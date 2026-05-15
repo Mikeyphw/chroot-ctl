@@ -1,0 +1,125 @@
+# ===================
+# OS Generated Files
+# ===================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# ===================
+# Editor/IDE Files
+# ===================
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+.history/
+
+# ===================
+# Python
+# ===================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+*.pyc
+*.pyo
+*.pyd
+
+# ===================
+# Build Outputs
+# ===================
+*.egg-info/
+.eggs/
+.installed.cfg
+*.manifest
+*.spec
+
+# ===================
+# Testing & Coverage
+# ===================
+.pytest_cache/
+.coverage
+htmlcov/
+test_reports/
+.junit
+test-results/
+.nyc_output/
+
+# ===================
+# Temporary Files
+# ===================
+*.tmp
+*.temp
+*.log
+*.bak
+*.backup
+*.orig
+*.rej
+.temp/
+tmp/
+temp/
+
+# ===================
+# Environment Files
+# ===================
+.env
+.env.local
+.env.*.local
+*.env
+
+# ===================
+# Database Files
+# ===================
+*.sqlite
+*.db
+*.sql
+*.sqlite3
+*.mdb
+
+# ===================
+# Secrets/Keys
+# ===================
+*.pem
+*.key
+*.crt
+credentials.json
+service-account.json
+
+# ===================
+# VCS (but NOT the actual .git directory)
+# ===================
+.svn/
+
+# ===================
+# Misc
+# ===================
+*.o
+*.a
+*.lib
+*.dylib
+*.so.*
+*.dll
+*.exe
+*.out
+

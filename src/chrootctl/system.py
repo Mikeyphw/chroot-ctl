@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import os
+import pwd
+import shlex
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Sequence
+import logging
+
+@dataclass(slots=True)
+class RunResult:
+    returncode: int
+    stdout: str
+    stderr: str
+
+class SystemRunner:
+    def __init__(self, logger: logging.Logger, dry_run: bool = False) -> None:
+        self.logger = logger
+        self.dry_run = dry_run
+
+    def run(
+        self,
+        args: Sequence[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        capture_output: bool = True,
+        cwd: Path | None = None,
+    ) -> RunResult:
+        self.logger.debug("run: %s", shlex.join(list(args)))
+        if self.dry_run:
+            return RunResult(returncode=0, stdout="", stderr="")
+        completed = subprocess.run(
+            list(args),
+            check=False,
+            env=env,
+            capture_output=capture_output,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+        )
+        result = RunResult(
+            returncode=completed.returncode,
+            stdout=completed.stdout or "",
+            stderr=completed.stderr or "",
+        )
+        if check and result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or f"command failed: {shlex.join(list(args))}")
+        return result
+
+    def require_root(self) -> None:
+        if os.geteuid() != 0:
+            raise PermissionError("root privileges required")
+
+    def is_root(self) -> bool:
+        return os.geteuid() == 0
+
+    def sudo_available(self) -> bool:
+        return shutil.which("sudo") is not None
+
+    def reexec_with_sudo(self, argv: list[str]) -> int:
+        if self.dry_run:
+            self.logger.info("dry-run sudo re-exec: %s", shlex.join(["sudo", *argv]))
+            return 0
+        if not self.sudo_available():
+            raise PermissionError("sudo is not available and root is required")
+        completed = subprocess.run(["sudo", *argv], check=False)
+        return completed.returncode
+
+    def python_reexec_argv(self) -> list[str]:
+        return [sys.executable, *sys.argv]
+
+    def mount_table(self) -> set[tuple[str, str]]:
+        mounts: set[tuple[str, str]] = set()
+        try:
+            with open("/proc/mounts", "r", encoding="utf-8") as handle:
+                for line in handle:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        mounts.add((parts[0], parts[1]))
+        except FileNotFoundError:
+            pass
+        return mounts
+
+    def host_termux_uid_gid(self, termux_home: Path) -> tuple[int, int]:
+        stat = termux_home.stat()
+        return stat.st_uid, stat.st_gid
+
+    def current_username(self) -> str:
+        return pwd.getpwuid(os.getuid()).pw_name

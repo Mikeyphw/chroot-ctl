@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import os
+import pwd
+from pathlib import Path
+
+from .config import ChrootConfig
+from .system import SystemRunner
+
+class UserSyncManager:
+    def __init__(self, config: ChrootConfig, runner: SystemRunner, logger) -> None:
+        self.config = config
+        self.runner = runner
+        self.logger = logger
+
+    def host_uid_gid(self) -> tuple[int, int]:
+        return self.runner.host_termux_uid_gid(self.config.termux_home)
+
+    def _chroot_sh(self, command: str) -> None:
+        self.runner.run(
+            ["busybox", "chroot", str(self.config.chroot_base), "/bin/bash", "-lc", command],
+            capture_output=False,
+        )
+
+    def show_id(self, username: str | None = None) -> dict[str, str]:
+        user = username or self.config.username
+        host_uid, host_gid = self.host_uid_gid()
+        passwd_path = self.config.chroot_base / "etc" / "passwd"
+        group_path = self.config.chroot_base / "etc" / "group"
+        current_uid = ""
+        current_gid = ""
+        if passwd_path.exists():
+            for line in passwd_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                parts = line.split(":")
+                if len(parts) >= 4 and parts[0] == user:
+                    current_uid, current_gid = parts[2], parts[3]
+                    break
+        return {
+            "username": user,
+            "host_uid": str(host_uid),
+            "host_gid": str(host_gid),
+            "chroot_uid": current_uid,
+            "chroot_gid": current_gid,
+            "passwd_exists": "yes" if passwd_path.exists() else "no",
+            "group_exists": "yes" if group_path.exists() else "no",
+        }
+
+    def sync_id(self, username: str | None = None, fix_ownership: bool = True) -> dict[str, str]:
+        self.runner.require_root()
+        user = username or self.config.username
+        host_uid, host_gid = self.host_uid_gid()
+
+        self._chroot_sh(f"getent group {user} >/dev/null || groupadd {user}")
+        self._chroot_sh(f"id -u {user} >/dev/null 2>&1 || useradd -m -s /bin/bash {user}")
+        self._chroot_sh(f"groupmod -g {host_gid} {user}")
+        self._chroot_sh(f"usermod -u {host_uid} -g {host_gid} {user}")
+
+        if fix_ownership:
+            paths = [
+                f"/home/{user}",
+                "/tmp",
+                "/var/tmp",
+                "/var/cache",
+            ]
+            for path in paths:
+                self._chroot_sh(f'[ -e "{path}" ] && chown -R {host_uid}:{host_gid} "{path}" || true')
+
+        return {
+            "username": user,
+            "uid": str(host_uid),
+            "gid": str(host_gid),
+            "ownership_fixed": "yes" if fix_ownership else "no",
+        }
