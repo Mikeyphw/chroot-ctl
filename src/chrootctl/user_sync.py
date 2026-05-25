@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-import os
-import pwd
-from pathlib import Path
+import re
+import shlex
 
 from .config import ChrootConfig
 from .system import SystemRunner
+
+USERNAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]*[$]?$")
+
+def validate_username(username: str) -> str:
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise ValueError(f"invalid username: {username!r}")
+    return username
 
 class UserSyncManager:
     def __init__(self, config: ChrootConfig, runner: SystemRunner, logger) -> None:
@@ -15,6 +21,9 @@ class UserSyncManager:
 
     def host_uid_gid(self) -> tuple[int, int]:
         return self.runner.host_termux_uid_gid(self.config.termux_home)
+
+    def _validate_username(self, username: str) -> str:
+        return validate_username(username)
 
     def _chroot_sh(self, command: str) -> None:
         self.runner.run(
@@ -47,13 +56,16 @@ class UserSyncManager:
 
     def sync_id(self, username: str | None = None, fix_ownership: bool = True) -> dict[str, str]:
         self.runner.require_root()
-        user = username or self.config.username
+        user = self._validate_username(username or self.config.username)
         host_uid, host_gid = self.host_uid_gid()
+        quoted_user = shlex.quote(user)
 
-        self._chroot_sh(f"getent group {user} >/dev/null || groupadd {user}")
-        self._chroot_sh(f"id -u {user} >/dev/null 2>&1 || useradd -m -s /bin/bash {user}")
-        self._chroot_sh(f"groupmod -g {host_gid} {user}")
-        self._chroot_sh(f"usermod -u {host_uid} -g {host_gid} {user}")
+        self._chroot_sh(f"getent group {quoted_user} >/dev/null || groupadd {quoted_user}")
+        self._chroot_sh(
+            f"id -u {quoted_user} >/dev/null 2>&1 || useradd -m -s /bin/bash {quoted_user}"
+        )
+        self._chroot_sh(f"groupmod -g {host_gid} {quoted_user}")
+        self._chroot_sh(f"usermod -u {host_uid} -g {host_gid} {quoted_user}")
 
         if fix_ownership:
             paths = [
@@ -63,7 +75,10 @@ class UserSyncManager:
                 "/var/cache",
             ]
             for path in paths:
-                self._chroot_sh(f'[ -e "{path}" ] && chown -R {host_uid}:{host_gid} "{path}" || true')
+                quoted_path = shlex.quote(path)
+                self._chroot_sh(
+                    f"[ -e {quoted_path} ] && chown -R {host_uid}:{host_gid} {quoted_path} || true"
+                )
 
         return {
             "username": user,

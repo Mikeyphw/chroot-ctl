@@ -34,10 +34,13 @@ class SystemRunner:
         self.logger.debug("run: %s", shlex.join(list(args)))
         if self.dry_run:
             return RunResult(returncode=0, stdout="", stderr="")
+        process_env = os.environ.copy()
+        if env is not None:
+            process_env.update(env)
         completed = subprocess.run(
             list(args),
             check=False,
-            env=env,
+            env=process_env,
             capture_output=capture_output,
             text=True,
             cwd=str(cwd) if cwd else None,

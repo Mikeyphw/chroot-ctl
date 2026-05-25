@@ -5,6 +5,9 @@ from .base_install import BaseInstaller, ReleaseRef
 class ArchInstaller(BaseInstaller):
     distro = "arch"
     ROOTFS_URL = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
+    ROOTFS_MD5_URL = f"{ROOTFS_URL}.md5"
+    BASE_PACKAGES = ("vim", "net-tools", "sudo", "git", "dbus", "xfce4-terminal")
+    DEV_PACKAGES = ("base-devel", "python", "python-pip", "pkgconf")
 
     def list_versions(self) -> list[ReleaseRef]:
         return [ReleaseRef("latest", self.ROOTFS_URL)]
@@ -24,7 +27,10 @@ class ArchInstaller(BaseInstaller):
         self.assert_phase_allowed("extract", force_phase)
         self.config.chroot_base.mkdir(parents=True, exist_ok=True)
         tarball = self.config.chroot_base / "ArchLinuxARM-aarch64-latest.tar.gz"
-        self.runner.run(["curl", "-L", self.ROOTFS_URL, "-o", str(tarball)])
+        self._download(self.ROOTFS_URL, tarball)
+        expected_md5 = self._fetch_text(self.ROOTFS_MD5_URL).split()[0]
+        if not self.runner.dry_run:
+            self._verify_md5(tarball, expected_md5)
         self.runner.run(["bsdtar", "-xpf", str(tarball)], cwd=self.config.chroot_base)
         for rel in ("dev/pts", "dev/shm", "proc", "sys", "tmp", "media/sdcard", f"home/{self.config.username}"):
             if not self.runner.dry_run:
@@ -32,40 +38,49 @@ class ArchInstaller(BaseInstaller):
         self.mark_phase("extract", version="latest", release_name="rolling", metadata={"tarball": tarball.name, "url": self.ROOTFS_URL})
         return {"phase": "extract", "version": "latest", "release": "rolling", "tarball": tarball.name}
 
-    def run_phase_bootstrap(self, *, username: str, force_phase: bool = False) -> dict[str, str]:
+    def _bootstrap_packages(self, profile: str | None) -> tuple[str, ...]:
+        packages = list(self.BASE_PACKAGES)
+        if profile == "dev":
+            packages.extend(self.DEV_PACKAGES)
+        packages.extend(self._extra_packages_for_profile(profile))
+        return tuple(dict.fromkeys(packages))
+
+    def run_phase_bootstrap(self, *, username: str, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
         self.runner.require_root()
         self.assert_phase_allowed("bootstrap", force_phase)
-        self.controller.mount()
-        self.controller.fix_tty()
-        self._chroot_shell('printf "nameserver 8.8.8.8\\n" > /etc/resolv.conf')
-        self._chroot_shell('printf "127.0.0.1 localhost\\n::1 localhost\\n" > /etc/hosts')
+        user = self._validated_username(username)
+        self._ensure_common_bootstrap_prereqs()
         self._chroot_shell(r"sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf || true")
         self._chroot_shell("pacman-key --init || true")
         self._chroot_shell("pacman-key --populate archlinuxarm || true")
         self._chroot_shell("pacman-key --refresh-keys || true")
-        for group_name, gid in (("aid_inet", 3003), ("aid_net_raw", 3004), ("aid_graphics", 1003)):
-            self._chroot_shell(f'getent group {group_name} >/dev/null || groupadd -g {gid} {group_name}')
+        self._ensure_android_groups()
         self._chroot_shell("pacman -Syu --noconfirm")
-        self._chroot_shell("pacman -S --noconfirm vim net-tools sudo git dbus xfce4-terminal")
-        self._chroot_shell("getent group storage >/dev/null || groupadd storage")
-        self._chroot_shell("getent group wheel >/dev/null || groupadd wheel")
-        self._chroot_shell(f"id -u {username} >/dev/null 2>&1 || useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {username}")
-        sudoers = self.config.chroot_base / "etc" / "sudoers.d" / username
-        if not self.runner.dry_run:
-            sudoers.parent.mkdir(parents=True, exist_ok=True)
-            sudoers.write_text(f"{username} ALL=(ALL:ALL) ALL\n", encoding="utf-8")
-            sudoers.chmod(0o440)
-        self._chroot_shell("locale-gen en_US.UTF-8 || true")
-        self.mark_phase("bootstrap", metadata={"username": username})
-        return {"phase": "bootstrap", "username": username}
+        packages = " ".join(self._bootstrap_packages(profile))
+        if packages:
+            self._chroot_shell(f"pacman -S --noconfirm {packages}")
+        self._ensure_common_user_groups()
+        self._ensure_user(
+            user,
+            "id -u {username} >/dev/null 2>&1 || useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {username}",
+        )
+        self._write_sudoers(user)
+        self._chroot_shell(f"locale-gen {self.config.locale} || true")
+        self.mark_phase("bootstrap", metadata={"username": user, "profile": profile or ""})
+        return {"phase": "bootstrap", "username": user, "profile": profile or ""}
 
-    def run_phase_desktop(self, *, desktop: str, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_desktop(self, *, desktop: str | None, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
         self.runner.require_root()
         self.assert_phase_allowed("desktop", force_phase)
-        pkg = {"xfce4": "xfce4 xfce4-terminal", "plasma": "plasma-meta konsole", "none": ""}[desktop]
+        snapshot = self._create_snapshot("desktop")
+        selected_desktop = desktop or "none"
+        pkg = {"xfce4": "xfce4 xfce4-terminal", "plasma": "plasma-meta konsole", "none": ""}[selected_desktop]
         if pkg:
             self.controller.mount()
             self.controller.fix_tty()
             self._chroot_shell(f"pacman -S --noconfirm {pkg}")
-        self.mark_phase("desktop", metadata={"desktop": desktop})
-        return {"phase": "desktop", "desktop": desktop}
+        self.mark_phase("desktop", metadata={"desktop": selected_desktop, "desktop_snapshot": snapshot or "", "profile": profile or ""})
+        return {"phase": "desktop", "desktop": selected_desktop, "snapshot": snapshot or "", "profile": profile or ""}
+
+    def _run_upgrade(self) -> None:
+        self._chroot_shell("pacman -Syu --noconfirm")

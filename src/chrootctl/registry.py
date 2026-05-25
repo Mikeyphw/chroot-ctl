@@ -79,6 +79,20 @@ class ChrootRegistry:
             return None
         return dict(row) | {"metadata": json.loads(row["metadata_json"])}
 
+    def rename(self, old_name: str, new_name: str, *, new_path: str | None = None) -> None:
+        record = self.get(old_name)
+        if record is None:
+            raise KeyError(old_name)
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE chroots SET name = ?, path = ? WHERE name = ?",
+                (new_name, new_path or record["path"], old_name),
+            )
+
+    def delete(self, name: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM chroots WHERE name = ?", (name,))
+
     def list(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(

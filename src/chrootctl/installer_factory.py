@@ -20,6 +20,6 @@ def build_installer(
 ):
     if distro == "ubuntu":
         return UbuntuInstaller(config, runner, controller, registry, user_sync, logger)
-    if distro in {"arch", "manjaro"}:
+    if distro == "arch":
         return ArchInstaller(config, runner, controller, registry, user_sync, logger)
     raise ValueError(f"unsupported distro: {distro}")
