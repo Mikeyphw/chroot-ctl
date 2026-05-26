@@ -228,6 +228,8 @@ def test_chroot_shell_uses_sanitized_environment(tmp_path: Path) -> None:
 
 def test_ubuntu_bootstrap_installs_prerequisites_before_group_setup(tmp_path: Path) -> None:
     installer, runner = build_real_installer(UbuntuInstaller, tmp_path)
+    (installer.config.chroot_base / "usr/bin").mkdir(parents=True)
+    (installer.config.chroot_base / "usr/bin/apt").touch()
 
     result = installer.run_phase_bootstrap(username="mike", profile="minimal", force_phase=True)
 
@@ -248,3 +250,28 @@ def test_ubuntu_bootstrap_installs_prerequisites_before_group_setup(tmp_path: Pa
     assert result["phase"] == "bootstrap"
     assert apt_update_index < prereq_index < preflight_index < group_index
     assert "passwd login libc-bin sudo" in shell_commands[prereq_index]
+
+
+def test_ubuntu_default_install_reruns_extract_when_apt_is_missing(tmp_path: Path) -> None:
+    installer, _ = build_real_installer(UbuntuInstaller, tmp_path)
+    installer.registry.upsert(name="ubuntu", distro="ubuntu", path=str(installer.config.chroot_base), phase="extract")
+    (installer.config.chroot_base / "etc").mkdir(parents=True)
+    (installer.config.chroot_base / "etc/os-release").write_text("ID=ubuntu\n", encoding="utf-8")
+    installer._resolve_release = lambda version, release: ReleaseRef("noble", "https://example.invalid/release/")  # type: ignore[method-assign]
+    installer._resolve_tarball = lambda ref: ("ubuntu-base.tar.gz", "https://example.invalid/ubuntu-base.tar.gz")  # type: ignore[method-assign]
+
+    result = installer.install(
+        phase=None,
+        username="mike",
+        desktop=None,
+        version=None,
+        release=None,
+        force_phase=False,
+        auto=False,
+        resume=False,
+        repair=False,
+        profile=None,
+    )
+
+    assert result[0]["phase"] == "extract"
+    assert any(command[:2] == ["curl", "--fail"] for command in installer.runner.commands)

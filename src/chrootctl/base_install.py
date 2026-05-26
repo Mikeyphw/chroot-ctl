@@ -198,11 +198,17 @@ class BaseInstaller:
                 f"missing chroot command: {', '.join(missing)}; run install --phase bootstrap --repair"
             )
 
+    def ready_for_bootstrap(self) -> bool:
+        return True
+
     def _default_install_phase(self) -> InstallPhase:
         record = self.registry.get(self.config.distro_name)
         if record is None:
             return "extract"
-        return self.next_phase(self.current_phase()) or "finalize"
+        current = self.current_phase()
+        if current == "extract" and not self.ready_for_bootstrap():
+            return "extract"
+        return self.next_phase(current) or "finalize"
 
     def _selected_profile(self, profile: str | None) -> str:
         return profile or self.config.install_profile or "xfce4"

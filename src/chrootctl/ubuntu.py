@@ -25,6 +25,8 @@ class UbuntuInstaller(BaseInstaller):
         base = self.config.chroot_base
         if not (base / "etc/os-release").exists():
             return "extract"
+        if not self.ready_for_bootstrap():
+            return "extract"
         if not (base / "etc/sudoers.d" / self.config.username).exists():
             return "extract"
         if not (base / "usr/share/X11").exists():
@@ -32,6 +34,9 @@ class UbuntuInstaller(BaseInstaller):
         if not (base / "etc/apt/preferences.d/nosnap.pref").exists():
             return "desktop"
         return "finalize"
+
+    def ready_for_bootstrap(self) -> bool:
+        return (self.config.chroot_base / "usr/bin/apt").exists()
 
     def _resolve_release(self, version: str | None, release: str | None) -> ReleaseRef:
         refs = {r.label: r for r in self.list_versions()}
@@ -81,6 +86,7 @@ class UbuntuInstaller(BaseInstaller):
         self.assert_phase_allowed("bootstrap", force_phase)
         user = self._validated_username(username)
         self._ensure_common_bootstrap_prereqs()
+        self._require_chroot_commands("apt")
         self._chroot_shell("apt update")
         self._install_bootstrap_prerequisites()
         self._require_chroot_commands("getent", "groupadd", "usermod", "useradd", "id")

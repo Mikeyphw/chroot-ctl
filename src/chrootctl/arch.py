@@ -16,11 +16,16 @@ class ArchInstaller(BaseInstaller):
         base = self.config.chroot_base
         if not (base / "etc/os-release").exists():
             return "extract"
+        if not self.ready_for_bootstrap():
+            return "extract"
         if not (base / "etc/sudoers.d" / self.config.username).exists():
             return "extract"
         if not (base / "usr/bin/startxfce4").exists() and not (base / "usr/bin/xfce4-session").exists():
             return "bootstrap"
         return "finalize"
+
+    def ready_for_bootstrap(self) -> bool:
+        return (self.config.chroot_base / "usr/bin/pacman").exists()
 
     def run_phase_extract(self, *, version: str | None, release: str | None, force_phase: bool = False) -> dict[str, str]:
         self.runner.require_root()
@@ -50,6 +55,7 @@ class ArchInstaller(BaseInstaller):
         self.assert_phase_allowed("bootstrap", force_phase)
         user = self._validated_username(username)
         self._ensure_common_bootstrap_prereqs()
+        self._require_chroot_commands("pacman")
         self._chroot_shell(r"sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf || true")
         self._chroot_shell("pacman-key --init || true")
         self._chroot_shell("pacman-key --populate archlinuxarm || true")
