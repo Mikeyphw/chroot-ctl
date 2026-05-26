@@ -211,7 +211,7 @@ class BaseInstaller:
         return self.next_phase(current) or "finalize"
 
     def _recover_phase_if_needed(self, requested: InstallPhase, *, force_phase: bool) -> InstallPhase:
-        if requested == "bootstrap" and not force_phase and not self.ready_for_bootstrap():
+        if self.phase_index(requested) >= self.phase_index("bootstrap") and not force_phase and not self.ready_for_bootstrap():
             return "extract"
         return requested
 
