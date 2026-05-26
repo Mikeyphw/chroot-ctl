@@ -34,6 +34,29 @@ def test_run_merges_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured_env["ADD_ME"] == "value"
 
 
+def test_run_filters_termux_variables_for_chroot_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_env: dict[str, str] = {}
+
+    def fake_run(args, **kwargs):
+        nonlocal captured_env
+        captured_env = kwargs["env"]
+        return CompletedProcess(0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setenv("LD_PRELOAD", "/data/data/com.termux/files/usr/lib/libtermux-exec.so")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/data/data/com.termux/files/usr/lib")
+    monkeypatch.setenv("PREFIX", "/data/data/com.termux/files/usr")
+    monkeypatch.setenv("KEEP_ME", "present")
+    runner = SystemRunner(logging.getLogger("test"))
+
+    runner.run(["busybox", "chroot", "/tmp/rootfs", "/bin/bash"], chroot_env=True)
+
+    assert "LD_PRELOAD" not in captured_env
+    assert "LD_LIBRARY_PATH" not in captured_env
+    assert "PREFIX" not in captured_env
+    assert captured_env["KEEP_ME"] == "present"
+
+
 def test_run_raises_with_fallback_message(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(args, **kwargs):
         return CompletedProcess(4, stdout="", stderr="")

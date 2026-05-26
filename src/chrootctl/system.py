@@ -11,6 +11,19 @@ from pathlib import Path
 from typing import Sequence
 import logging
 
+CHROOT_ENV_BLOCKLIST = {
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "LD_AUDIT",
+    "PYTHONPATH",
+    "PREFIX",
+    "TERMUX_VERSION",
+    "TERMUX_APK_RELEASE",
+    "ANDROID_ROOT",
+    "ANDROID_DATA",
+    "EXTERNAL_STORAGE",
+}
+
 @dataclass(slots=True)
 class RunResult:
     returncode: int
@@ -28,13 +41,18 @@ class SystemRunner:
         *,
         check: bool = True,
         env: dict[str, str] | None = None,
+        clean_env: bool = False,
+        chroot_env: bool = False,
         capture_output: bool = True,
         cwd: Path | None = None,
     ) -> RunResult:
         self.logger.debug("run: %s", shlex.join(list(args)))
         if self.dry_run:
             return RunResult(returncode=0, stdout="", stderr="")
-        process_env = os.environ.copy()
+        process_env = {} if clean_env else os.environ.copy()
+        if chroot_env:
+            for key in CHROOT_ENV_BLOCKLIST:
+                process_env.pop(key, None)
         if env is not None:
             process_env.update(env)
         completed = subprocess.run(

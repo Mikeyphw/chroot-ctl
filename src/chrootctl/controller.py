@@ -287,6 +287,7 @@ class ChrootController:
             argv,
             check=False,
             env=env,
+            chroot_env=True,
             capture_output=False,
         )
         return result.returncode

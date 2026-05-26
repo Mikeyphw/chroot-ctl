@@ -5,7 +5,8 @@ from .base_install import BaseInstaller, LinkParser, ReleaseRef
 class UbuntuInstaller(BaseInstaller):
     distro = "ubuntu"
     RELEASE_INDEX_URL = "https://cdimage.ubuntu.com/ubuntu-base/releases/"
-    BASE_PACKAGES = ("nano", "vim", "net-tools", "sudo", "git", "locales", "dbus-x11", "curl", "wget")
+    PREREQ_PACKAGES = ("passwd", "login", "libc-bin", "sudo")
+    BASE_PACKAGES = ("nano", "vim", "net-tools", "git", "locales", "dbus-x11", "curl", "wget")
     DEV_PACKAGES = ("build-essential", "pkg-config", "python3", "python3-pip")
 
     def list_versions(self) -> list[ReleaseRef]:
@@ -65,19 +66,25 @@ class UbuntuInstaller(BaseInstaller):
         return {"phase": "extract", "version": version or ref.label, "release": release or ref.label, "tarball": filename}
 
     def _bootstrap_packages(self, profile: str | None) -> tuple[str, ...]:
-        packages = list(self.BASE_PACKAGES)
+        packages = list(self.PREREQ_PACKAGES) + list(self.BASE_PACKAGES)
         if profile == "dev":
             packages.extend(self.DEV_PACKAGES)
         packages.extend(self._extra_packages_for_profile(profile))
         return tuple(dict.fromkeys(packages))
+
+    def _install_bootstrap_prerequisites(self) -> None:
+        packages = " ".join(self.PREREQ_PACKAGES)
+        self._chroot_shell(f"DEBIAN_FRONTEND=noninteractive apt install -y {packages}")
 
     def run_phase_bootstrap(self, *, username: str, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
         self.runner.require_root()
         self.assert_phase_allowed("bootstrap", force_phase)
         user = self._validated_username(username)
         self._ensure_common_bootstrap_prereqs()
-        self._ensure_android_groups()
         self._chroot_shell("apt update")
+        self._install_bootstrap_prerequisites()
+        self._require_chroot_commands("getent", "groupadd", "usermod", "useradd", "id")
+        self._ensure_android_groups()
         self._chroot_shell("DEBIAN_FRONTEND=noninteractive apt -y upgrade")
         packages = " ".join(self._bootstrap_packages(profile))
         if packages:

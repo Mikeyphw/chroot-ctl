@@ -18,6 +18,7 @@ from chrootctl.user_sync import UserSyncManager
 class InstallerRunner:
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
+        self.kwargs: list[dict] = []
         self.dry_run = True
 
     def require_root(self) -> None:
@@ -25,6 +26,7 @@ class InstallerRunner:
 
     def run(self, args, **kwargs) -> RunResult:
         self.commands.append(list(args))
+        self.kwargs.append(kwargs)
         return RunResult(returncode=0, stdout="", stderr="")
 
     def mount_table(self) -> set[tuple[str, str]]:
@@ -214,3 +216,35 @@ def test_upgrade_runs_installer_upgrade_flow(tmp_path: Path) -> None:
 
     assert installer.called == ["upgrade"]
     assert result["status"] == "upgraded"
+
+
+def test_chroot_shell_uses_sanitized_environment(tmp_path: Path) -> None:
+    installer, _ = build_stub_installer(tmp_path)
+
+    installer._chroot_shell("true")
+
+    assert installer.runner.kwargs[-1]["chroot_env"] is True
+
+
+def test_ubuntu_bootstrap_installs_prerequisites_before_group_setup(tmp_path: Path) -> None:
+    installer, runner = build_real_installer(UbuntuInstaller, tmp_path)
+
+    result = installer.run_phase_bootstrap(username="mike", profile="minimal", force_phase=True)
+
+    shell_commands = [
+        command[-1]
+        for command in runner.commands
+        if command[:4] == ["busybox", "chroot", str(installer.config.chroot_base), "/bin/bash"]
+    ]
+    apt_update_index = shell_commands.index("apt update")
+    prereq_index = next(
+        index
+        for index, command in enumerate(shell_commands)
+        if command.startswith("DEBIAN_FRONTEND=noninteractive apt install -y passwd login libc-bin sudo")
+    )
+    group_index = next(index for index, command in enumerate(shell_commands) if "getent group aid_inet" in command)
+    preflight_index = next(index for index, command in enumerate(shell_commands) if "command -v groupadd" in command)
+
+    assert result["phase"] == "bootstrap"
+    assert apt_update_index < prereq_index < preflight_index < group_index
+    assert "passwd login libc-bin sudo" in shell_commands[prereq_index]

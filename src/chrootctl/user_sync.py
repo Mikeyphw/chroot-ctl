@@ -28,6 +28,7 @@ class UserSyncManager:
     def _chroot_sh(self, command: str) -> None:
         self.runner.run(
             ["busybox", "chroot", str(self.config.chroot_base), "/bin/bash", "-lc", command],
+            chroot_env=True,
             capture_output=False,
         )
 

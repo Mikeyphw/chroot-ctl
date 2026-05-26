@@ -82,14 +82,17 @@ class BaseInstaller:
         self._chroot_shell('printf "127.0.0.1 localhost\\n::1 localhost\\n" > /etc/hosts')
 
     def _ensure_android_groups(self) -> None:
+        self._require_chroot_commands("getent", "groupadd")
         for group_name, gid in (("aid_inet", 3003), ("aid_net_raw", 3004), ("aid_graphics", 1003)):
             self._chroot_shell(f"getent group {group_name} >/dev/null || groupadd -g {gid} {group_name}")
 
     def _ensure_common_user_groups(self) -> None:
+        self._require_chroot_commands("getent", "groupadd")
         self._chroot_shell("getent group storage >/dev/null || groupadd storage")
         self._chroot_shell("getent group wheel >/dev/null || groupadd wheel")
 
     def _ensure_user(self, username: str, command: str) -> str:
+        self._require_chroot_commands("id", "useradd")
         user = self._validated_username(username)
         self._chroot_shell(command.format(username=shlex.quote(user)))
         return user
@@ -173,8 +176,27 @@ class BaseInstaller:
     def _chroot_shell(self, command: str) -> None:
         self.runner.run(
             ["busybox", "chroot", str(self.config.chroot_base), "/bin/bash", "-lc", command],
+            chroot_env=True,
             capture_output=False,
         )
+
+    def _chroot_shell_result(self, command: str) -> object:
+        return self.runner.run(
+            ["busybox", "chroot", str(self.config.chroot_base), "/bin/bash", "-lc", command],
+            check=False,
+            chroot_env=True,
+        )
+
+    def _require_chroot_commands(self, *commands: str) -> None:
+        missing: list[str] = []
+        for command in commands:
+            result = self._chroot_shell_result(f"command -v {shlex.quote(command)} >/dev/null 2>&1")
+            if result.returncode != 0:
+                missing.append(command)
+        if missing:
+            raise RuntimeError(
+                f"missing chroot command: {', '.join(missing)}; run install --phase bootstrap --repair"
+            )
 
     def _default_install_phase(self) -> InstallPhase:
         record = self.registry.get(self.config.distro_name)

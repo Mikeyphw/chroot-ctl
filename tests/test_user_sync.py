@@ -13,6 +13,7 @@ from chrootctl.user_sync import UserSyncManager
 class RecordingRunner:
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
+        self.kwargs: list[dict] = []
 
     def require_root(self) -> None:
         return None
@@ -22,6 +23,7 @@ class RecordingRunner:
 
     def run(self, args, **kwargs) -> RunResult:
         self.commands.append(list(args))
+        self.kwargs.append(kwargs)
         return RunResult(returncode=0, stdout="", stderr="")
 
 
@@ -69,3 +71,12 @@ def test_sync_id_can_skip_ownership_fix(tmp_path: Path) -> None:
 
     assert result["ownership_fixed"] == "no"
     assert len(runner.commands) == 4
+
+
+def test_sync_id_uses_sanitized_chroot_environment(tmp_path: Path) -> None:
+    mgr, runner = build_manager(tmp_path)
+
+    mgr.sync_id("mike", fix_ownership=False)
+
+    assert runner.kwargs
+    assert all(kwargs.get("chroot_env") is True for kwargs in runner.kwargs)
