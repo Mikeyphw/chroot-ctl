@@ -38,8 +38,8 @@ chrootctl completion zsh > ~/.local/share/zsh/site-functions/_chrootctl
 ## Examples
 
 ```bash
-chrootctl install ubuntu --name ubuntu --auto --username mike
-chrootctl install arch --name arch --auto --username mike
+chrootctl install ubuntu --name ubuntu --username mike
+chrootctl install arch --name arch --username mike
 chrootctl install ubuntu --name work --resume --profile dev --username mike
 
 chrootctl users show-id --name ubuntu --username mike
@@ -54,5 +54,7 @@ chrootctl doctor --name work
 chrootctl logs --tail 50
 source <(chrootctl completion zsh)
 ```
+
+By default, chroots are created under `/data/local/tmp/<name>`. Set `chroot_root` in the config file if you need a different base directory.
 
 If `fzf` is installed, the generated zsh completion uses it for interactive chroot selection. If `bat` or `lsd` are available, they are used automatically for previews. The script falls back to normal zsh completion and standard preview tools when those commands are missing, so regeneration is not required after installing them later.

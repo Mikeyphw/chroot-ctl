@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("distro", choices=["ubuntu", "arch"])
     install.add_argument("--phase", choices=["extract", "bootstrap", "desktop", "finalize"], default=None)
     install.add_argument("--force-phase", action="store_true")
-    install.add_argument("--auto", action="store_true")
+    install.add_argument("--auto", action="store_true", help="Run remaining phases from --phase; default install already auto-advances")
     install.add_argument("--resume", action="store_true")
     install.add_argument("--repair", action="store_true")
     install.add_argument("--list-versions", action="store_true")

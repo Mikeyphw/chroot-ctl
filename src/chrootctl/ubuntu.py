@@ -63,7 +63,11 @@ class UbuntuInstaller(BaseInstaller):
         self.config.chroot_base.mkdir(parents=True, exist_ok=True)
         tarball = self.config.chroot_base / filename
         self._download(url, tarball)
-        self.runner.run(["tar", "xpvf", str(tarball), "--numeric-owner"], cwd=self.config.chroot_base)
+        self.runner.run(
+            ["tar", "xpvf", str(tarball), "--numeric-owner"],
+            cwd=self.config.chroot_base,
+            capture_output=False,
+        )
         for rel in ("dev/pts", "dev/shm", "proc", "sys", "sdcard", "tmp", f"home/{self.config.username}"):
             if not self.runner.dry_run:
                 (self.config.chroot_base / rel).mkdir(parents=True, exist_ok=True)

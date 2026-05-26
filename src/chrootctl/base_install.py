@@ -117,10 +117,12 @@ class BaseInstaller:
                 "1800",
                 "--retry",
                 "3",
+                "--progress-bar",
                 url,
                 "-o",
                 str(target),
-            ]
+            ],
+            capture_output=False,
         )
 
     def _verify_md5(self, file_path: Path, expected_md5: str) -> None:
@@ -287,6 +289,7 @@ class BaseInstaller:
         selected_desktop = self._selected_desktop(desktop, selected_profile)
         if repair:
             current = self.current_phase()
+            current = self._recover_phase_if_needed(current, force_phase=force_phase)
             if current == "extract":
                 return [self.run_phase_extract(version=version, release=release, force_phase=True)]
             if current == "bootstrap":
@@ -294,11 +297,11 @@ class BaseInstaller:
             if current == "desktop":
                 return [self.run_phase_desktop(desktop=selected_desktop, profile=selected_profile, force_phase=True)]
             return [self.run_phase_finalize(username=username, force_phase=True)]
-        if auto or resume:
+        if auto or resume or phase is None:
             record = self.registry.get(self.config.distro_name)
             if record and record.get("installed"):
                 return [{"phase": "finalize", "installed": "true", "status": "already_complete"}]
-            start_phase = self._default_install_phase()
+            start_phase = phase or self._default_install_phase()
             start_phase = self._recover_phase_if_needed(start_phase, force_phase=force_phase)
             for item in PHASES[PHASES.index(start_phase):]:
                 if item == "extract":

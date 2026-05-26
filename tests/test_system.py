@@ -55,6 +55,13 @@ def test_run_filters_termux_variables_for_chroot_env(monkeypatch: pytest.MonkeyP
     assert "LD_LIBRARY_PATH" not in captured_env
     assert "PREFIX" not in captured_env
     assert captured_env["KEEP_ME"] == "present"
+    assert captured_env["PATH"] == "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    assert captured_env["HOME"] == "/root"
+    assert captured_env["USER"] == "root"
+    assert captured_env["SHELL"] == "/bin/bash"
+    assert captured_env["LANG"] == "C.UTF-8"
+    assert captured_env["LC_ALL"] == "C.UTF-8"
+    assert captured_env["TERM"]
 
 
 def test_run_raises_with_fallback_message(monkeypatch: pytest.MonkeyPatch) -> None:

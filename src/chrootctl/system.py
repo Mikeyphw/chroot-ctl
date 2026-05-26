@@ -24,6 +24,15 @@ CHROOT_ENV_BLOCKLIST = {
     "EXTERNAL_STORAGE",
 }
 
+CHROOT_ENV_DEFAULTS = {
+    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "HOME": "/root",
+    "USER": "root",
+    "SHELL": "/bin/bash",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+}
+
 @dataclass(slots=True)
 class RunResult:
     returncode: int
@@ -53,6 +62,8 @@ class SystemRunner:
         if chroot_env:
             for key in CHROOT_ENV_BLOCKLIST:
                 process_env.pop(key, None)
+            process_env.update(CHROOT_ENV_DEFAULTS)
+            process_env["TERM"] = os.environ.get("TERM") or "xterm-256color"
         if env is not None:
             process_env.update(env)
         completed = subprocess.run(

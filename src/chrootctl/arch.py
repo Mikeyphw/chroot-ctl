@@ -36,7 +36,7 @@ class ArchInstaller(BaseInstaller):
         expected_md5 = self._fetch_text(self.ROOTFS_MD5_URL).split()[0]
         if not self.runner.dry_run:
             self._verify_md5(tarball, expected_md5)
-        self.runner.run(["bsdtar", "-xpf", str(tarball)], cwd=self.config.chroot_base)
+        self.runner.run(["bsdtar", "-xpf", str(tarball)], cwd=self.config.chroot_base, capture_output=False)
         for rel in ("dev/pts", "dev/shm", "proc", "sys", "tmp", "media/sdcard", f"home/{self.config.username}"):
             if not self.runner.dry_run:
                 (self.config.chroot_base / rel).mkdir(parents=True, exist_ok=True)

@@ -136,7 +136,7 @@ typeset -g {fn}_prog="{prog}"
             '1:distro:({distros})' \\
             '--phase[Installation phase]:phase:({phases})' \\
             '--force-phase[Bypass phase gating]' \\
-            '--auto[Run through remaining phases automatically]' \\
+            '--auto[Run remaining phases from --phase]' \\
             '--resume[Resume from next actionable phase]' \\
             '--repair[Re-run current phase in repair mode]' \\
             '--list-versions[List available versions]' \\

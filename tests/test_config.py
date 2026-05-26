@@ -7,7 +7,8 @@ from chrootctl.config import ChrootConfig
 
 def test_chroot_base_uses_name() -> None:
     cfg = ChrootConfig(distro_name="noble")
-    assert str(cfg.chroot_base).endswith("/noble")
+    assert cfg.chroot_root == Path("/data/local/tmp")
+    assert cfg.chroot_base == Path("/data/local/tmp/noble")
 
 def test_repo_imports_resolve_to_local_src() -> None:
     expected_root = Path(__file__).resolve().parents[1] / "src" / "chrootctl"

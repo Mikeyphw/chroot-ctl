@@ -93,7 +93,7 @@ def build_real_installer(installer_cls, tmp_path: Path):
     return installer_cls(cfg, runner, controller, registry, user_sync, logger), runner
 
 
-def test_manual_install_without_phase_uses_next_actionable_phase(tmp_path: Path) -> None:
+def test_install_without_phase_runs_remaining_phases_by_default(tmp_path: Path) -> None:
     installer, registry = build_stub_installer(tmp_path)
     registry.upsert(name="stub", distro="stub", path="/tmp/stub", phase="extract")
 
@@ -110,8 +110,55 @@ def test_manual_install_without_phase_uses_next_actionable_phase(tmp_path: Path)
         profile=None,
     )
 
+    assert installer.called == ["bootstrap", "desktop", "finalize"]
+    assert result == [
+        {"phase": "bootstrap", "profile": "xfce4"},
+        {"phase": "desktop", "desktop": "xfce4", "profile": "xfce4"},
+        {"phase": "finalize"},
+    ]
+
+
+def test_explicit_phase_runs_single_phase_without_auto(tmp_path: Path) -> None:
+    installer, registry = build_stub_installer(tmp_path)
+    registry.upsert(name="stub", distro="stub", path="/tmp/stub", phase="extract")
+
+    result = installer.install(
+        phase="bootstrap",
+        username="mike",
+        desktop="xfce4",
+        version=None,
+        release=None,
+        force_phase=False,
+        auto=False,
+        resume=False,
+        repair=False,
+        profile=None,
+    )
+
     assert installer.called == ["bootstrap"]
     assert result == [{"phase": "bootstrap", "profile": "xfce4"}]
+
+
+def test_explicit_phase_with_auto_runs_remaining_phases(tmp_path: Path) -> None:
+    installer, registry = build_stub_installer(tmp_path)
+    registry.upsert(name="stub", distro="stub", path="/tmp/stub", phase="extract")
+
+    result = installer.install(
+        phase="bootstrap",
+        username="mike",
+        desktop="xfce4",
+        version=None,
+        release=None,
+        force_phase=False,
+        auto=True,
+        resume=False,
+        repair=False,
+        profile=None,
+    )
+
+    assert installer.called == ["bootstrap", "desktop", "finalize"]
+    assert result[0]["phase"] == "bootstrap"
+    assert result[-1]["phase"] == "finalize"
 
 
 def test_auto_install_runs_remaining_phases(tmp_path: Path) -> None:
@@ -209,6 +256,28 @@ def test_repair_reruns_current_phase(tmp_path: Path) -> None:
     assert result == [{"phase": "desktop", "desktop": "none", "profile": "minimal"}]
 
 
+def test_repair_reruns_extract_when_bootstrap_is_not_ready(tmp_path: Path) -> None:
+    installer, registry = build_stub_installer(tmp_path)
+    registry.upsert(name="stub", distro="stub", path="/tmp/stub", phase="bootstrap")
+    installer.ready_for_bootstrap = lambda: False  # type: ignore[method-assign]
+
+    result = installer.install(
+        phase=None,
+        username="mike",
+        desktop=None,
+        version=None,
+        release=None,
+        force_phase=False,
+        auto=False,
+        resume=False,
+        repair=True,
+        profile="minimal",
+    )
+
+    assert installer.called == ["extract"]
+    assert result == [{"phase": "extract"}]
+
+
 def test_upgrade_runs_installer_upgrade_flow(tmp_path: Path) -> None:
     installer, _ = build_stub_installer(tmp_path)
 
@@ -223,6 +292,15 @@ def test_chroot_shell_uses_sanitized_environment(tmp_path: Path) -> None:
 
     installer._chroot_shell("true")
 
+    assert installer.runner.kwargs[-1]["chroot_env"] is True
+
+
+def test_require_chroot_commands_uses_sanitized_environment(tmp_path: Path) -> None:
+    installer, _ = build_stub_installer(tmp_path)
+
+    installer._require_chroot_commands("apt")
+
+    assert installer.runner.commands[-1][-1] == "command -v apt >/dev/null 2>&1"
     assert installer.runner.kwargs[-1]["chroot_env"] is True
 
 
@@ -275,6 +353,11 @@ def test_ubuntu_default_install_reruns_extract_when_apt_is_missing(tmp_path: Pat
 
     assert result[0]["phase"] == "extract"
     assert any(command[:2] == ["curl", "--fail"] for command in installer.runner.commands)
+    curl_index = next(index for index, command in enumerate(installer.runner.commands) if command[:2] == ["curl", "--fail"])
+    assert "--progress-bar" in installer.runner.commands[curl_index]
+    assert installer.runner.kwargs[curl_index]["capture_output"] is False
+    tar_index = next(index for index, command in enumerate(installer.runner.commands) if command[:2] == ["tar", "xpvf"])
+    assert installer.runner.kwargs[tar_index]["capture_output"] is False
 
 
 def test_ubuntu_default_install_recovers_from_bootstrap_registry_when_apt_is_missing(tmp_path: Path) -> None:
@@ -299,3 +382,17 @@ def test_ubuntu_default_install_recovers_from_bootstrap_registry_when_apt_is_mis
     )
 
     assert result[0]["phase"] == "extract"
+
+
+def test_arch_extract_streams_download_and_extraction_progress(tmp_path: Path) -> None:
+    installer, runner = build_real_installer(ArchInstaller, tmp_path)
+    installer._fetch_text = lambda url: "d41d8cd98f00b204e9800998ecf8427e  ArchLinuxARM-aarch64-latest.tar.gz"  # type: ignore[method-assign]
+
+    result = installer.run_phase_extract(version=None, release=None, force_phase=True)
+
+    curl_index = next(index for index, command in enumerate(runner.commands) if command[:2] == ["curl", "--fail"])
+    bsdtar_index = next(index for index, command in enumerate(runner.commands) if command[:2] == ["bsdtar", "-xpf"])
+    assert result["phase"] == "extract"
+    assert "--progress-bar" in runner.commands[curl_index]
+    assert runner.kwargs[curl_index]["capture_output"] is False
+    assert runner.kwargs[bsdtar_index]["capture_output"] is False

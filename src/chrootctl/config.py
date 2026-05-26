@@ -70,7 +70,7 @@ def _normalize_strings(payload: Any) -> tuple[str, ...]:
 
 @dataclass(frozen=True, slots=True)
 class ChrootConfig:
-    chroot_root: Path = Path("/data/local/chroot")
+    chroot_root: Path = Path("/data/local/tmp")
     distro_name: str = "ubuntu"
     username: str = "mike"
     termux_home: Path = Path("/data/data/com.termux/files/home")
