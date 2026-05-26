@@ -2,7 +2,7 @@
 set -eu
 
 if [ "${CHROOTCTL_DISTRO:?}" != "ubuntu" ]; then
-  echo "ulauncher is currently packaged as an Ubuntu-only addon." >&2
+  echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2
   exit 1
 fi
 

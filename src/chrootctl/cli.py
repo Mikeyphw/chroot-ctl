@@ -5,12 +5,13 @@ import shutil
 import sys
 from pathlib import Path
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
+from rich.text import Text
 
 from .catalog import ManifestCatalog
+from .chroot_users import ChrootUserManager
 from .completion import (
     completion_chroot_details,
     completion_chroot_names,
@@ -19,13 +20,15 @@ from .completion import (
 )
 from .config import ChrootConfig
 from .controller import ChrootController
+from .interactive import Choice, select_one
 from .installer_factory import build_installer
 from .logging_utils import configure_logging
 from .registry import ChrootRegistry
+from .output import build_console
 from .system import SystemRunner
 from .user_sync import UserSyncManager
 
-console = Console()
+console = build_console()
 INSTALL_PROFILES = ["minimal", "dev", "xfce4", "plasma", "custom"]
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,20 +96,49 @@ def build_parser() -> argparse.ArgumentParser:
     chroots_sub = chroots.add_subparsers(dest="chroots_command", required=True)
     chroots_sub.add_parser("list")
     show = chroots_sub.add_parser("show")
-    show.add_argument("chroot_name")
+    show.add_argument("chroot_name", nargs="?")
     remove = chroots_sub.add_parser("remove")
-    remove.add_argument("chroot_name")
+    remove.add_argument("chroot_name", nargs="?")
     rename = chroots_sub.add_parser("rename")
-    rename.add_argument("old_name")
-    rename.add_argument("new_name")
+    rename.add_argument("old_name", nargs="?")
+    rename.add_argument("new_name", nargs="?")
 
     users = subs.add_parser("users")
     users_sub = users.add_subparsers(dest="users_command", required=True)
+    users_list = users_sub.add_parser("list")
+    users_list.add_argument("--name", default=argparse.SUPPRESS)
+    users_show = users_sub.add_parser("show")
+    users_show.add_argument("username", nargs="?")
+    users_show.add_argument("--name", default=argparse.SUPPRESS)
+    users_add = users_sub.add_parser("add")
+    users_add.add_argument("username", nargs="?")
+    users_add.add_argument("--shell", default="/bin/bash")
+    users_add.add_argument("--sudo", action="store_true")
+    users_add.add_argument("--name", default=argparse.SUPPRESS)
+    users_remove = users_sub.add_parser("remove")
+    users_remove.add_argument("username", nargs="?")
+    users_remove.add_argument("--delete-home", action="store_true")
+    users_remove.add_argument("--name", default=argparse.SUPPRESS)
+    users_password = users_sub.add_parser("password")
+    users_password.add_argument("username", nargs="?")
+    users_password.add_argument("--name", default=argparse.SUPPRESS)
+    users_shell = users_sub.add_parser("shell")
+    users_shell.add_argument("username", nargs="?")
+    users_shell.add_argument("--shell", required=True)
+    users_shell.add_argument("--name", default=argparse.SUPPRESS)
+    users_sudo = users_sub.add_parser("sudo")
+    users_sudo.add_argument("username", nargs="?")
+    sudo_mode = users_sudo.add_mutually_exclusive_group(required=True)
+    sudo_mode.add_argument("--enable", action="store_true")
+    sudo_mode.add_argument("--disable", action="store_true")
+    users_sudo.add_argument("--name", default=argparse.SUPPRESS)
     show_id = users_sub.add_parser("show-id")
     show_id.add_argument("--username", default=None)
+    show_id.add_argument("--name", default=argparse.SUPPRESS)
     sync_id = users_sub.add_parser("sync-id")
     sync_id.add_argument("--username", default=None)
     sync_id.add_argument("--no-fix-ownership", action="store_true")
+    sync_id.add_argument("--name", default=argparse.SUPPRESS)
 
 
     tools = subs.add_parser("tools")
@@ -117,11 +149,13 @@ def build_parser() -> argparse.ArgumentParser:
     tools_list.add_argument("--distro", choices=["ubuntu", "arch"], default=None)
     tools_list.add_argument("--category", default=None)
     tools_show = tools_sub.add_parser("show")
-    tools_show.add_argument("tool_name")
+    tools_show.add_argument("tool_name", nargs="?")
     tools_apply = tools_sub.add_parser("apply")
-    tools_apply.add_argument("tool_names", nargs="+")
+    tools_apply.add_argument("tool_names", nargs="*")
+    tools_apply.add_argument("--name", default=argparse.SUPPRESS)
     tools_select = tools_sub.add_parser("select")
     tools_select.add_argument("--category", default=None)
+    tools_select.add_argument("--name", default=argparse.SUPPRESS)
 
     addons = subs.add_parser("addons")
     addons_sub = addons.add_subparsers(dest="addons_command", required=True)
@@ -131,14 +165,16 @@ def build_parser() -> argparse.ArgumentParser:
     addons_list.add_argument("--distro", choices=["ubuntu", "arch"], default=None)
     addons_list.add_argument("--category", default=None)
     addons_show = addons_sub.add_parser("show")
-    addons_show.add_argument("addon_name")
+    addons_show.add_argument("addon_name", nargs="?")
     addons_apply = addons_sub.add_parser("apply")
-    addons_apply.add_argument("addon_names", nargs="+")
+    addons_apply.add_argument("addon_names", nargs="*")
+    addons_apply.add_argument("--name", default=argparse.SUPPRESS)
     addons_select = addons_sub.add_parser("select")
     addons_select.add_argument("--category", default=None)
+    addons_select.add_argument("--name", default=argparse.SUPPRESS)
 
     hidden = subs.add_parser("__complete")
-    hidden.add_argument("topic", choices=["chroots", "chroot-details", "chroot-preview"])
+    hidden.add_argument("topic", choices=["chroots", "chroot-details", "chroot-preview", "users", "tools", "addons"])
     hidden.add_argument("value", nargs="?")
 
     return parser
@@ -183,15 +219,16 @@ def render_table(title: str, rows: list[dict[str, str]]) -> None:
         for key in row.keys():
             if key not in keys:
                 keys.append(key)
-    table = Table(title=title)
+    table = Table(title=title, box=None, pad_edge=False, expand=True, show_header=True)
     for key in keys:
-        table.add_column(key)
+        table.add_column(key, overflow="fold")
     for row in rows:
         table.add_row(*(str(row.get(key, "")) for key in keys))
     console.print(table)
 
 def result_panel(title: str, data: dict[str, str]) -> None:
-    console.print(Panel.fit("\n".join(f"{k}={v}" for k, v in data.items()), title=title, border_style="green"))
+    body = Text("\n".join(f"{k}={v}" for k, v in data.items()), overflow="fold")
+    console.print(Panel(body, title=title, border_style="green", expand=True))
 
 def flatten_record(record: dict[str, object]) -> dict[str, str]:
     data = {key: str(value) for key, value in record.items() if key != "metadata_json"}
@@ -296,6 +333,99 @@ def install_selection_names(*, catalog: ManifestCatalog, distro: str, explicit_n
                 names.append(name)
     return names
 
+def select_chroot_name(registry: ChrootRegistry, *, prompt: str, installed_only: bool = False) -> str:
+    records = [
+        record
+        for record in registry.list()
+        if not installed_only or bool(record.get("installed"))
+    ]
+    choices = [
+        Choice(
+            value=str(record["name"]),
+            label=str(record["name"]),
+            description=f"{record.get('distro', '')} {record.get('phase', '')}",
+        )
+        for record in records
+    ]
+    return select_one(choices, prompt=prompt)
+
+def resolve_chroot_arg(
+    value: str | None,
+    registry: ChrootRegistry,
+    *,
+    prompt: str,
+    installed_only: bool = False,
+) -> str:
+    return value or select_chroot_name(registry, prompt=prompt, installed_only=installed_only)
+
+def select_chroot_username(manager: ChrootUserManager, *, prompt: str) -> str:
+    choices = [
+        Choice(
+            value=user.username,
+            label=user.username,
+            description=f"uid={user.uid} shell={user.shell}",
+        )
+        for user in manager.list_users()
+    ]
+    return select_one(choices, prompt=prompt)
+
+def resolve_username_arg(value: str | None, manager: ChrootUserManager, *, prompt: str) -> str:
+    return value or select_chroot_username(manager, prompt=prompt)
+
+def select_catalog_name(catalog: ManifestCatalog, *, distro: str | None, category: str | None, prompt: str) -> str:
+    entries = catalog.list_entries(distro=distro, category=category)
+    choices = [
+        Choice(
+            value=entry.name,
+            label=entry.name,
+            description=f"{','.join(entry.categories) or 'uncategorized'} - {entry.description}",
+        )
+        for entry in entries
+    ]
+    return select_one(choices, prompt=prompt)
+
+def select_catalog_names(catalog: ManifestCatalog, *, distro: str, category: str | None, prompt: str) -> list[str]:
+    return catalog.select_names(distro=distro, prompt=prompt, category=category)
+
+def registry_distro_for_config(registry: ChrootRegistry, config: ChrootConfig) -> str:
+    record = registry.get(config.distro_name)
+    if record is None:
+        raise RuntimeError("chroot must be installed first")
+    return str(record.get("distro", ""))
+
+def completion_user_names(config: ChrootConfig) -> str:
+    passwd_path = config.chroot_base / "etc" / "passwd"
+    if not passwd_path.exists():
+        return ""
+    names: list[str] = []
+    for line in passwd_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        parts = line.split(":")
+        if len(parts) >= 7 and parts[0]:
+            names.append(parts[0])
+    return "\n".join(sorted(names))
+
+def completion_catalog_names(kind: str, distro: str | None = None) -> str:
+    catalog = ManifestCatalog("tool" if kind == "tools" else "addon")
+    return "\n".join(entry.name for entry in catalog.list_entries(distro=distro))
+
+def apply_start_name_shorthand(
+    args: argparse.Namespace,
+    config: ChrootConfig,
+    registry: ChrootRegistry,
+) -> ChrootConfig:
+    if args.command not in {"start", "restart"}:
+        return config
+    if args.login or args.root_login or args.exec_command:
+        return config
+    if not args.argv or len(args.argv) != 1 or args.argv[0] == "--":
+        return config
+    record = registry.get(args.argv[0])
+    if record is None:
+        return config
+    args.login = True
+    args.argv = []
+    return config.for_chroot(str(record["name"]))
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -317,12 +447,21 @@ def main() -> None:
             record = registry.get(args.value or "")
             sys.stdout.write(completion_chroot_preview(record))
             return
+        if args.topic == "users":
+            target = config.for_chroot(args.value or config.distro_name)
+            sys.stdout.write(completion_user_names(target))
+            return
+        if args.topic in {"tools", "addons"}:
+            sys.stdout.write(completion_catalog_names(args.topic, args.value))
+            return
 
     logger = configure_logging(config.log_file, verbose=args.verbose)
     runner = SystemRunner(logger=logger, dry_run=args.dry_run)
     registry = ChrootRegistry(config.database_path)
+    config = apply_start_name_shorthand(args, config, registry)
     controller = ChrootController(config, runner, logger)
     user_sync = UserSyncManager(config, runner, logger)
+    chroot_users = ChrootUserManager(config, runner, registry, logger)
 
     try:
         maybe_reexec_with_sudo(args, runner)
@@ -362,7 +501,7 @@ def main() -> None:
 
         if args.command == "logs":
             text = read_logs(config.log_file, tail=args.tail, show_all=args.all)
-            console.print(Panel.fit(text or "no logs available", title="Logs"))
+            console.print(Panel(Text(text or "no logs available", overflow="fold"), title="Logs", expand=True))
             return
 
         if args.command == "start":
@@ -404,10 +543,11 @@ def main() -> None:
                 render_table("Installed Chroots", registry.list())
                 return
             if args.chroots_command == "show":
-                record = registry.get(args.chroot_name)
+                chroot_name = resolve_chroot_arg(args.chroot_name, registry, prompt="Select chroot")
+                record = registry.get(chroot_name)
                 if record is None:
-                    raise RuntimeError(f"unknown chroot: {args.chroot_name}")
-                target_config = config.for_chroot(args.chroot_name)
+                    raise RuntimeError(f"unknown chroot: {chroot_name}")
+                target_config = config.for_chroot(chroot_name)
                 data = flatten_record(record)
                 data["configured_mounts"] = mount_summary(target_config)
                 data["extra_packages"] = ",".join(target_config.extra_packages) or "none"
@@ -415,21 +555,26 @@ def main() -> None:
                 result_panel("Chroot Details", data)
                 return
             if args.chroots_command == "remove":
+                chroot_name = resolve_chroot_arg(args.chroot_name, registry, prompt="Select chroot to remove")
                 result = progress_call(
                     "Removing chroot",
-                    lambda: remove_chroot(config, registry, runner, logger, args.chroot_name),
+                    lambda: remove_chroot(config, registry, runner, logger, chroot_name),
                 )
                 result_panel("Chroot Remove", result)
                 return
             if args.chroots_command == "rename":
+                old_name = resolve_chroot_arg(args.old_name, registry, prompt="Select chroot to rename")
+                if not args.new_name:
+                    raise RuntimeError("new chroot name is required")
                 result = progress_call(
                     "Renaming chroot",
-                    lambda: rename_chroot(config, registry, args.old_name, args.new_name),
+                    lambda: rename_chroot(config, registry, old_name, args.new_name),
                 )
                 result_panel("Chroot Rename", result)
                 return
 
         if args.command == "users":
+            user_manager = chroot_users
             if args.users_command == "show-id":
                 result_panel("User IDs", user_sync.show_id(username=args.username))
                 return
@@ -439,6 +584,54 @@ def main() -> None:
                     lambda: user_sync.sync_id(username=args.username, fix_ownership=not args.no_fix_ownership),
                 )
                 result_panel("User Sync", result)
+                return
+            if args.users_command == "list":
+                render_table("Chroot Users", user_manager.user_rows())
+                return
+            if args.users_command == "show":
+                username = resolve_username_arg(args.username, user_manager, prompt="Select user")
+                result_panel("Chroot User", user_manager.show_user(username))
+                return
+            if args.users_command == "add":
+                if not args.username:
+                    raise RuntimeError("username is required")
+                result = progress_call(
+                    "Adding chroot user",
+                    lambda: user_manager.add_user(args.username, shell=args.shell, sudo=args.sudo),
+                )
+                result_panel("Chroot User Add", result)
+                return
+            if args.users_command == "remove":
+                username = resolve_username_arg(args.username, user_manager, prompt="Select user to remove")
+                result = progress_call(
+                    "Removing chroot user",
+                    lambda: user_manager.remove_user(username, delete_home=args.delete_home),
+                )
+                result_panel("Chroot User Remove", result)
+                return
+            if args.users_command == "password":
+                username = resolve_username_arg(args.username, user_manager, prompt="Select user for password")
+                result = progress_call(
+                    "Updating chroot user password",
+                    lambda: user_manager.set_password(username),
+                )
+                result_panel("Chroot User Password", result)
+                return
+            if args.users_command == "shell":
+                username = resolve_username_arg(args.username, user_manager, prompt="Select user for shell")
+                result = progress_call(
+                    "Updating chroot user shell",
+                    lambda: user_manager.set_shell(username, shell=args.shell),
+                )
+                result_panel("Chroot User Shell", result)
+                return
+            if args.users_command == "sudo":
+                username = resolve_username_arg(args.username, user_manager, prompt="Select user for sudo")
+                result = progress_call(
+                    "Updating chroot user sudo",
+                    lambda: user_manager.set_sudo(username, enabled=args.enable),
+                )
+                result_panel("Chroot User Sudo", result)
                 return
 
         if args.command == "tools":
@@ -450,14 +643,21 @@ def main() -> None:
                 render_catalog_table("Tools", catalog.list_entries(distro=args.distro, category=args.category))
                 return
             if args.tools_command == "show":
-                catalog_result_panel("tool", catalog.get_entry(args.tool_name))
+                tool_name = args.tool_name or select_catalog_name(catalog, distro=None, category=None, prompt="Select tool")
+                catalog_result_panel("tool", catalog.get_entry(tool_name))
                 return
             if args.tools_command == "apply":
+                tool_names = args.tool_names or select_catalog_names(
+                    catalog,
+                    distro=registry_distro_for_config(registry, config),
+                    category=None,
+                    prompt="Select tools",
+                )
                 results = progress_call(
                     "Applying tools",
                     lambda: apply_catalog_entries(
                         catalog=catalog,
-                        names=args.tool_names,
+                        names=tool_names,
                         config=config,
                         runner=runner,
                         registry=registry,
@@ -467,7 +667,12 @@ def main() -> None:
                 render_table("Tools", results)
                 return
             if args.tools_command == "select":
-                names = catalog.select_names(distro=(registry.get(config.distro_name) or {}).get("distro", "ubuntu"), prompt="Select tools", category=args.category)
+                names = select_catalog_names(
+                    catalog,
+                    distro=registry_distro_for_config(registry, config),
+                    category=args.category,
+                    prompt="Select tools",
+                )
                 results = progress_call(
                     "Applying tools",
                     lambda: apply_catalog_entries(
@@ -491,14 +696,21 @@ def main() -> None:
                 render_catalog_table("Addons", catalog.list_entries(distro=args.distro, category=args.category))
                 return
             if args.addons_command == "show":
-                catalog_result_panel("addon", catalog.get_entry(args.addon_name))
+                addon_name = args.addon_name or select_catalog_name(catalog, distro=None, category=None, prompt="Select addon")
+                catalog_result_panel("addon", catalog.get_entry(addon_name))
                 return
             if args.addons_command == "apply":
+                addon_names = args.addon_names or select_catalog_names(
+                    catalog,
+                    distro=registry_distro_for_config(registry, config),
+                    category=None,
+                    prompt="Select addons",
+                )
                 results = progress_call(
                     "Applying addons",
                     lambda: apply_catalog_entries(
                         catalog=catalog,
-                        names=args.addon_names,
+                        names=addon_names,
                         config=config,
                         runner=runner,
                         registry=registry,
@@ -508,7 +720,12 @@ def main() -> None:
                 render_table("Addons", results)
                 return
             if args.addons_command == "select":
-                names = catalog.select_names(distro=(registry.get(config.distro_name) or {}).get("distro", "ubuntu"), prompt="Select addons", category=args.category)
+                names = select_catalog_names(
+                    catalog,
+                    distro=registry_distro_for_config(registry, config),
+                    category=args.category,
+                    prompt="Select addons",
+                )
                 results = progress_call(
                     "Applying addons",
                     lambda: apply_catalog_entries(

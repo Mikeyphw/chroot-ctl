@@ -77,3 +77,20 @@ def test_run_raises_with_fallback_message(monkeypatch: pytest.MonkeyPatch) -> No
 
     with pytest.raises(RuntimeError, match="command failed: false"):
         runner.run(["false"])
+
+
+def test_run_passes_input_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_input = None
+
+    def fake_run(args, **kwargs):
+        nonlocal captured_input
+        captured_input = kwargs["input"]
+        return CompletedProcess(0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    runner = SystemRunner(logging.getLogger("test"))
+
+    result = runner.run(["python3", "-"], input_text="print('ok')")
+
+    assert captured_input == "print('ok')"
+    assert result.stdout == "ok"

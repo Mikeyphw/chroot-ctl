@@ -1,8 +1,6 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -11,12 +9,14 @@ from typing import Literal
 import yaml
 
 from .config import ChrootConfig
+from .interactive import Choice, select_many
 from .registry import ChrootRegistry
 from .system import SystemRunner
 from .user_sync import UserSyncManager
 
 SUPPORTED_DISTROS = {"ubuntu", "arch"}
 CATALOG_KIND = Literal["tool", "addon"]
+SUPPORTED_SCRIPT_SUFFIXES = {".sh", ".py"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,11 +78,15 @@ class ManifestCatalog:
         entries = self.list_entries(distro=distro, category=category)
         if not entries:
             return []
-        if _fzf_available():
-            return _select_with_fzf(entries, prompt=prompt)
-        if not os.isatty(0):
-            raise RuntimeError("fzf is not available and interactive selection requires a tty")
-        return _select_with_prompt(entries)
+        choices = [
+            Choice(
+                value=entry.name,
+                label=f"{entry.name} [{','.join(entry.categories) or 'uncategorized'}]",
+                description=entry.description,
+            )
+            for entry in sorted(entries, key=lambda entry: ((entry.categories[0] if entry.categories else "uncategorized"), entry.name))
+        ]
+        return select_many(choices, prompt=prompt, multi=True)
 
     def apply(
         self,
@@ -106,20 +110,7 @@ class ManifestCatalog:
         if self.kind == "tool" and entry.name == "sync-uid":
             UserSyncManager(config, runner, logger).sync_id(username=config.username, fix_ownership=True)
         else:
-            payload = "\n".join(
-                [
-                    "set -e",
-                    f"export CHROOTCTL_NAME={config.distro_name!r}",
-                    f"export CHROOTCTL_DISTRO={target_distro!r}",
-                    f"export CHROOTCTL_USERNAME={config.username!r}",
-                    entry.script_text,
-                ]
-            )
-            runner.run(
-                ["busybox", "chroot", str(config.chroot_base), "/bin/bash", "-lc", payload],
-                chroot_env=True,
-                capture_output=False,
-            )
+            self._run_script(entry, config=config, runner=runner, target_distro=target_distro)
 
         metadata = dict(record.get("metadata", {}))
         key = f"{self.kind}s"
@@ -146,6 +137,47 @@ class ManifestCatalog:
             "categories": ",".join(entry.categories),
             "applied": "yes",
         }
+
+    def _run_script(
+        self,
+        entry: ManifestEntry,
+        *,
+        config: ChrootConfig,
+        runner: SystemRunner,
+        target_distro: str,
+    ) -> None:
+        env = {
+            "CHROOTCTL_NAME": config.distro_name,
+            "CHROOTCTL_DISTRO": target_distro,
+            "CHROOTCTL_USERNAME": config.username,
+        }
+        if entry.script.endswith(".sh"):
+            payload = "\n".join(["set -e", entry.script_text])
+            runner.run(
+                ["busybox", "chroot", str(config.chroot_base), "/bin/bash", "-lc", payload],
+                chroot_env=True,
+                env=env,
+                capture_output=False,
+            )
+            return
+        if entry.script.endswith(".py"):
+            python_check = runner.run(
+                ["busybox", "chroot", str(config.chroot_base), "python3", "--version"],
+                check=False,
+                chroot_env=True,
+                env=env,
+            )
+            if python_check.returncode != 0:
+                raise RuntimeError(f"{self.kind} '{entry.name}' requires python3 inside the chroot")
+            runner.run(
+                ["busybox", "chroot", str(config.chroot_base), "python3", "-"],
+                chroot_env=True,
+                env=env,
+                capture_output=False,
+                input_text=entry.script_text,
+            )
+            return
+        raise RuntimeError(f"unsupported script type for {entry.script}")
 
     def _load_all(self) -> list[ManifestEntry]:
         entries_by_name: dict[str, ManifestEntry] = {}
@@ -242,6 +274,10 @@ def _validate_script_name(value: object, *, filename: str) -> str:
     script = value.strip()
     if "/" in script or ".." in script or "\\" in script:
         raise ValueError(f"manifest {filename} has invalid script path: {script}")
+    if Path(script).suffix not in SUPPORTED_SCRIPT_SUFFIXES:
+        raise ValueError(
+            f"manifest {filename} has unsupported script suffix: {Path(script).suffix or '<none>'}"
+        )
     return script
 
 
@@ -291,46 +327,6 @@ def _metadata_list(value: object) -> list[str]:
     if isinstance(value, str):
         return [item for item in value.split(",") if item]
     return []
-
-
-def _fzf_available() -> bool:
-    return True if shutil_which("fzf") else False
-
-
-def shutil_which(name: str) -> str | None:
-    import shutil
-    return shutil.which(name)
-
-
-def _select_with_fzf(entries: list[ManifestEntry], *, prompt: str) -> list[str]:
-    source = "\n".join(_grouped_selection_lines(entries))
-    completed = subprocess.run(
-        ["fzf", "--multi", "--height=40%", "--layout=reverse", "--prompt", f"{prompt}>", "--with-nth=1,2,3"],
-        input=source,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode not in {0, 1}:
-        raise RuntimeError(completed.stderr.strip() or "fzf selection failed")
-    lines = [line for line in completed.stdout.splitlines() if line.strip()]
-    return [line.split("\t", 1)[0] for line in lines]
-
-
-def _select_with_prompt(entries: list[ManifestEntry]) -> list[str]:
-    for index, line in enumerate(_grouped_selection_lines(entries), start=1):
-        name, categories, description = line.split("\t", 2)
-        print(f"{index}. {name} [{categories}] - {description}")
-    raw = input("Select one or more entries by number (comma separated, blank to skip): ").strip()
-    if not raw:
-        return []
-    selected: list[str] = []
-    for part in raw.split(","):
-        idx = int(part.strip())
-        if idx < 1 or idx > len(entries):
-            raise RuntimeError(f"selection out of range: {idx}")
-        selected.append(entries[idx - 1].name)
-    return list(dict.fromkeys(selected))
 
 
 def _grouped_selection_lines(entries: list[ManifestEntry]) -> list[str]:

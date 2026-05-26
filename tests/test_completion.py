@@ -51,6 +51,11 @@ def test_generate_zsh_completion_contains_expected_sections() -> None:
     assert "completion)" in script
     assert "chroots)" in script
     assert "users)" in script
+    assert "users_subcommands = \"list show add remove password shell sudo show-id sync-id\"" not in script
+    assert "password)" in script
+    assert "__complete users" in script
+    assert "__complete tools" in script
+    assert "__complete addons" in script
 
 
 def test_completion_helpers_render_registry_data() -> None:
@@ -92,3 +97,28 @@ def test_hidden_completion_uses_registry(tmp_path: Path, monkeypatch) -> None:
     main()
 
     assert stdout.getvalue().strip() == "work"
+
+
+def test_hidden_completion_lists_users_and_catalog_items(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "share" / "chrootctl" / "chroots.sqlite3"
+    chroot_root = tmp_path / "chroots"
+    passwd_path = chroot_root / "work" / "etc" / "passwd"
+    passwd_path.parent.mkdir(parents=True)
+    passwd_path.write_text("mike:x:2000:2000::/home/mike:/bin/bash\n", encoding="utf-8")
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        f'{{"database_path": "{db_path}", "chroot_root": "{chroot_root}"}}',
+        encoding="utf-8",
+    )
+
+    stdout = io.StringIO()
+    monkeypatch.setattr(sys, "argv", ["chrootctl", "--config", str(config_path), "--name", "work", "__complete", "users"])
+    monkeypatch.setattr(sys, "stdout", stdout)
+    main()
+    assert stdout.getvalue().strip() == "mike"
+
+    stdout = io.StringIO()
+    monkeypatch.setattr(sys, "argv", ["chrootctl", "--config", str(config_path), "__complete", "addons", "ubuntu"])
+    monkeypatch.setattr(sys, "stdout", stdout)
+    main()
+    assert "nala" in stdout.getvalue().splitlines()

@@ -12,7 +12,7 @@ def generate_zsh_completion(prog: str = "chrootctl") -> str:
     profiles = "minimal dev xfce4 plasma custom"
     completion_subcommands = "zsh"
     chroots_subcommands = "list show remove rename"
-    users_subcommands = "show-id sync-id"
+    users_subcommands = "list show add remove password shell sudo show-id sync-id"
     tools_subcommands = "categories list show apply select"
     addons_subcommands = "categories list show apply select"
 
@@ -81,6 +81,24 @@ typeset -g {fn}_prog="{prog}"
     [[ -n "$picked" ]] && compadd -- "$picked" && return
   fi
   _files
+}}
+
+{fn}_compadd_users() {{
+  local -a names
+  names=($({fn}_dynamic __complete users))
+  compadd -a names
+}}
+
+{fn}_compadd_tools() {{
+  local -a names
+  names=($({fn}_dynamic __complete tools))
+  compadd -a names
+}}
+
+{fn}_compadd_addons() {{
+  local -a names
+  names=($({fn}_dynamic __complete addons))
+  compadd -a names
 }}
 
 {fn}_complete_after_dashdash() {{
@@ -181,11 +199,26 @@ typeset -g {fn}_prog="{prog}"
             return
           fi
           case $words[3] in
+            list)
+              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg'
+              ;;
+            show|remove|password)
+              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '1:user:{fn}_compadd_users'
+              ;;
+            add)
+              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--shell[Login shell]:shell:_files' '--sudo[Grant sudo access]' '1:username:'
+              ;;
+            shell)
+              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--shell[Login shell]:shell:_files' '1:user:{fn}_compadd_users'
+              ;;
+            sudo)
+              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--enable[Enable sudo]' '--disable[Disable sudo]' '1:user:{fn}_compadd_users'
+              ;;
             show-id)
-              _arguments '--username[Username to inspect]:username'
+              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--username[Username to inspect]:username:{fn}_compadd_users'
               ;;
             sync-id)
-              _arguments '--username[Username to sync]:username' '--no-fix-ownership[Skip recursive chown]'
+              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--username[Username to sync]:username:{fn}_compadd_users' '--no-fix-ownership[Skip recursive chown]'
               ;;
           esac
           ;;
@@ -195,10 +228,17 @@ typeset -g {fn}_prog="{prog}"
             return
           fi
           case $words[3] in
-            list)
+            categories)
               _arguments '--distro[Filter by distro]:distro:({distros})'
               ;;
-            show|apply|select)
+            list)
+              _arguments '--distro[Filter by distro]:distro:({distros})' '--category[Filter by category]:category'
+              ;;
+            select)
+              _arguments '--category[Filter by category]:category'
+              ;;
+            show|apply)
+              _arguments '1:tool:{fn}_compadd_tools' '*:tool:{fn}_compadd_tools'
               ;;
           esac
           ;;
@@ -208,10 +248,17 @@ typeset -g {fn}_prog="{prog}"
             return
           fi
           case $words[3] in
-            list)
+            categories)
               _arguments '--distro[Filter by distro]:distro:({distros})'
               ;;
-            show|apply|select)
+            list)
+              _arguments '--distro[Filter by distro]:distro:({distros})' '--category[Filter by category]:category'
+              ;;
+            select)
+              _arguments '--category[Filter by category]:category'
+              ;;
+            show|apply)
+              _arguments '1:addon:{fn}_compadd_addons' '*:addon:{fn}_compadd_addons'
               ;;
           esac
           ;;

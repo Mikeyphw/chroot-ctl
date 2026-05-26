@@ -60,6 +60,7 @@ class SystemRunner:
         chroot_env: bool = False,
         capture_output: bool = True,
         cwd: Path | None = None,
+        input_text: str | None = None,
     ) -> RunResult:
         self.logger.debug("run: %s", shlex.join(list(args)))
         if self.dry_run:
@@ -77,6 +78,7 @@ class SystemRunner:
             check=False,
             env=process_env,
             capture_output=capture_output,
+            input=input_text,
             text=True,
             cwd=str(cwd) if cwd else None,
         )

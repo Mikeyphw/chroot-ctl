@@ -23,4 +23,4 @@ where = ["src"]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
-chrootctl = ["resources/tools/*.yaml", "resources/addons/*.yaml", "resources/tool-scripts/*.sh", "resources/addon-scripts/*.sh"]
+chrootctl = ["resources/tools/*.yaml", "resources/addons/*.yaml", "resources/tool-scripts/*.sh", "resources/tool-scripts/*.py", "resources/addon-scripts/*.sh", "resources/addon-scripts/*.py"]

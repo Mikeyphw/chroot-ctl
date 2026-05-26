@@ -1,6 +1,17 @@
 #!/bin/sh
 set -eu
 
+case "${CHROOTCTL_DISTRO:?}" in
+  ubuntu)
+    ;;
+  arch)
+    ;;
+  *)
+    echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2
+    exit 1
+    ;;
+esac
+
 getent group "${CHROOTCTL_USERNAME}" >/dev/null 2>&1 || groupadd "${CHROOTCTL_USERNAME}"
 id -u "${CHROOTCTL_USERNAME}" >/dev/null 2>&1 || useradd -m -s /bin/bash "${CHROOTCTL_USERNAME}"
 
