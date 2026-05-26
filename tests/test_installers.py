@@ -275,3 +275,27 @@ def test_ubuntu_default_install_reruns_extract_when_apt_is_missing(tmp_path: Pat
 
     assert result[0]["phase"] == "extract"
     assert any(command[:2] == ["curl", "--fail"] for command in installer.runner.commands)
+
+
+def test_ubuntu_default_install_recovers_from_bootstrap_registry_when_apt_is_missing(tmp_path: Path) -> None:
+    installer, _ = build_real_installer(UbuntuInstaller, tmp_path)
+    installer.registry.upsert(name="ubuntu", distro="ubuntu", path=str(installer.config.chroot_base), phase="bootstrap")
+    (installer.config.chroot_base / "etc").mkdir(parents=True)
+    (installer.config.chroot_base / "etc/os-release").write_text("ID=ubuntu\n", encoding="utf-8")
+    installer._resolve_release = lambda version, release: ReleaseRef("noble", "https://example.invalid/release/")  # type: ignore[method-assign]
+    installer._resolve_tarball = lambda ref: ("ubuntu-base.tar.gz", "https://example.invalid/ubuntu-base.tar.gz")  # type: ignore[method-assign]
+
+    result = installer.install(
+        phase=None,
+        username="mike",
+        desktop=None,
+        version=None,
+        release=None,
+        force_phase=False,
+        auto=False,
+        resume=False,
+        repair=False,
+        profile=None,
+    )
+
+    assert result[0]["phase"] == "extract"

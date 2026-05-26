@@ -210,6 +210,11 @@ class BaseInstaller:
             return "extract"
         return self.next_phase(current) or "finalize"
 
+    def _recover_phase_if_needed(self, requested: InstallPhase, *, force_phase: bool) -> InstallPhase:
+        if requested == "bootstrap" and not force_phase and not self.ready_for_bootstrap():
+            return "extract"
+        return requested
+
     def _selected_profile(self, profile: str | None) -> str:
         return profile or self.config.install_profile or "xfce4"
 
@@ -294,6 +299,7 @@ class BaseInstaller:
             if record and record.get("installed"):
                 return [{"phase": "finalize", "installed": "true", "status": "already_complete"}]
             start_phase = self._default_install_phase()
+            start_phase = self._recover_phase_if_needed(start_phase, force_phase=force_phase)
             for item in PHASES[PHASES.index(start_phase):]:
                 if item == "extract":
                     results.append(self.run_phase_extract(version=version, release=release, force_phase=force_phase))
@@ -306,6 +312,7 @@ class BaseInstaller:
             return results
 
         requested = phase or self._default_install_phase()
+        requested = self._recover_phase_if_needed(requested, force_phase=force_phase)
         if requested == "extract":
             return [self.run_phase_extract(version=version, release=release, force_phase=force_phase)]
         if requested == "bootstrap":
