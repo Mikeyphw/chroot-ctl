@@ -112,8 +112,8 @@ def test_install_without_phase_runs_remaining_phases_by_default(tmp_path: Path) 
 
     assert installer.called == ["bootstrap", "desktop", "finalize"]
     assert result == [
-        {"phase": "bootstrap", "profile": "xfce4"},
-        {"phase": "desktop", "desktop": "xfce4", "profile": "xfce4"},
+        {"phase": "bootstrap", "profile": "minimal"},
+        {"phase": "desktop", "desktop": "xfce4", "profile": "minimal"},
         {"phase": "finalize"},
     ]
 
@@ -136,7 +136,7 @@ def test_explicit_phase_runs_single_phase_without_auto(tmp_path: Path) -> None:
     )
 
     assert installer.called == ["bootstrap"]
-    assert result == [{"phase": "bootstrap", "profile": "xfce4"}]
+    assert result == [{"phase": "bootstrap", "profile": "minimal"}]
 
 
 def test_explicit_phase_with_auto_runs_remaining_phases(tmp_path: Path) -> None:
@@ -179,7 +179,7 @@ def test_auto_install_runs_remaining_phases(tmp_path: Path) -> None:
     )
 
     assert installer.called == ["desktop", "finalize"]
-    assert result == [{"phase": "desktop", "desktop": "xfce4", "profile": "xfce4"}, {"phase": "finalize"}]
+    assert result == [{"phase": "desktop", "desktop": "xfce4", "profile": "minimal"}, {"phase": "finalize"}]
 
 
 def test_auto_install_short_circuits_when_already_installed(tmp_path: Path) -> None:
@@ -396,3 +396,10 @@ def test_arch_extract_streams_download_and_extraction_progress(tmp_path: Path) -
     assert "--progress-bar" in runner.commands[curl_index]
     assert runner.kwargs[curl_index]["capture_output"] is False
     assert runner.kwargs[bsdtar_index]["capture_output"] is False
+
+
+def test_default_profile_is_minimal_and_default_desktop_is_none(tmp_path: Path) -> None:
+    installer, _ = build_stub_installer(tmp_path)
+
+    assert installer._selected_profile(None) == "minimal"
+    assert installer._selected_desktop(None, None) == "none"

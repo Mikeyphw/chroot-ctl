@@ -10,6 +10,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
+from .catalog import ManifestCatalog
 from .completion import (
     completion_chroot_details,
     completion_chroot_names,
@@ -76,6 +77,10 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--username", default="mike")
     install.add_argument("--desktop", choices=["xfce4", "plasma", "none"], default=None)
     install.add_argument("--profile", choices=INSTALL_PROFILES, default=None)
+    install.add_argument("--tool", dest="tools", action="append", default=[])
+    install.add_argument("--addon", dest="addons", action="append", default=[])
+    install.add_argument("--select-tools", action="store_true")
+    install.add_argument("--select-addons", action="store_true")
 
     upgrade = subs.add_parser("upgrade")
     upgrade.add_argument("--username", default="mike")
@@ -103,6 +108,35 @@ def build_parser() -> argparse.ArgumentParser:
     sync_id.add_argument("--username", default=None)
     sync_id.add_argument("--no-fix-ownership", action="store_true")
 
+
+    tools = subs.add_parser("tools")
+    tools_sub = tools.add_subparsers(dest="tools_command", required=True)
+    tools_categories = tools_sub.add_parser("categories")
+    tools_categories.add_argument("--distro", choices=["ubuntu", "arch"], default=None)
+    tools_list = tools_sub.add_parser("list")
+    tools_list.add_argument("--distro", choices=["ubuntu", "arch"], default=None)
+    tools_list.add_argument("--category", default=None)
+    tools_show = tools_sub.add_parser("show")
+    tools_show.add_argument("tool_name")
+    tools_apply = tools_sub.add_parser("apply")
+    tools_apply.add_argument("tool_names", nargs="+")
+    tools_select = tools_sub.add_parser("select")
+    tools_select.add_argument("--category", default=None)
+
+    addons = subs.add_parser("addons")
+    addons_sub = addons.add_subparsers(dest="addons_command", required=True)
+    addons_categories = addons_sub.add_parser("categories")
+    addons_categories.add_argument("--distro", choices=["ubuntu", "arch"], default=None)
+    addons_list = addons_sub.add_parser("list")
+    addons_list.add_argument("--distro", choices=["ubuntu", "arch"], default=None)
+    addons_list.add_argument("--category", default=None)
+    addons_show = addons_sub.add_parser("show")
+    addons_show.add_argument("addon_name")
+    addons_apply = addons_sub.add_parser("apply")
+    addons_apply.add_argument("addon_names", nargs="+")
+    addons_select = addons_sub.add_parser("select")
+    addons_select.add_argument("--category", default=None)
+
     hidden = subs.add_parser("__complete")
     hidden.add_argument("topic", choices=["chroots", "chroot-details", "chroot-preview"])
     hidden.add_argument("value", nargs="?")
@@ -113,6 +147,10 @@ def command_requires_root(args: argparse.Namespace) -> bool:
     if args.command in {"mount", "unmount", "fix-tty", "start", "restart", "exec", "install", "upgrade", "users"}:
         return True
     if args.command == "chroots" and args.chroots_command == "remove":
+        return True
+    if args.command == "tools" and args.tools_command in {"apply", "select"}:
+        return True
+    if args.command == "addons" and args.addons_command in {"apply", "select"}:
         return True
     return False
 
@@ -208,6 +246,55 @@ def rename_chroot(config: ChrootConfig, registry: ChrootRegistry, old_name: str,
         old_config.chroot_base.rename(new_config.chroot_base)
     registry.rename(old_name, new_name, new_path=str(new_config.chroot_base))
     return {"old_name": old_name, "new_name": new_name, "renamed": "yes"}
+
+
+
+def render_catalog_table(title: str, entries) -> None:
+    rows = [
+        {
+            "name": entry.name,
+            "description": entry.description,
+            "distros": ",".join(entry.distros),
+            "categories": ",".join(entry.categories),
+            "script": entry.script,
+        }
+        for entry in entries
+    ]
+    render_table(title, rows)
+
+
+def render_category_table(title: str, categories: list[str]) -> None:
+    render_table(title, [{"category": category} for category in categories])
+
+
+def catalog_result_panel(kind: str, entry) -> None:
+    result_panel(
+        kind.title(),
+        {
+            "name": entry.name,
+            "description": entry.description,
+            "distros": ",".join(entry.distros),
+            "categories": ",".join(entry.categories),
+            "script": entry.script,
+        },
+    )
+
+
+def apply_catalog_entries(*, catalog: ManifestCatalog, names: list[str], config: ChrootConfig, runner: SystemRunner, registry: ChrootRegistry, logger) -> list[dict[str, str]]:
+    return [
+        catalog.apply(name=name, config=config, runner=runner, registry=registry, logger=logger)
+        for name in names
+    ]
+
+
+def install_selection_names(*, catalog: ManifestCatalog, distro: str, explicit_names: list[str], select_flag: bool) -> list[str]:
+    names = list(dict.fromkeys(explicit_names))
+    if select_flag:
+        chosen = catalog.select_names(distro=distro, prompt=f"Select {catalog.kind}s")
+        for name in chosen:
+            if name not in names:
+                names.append(name)
+    return names
 
 def main() -> None:
     parser = build_parser()
@@ -354,6 +441,88 @@ def main() -> None:
                 result_panel("User Sync", result)
                 return
 
+        if args.command == "tools":
+            catalog = ManifestCatalog("tool", config=config)
+            if args.tools_command == "categories":
+                render_category_table("Tool Categories", catalog.categories(distro=args.distro))
+                return
+            if args.tools_command == "list":
+                render_catalog_table("Tools", catalog.list_entries(distro=args.distro, category=args.category))
+                return
+            if args.tools_command == "show":
+                catalog_result_panel("tool", catalog.get_entry(args.tool_name))
+                return
+            if args.tools_command == "apply":
+                results = progress_call(
+                    "Applying tools",
+                    lambda: apply_catalog_entries(
+                        catalog=catalog,
+                        names=args.tool_names,
+                        config=config,
+                        runner=runner,
+                        registry=registry,
+                        logger=logger,
+                    ),
+                )
+                render_table("Tools", results)
+                return
+            if args.tools_command == "select":
+                names = catalog.select_names(distro=(registry.get(config.distro_name) or {}).get("distro", "ubuntu"), prompt="Select tools", category=args.category)
+                results = progress_call(
+                    "Applying tools",
+                    lambda: apply_catalog_entries(
+                        catalog=catalog,
+                        names=names,
+                        config=config,
+                        runner=runner,
+                        registry=registry,
+                        logger=logger,
+                    ),
+                )
+                render_table("Tools", results)
+                return
+
+        if args.command == "addons":
+            catalog = ManifestCatalog("addon", config=config)
+            if args.addons_command == "categories":
+                render_category_table("Addon Categories", catalog.categories(distro=args.distro))
+                return
+            if args.addons_command == "list":
+                render_catalog_table("Addons", catalog.list_entries(distro=args.distro, category=args.category))
+                return
+            if args.addons_command == "show":
+                catalog_result_panel("addon", catalog.get_entry(args.addon_name))
+                return
+            if args.addons_command == "apply":
+                results = progress_call(
+                    "Applying addons",
+                    lambda: apply_catalog_entries(
+                        catalog=catalog,
+                        names=args.addon_names,
+                        config=config,
+                        runner=runner,
+                        registry=registry,
+                        logger=logger,
+                    ),
+                )
+                render_table("Addons", results)
+                return
+            if args.addons_command == "select":
+                names = catalog.select_names(distro=(registry.get(config.distro_name) or {}).get("distro", "ubuntu"), prompt="Select addons", category=args.category)
+                results = progress_call(
+                    "Applying addons",
+                    lambda: apply_catalog_entries(
+                        catalog=catalog,
+                        names=names,
+                        config=config,
+                        runner=runner,
+                        registry=registry,
+                        logger=logger,
+                    ),
+                )
+                render_table("Addons", results)
+                return
+
         if args.command == "install":
             install_config = config.with_overrides(username=args.username)
             installer = build_installer(
@@ -368,6 +537,18 @@ def main() -> None:
             if args.list_versions:
                 render_table("Available Versions", [vars(v) for v in progress_call("Fetching versions", installer.list_versions)])
                 return
+            selected_tools = install_selection_names(
+                catalog=ManifestCatalog("tool", config=config),
+                distro=args.distro,
+                explicit_names=args.tools,
+                select_flag=args.select_tools,
+            )
+            selected_addons = install_selection_names(
+                catalog=ManifestCatalog("addon", config=config),
+                distro=args.distro,
+                explicit_names=args.addons,
+                select_flag=args.select_addons,
+            )
             results = progress_call(
                 f"Installing {args.distro}",
                 lambda: installer.install(
@@ -383,6 +564,36 @@ def main() -> None:
                     profile=args.profile,
                 ),
             )
+            if selected_tools or selected_addons:
+                record = registry.get(install_config.distro_name)
+                if record is None or not bool(record.get("installed")):
+                    raise RuntimeError("tools and addons can only be applied after finalize completes")
+                if selected_tools:
+                    tool_results = progress_call(
+                        "Applying tools",
+                        lambda: apply_catalog_entries(
+                            catalog=ManifestCatalog("tool", config=config),
+                            names=selected_tools,
+                            config=install_config,
+                            runner=runner,
+                            registry=registry,
+                            logger=logger,
+                        ),
+                    )
+                    results.extend(tool_results)
+                if selected_addons:
+                    addon_results = progress_call(
+                        "Applying addons",
+                        lambda: apply_catalog_entries(
+                            catalog=ManifestCatalog("addon", config=config),
+                            names=selected_addons,
+                            config=install_config,
+                            runner=runner,
+                            registry=registry,
+                            logger=logger,
+                        ),
+                    )
+                    results.extend(addon_results)
             render_table("Install Results", results)
             return
 

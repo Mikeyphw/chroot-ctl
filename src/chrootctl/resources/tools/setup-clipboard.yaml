@@ -1,0 +1,7 @@
+description: Install common clipboard helpers for X11 sessions
+distro: all
+categories:
+- desktop
+- desktop-utility
+script: setup-clipboard.sh
+name: setup-clipboard

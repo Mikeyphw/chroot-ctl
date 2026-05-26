@@ -1,0 +1,7 @@
+description: Create the desktop user if missing and grant sudo access
+distro: all
+categories:
+- user-management
+- system
+script: setup-sudo-user.sh
+name: setup-sudo-user

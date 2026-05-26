@@ -68,6 +68,16 @@ def _normalize_strings(payload: Any) -> tuple[str, ...]:
         raise TypeError("expected a list of strings")
     return tuple(str(item) for item in payload)
 
+
+def _normalize_paths(payload: Any) -> tuple[Path, ...]:
+    if payload is None:
+        return ()
+    if isinstance(payload, (str, Path)):
+        return (Path(payload).expanduser(),)
+    if not isinstance(payload, list):
+        raise TypeError("expected a list of paths")
+    return tuple(Path(item).expanduser() for item in payload)
+
 @dataclass(frozen=True, slots=True)
 class ChrootConfig:
     chroot_root: Path = Path("/data/local/tmp")
@@ -89,6 +99,10 @@ class ChrootConfig:
     install_profile: str | None = None
     snapshot_dir: Path = Path.home() / ".local" / "share" / "chrootctl" / "snapshots"
     snapshot_before_destructive: bool = False
+    tool_manifest_dirs: tuple[Path, ...] = ()
+    tool_script_dirs: tuple[Path, ...] = ()
+    addon_manifest_dirs: tuple[Path, ...] = ()
+    addon_script_dirs: tuple[Path, ...] = ()
     chroot_overrides: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -97,6 +111,10 @@ class ChrootConfig:
         object.__setattr__(self, "extra_packages", tuple(self.extra_packages))
         object.__setattr__(self, "dns_servers", tuple(self.dns_servers))
         object.__setattr__(self, "post_install_hooks", tuple(self.post_install_hooks))
+        object.__setattr__(self, "tool_manifest_dirs", tuple(Path(item).expanduser() for item in self.tool_manifest_dirs))
+        object.__setattr__(self, "tool_script_dirs", tuple(Path(item).expanduser() for item in self.tool_script_dirs))
+        object.__setattr__(self, "addon_manifest_dirs", tuple(Path(item).expanduser() for item in self.addon_manifest_dirs))
+        object.__setattr__(self, "addon_script_dirs", tuple(Path(item).expanduser() for item in self.addon_script_dirs))
 
     @property
     def chroot_base(self) -> Path:
@@ -117,6 +135,11 @@ class ChrootConfig:
     @classmethod
     def _kwargs_from_payload(cls, payload: Mapping[str, Any], base: "ChrootConfig" | None = None) -> dict[str, Any]:
         current = base or cls()
+        repositories = payload.get("repositories", {})
+        if repositories is None:
+            repositories = {}
+        if not isinstance(repositories, Mapping):
+            raise TypeError("repositories must be a mapping")
         return {
             "chroot_root": Path(payload.get("chroot_root", str(current.chroot_root))),
             "distro_name": payload.get("distro_name", current.distro_name),
@@ -137,6 +160,10 @@ class ChrootConfig:
             "install_profile": payload.get("install_profile", current.install_profile),
             "snapshot_dir": Path(payload.get("snapshot_dir", str(current.snapshot_dir))),
             "snapshot_before_destructive": payload.get("snapshot_before_destructive", current.snapshot_before_destructive),
+            "tool_manifest_dirs": _normalize_paths(payload.get("tool_manifest_dirs", repositories.get("tool_manifests", list(current.tool_manifest_dirs)))),
+            "tool_script_dirs": _normalize_paths(payload.get("tool_script_dirs", repositories.get("tool_scripts", list(current.tool_script_dirs)))),
+            "addon_manifest_dirs": _normalize_paths(payload.get("addon_manifest_dirs", repositories.get("addon_manifests", list(current.addon_manifest_dirs)))),
+            "addon_script_dirs": _normalize_paths(payload.get("addon_script_dirs", repositories.get("addon_scripts", list(current.addon_script_dirs)))),
         }
 
     @classmethod

@@ -5,7 +5,7 @@ from typing import Iterable
 
 def generate_zsh_completion(prog: str = "chrootctl") -> str:
     fn = f"_{prog}"
-    commands = "status mount unmount fix-tty doctor logs start restart exec install upgrade completion chroots users"
+    commands = "status mount unmount fix-tty doctor logs start restart exec install upgrade completion chroots users tools addons"
     distros = "ubuntu arch"
     phases = "extract bootstrap desktop finalize"
     desktops = "xfce4 plasma none"
@@ -13,6 +13,8 @@ def generate_zsh_completion(prog: str = "chrootctl") -> str:
     completion_subcommands = "zsh"
     chroots_subcommands = "list show remove rename"
     users_subcommands = "show-id sync-id"
+    tools_subcommands = "categories list show apply select"
+    addons_subcommands = "categories list show apply select"
 
     return f"""#compdef {prog}
 
@@ -144,7 +146,11 @@ typeset -g {fn}_prog="{prog}"
             '--release[Release codename]:release' \\
             '--username[Username to create or sync]:username' \\
             '--desktop[Desktop selection]:desktop:({desktops})' \\
-            '--profile[Install profile]:profile:({profiles})'
+            '--profile[Install profile]:profile:({profiles})' \\
+            '--tool[Tool to apply after finalize]:tool' \\
+            '--addon[Addon to apply after finalize]:addon' \\
+            '--select-tools[Select tools with fzf if available]' \\
+            '--select-addons[Select addons with fzf if available]'
           ;;
         upgrade)
           _arguments '--username[Username for ownership sync and hooks]:username'
@@ -180,6 +186,32 @@ typeset -g {fn}_prog="{prog}"
               ;;
             sync-id)
               _arguments '--username[Username to sync]:username' '--no-fix-ownership[Skip recursive chown]'
+              ;;
+          esac
+          ;;
+        tools)
+          if (( CURRENT == 3 )); then
+            compadd {tools_subcommands}
+            return
+          fi
+          case $words[3] in
+            list)
+              _arguments '--distro[Filter by distro]:distro:({distros})'
+              ;;
+            show|apply|select)
+              ;;
+          esac
+          ;;
+        addons)
+          if (( CURRENT == 3 )); then
+            compadd {addons_subcommands}
+            return
+          fi
+          case $words[3] in
+            list)
+              _arguments '--distro[Filter by distro]:distro:({distros})'
+              ;;
+            show|apply|select)
               ;;
           esac
           ;;

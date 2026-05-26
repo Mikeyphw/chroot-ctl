@@ -1,0 +1,7 @@
+description: Install PipeWire and desktop audio utilities
+distro: all
+categories:
+- audio
+- desktop
+script: setup-audio.sh
+name: setup-audio

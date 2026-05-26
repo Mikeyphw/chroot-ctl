@@ -218,12 +218,12 @@ class BaseInstaller:
         return requested
 
     def _selected_profile(self, profile: str | None) -> str:
-        return profile or self.config.install_profile or "xfce4"
+        return profile or self.config.install_profile or "minimal"
 
     def _selected_desktop(self, desktop: str | None, profile: str | None) -> str:
         if desktop is not None:
             return desktop
-        return PROFILE_DEFAULT_DESKTOP.get(self._selected_profile(profile), "xfce4")
+        return PROFILE_DEFAULT_DESKTOP.get(self._selected_profile(profile), "none")
 
     def _extra_packages_for_profile(self, profile: str | None) -> tuple[str, ...]:
         return self.config.extra_packages

@@ -85,3 +85,64 @@ def test_completion_parser_supports_zsh() -> None:
 
     assert args.command == "completion"
     assert args.completion_shell == "zsh"
+
+
+def test_install_parser_supports_tool_and_addon_flags() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "install",
+            "ubuntu",
+            "--tool",
+            "sync-uid",
+            "--tool",
+            "remove-snapd",
+            "--addon",
+            "nala",
+            "--select-tools",
+            "--select-addons",
+        ]
+    )
+
+    assert args.tools == ["sync-uid", "remove-snapd"]
+    assert args.addons == ["nala"]
+    assert args.select_tools is True
+    assert args.select_addons is True
+
+
+def test_tools_and_addons_parsers_support_list_show_apply_select_and_categories() -> None:
+    parser = build_parser()
+
+    tools_args = parser.parse_args(["tools", "apply", "sync-uid", "remove-snapd"])
+    addons_args = parser.parse_args(["addons", "list", "--distro", "ubuntu"])
+    tool_show_args = parser.parse_args(["tools", "show", "sync-uid"])
+    addon_select_args = parser.parse_args(["addons", "select"])
+    tool_categories_args = parser.parse_args(["tools", "categories", "--distro", "ubuntu"])
+    addon_categories_args = parser.parse_args(["addons", "categories"])
+
+    assert tools_args.command == "tools"
+    assert tools_args.tools_command == "apply"
+    assert tools_args.tool_names == ["sync-uid", "remove-snapd"]
+    assert addons_args.command == "addons"
+    assert addons_args.addons_command == "list"
+    assert addons_args.distro == "ubuntu"
+    assert tool_show_args.tool_name == "sync-uid"
+    assert addon_select_args.addons_command == "select"
+    assert tool_categories_args.tools_command == "categories"
+    assert tool_categories_args.distro == "ubuntu"
+    assert addon_categories_args.addons_command == "categories"
+
+
+def test_tools_and_addons_parser_support_category_filters() -> None:
+    parser = build_parser()
+
+    tools_list = parser.parse_args(["tools", "list", "--distro", "ubuntu", "--category", "ssh"])
+    tools_select = parser.parse_args(["tools", "select", "--category", "system"])
+    addons_list = parser.parse_args(["addons", "list", "--category", "desktop-environment"])
+    addons_select = parser.parse_args(["addons", "select", "--category", "browser"])
+
+    assert tools_list.category == "ssh"
+    assert tools_select.category == "system"
+    assert addons_list.category == "desktop-environment"
+    assert addons_select.category == "browser"

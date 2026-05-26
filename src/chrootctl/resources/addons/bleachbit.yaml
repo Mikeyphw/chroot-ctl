@@ -1,0 +1,7 @@
+description: Install BleachBit system cleaner
+distro: all
+categories:
+- cleaning
+- system
+script: install-bleachbit.sh
+name: bleachbit

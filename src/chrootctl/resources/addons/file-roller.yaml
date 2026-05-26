@@ -1,0 +1,7 @@
+description: Install File Roller archive manager
+distro: all
+categories:
+- archive
+- desktop-utility
+script: install-file-roller.sh
+name: file-roller

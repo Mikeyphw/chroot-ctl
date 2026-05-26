@@ -1,0 +1,7 @@
+description: Install 7-Zip tooling alongside Wine compatibility packages
+distro: all
+categories:
+- archive
+- compatibility
+script: install-sevenzip-wine.sh
+name: sevenzip-wine
