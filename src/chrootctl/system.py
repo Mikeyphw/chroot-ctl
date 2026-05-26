@@ -22,6 +22,9 @@ CHROOT_ENV_BLOCKLIST = {
     "ANDROID_ROOT",
     "ANDROID_DATA",
     "EXTERNAL_STORAGE",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
 }
 
 CHROOT_ENV_DEFAULTS = {
@@ -31,6 +34,9 @@ CHROOT_ENV_DEFAULTS = {
     "SHELL": "/bin/bash",
     "LANG": "C.UTF-8",
     "LC_ALL": "C.UTF-8",
+    "TMPDIR": "/tmp",
+    "TMP": "/tmp",
+    "TEMP": "/tmp",
 }
 
 @dataclass(slots=True)

@@ -46,6 +46,7 @@ def test_run_filters_termux_variables_for_chroot_env(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("LD_PRELOAD", "/data/data/com.termux/files/usr/lib/libtermux-exec.so")
     monkeypatch.setenv("LD_LIBRARY_PATH", "/data/data/com.termux/files/usr/lib")
     monkeypatch.setenv("PREFIX", "/data/data/com.termux/files/usr")
+    monkeypatch.setenv("TMPDIR", "/data/data/com.termux/files/usr/tmp")
     monkeypatch.setenv("KEEP_ME", "present")
     runner = SystemRunner(logging.getLogger("test"))
 
@@ -61,6 +62,9 @@ def test_run_filters_termux_variables_for_chroot_env(monkeypatch: pytest.MonkeyP
     assert captured_env["SHELL"] == "/bin/bash"
     assert captured_env["LANG"] == "C.UTF-8"
     assert captured_env["LC_ALL"] == "C.UTF-8"
+    assert captured_env["TMPDIR"] == "/tmp"
+    assert captured_env["TMP"] == "/tmp"
+    assert captured_env["TEMP"] == "/tmp"
     assert captured_env["TERM"]
 
 
