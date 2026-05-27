@@ -63,7 +63,7 @@ def test_bind_host_devices_records_mount_failures(tmp_path: Path) -> None:
 def test_start_login_opens_user_session(tmp_path: Path) -> None:
     controller, runner = build_controller(tmp_path)
 
-    code = controller.start(login=True, root_login=False, exec_command=None, command_argv=None)
+    code = controller.start(login=True, root_login=False)
 
     assert code == 0
     argv, kwargs = runner.calls[-1]
@@ -72,10 +72,10 @@ def test_start_login_opens_user_session(tmp_path: Path) -> None:
     assert kwargs["env"]["USER"] == "mike"
 
 
-def test_start_root_login_uses_login_shell(tmp_path: Path) -> None:
+def test_start_defaults_to_root_login_shell(tmp_path: Path) -> None:
     controller, runner = build_controller(tmp_path)
 
-    code = controller.start(login=False, root_login=True, exec_command=None, command_argv=None)
+    code = controller.start(login=False, root_login=False)
 
     assert code == 0
     argv, kwargs = runner.calls[-1]
@@ -84,32 +84,16 @@ def test_start_root_login_uses_login_shell(tmp_path: Path) -> None:
     assert kwargs["env"]["HOME"] == "/root"
 
 
-def test_start_command_argv_uses_su_dash_c(tmp_path: Path) -> None:
+def test_start_root_login_uses_login_shell(tmp_path: Path) -> None:
     controller, runner = build_controller(tmp_path)
 
-    code = controller.start(login=False, root_login=False, exec_command=None, command_argv=["echo", "hello world"])
+    code = controller.start(login=False, root_login=True)
 
     assert code == 0
-    argv, _ = runner.calls[-1]
-    assert argv[-2] == "-c"
-    assert argv[-1] == "echo 'hello world'"
-
-
-def test_start_exec_command_uses_su_dash_c(tmp_path: Path) -> None:
-    controller, runner = build_controller(tmp_path)
-
-    code = controller.start(login=False, root_login=False, exec_command="id -u", command_argv=None)
-
-    assert code == 0
-    argv, _ = runner.calls[-1]
-    assert argv[-2:] == ["-c", "id -u"]
-
-
-def test_start_requires_execution_mode(tmp_path: Path) -> None:
-    controller, _ = build_controller(tmp_path)
-
-    with pytest.raises(ValueError, match="no execution mode specified"):
-        controller.start(login=False, root_login=False, exec_command=None, command_argv=None)
+    argv, kwargs = runner.calls[-1]
+    assert argv[:2] == ["chroot", str(controller.config.chroot_base)]
+    assert argv[-2:] == ["/usr/bin/zsh", "-l"]
+    assert kwargs["env"]["HOME"] == "/root"
 
 
 def test_exec_runs_non_interactive_command(tmp_path: Path) -> None:
@@ -122,11 +106,21 @@ def test_exec_runs_non_interactive_command(tmp_path: Path) -> None:
     assert argv[-2:] == ["-c", "id -u"]
 
 
+def test_exec_root_runs_via_shell_lc(tmp_path: Path) -> None:
+    controller, runner = build_controller(tmp_path)
+
+    code = controller.exec(root=True, command="id -u")
+
+    assert code == 0
+    argv, _ = runner.calls[-1]
+    assert argv[-3:] == ["/usr/bin/zsh", "-lc", "id -u"]
+
+
 def test_restart_unmounts_before_start(tmp_path: Path) -> None:
     controller, runner = build_controller(tmp_path)
     controller.unmount = lambda: runner.calls.append((["UNMOUNT"], {})) or None  # type: ignore[method-assign]
 
-    code = controller.restart(login=True, root_login=False, exec_command=None, command_argv=None)
+    code = controller.restart(login=True, root_login=False)
 
     assert code == 0
     assert runner.calls[0][0] == ["UNMOUNT"]

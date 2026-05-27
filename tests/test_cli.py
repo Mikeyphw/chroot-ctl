@@ -27,24 +27,25 @@ def test_install_parser_rejects_manjaro() -> None:
         parser.parse_args(["install", "manjaro"])
 
 
-def test_start_parser_collects_login_and_argv() -> None:
+def test_start_parser_collects_login_and_optional_target() -> None:
     parser = build_parser()
 
-    args = parser.parse_args(["start", "--login", "--", "echo", "hello"])
+    args = parser.parse_args(["start", "--login", "ubuntu"])
 
     assert args.command == "start"
     assert args.login is True
     assert args.root_login is False
-    assert args.argv == ["--", "echo", "hello"]
+    assert args.target == "ubuntu"
 
 
-def test_start_parser_collects_exec_command() -> None:
+def test_start_parser_defaults_to_interactive_root_shell() -> None:
     parser = build_parser()
 
-    args = parser.parse_args(["start", "--exec-command", "id -u"])
+    args = parser.parse_args(["start"])
 
-    assert args.exec_command == "id -u"
-    assert args.argv == []
+    assert args.login is False
+    assert args.root_login is False
+    assert args.target is None
 
 
 def test_exec_parser_collects_command_and_root_flag() -> None:
@@ -125,8 +126,7 @@ def test_start_name_shorthand_selects_installed_chroot(tmp_path) -> None:
     resolved = apply_start_name_shorthand(args, config.for_chroot("default"), registry)
 
     assert resolved.distro_name == "ubuntu"
-    assert args.login is True
-    assert args.argv == []
+    assert args.target is None
 
 
 def test_completion_parser_supports_zsh() -> None:

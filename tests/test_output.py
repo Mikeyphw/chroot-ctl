@@ -46,8 +46,10 @@ def test_render_table_wraps_long_values_without_ellipsis(monkeypatch) -> None:
     output = buffer.getvalue()
 
     assert "..." not in output
-    assert "very long description" in output
-    assert "\n" in output
+    assert "Example" in output
+    assert "alpha" in output
+    assert "this is a very" in output
+    assert "description that should" in output
 
 
 def test_result_panel_wraps_long_values_without_ellipsis(monkeypatch) -> None:
@@ -66,8 +68,11 @@ def test_result_panel_wraps_long_values_without_ellipsis(monkeypatch) -> None:
     output = buffer.getvalue()
 
     assert "..." not in output
-    assert "very-long-rootfs-name" in output
-    assert "\n" in output
+    assert "Example" in output
+    assert "path=" in output
+    assert "/data/local/tmp/very-long" in output
+    assert "-rootfs-name-that-should-" in output
+    assert "status=" in output
 
 
 def test_selection_prompt_wraps_long_choices_without_ellipsis(monkeypatch, capsys) -> None:

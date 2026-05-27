@@ -221,29 +221,47 @@ class ChrootController:
         return rows
 
     def exec(self, *, root: bool, argv: list[str] | None = None, command: str | None = None) -> int:
+        self.runner.require_root()
         if not command and not argv:
             raise ValueError("no command specified")
-        return self.start(
-            login=False,
-            root_login=root,
-            exec_command=command,
-            command_argv=argv,
+        self.mount()
+        self.fix_tty()
+        exec_user = "root" if root else self.config.username
+        shell = self._resolved_shell()
+        command_text = command or shlex.join(argv or [])
+        if root:
+            chroot_argv = ["chroot", str(self.config.chroot_base), shell, "-lc", command_text]
+        else:
+            chroot_argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", command_text]
+
+        env = {
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME": "/root" if root else f"/home/{self.config.username}",
+            "USER": exec_user,
+            "SHELL": shell,
+            "TERM": "xterm-256color",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        result = self.runner.run(
+            chroot_argv,
+            check=False,
+            env=env,
+            chroot_env=True,
+            capture_output=False,
         )
+        return result.returncode
 
     def restart(
         self,
         *,
         login: bool,
         root_login: bool,
-        exec_command: str | None,
-        command_argv: list[str] | None,
     ) -> int:
         self.unmount()
         return self.start(
             login=login,
             root_login=root_login,
-            exec_command=exec_command,
-            command_argv=command_argv,
         )
 
     def start(
@@ -251,32 +269,21 @@ class ChrootController:
         *,
         login: bool,
         root_login: bool,
-        exec_command: str | None,
-        command_argv: list[str] | None,
     ) -> int:
         self.runner.require_root()
-        if not any([login, root_login, exec_command, command_argv]):
-            raise ValueError("no execution mode specified")
         self.mount()
         self.fix_tty()
-        exec_user = "root" if root_login else self.config.username
+        use_root_login = root_login or not login
+        exec_user = "root" if use_root_login else self.config.username
         shell = self._resolved_shell()
-        if command_argv:
-            command = shlex.join(command_argv)
-            argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", command]
-        elif exec_command:
-            command = exec_command
-            argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", command]
-        elif root_login:
+        if use_root_login:
             argv = ["chroot", str(self.config.chroot_base), shell, "-l"]
-        elif login:
-            argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user]
         else:
-            raise ValueError("no execution mode specified")
+            argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user]
 
         env = {
             "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "HOME": "/root" if root_login else f"/home/{self.config.username}",
+            "HOME": "/root" if use_root_login else f"/home/{self.config.username}",
             "USER": exec_user,
             "SHELL": shell,
             "TERM": "xterm-256color",

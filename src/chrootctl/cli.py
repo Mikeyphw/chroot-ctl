@@ -24,7 +24,7 @@ from .interactive import Choice, select_one
 from .installer_factory import build_installer
 from .logging_utils import configure_logging
 from .registry import ChrootRegistry
-from .output import build_console
+from .output import build_console, wrap_text
 from .system import SystemRunner
 from .user_sync import UserSyncManager
 
@@ -53,14 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
     start = subs.add_parser("start")
     start.add_argument("--login", action="store_true")
     start.add_argument("--root-login", action="store_true")
-    start.add_argument("--exec-command", default=None)
-    start.add_argument("argv", nargs=argparse.REMAINDER)
+    start.add_argument("target", nargs="?")
 
     restart = subs.add_parser("restart")
     restart.add_argument("--login", action="store_true")
     restart.add_argument("--root-login", action="store_true")
-    restart.add_argument("--exec-command", default=None)
-    restart.add_argument("argv", nargs=argparse.REMAINDER)
+    restart.add_argument("target", nargs="?")
 
     exec_parser = subs.add_parser("exec")
     exec_parser.add_argument("--root", action="store_true")
@@ -214,21 +212,34 @@ def progress_call(description: str, fn):
         return result
 
 def render_table(title: str, rows: list[dict[str, str]]) -> None:
-    keys = []
+    keys: list[str] = []
     for row in rows:
         for key in row.keys():
             if key not in keys:
                 keys.append(key)
-    table = Table(title=title, box=None, pad_edge=False, expand=True, show_header=True)
-    for key in keys:
-        table.add_column(key, overflow="fold")
+    if not keys:
+        console.print(Panel(title, expand=False))
+        return
+
+    table = Table(title=title, box=None, expand=True, pad_edge=False, show_header=True)
+    for index, key in enumerate(keys):
+        table.add_column(
+            key,
+            overflow="fold",
+            no_wrap=False,
+            ratio=1 if index == 0 else 3,
+        )
     for row in rows:
         table.add_row(*(str(row.get(key, "")) for key in keys))
     console.print(table)
 
 def result_panel(title: str, data: dict[str, str]) -> None:
-    body = Text("\n".join(f"{k}={v}" for k, v in data.items()), overflow="fold")
-    console.print(Panel(body, title=title, border_style="green", expand=True))
+    body = Table.grid(expand=True)
+    body.add_column(style="bold cyan", no_wrap=True)
+    body.add_column(overflow="fold", ratio=1)
+    for key, value in data.items():
+        body.add_row(f"{key}=", str(value))
+    console.print(Panel(body, title=title, expand=False))
 
 def flatten_record(record: dict[str, object]) -> dict[str, str]:
     data = {key: str(value) for key, value in record.items() if key != "metadata_json"}
@@ -415,15 +426,13 @@ def apply_start_name_shorthand(
 ) -> ChrootConfig:
     if args.command not in {"start", "restart"}:
         return config
-    if args.login or args.root_login or args.exec_command:
+    target = getattr(args, "target", None)
+    if not target:
         return config
-    if not args.argv or len(args.argv) != 1 or args.argv[0] == "--":
-        return config
-    record = registry.get(args.argv[0])
+    record = registry.get(target)
     if record is None:
         return config
-    args.login = True
-    args.argv = []
+    args.target = None
     return config.for_chroot(str(record["name"]))
 
 def main() -> None:
@@ -505,27 +514,21 @@ def main() -> None:
             return
 
         if args.command == "start":
-            argv = args.argv[1:] if args.argv and args.argv[0] == "--" else args.argv
             code = progress_call(
                 "Starting chroot session",
                 lambda: controller.start(
                     login=args.login,
                     root_login=args.root_login,
-                    exec_command=args.exec_command,
-                    command_argv=argv or None,
                 ),
             )
             raise SystemExit(code)
 
         if args.command == "restart":
-            argv = args.argv[1:] if args.argv and args.argv[0] == "--" else args.argv
             code = progress_call(
                 "Restarting chroot session",
                 lambda: controller.restart(
                     login=args.login,
                     root_login=args.root_login,
-                    exec_command=args.exec_command,
-                    command_argv=argv or None,
                 ),
             )
             raise SystemExit(code)
