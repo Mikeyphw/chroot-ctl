@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from .base_install import BaseInstaller, LinkParser, ReleaseRef
+from .models import InstallBootstrapResult, InstallDesktopResult, InstallExtractResult
+
 
 class UbuntuInstaller(BaseInstaller):
     distro = "ubuntu"
@@ -43,19 +45,25 @@ class UbuntuInstaller(BaseInstaller):
         for key in [version, release, "24.04.4", "24.04", "noble"]:
             if key and key in refs:
                 return refs[key]
-        raise ValueError("could not resolve Ubuntu release")
+        raise ValueError("could not resolve ubuntu release; pass --version or --release")
 
     def _resolve_tarball(self, ref: ReleaseRef) -> tuple[str, str]:
         html = self._fetch_text(ref.url)
         parser = LinkParser()
         parser.feed(html)
-        tarballs = [link for link in parser.links if link.endswith("-base-arm64.tar.gz")]
-        if not tarballs:
-            raise ValueError("no Ubuntu arm64 rootfs tarball found")
-        name = tarballs[0].split("/")[-1]
-        return name, f"{ref.url}{name}"
+        for link in parser.links:
+            name = link.split("/")[-1]
+            if name.startswith("ubuntu-base-") and name.endswith("-base-arm64.tar.gz"):
+                return name, f"{ref.url}{name}"
+        raise RuntimeError(f"could not find arm64 ubuntu-base tarball under {ref.url}")
 
-    def run_phase_extract(self, *, version: str | None, release: str | None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_extract(
+        self,
+        *,
+        version: str | None,
+        release: str | None,
+        force_phase: bool = False,
+    ) -> InstallExtractResult:
         self.runner.require_root()
         self.assert_phase_allowed("extract", force_phase)
         ref = self._resolve_release(version, release)
@@ -71,8 +79,10 @@ class UbuntuInstaller(BaseInstaller):
         for rel in ("dev/pts", "dev/shm", "proc", "sys", "sdcard", "tmp", f"home/{self.config.username}"):
             if not self.runner.dry_run:
                 (self.config.chroot_base / rel).mkdir(parents=True, exist_ok=True)
-        self.mark_phase("extract", version=version or ref.label, release_name=release or ref.label, metadata={"tarball": filename, "url": url})
-        return {"phase": "extract", "version": version or ref.label, "release": release or ref.label, "tarball": filename}
+        resolved_version = version or ref.label
+        resolved_release = release or ref.label
+        self.mark_phase("extract", version=resolved_version, release_name=resolved_release, metadata={"tarball": filename, "url": url})
+        return InstallExtractResult(version=resolved_version, release=resolved_release, tarball=filename)
 
     def _bootstrap_packages(self, profile: str | None) -> tuple[str, ...]:
         packages = list(self.PREREQ_PACKAGES) + list(self.BASE_PACKAGES)
@@ -85,7 +95,13 @@ class UbuntuInstaller(BaseInstaller):
         packages = " ".join(self.PREREQ_PACKAGES)
         self._chroot_shell(f"DEBIAN_FRONTEND=noninteractive apt install -y {packages}")
 
-    def run_phase_bootstrap(self, *, username: str, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_bootstrap(
+        self,
+        *,
+        username: str,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallBootstrapResult:
         self.runner.require_root()
         self.assert_phase_allowed("bootstrap", force_phase)
         user = self._validated_username(username)
@@ -109,9 +125,15 @@ class UbuntuInstaller(BaseInstaller):
         self._write_sudoers(user)
         self._chroot_shell(f"locale-gen {self.config.locale}")
         self.mark_phase("bootstrap", metadata={"username": user, "profile": profile or ""})
-        return {"phase": "bootstrap", "username": user, "profile": profile or ""}
+        return InstallBootstrapResult(username=user, profile=profile or "")
 
-    def run_phase_desktop(self, *, desktop: str | None, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_desktop(
+        self,
+        *,
+        desktop: str | None,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallDesktopResult:
         self.runner.require_root()
         self.assert_phase_allowed("desktop", force_phase)
         snapshot = self._create_snapshot("desktop")
@@ -127,7 +149,7 @@ class UbuntuInstaller(BaseInstaller):
             pref.write_text("Package: snapd\nPin: release a=*\nPin-Priority: -10\n", encoding="utf-8")
         self._chroot_shell("apt-get -y autopurge snapd || true")
         self.mark_phase("desktop", metadata={"desktop": selected_desktop, "desktop_snapshot": snapshot or "", "profile": profile or ""})
-        return {"phase": "desktop", "desktop": selected_desktop, "snapshot": snapshot or "", "profile": profile or ""}
+        return InstallDesktopResult(desktop=selected_desktop, snapshot=snapshot or "", profile=profile or "")
 
     def _run_upgrade(self) -> None:
         self._chroot_shell("apt update")

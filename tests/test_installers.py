@@ -9,6 +9,14 @@ from chrootctl.arch import ArchInstaller
 from chrootctl.base_install import BaseInstaller, ReleaseRef
 from chrootctl.config import ChrootConfig
 from chrootctl.controller import ChrootController
+from chrootctl.models import (
+    InstallAlreadyCompleteResult,
+    InstallBootstrapResult,
+    InstallDesktopResult,
+    InstallExtractResult,
+    InstallFinalizeResult,
+    UpgradeResult,
+)
 from chrootctl.registry import ChrootRegistry
 from chrootctl.system import RunResult
 from chrootctl.ubuntu import UbuntuInstaller
@@ -49,25 +57,43 @@ class StubInstaller(BaseInstaller):
     def infer_phase_from_filesystem(self):
         return "extract"
 
-    def run_phase_extract(self, *, version: str | None, release: str | None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_extract(
+        self,
+        *,
+        version: str | None,
+        release: str | None,
+        force_phase: bool = False,
+    ) -> InstallExtractResult:
         self.called.append("extract")
         self.mark_phase("extract")
-        return {"phase": "extract"}
+        return InstallExtractResult(version=version or "latest", release=release or "rolling", tarball="stub.tar.gz")
 
-    def run_phase_bootstrap(self, *, username: str, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_bootstrap(
+        self,
+        *,
+        username: str,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallBootstrapResult:
         self.called.append("bootstrap")
         self.mark_phase("bootstrap")
-        return {"phase": "bootstrap", "profile": profile or ""}
+        return InstallBootstrapResult(username=username, profile=profile or "")
 
-    def run_phase_desktop(self, *, desktop: str | None, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_desktop(
+        self,
+        *,
+        desktop: str | None,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallDesktopResult:
         self.called.append("desktop")
         self.mark_phase("desktop")
-        return {"phase": "desktop", "desktop": desktop or "none", "profile": profile or ""}
+        return InstallDesktopResult(desktop=desktop or "none", snapshot="", profile=profile or "")
 
-    def run_phase_finalize(self, *, username: str, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_finalize(self, *, username: str, force_phase: bool = False) -> InstallFinalizeResult:
         self.called.append("finalize")
         self.mark_phase("finalize", installed=True)
-        return {"phase": "finalize"}
+        return InstallFinalizeResult(installed=True, uid_sync=True, snapshot="")
 
     def _run_upgrade(self) -> None:
         self.called.append("upgrade")
@@ -112,9 +138,9 @@ def test_install_without_phase_runs_remaining_phases_by_default(tmp_path: Path) 
 
     assert installer.called == ["bootstrap", "desktop", "finalize"]
     assert result == [
-        {"phase": "bootstrap", "profile": "minimal"},
-        {"phase": "desktop", "desktop": "xfce4", "profile": "minimal"},
-        {"phase": "finalize"},
+        InstallBootstrapResult(username="mike", profile="minimal"),
+        InstallDesktopResult(desktop="xfce4", snapshot="", profile="minimal"),
+        InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
     ]
 
 
@@ -136,7 +162,7 @@ def test_explicit_phase_runs_single_phase_without_auto(tmp_path: Path) -> None:
     )
 
     assert installer.called == ["bootstrap"]
-    assert result == [{"phase": "bootstrap", "profile": "minimal"}]
+    assert result == [InstallBootstrapResult(username="mike", profile="minimal")]
 
 
 def test_explicit_phase_with_auto_runs_remaining_phases(tmp_path: Path) -> None:
@@ -157,8 +183,8 @@ def test_explicit_phase_with_auto_runs_remaining_phases(tmp_path: Path) -> None:
     )
 
     assert installer.called == ["bootstrap", "desktop", "finalize"]
-    assert result[0]["phase"] == "bootstrap"
-    assert result[-1]["phase"] == "finalize"
+    assert result[0] == InstallBootstrapResult(username="mike", profile="minimal")
+    assert result[-1] == InstallFinalizeResult(installed=True, uid_sync=True, snapshot="")
 
 
 def test_auto_install_runs_remaining_phases(tmp_path: Path) -> None:
@@ -179,7 +205,10 @@ def test_auto_install_runs_remaining_phases(tmp_path: Path) -> None:
     )
 
     assert installer.called == ["desktop", "finalize"]
-    assert result == [{"phase": "desktop", "desktop": "xfce4", "profile": "minimal"}, {"phase": "finalize"}]
+    assert result == [
+        InstallDesktopResult(desktop="xfce4", snapshot="", profile="minimal"),
+        InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
+    ]
 
 
 def test_auto_install_short_circuits_when_already_installed(tmp_path: Path) -> None:
@@ -200,7 +229,7 @@ def test_auto_install_short_circuits_when_already_installed(tmp_path: Path) -> N
     )
 
     assert installer.called == []
-    assert result == [{"phase": "finalize", "installed": "true", "status": "already_complete"}]
+    assert result == [InstallAlreadyCompleteResult()]
 
 
 @pytest.mark.parametrize("installer_cls", [UbuntuInstaller, ArchInstaller])
@@ -231,8 +260,8 @@ def test_resume_runs_remaining_phases(tmp_path: Path) -> None:
     )
 
     assert installer.called == ["bootstrap", "desktop", "finalize"]
-    assert result[0]["profile"] == "dev"
-    assert result[1]["desktop"] == "none"
+    assert result[0] == InstallBootstrapResult(username="mike", profile="dev")
+    assert result[1] == InstallDesktopResult(desktop="none", snapshot="", profile="dev")
 
 
 def test_repair_reruns_current_phase(tmp_path: Path) -> None:
@@ -253,7 +282,7 @@ def test_repair_reruns_current_phase(tmp_path: Path) -> None:
     )
 
     assert installer.called == ["desktop"]
-    assert result == [{"phase": "desktop", "desktop": "none", "profile": "minimal"}]
+    assert result == [InstallDesktopResult(desktop="none", snapshot="", profile="minimal")]
 
 
 def test_repair_reruns_extract_when_bootstrap_is_not_ready(tmp_path: Path) -> None:
@@ -275,7 +304,7 @@ def test_repair_reruns_extract_when_bootstrap_is_not_ready(tmp_path: Path) -> No
     )
 
     assert installer.called == ["extract"]
-    assert result == [{"phase": "extract"}]
+    assert result == [InstallExtractResult(version="latest", release="rolling", tarball="stub.tar.gz")]
 
 
 def test_upgrade_runs_installer_upgrade_flow(tmp_path: Path) -> None:
@@ -284,7 +313,7 @@ def test_upgrade_runs_installer_upgrade_flow(tmp_path: Path) -> None:
     result = installer.upgrade()
 
     assert installer.called == ["upgrade"]
-    assert result["status"] == "upgraded"
+    assert result == UpgradeResult(status="upgraded", snapshot="")
 
 
 def test_chroot_shell_uses_sanitized_environment(tmp_path: Path) -> None:
@@ -325,7 +354,7 @@ def test_ubuntu_bootstrap_installs_prerequisites_before_group_setup(tmp_path: Pa
     group_index = next(index for index, command in enumerate(shell_commands) if "getent group aid_inet" in command)
     preflight_index = next(index for index, command in enumerate(shell_commands) if "command -v groupadd" in command)
 
-    assert result["phase"] == "bootstrap"
+    assert result.phase == "bootstrap"
     assert apt_update_index < prereq_index < preflight_index < group_index
     assert "passwd login libc-bin sudo" in shell_commands[prereq_index]
 
@@ -351,7 +380,7 @@ def test_ubuntu_default_install_reruns_extract_when_apt_is_missing(tmp_path: Pat
         profile=None,
     )
 
-    assert result[0]["phase"] == "extract"
+    assert result[0].phase == "extract"
     assert any(command[:2] == ["curl", "--fail"] for command in installer.runner.commands)
     curl_index = next(index for index, command in enumerate(installer.runner.commands) if command[:2] == ["curl", "--fail"])
     assert "--progress-bar" in installer.runner.commands[curl_index]
@@ -381,7 +410,7 @@ def test_ubuntu_default_install_recovers_from_bootstrap_registry_when_apt_is_mis
         profile=None,
     )
 
-    assert result[0]["phase"] == "extract"
+    assert result[0].phase == "extract"
 
 
 def test_arch_extract_streams_download_and_extraction_progress(tmp_path: Path) -> None:
@@ -392,7 +421,7 @@ def test_arch_extract_streams_download_and_extraction_progress(tmp_path: Path) -
 
     curl_index = next(index for index, command in enumerate(runner.commands) if command[:2] == ["curl", "--fail"])
     bsdtar_index = next(index for index, command in enumerate(runner.commands) if command[:2] == ["bsdtar", "-xpf"])
-    assert result["phase"] == "extract"
+    assert result.phase == "extract"
     assert "--progress-bar" in runner.commands[curl_index]
     assert runner.kwargs[curl_index]["capture_output"] is False
     assert runner.kwargs[bsdtar_index]["capture_output"] is False

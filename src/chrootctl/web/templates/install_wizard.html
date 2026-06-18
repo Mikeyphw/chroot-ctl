@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Install wizard</p>
+      <h2 class="page-title">Queue a guided install job</h2>
+      <p class="panel-copy">This wizard submits one install job, then streams progress, logs, and next steps. Install operations usually require root.</p>
+    </div>
+    <div class="chip-list">
+      <span class="chip">{{ distros | length }} distros</span>
+      <span class="chip">{{ tools | length }} tools</span>
+      <span class="chip">{{ addons | length }} addons</span>
+    </div>
+  </div>
+</section>
+
+<form method="post" action="/install" class="form-stack" data-toast="Install job queued…" data-toast-kind="ok">
+  {{ csrf_token_input(request) }}
+
+  <section class="collapsible-grid">
+    <details class="card fold-card" open>
+      <summary class="fold-summary">
+        <div class="fold-summary-copy">
+          <p class="eyebrow">Step 1</p>
+          <h3 class="section-title">Base selection</h3>
+        </div>
+        <div class="fold-summary-meta">
+          <span class="badge ok">required</span>
+          <span class="fold-arrow">⌄</span>
+        </div>
+      </summary>
+      <div class="fold-body">
+        <div class="detail-grid">
+          <label>Distro
+            <select name="distro" required>
+              {% for distro in distros %}
+              <option value="{{ distro }}" {% if defaults.distro == distro %}selected{% endif %}>{{ distro }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Chroot name
+            <input type="text" name="name" value="{{ defaults.name or defaults.distro or '' }}" required>
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <details class="card fold-card" open>
+      <summary class="fold-summary">
+        <div class="fold-summary-copy">
+          <p class="eyebrow">Step 2</p>
+          <h3 class="section-title">User and profile</h3>
+        </div>
+        <div class="fold-summary-meta">
+          <span class="badge ok">required</span>
+          <span class="fold-arrow">⌄</span>
+        </div>
+      </summary>
+      <div class="fold-body">
+        <div class="detail-grid">
+          <label>Username
+            <input type="text" name="username" value="{{ defaults.username or '' }}" required>
+          </label>
+          <label>Profile
+            <select name="profile">
+              <option value="">default</option>
+              {% for profile in profiles %}
+              <option value="{{ profile }}" {% if defaults.profile == profile %}selected{% endif %}>{{ profile }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Desktop
+            <select name="desktop">
+              <option value="">auto</option>
+              {% for desktop in desktops %}
+              <option value="{{ desktop }}" {% if defaults.desktop == desktop %}selected{% endif %}>{{ desktop }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <details class="card fold-card">
+      <summary class="fold-summary">
+        <div class="fold-summary-copy">
+          <p class="eyebrow">Step 3</p>
+          <h3 class="section-title">Release and version</h3>
+        </div>
+        <div class="fold-summary-meta">
+          <span class="badge subtle">{{ versions | length }} version{{ '' if versions | length == 1 else 's' }}</span>
+          <span class="fold-arrow">⌄</span>
+        </div>
+      </summary>
+      <div class="fold-body">
+        <div class="detail-grid">
+          <label>Release
+            <input type="text" name="release" value="{{ defaults.release or '' }}" placeholder="auto">
+          </label>
+          <label>Version
+            <select name="version">
+              <option value="">latest</option>
+              {% for item in versions %}
+              <option value="{{ item.version }}" {% if defaults.version == item.version %}selected{% endif %}>
+                {{ item.version }}{% if item.release %} · {{ item.release }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        {% if not versions %}
+        <article class="empty-state">
+          <span class="empty-icon">v</span>
+          <h3>No version list loaded yet</h3>
+          <p class="muted">Choose a distro first, then refresh the page if you want a release/version suggestion list.</p>
+        </article>
+        {% endif %}
+      </div>
+    </details>
+
+    <details class="card fold-card">
+      <summary class="fold-summary">
+        <div class="fold-summary-copy">
+          <p class="eyebrow">Step 4</p>
+          <h3 class="section-title">Tools</h3>
+        </div>
+        <div class="fold-summary-meta">
+          <span class="badge subtle">{{ tools | length }} available</span>
+          <span class="fold-arrow">⌄</span>
+        </div>
+      </summary>
+      <div class="fold-body">
+        {% if tools %}
+        <div class="choice-grid columns-3">
+          {% for entry in tools %}
+          <label class="choice-card">
+            <input type="checkbox" name="tools" value="{{ entry.name }}">
+            <span>
+              <strong>{{ entry.name }}</strong>
+              <span class="muted">{{ entry.description }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <article class="empty-state">
+          <span class="empty-icon">T</span>
+          <h3>No tools available</h3>
+          <p class="muted">The selected distro currently has no matching tool manifests.</p>
+        </article>
+        {% endif %}
+      </div>
+    </details>
+
+    <details class="card fold-card">
+      <summary class="fold-summary">
+        <div class="fold-summary-copy">
+          <p class="eyebrow">Step 5</p>
+          <h3 class="section-title">Addons</h3>
+        </div>
+        <div class="fold-summary-meta">
+          <span class="badge subtle">{{ addons | length }} available</span>
+          <span class="fold-arrow">⌄</span>
+        </div>
+      </summary>
+      <div class="fold-body">
+        {% if addons %}
+        <div class="choice-grid columns-3">
+          {% for entry in addons %}
+          <label class="choice-card">
+            <input type="checkbox" name="addons" value="{{ entry.name }}">
+            <span>
+              <strong>{{ entry.name }}</strong>
+              <span class="muted">{{ entry.description }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <article class="empty-state">
+          <span class="empty-icon">A</span>
+          <h3>No addons available</h3>
+          <p class="muted">The selected distro currently has no matching addon manifests.</p>
+        </article>
+        {% endif %}
+      </div>
+    </details>
+
+    <details class="card fold-card">
+      <summary class="fold-summary">
+        <div class="fold-summary-copy">
+          <p class="eyebrow">Step 6</p>
+          <h3 class="section-title">Repair mode</h3>
+        </div>
+        <div class="fold-summary-meta">
+          <span class="badge warn">optional</span>
+          <span class="fold-arrow">⌄</span>
+        </div>
+      </summary>
+      <div class="fold-body">
+        <label class="checkbox-row">
+          <input type="checkbox" name="repair" value="true">
+          <span>Enable repair flow</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="confirm_repair" value="true">
+          <span>I understand repair mode modifies an existing install attempt.</span>
+        </label>
+      </div>
+    </details>
+  </section>
+
+  <section class="sticky-action-bar">
+    <div class="sticky-action-meta">
+      <span class="badge ok">1 job</span>
+      <span class="chip">guided install</span>
+      <span class="chip">live logs</span>
+      <span class="chip">next steps included</span>
+    </div>
+    <div class="actions">
+      <button type="submit">Queue install job</button>
+      <a class="button-link subtle" href="/chroots">Review current chroots</a>
+    </div>
+  </section>
+</form>
+{% endblock %}

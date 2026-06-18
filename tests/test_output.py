@@ -6,9 +6,8 @@ import shutil
 
 from rich.console import Console
 
-from chrootctl import cli
 from chrootctl.interactive import Choice, select_one
-from chrootctl.output import build_console, wrap_text
+from chrootctl.output import build_console, render_table, result_panel, wrap_text
 
 
 def test_termux_console_width_is_capped(monkeypatch) -> None:
@@ -28,12 +27,11 @@ def test_wrap_text_avoids_ellipsis() -> None:
     assert "\n" in wrapped
 
 
-def test_render_table_wraps_long_values_without_ellipsis(monkeypatch) -> None:
+def test_render_table_wraps_long_values_without_ellipsis() -> None:
     buffer = io.StringIO()
     test_console = Console(file=buffer, width=36, force_terminal=False, soft_wrap=True)
-    monkeypatch.setattr(cli, "console", test_console)
 
-    cli.render_table(
+    render_table(
         "Example",
         [
             {
@@ -41,6 +39,7 @@ def test_render_table_wraps_long_values_without_ellipsis(monkeypatch) -> None:
                 "description": "this is a very long description that should wrap rather than truncate",
             }
         ],
+        console=test_console,
     )
 
     output = buffer.getvalue()
@@ -49,20 +48,21 @@ def test_render_table_wraps_long_values_without_ellipsis(monkeypatch) -> None:
     assert "Example" in output
     assert "alpha" in output
     assert "this is a very" in output
-    assert "description that should" in output
+    assert "description that" in output
+    assert "should wrap" in output
 
 
-def test_result_panel_wraps_long_values_without_ellipsis(monkeypatch) -> None:
+def test_result_panel_wraps_long_values_without_ellipsis() -> None:
     buffer = io.StringIO()
     test_console = Console(file=buffer, width=36, force_terminal=False, soft_wrap=True)
-    monkeypatch.setattr(cli, "console", test_console)
 
-    cli.result_panel(
+    result_panel(
         "Example",
         {
             "path": "/data/local/tmp/very-long-rootfs-name-that-should-wrap",
             "status": "ready",
         },
+        console=test_console,
     )
 
     output = buffer.getvalue()
@@ -98,3 +98,51 @@ def test_selection_prompt_wraps_long_choices_without_ellipsis(monkeypatch, capsy
     assert "very-long-choice-label" in output
     assert "should also wrap" in output
     assert "\n" in output
+
+
+def test_result_panel_accepts_display_models_without_manual_dict_conversion() -> None:
+    buffer = io.StringIO()
+    test_console = Console(file=buffer, width=36, force_terminal=False, soft_wrap=True)
+
+    from chrootctl.models import ChrootRenameResult
+
+    result_panel(
+        "Rename",
+        ChrootRenameResult(old_name="old", new_name="new", renamed=True),
+        console=test_console,
+    )
+
+    output = buffer.getvalue()
+
+    assert "Rename" in output
+    assert "old_name=" in output
+    assert "new" in output
+    assert "renamed=" in output
+
+
+def test_render_table_accepts_display_models_without_manual_dict_conversion() -> None:
+    buffer = io.StringIO()
+    test_console = Console(file=buffer, width=48, force_terminal=False, soft_wrap=True)
+
+    from chrootctl.models import CatalogApplyResult
+
+    render_table(
+        "Tools",
+        [
+            CatalogApplyResult(
+                kind="tool",
+                name="sync-uid",
+                distro="ubuntu",
+                categories=("system", "identity"),
+                applied=True,
+            )
+        ],
+        console=test_console,
+    )
+
+    output = buffer.getvalue()
+
+    assert "Tools" in output
+    assert "sync-uid" in output
+    assert "system,id" in output
+    assert "entity" in output

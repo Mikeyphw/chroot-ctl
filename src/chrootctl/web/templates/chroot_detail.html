@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">{{ chroot.distro }}</p>
+      <h2 class="page-title">{{ chroot.name }}</h2>
+      <p class="panel-copy">phase={{ chroot.phase }} · Rename, remove, and upgrade modify the chroot and typically require root.</p>
+    </div>
+    <div class="actions">
+      <form method="post" action="/chroots/{{ chroot.name }}/start">
+        {{ csrf_token_input(request) }}
+        <button type="submit">Start</button>
+      </form>
+      <form method="post" action="/chroots/{{ chroot.name }}/restart">
+        {{ csrf_token_input(request) }}
+        <button type="submit" class="subtle">Restart</button>
+      </form>
+      <button type="button" class="ghost" onclick="document.getElementById('upgrade-dialog').showModal()">Upgrade</button>
+    </div>
+  </div>
+
+  <dl class="kv">
+    {% for key, value in chroot.to_display_dict().items() %}
+    <div class="kv-pair">
+      <dt>{{ key }}</dt>
+      <dd>{{ value }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Status</p>
+        <h2 class="section-title">Runtime checks</h2>
+      </div>
+    </div>
+    <div class="status-list">
+      {% for row in status_rows %}
+      <article class="status-card">
+        <div class="item-header">
+          <strong class="item-title">{{ row.check }}</strong>
+          <span class="badge {{ 'bad' if row.result == 'FAIL' else ('warn' if row.result == 'WARN' else 'ok') }}">{{ row.result }}</span>
+        </div>
+        {% if row.next %}
+        <code class="code-token">{{ row.next }}</code>
+        {% else %}
+        <span class="muted">No action needed.</span>
+        {% endif %}
+      </article>
+      {% else %}
+      <div class="empty-state"><p>No status rows.</p></div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Doctor</p>
+        <h2 class="section-title">Repair guidance</h2>
+      </div>
+    </div>
+    <div class="status-list">
+      {% for row in doctor_rows %}
+      <article class="status-card">
+        <div class="item-header">
+          <strong class="item-title">{{ row.check }}</strong>
+          <span class="badge {{ 'bad' if row.result == 'FAIL' else ('warn' if row.result == 'WARN' else 'ok') }}">{{ row.result }}</span>
+        </div>
+        {% if row.next %}
+        <code class="code-token">{{ row.next }}</code>
+        {% else %}
+        <span class="muted">No action needed.</span>
+        {% endif %}
+      </article>
+      {% else %}
+      <div class="empty-state"><p>No doctor rows.</p></div>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Rename</p>
+        <h2 class="section-title">Change the chroot name</h2>
+      </div>
+    </div>
+    <form method="post" action="/chroots/{{ chroot.name }}/rename" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <label>New name
+        <input type="text" name="new_name" value="{{ chroot.name }}" required>
+      </label>
+      <label>Type <code class="code-token">{{ chroot.name }}</code> to confirm
+        <input type="text" name="confirm_name" autocomplete="off" required>
+      </label>
+      <div class="actions">
+        <button type="submit">Rename</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card soft">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Danger zone</p>
+        <h2 class="section-title">Remove this chroot</h2>
+        <p class="panel-copy">This is destructive. Type the chroot name in the confirmation dialog before removal.</p>
+      </div>
+      <button type="button" class="danger" onclick="document.getElementById('remove-dialog').showModal()">Open confirmation</button>
+    </div>
+  </article>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Related</p>
+      <h2 class="section-title">Jump back into management</h2>
+    </div>
+  </div>
+  <div class="actions">
+    <a class="button-link" href="/chroots/{{ chroot.name }}/users">Manage users</a>
+    <a class="button-link subtle" href="/logs?name={{ chroot.name }}">Logs</a>
+    <a class="button-link ghost" href="/doctor?name={{ chroot.name }}">Doctor</a>
+  </div>
+</section>
+
+<dialog id="upgrade-dialog" class="modal">
+  <div class="modal-inner">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Upgrade</p>
+        <h2 class="section-title">{{ chroot.name }}</h2>
+      </div>
+      <button type="button" class="button-link subtle" onclick="document.getElementById('upgrade-dialog').close()">Close</button>
+    </div>
+    <form method="post" action="/chroots/{{ chroot.name }}/upgrade" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <label class="checkbox-row">
+        <input type="checkbox" name="confirm_upgrade" value="true" required>
+        <span>I understand that upgrading modifies packages in place and usually requires root.</span>
+      </label>
+      <div class="actions">
+        <button type="submit">Run upgrade</button>
+        <button type="button" class="subtle" onclick="document.getElementById('upgrade-dialog').close()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="remove-dialog" class="modal">
+  <div class="modal-inner">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Remove</p>
+        <h2 class="section-title">{{ chroot.name }}</h2>
+      </div>
+      <button type="button" class="button-link subtle" onclick="document.getElementById('remove-dialog').close()">Close</button>
+    </div>
+    <form method="post" action="/chroots/{{ chroot.name }}/remove" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <label>Type <code class="code-token">{{ chroot.name }}</code> to confirm
+        <input type="text" name="confirm_name" autocomplete="off" required>
+      </label>
+      <div class="actions">
+        <button type="submit" class="danger">Remove chroot</button>
+        <button type="button" class="subtle" onclick="document.getElementById('remove-dialog').close()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}

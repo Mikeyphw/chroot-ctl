@@ -4,6 +4,7 @@ import re
 import shlex
 
 from .config import ChrootConfig
+from .models import UserIdStatus, UserIdSyncResult
 from .system import SystemRunner
 
 USERNAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]*[$]?$")
@@ -32,7 +33,7 @@ class UserSyncManager:
             capture_output=False,
         )
 
-    def show_id(self, username: str | None = None) -> dict[str, str]:
+    def show_id(self, username: str | None = None) -> UserIdStatus:
         user = username or self.config.username
         host_uid, host_gid = self.host_uid_gid()
         passwd_path = self.config.chroot_base / "etc" / "passwd"
@@ -45,17 +46,17 @@ class UserSyncManager:
                 if len(parts) >= 4 and parts[0] == user:
                     current_uid, current_gid = parts[2], parts[3]
                     break
-        return {
-            "username": user,
-            "host_uid": str(host_uid),
-            "host_gid": str(host_gid),
-            "chroot_uid": current_uid,
-            "chroot_gid": current_gid,
-            "passwd_exists": "yes" if passwd_path.exists() else "no",
-            "group_exists": "yes" if group_path.exists() else "no",
-        }
+        return UserIdStatus(
+            username=user,
+            host_uid=host_uid,
+            host_gid=host_gid,
+            chroot_uid=current_uid,
+            chroot_gid=current_gid,
+            passwd_exists=passwd_path.exists(),
+            group_exists=group_path.exists(),
+        )
 
-    def sync_id(self, username: str | None = None, fix_ownership: bool = True) -> dict[str, str]:
+    def sync_id(self, username: str | None = None, fix_ownership: bool = True) -> UserIdSyncResult:
         self.runner.require_root()
         user = self._validate_username(username or self.config.username)
         host_uid, host_gid = self.host_uid_gid()
@@ -81,9 +82,9 @@ class UserSyncManager:
                     f"[ -e {quoted_path} ] && chown -R {host_uid}:{host_gid} {quoted_path} || true"
                 )
 
-        return {
-            "username": user,
-            "uid": str(host_uid),
-            "gid": str(host_gid),
-            "ownership_fixed": "yes" if fix_ownership else "no",
-        }
+        return UserIdSyncResult(
+            username=user,
+            uid=host_uid,
+            gid=host_gid,
+            ownership_fixed=fix_ownership,
+        )

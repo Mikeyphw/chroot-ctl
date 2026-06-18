@@ -5,6 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import ChrootConfig
+from .models import (
+    ChrootUserCreateResult,
+    ChrootUserDetails,
+    ChrootUserPasswordResult,
+    ChrootUserRemoveResult,
+    ChrootUserShellResult,
+    ChrootUserSudoResult,
+)
 from .registry import ChrootRegistry
 from .system import SystemRunner
 from .user_sync import validate_username
@@ -17,6 +25,15 @@ class ChrootUser:
     gid: str
     home: str
     shell: str
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "username": self.username,
+            "uid": self.uid,
+            "gid": self.gid,
+            "home": self.home,
+            "shell": self.shell,
+        }
 
 
 class ChrootUserManager:
@@ -54,30 +71,21 @@ class ChrootUserManager:
             )
         return users
 
-    def user_rows(self) -> list[dict[str, str]]:
-        return [
-            {
-                "username": user.username,
-                "uid": user.uid,
-                "gid": user.gid,
-                "home": user.home,
-                "shell": user.shell,
-            }
-            for user in self.list_users()
-        ]
+    def user_rows(self) -> list[ChrootUser]:
+        return self.list_users()
 
-    def show_user(self, username: str) -> dict[str, str]:
+    def show_user(self, username: str) -> ChrootUserDetails:
         user = self._find_user(username)
-        return {
-            "username": user.username,
-            "uid": user.uid,
-            "gid": user.gid,
-            "home": user.home,
-            "shell": user.shell,
-            "sudo": "yes" if self._has_sudo_marker(user.username) else "unknown",
-        }
+        return ChrootUserDetails(
+            username=user.username,
+            uid=user.uid,
+            gid=user.gid,
+            home=user.home,
+            shell=user.shell,
+            sudo=self._has_sudo_access(user.username),
+        )
 
-    def add_user(self, username: str, *, shell: str, sudo: bool) -> dict[str, str]:
+    def add_user(self, username: str, *, shell: str, sudo: bool) -> ChrootUserCreateResult:
         self._require_installed()
         user = validate_username(username)
         shell_path = self._validate_shell(shell)
@@ -89,17 +97,17 @@ class ChrootUserManager:
         )
         if sudo:
             self.set_sudo(user, enabled=True)
-        return {"username": user, "shell": shell_path, "sudo": "yes" if sudo else "no", "created": "yes"}
+        return ChrootUserCreateResult(username=user, shell=shell_path, sudo=sudo, created=True)
 
-    def remove_user(self, username: str, *, delete_home: bool) -> dict[str, str]:
+    def remove_user(self, username: str, *, delete_home: bool) -> ChrootUserRemoveResult:
         self._require_installed()
         user = validate_username(username)
         flag = "-r " if delete_home else ""
         self._chroot_sh(f"id -u {shlex.quote(user)} >/dev/null 2>&1 && userdel {flag}{shlex.quote(user)} || true")
         self._remove_sudoers(user)
-        return {"username": user, "home_deleted": "yes" if delete_home else "no", "removed": "yes"}
+        return ChrootUserRemoveResult(username=user, home_deleted=delete_home, removed=True)
 
-    def set_password(self, username: str) -> dict[str, str]:
+    def set_password(self, username: str) -> ChrootUserPasswordResult:
         self._require_installed()
         user = validate_username(username)
         self.runner.run(
@@ -107,16 +115,28 @@ class ChrootUserManager:
             chroot_env=True,
             capture_output=False,
         )
-        return {"username": user, "password": "updated"}
+        return ChrootUserPasswordResult(username=user, updated=True)
 
-    def set_shell(self, username: str, *, shell: str) -> dict[str, str]:
+    def set_password_value(self, username: str, *, password: str) -> ChrootUserPasswordResult:
+        self._require_installed()
+        user = validate_username(username)
+        password_value = _validate_password_value(password)
+        self.runner.run(
+            ["busybox", "chroot", str(self.config.chroot_base), "/bin/bash", "-lc", "chpasswd"],
+            chroot_env=True,
+            capture_output=True,
+            input_text=f"{user}:{password_value}\n",
+        )
+        return ChrootUserPasswordResult(username=user, updated=True)
+
+    def set_shell(self, username: str, *, shell: str) -> ChrootUserShellResult:
         self._require_installed()
         user = validate_username(username)
         shell_path = self._validate_shell(shell)
         self._chroot_sh(f"usermod -s {shlex.quote(shell_path)} {shlex.quote(user)}")
-        return {"username": user, "shell": shell_path, "updated": "yes"}
+        return ChrootUserShellResult(username=user, shell=shell_path, updated=True)
 
-    def set_sudo(self, username: str, *, enabled: bool) -> dict[str, str]:
+    def set_sudo(self, username: str, *, enabled: bool) -> ChrootUserSudoResult:
         self._require_installed()
         user = validate_username(username)
         if enabled:
@@ -126,7 +146,7 @@ class ChrootUserManager:
         else:
             self._chroot_sh(f"gpasswd -d {shlex.quote(user)} sudo >/dev/null 2>&1 || true")
             self._remove_sudoers(user)
-        return {"username": user, "sudo": "enabled" if enabled else "disabled"}
+        return ChrootUserSudoResult(username=user, enabled=enabled)
 
     def _find_user(self, username: str) -> ChrootUser:
         user = validate_username(username)
@@ -160,7 +180,7 @@ class ChrootUserManager:
         sudoers = self._sudoers_path(username)
         if not self.runner.dry_run:
             sudoers.parent.mkdir(parents=True, exist_ok=True)
-            sudoers.write_text(f"{username} ALL=(ALL:ALL) ALL\n", encoding="utf-8")
+            sudoers.write_text(self._sudoers_rule(username) + "\n", encoding="utf-8")
             sudoers.chmod(0o440)
 
     def _remove_sudoers(self, username: str) -> None:
@@ -168,5 +188,19 @@ class ChrootUserManager:
         if sudoers.exists() and not self.runner.dry_run:
             sudoers.unlink()
 
-    def _has_sudo_marker(self, username: str) -> bool:
-        return self._sudoers_path(username).exists()
+    def _sudoers_rule(self, username: str) -> str:
+        return f"{username} ALL=(ALL:ALL) ALL"
+
+    def _has_sudo_access(self, username: str) -> bool:
+        sudoers = self._sudoers_path(username)
+        if not sudoers.is_file():
+            return False
+        try:
+            lines = [
+                line.strip()
+                for line in sudoers.read_text(encoding="utf-8", errors="ignore").splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
+            ]
+        except OSError:
+            return False
+        return self._sudoers_rule(username) in lines

@@ -10,6 +10,7 @@ import yaml
 
 from .config import ChrootConfig
 from .interactive import Choice, select_many
+from .models import CatalogApplyResult
 from .registry import ChrootRegistry
 from .system import SystemRunner
 from .user_sync import UserSyncManager
@@ -96,7 +97,7 @@ class ManifestCatalog:
         runner: SystemRunner,
         registry: ChrootRegistry,
         logger,
-    ) -> dict[str, str]:
+    ) -> CatalogApplyResult:
         record = registry.get(config.distro_name)
         if record is None or not bool(record.get("installed")):
             raise RuntimeError("chroot must be installed first")
@@ -130,13 +131,13 @@ class ManifestCatalog:
             metadata=metadata,
         )
         logger.info("applied %s %s to %s", self.kind, name, config.distro_name)
-        return {
-            "kind": self.kind,
-            "name": name,
-            "distro": target_distro,
-            "categories": ",".join(entry.categories),
-            "applied": "yes",
-        }
+        return CatalogApplyResult(
+            kind=self.kind,
+            name=name,
+            distro=target_distro,
+            categories=entry.categories,
+            applied=True,
+        )
 
     def _run_script(
         self,

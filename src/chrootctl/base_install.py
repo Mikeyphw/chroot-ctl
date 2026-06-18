@@ -12,6 +12,12 @@ from urllib.request import urlopen
 
 from .config import ChrootConfig
 from .controller import ChrootController
+from .models import (
+    InstallAlreadyCompleteResult,
+    InstallFinalizeResult,
+    InstallerResult,
+    UpgradeResult,
+)
 from .registry import ChrootRegistry
 from .system import SystemRunner
 from .user_sync import UserSyncManager, validate_username
@@ -27,6 +33,7 @@ PROFILE_DEFAULT_DESKTOP = {
     "custom": "none",
 }
 
+
 class LinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -39,10 +46,18 @@ class LinkParser(HTMLParser):
             if key == "href" and value:
                 self.links.append(value)
 
+
 @dataclass(slots=True)
 class ReleaseRef:
     label: str
     url: str
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "label": self.label,
+            "url": self.url,
+        }
+
 
 class BaseInstaller:
     distro: str = ""
@@ -158,7 +173,15 @@ class BaseInstaller:
                 f"phase '{requested}' is gated because current phase is '{current}'. Use --force-phase to bypass."
             )
 
-    def mark_phase(self, phase: InstallPhase, *, installed: bool = False, version: str | None = None, release_name: str | None = None, metadata: dict | None = None) -> None:
+    def mark_phase(
+        self,
+        phase: InstallPhase,
+        *,
+        installed: bool = False,
+        version: str | None = None,
+        release_name: str | None = None,
+        metadata: dict | None = None,
+    ) -> None:
         record = self.registry.get(self.config.distro_name) or {}
         merged = dict(record.get("metadata", {}))
         if metadata:
@@ -253,16 +276,34 @@ class BaseInstaller:
     def infer_phase_from_filesystem(self) -> InstallPhase:
         raise NotImplementedError
 
-    def run_phase_extract(self, *, version: str | None, release: str | None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_extract(
+        self,
+        *,
+        version: str | None,
+        release: str | None,
+        force_phase: bool = False,
+    ) -> InstallerResult:
         raise NotImplementedError
 
-    def run_phase_bootstrap(self, *, username: str, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_bootstrap(
+        self,
+        *,
+        username: str,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallerResult:
         raise NotImplementedError
 
-    def run_phase_desktop(self, *, desktop: str | None, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_desktop(
+        self,
+        *,
+        desktop: str | None,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallerResult:
         raise NotImplementedError
 
-    def upgrade(self) -> dict[str, str]:
+    def upgrade(self) -> UpgradeResult:
         self.runner.require_root()
         snapshot = self._create_snapshot("upgrade")
         self.controller.mount()
@@ -270,21 +311,34 @@ class BaseInstaller:
         self._run_upgrade()
         self._run_post_install_hooks()
         self.mark_phase(self.current_phase(), metadata={"last_upgrade": "true", "upgrade_snapshot": snapshot or ""})
-        return {"status": "upgraded", "snapshot": snapshot or ""}
+        return UpgradeResult(status="upgraded", snapshot=snapshot or "")
 
     def _run_upgrade(self) -> None:
         raise NotImplementedError
 
-    def run_phase_finalize(self, *, username: str, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_finalize(self, *, username: str, force_phase: bool = False) -> InstallFinalizeResult:
         self.assert_phase_allowed("finalize", force_phase)
         snapshot = self._create_snapshot("finalize")
         self.user_sync.sync_id(username=username, fix_ownership=True)
         self._run_post_install_hooks()
         self.mark_phase("finalize", installed=True, metadata={"uid_sync": True, "finalize_snapshot": snapshot or ""})
-        return {"phase": "finalize", "installed": "true", "uid_sync": "true", "snapshot": snapshot or ""}
+        return InstallFinalizeResult(installed=True, uid_sync=True, snapshot=snapshot or "")
 
-    def install(self, *, phase: InstallPhase | None, username: str, desktop: str | None, version: str | None, release: str | None, force_phase: bool, auto: bool, resume: bool = False, repair: bool = False, profile: str | None = None) -> list[dict[str, str]]:
-        results: list[dict[str, str]] = []
+    def install(
+        self,
+        *,
+        phase: InstallPhase | None,
+        username: str,
+        desktop: str | None,
+        version: str | None,
+        release: str | None,
+        force_phase: bool,
+        auto: bool,
+        resume: bool = False,
+        repair: bool = False,
+        profile: str | None = None,
+    ) -> list[InstallerResult]:
+        results: list[InstallerResult] = []
         selected_profile = self._selected_profile(profile)
         selected_desktop = self._selected_desktop(desktop, selected_profile)
         if repair:
@@ -300,7 +354,7 @@ class BaseInstaller:
         if auto or resume or phase is None:
             record = self.registry.get(self.config.distro_name)
             if record and record.get("installed"):
-                return [{"phase": "finalize", "installed": "true", "status": "already_complete"}]
+                return [InstallAlreadyCompleteResult()]
             start_phase = phase or self._default_install_phase()
             start_phase = self._recover_phase_if_needed(start_phase, force_phase=force_phase)
             for item in PHASES[PHASES.index(start_phase):]:

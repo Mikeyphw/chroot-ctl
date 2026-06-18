@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} · chrootctl</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+  </head>
+  <body>
+    {% set path = request.url.path %}
+    {% set toast_message = request.query_params.get('toast') %}
+    {% set toast_kind = request.query_params.get('toast_kind') or 'ok' %}
+    <div class="app-shell">
+      <header class="site-header">
+        <div class="site-header-inner">
+          <div class="brand-block">
+            <a class="brand-mark" href="/">cc</a>
+            <div class="brand-copy">
+              <p class="eyebrow">Local Web UI</p>
+              <h1><a href="/">chrootctl</a></h1>
+              <p class="muted">Bound to {{ request.state.web_security.bind_host }}:{{ request.state.web_security.bind_port }}</p>
+            </div>
+          </div>
+
+          <nav class="nav-scroll" aria-label="Primary">
+            <a class="nav-link {% if path == '/' %}active{% endif %}" href="/">Dashboard</a>
+            <a class="nav-link {% if path.startswith('/install') %}active{% endif %}" href="/install">Install</a>
+            <a class="nav-link {% if path.startswith('/chroots') %}active{% endif %}" href="/chroots">Chroots</a>
+            <a class="nav-link {% if path.startswith('/tools') %}active{% endif %}" href="/tools">Tools</a>
+            <a class="nav-link {% if path.startswith('/addons') %}active{% endif %}" href="/addons">Addons</a>
+            <a class="nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">Logs</a>
+            <a class="nav-link {% if path.startswith('/doctor') or path.startswith('/status') %}active{% endif %}" href="/doctor">Checks</a>
+          </nav>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        <section class="status-strip {{ 'root' if request.state.web_security.running_as_root else 'warn' }}">
+          <div>
+            {% if request.state.web_security.running_as_root %}
+            <strong>Running as root.</strong>
+            <span class="muted">Mutating actions execute directly from the local Web UI process.</span>
+            {% else %}
+            <strong>Running as {{ request.state.web_security.username }} (uid {{ request.state.web_security.effective_uid }}).</strong>
+            <span class="muted">Install, upgrade, rename, remove, and user-management actions usually require root.</span>
+            {% endif %}
+          </div>
+          <div class="chip-list">
+            {% if request.state.web_security.access_token_enabled %}
+            <span class="status-chip warn">token required</span>
+            {% endif %}
+            <span class="status-chip {% if request.state.web_security.running_as_root %}ok{% else %}warn{% endif %}">
+              {{ 'root ready' if request.state.web_security.running_as_root else 'limited writes' }}
+            </span>
+          </div>
+        </section>
+
+        {% if toast_message %}
+        <section class="toast-stack inline">
+          <article class="toast toast-{{ toast_kind }}" data-toast>
+            <div class="toast-copy">
+              <strong>{{ toast_message }}</strong>
+            </div>
+            <button type="button" class="toast-dismiss" data-dismiss="toast" aria-label="Dismiss">×</button>
+          </article>
+        </section>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+      </main>
+
+      <nav class="mobile-nav" aria-label="Mobile">
+        <div class="mobile-nav-inner">
+          <a class="mobile-nav-link {% if path == '/' %}active{% endif %}" href="/">
+            <span>Home</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/install') %}active{% endif %}" href="/install">
+            <span>Install</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/chroots') %}active{% endif %}" href="/chroots">
+            <span>Chroots</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">
+            <span>Logs</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/doctor') or path.startswith('/status') %}active{% endif %}" href="/doctor">
+            <span>Checks</span>
+          </a>
+        </div>
+      </nav>
+
+      <div class="toast-stack floating" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <script>
+    (() => {
+      const body = document.body;
+      body.classList.add("js");
+
+      const toastStack = document.getElementById("toast-stack");
+      window.chrootctlToast = (message, kind = "ok", timeout = 3400) => {
+        if (!toastStack || !message) return;
+        const toast = document.createElement("article");
+        toast.className = `toast toast-${kind}`;
+        toast.innerHTML = `<div class="toast-copy"><strong>${message}</strong></div><button type="button" class="toast-dismiss" aria-label="Dismiss">×</button>`;
+        toast.querySelector(".toast-dismiss")?.addEventListener("click", () => toast.remove());
+        toastStack.appendChild(toast);
+        if (timeout > 0) {
+          window.setTimeout(() => toast.remove(), timeout);
+        }
+      };
+
+      document.querySelectorAll("[data-dismiss='toast']").forEach((button) => {
+        button.addEventListener("click", () => button.closest(".toast")?.remove());
+      });
+
+      document.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        form.classList.add("is-submitting");
+        if (form.dataset.toast && window.chrootctlToast) {
+          window.chrootctlToast(form.dataset.toast, form.dataset.toastKind || "ok", 1800);
+        }
+        form.querySelectorAll("button, input[type='submit']").forEach((node) => {
+          if (node instanceof HTMLButtonElement || node instanceof HTMLInputElement) {
+            node.disabled = true;
+            node.classList.add("is-loading");
+          }
+        });
+      }, true);
+
+      window.requestAnimationFrame(() => body.classList.add("app-ready"));
+    })();
+    </script>
+  </body>
+</html>
