@@ -7,11 +7,13 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
     {% set path = request.url.path %}
     {% set toast_message = request.query_params.get('toast') %}
     {% set toast_kind = request.query_params.get('toast_kind') or 'ok' %}
+    <div class="app-backdrop" aria-hidden="true"><span class="app-glow app-glow-a"></span><span class="app-glow app-glow-b"></span><span class="app-grid"></span></div>
     <div class="app-shell">
-      <header class="site-header">
+      <header class="site-header" data-reveal="down">
         <div class="site-header-inner">
           <div class="brand-block">
             <a class="brand-mark" href="/">cc</a>
@@ -24,18 +26,25 @@
 
           <nav class="nav-scroll" aria-label="Primary">
             <a class="nav-link {% if path == '/' %}active{% endif %}" href="/">Dashboard</a>
+            <a class="nav-link {% if path == '/quickstart' %}active{% endif %}" href="/quickstart">Quick Start</a>
             <a class="nav-link {% if path.startswith('/install') %}active{% endif %}" href="/install">Install</a>
             <a class="nav-link {% if path.startswith('/chroots') %}active{% endif %}" href="/chroots">Chroots</a>
+            <a class="nav-link {% if path.startswith('/transfer') %}active{% endif %}" href="/transfer">Transfer</a>
+            <a class="nav-link {% if path.startswith('/build') %}active{% endif %}" href="/build">Build</a>
+            <a class="nav-link {% if path.startswith('/jobs') %}active{% endif %}" href="/jobs">Jobs</a>
             <a class="nav-link {% if path.startswith('/tools') %}active{% endif %}" href="/tools">Tools</a>
             <a class="nav-link {% if path.startswith('/addons') %}active{% endif %}" href="/addons">Addons</a>
             <a class="nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">Logs</a>
             <a class="nav-link {% if path.startswith('/doctor') or path.startswith('/status') %}active{% endif %}" href="/doctor">Checks</a>
+            <a class="nav-link {% if path.startswith('/docs') or path.startswith('/api/openapi') %}active{% endif %}" href="/docs">Docs</a>
+            <a class="nav-link {% if path.startswith('/faq') %}active{% endif %}" href="/faq">FAQ</a>
+            <a class="nav-link {% if path.startswith('/support') %}active{% endif %}" href="/support">Support</a>
           </nav>
         </div>
       </header>
 
-      <main class="page-shell">
-        <section class="status-strip {{ 'root' if request.state.web_security.running_as_root else 'warn' }}">
+      <main class="page-shell" id="main-content">
+        <section class="status-strip" data-reveal="up" {{ 'root' if request.state.web_security.running_as_root else 'warn' }}">
           <div>
             {% if request.state.web_security.running_as_root %}
             <strong>Running as root.</strong>
@@ -69,7 +78,7 @@
         {% block content %}{% endblock %}
       </main>
 
-      <nav class="mobile-nav" aria-label="Mobile">
+      <nav class="mobile-nav" aria-label="Mobile" data-reveal="up">
         <div class="mobile-nav-inner">
           <a class="mobile-nav-link {% if path == '/' %}active{% endif %}" href="/">
             <span>Home</span>
@@ -79,6 +88,12 @@
           </a>
           <a class="mobile-nav-link {% if path.startswith('/chroots') %}active{% endif %}" href="/chroots">
             <span>Chroots</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/transfer') %}active{% endif %}" href="/transfer">
+            <span>Files</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/jobs') %}active{% endif %}" href="/jobs">
+            <span>Jobs</span>
           </a>
           <a class="mobile-nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">
             <span>Logs</span>
@@ -110,6 +125,69 @@
         }
       };
 
+
+
+      window.chrootctlCopyText = async (text, label = "Copied") => {
+        try {
+          await navigator.clipboard.writeText(text);
+          window.chrootctlToast?.(label, "ok", 1800);
+          return true;
+        } catch (error) {
+          window.chrootctlToast?.("Copy failed", "bad", 2200);
+          return false;
+        }
+      };
+      window.chrootctlPoll = ({ url, interval = 2500, onData, onError, stopWhen }) => {
+        let timer = null;
+        let stopped = false;
+
+        const tick = async () => {
+          if (stopped) return;
+          try {
+            const response = await fetch(url, {
+              headers: { Accept: "application/json" },
+              cache: "no-store",
+            });
+            if (!response.ok) {
+              throw new Error(`poll failed: ${response.status}`);
+            }
+            const data = await response.json();
+            onData?.(data);
+            if (stopWhen?.(data)) {
+              stopped = true;
+              return;
+            }
+          } catch (error) {
+            onError?.(error);
+          }
+          timer = window.setTimeout(tick, interval);
+        };
+
+        tick();
+        return () => {
+          stopped = true;
+          if (timer) window.clearTimeout(timer);
+        };
+      };
+
+      window.chrootctlJobNotifier = (() => {
+        const announced = new Map();
+        return {
+          update(items) {
+            for (const item of items || []) {
+              const prior = announced.get(item.job_id);
+              if (prior === item.state) continue;
+              announced.set(item.job_id, item.state);
+              if (item.state === "succeeded") {
+                window.chrootctlToast?.(`${item.title} completed.`, "ok", 2600);
+              } else if (item.state === "failed") {
+                window.chrootctlToast?.(`${item.title} failed.`, "bad", 3600);
+              }
+            }
+          },
+        };
+      })();
+
       document.querySelectorAll("[data-dismiss='toast']").forEach((button) => {
         button.addEventListener("click", () => button.closest(".toast")?.remove());
       });
@@ -128,6 +206,37 @@
           }
         });
       }, true);
+
+
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      if (!prefersReducedMotion.matches) {
+        const revealNodes = document.querySelectorAll("[data-reveal]");
+        const revealObserver = "IntersectionObserver" in window
+          ? new IntersectionObserver((entries, observer) => {
+              entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add("is-visible");
+                observer.unobserve(entry.target);
+              });
+            }, { threshold: 0.12, rootMargin: "0px 0px -24px 0px" })
+          : null;
+        revealNodes.forEach((node, index) => {
+          node.style.setProperty("--reveal-delay", `${Math.min(index * 45, 260)}ms`);
+          if (revealObserver) {
+            revealObserver.observe(node);
+          } else {
+            node.classList.add("is-visible");
+          }
+        });
+      } else {
+        document.querySelectorAll("[data-reveal]").forEach((node) => node.classList.add("is-visible"));
+      }
+
+      const compactNav = document.querySelector(".mobile-nav-inner");
+      if (compactNav) {
+        const activeLink = compactNav.querySelector(".mobile-nav-link.active");
+        activeLink?.setAttribute("aria-current", "page");
+      }
 
       window.requestAnimationFrame(() => body.classList.add("app-ready"));
     })();

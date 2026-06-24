@@ -9,6 +9,7 @@ from ..system import SystemRunner
 from .catalog import handle_addons, handle_tools
 from .chroots import handle_chroots
 from .install import handle_install, handle_upgrade
+from .magisk import handle_magisk
 from .session import (
     handle_doctor,
     handle_exec,
@@ -20,7 +21,9 @@ from .session import (
     handle_status,
     handle_unmount,
 )
+from .transfer import handle_transfer
 from .users import handle_users
+from .common import emit_panel, emit_table, progress_call
 
 if TYPE_CHECKING:
     from .core import RuntimeContext
@@ -68,12 +71,14 @@ COMMAND_SPECS: dict[str, CommandSpec] = {
     "start": CommandSpec("start", handle_start, RootPolicy.always_required()),
     "restart": CommandSpec("restart", handle_restart, RootPolicy.always_required()),
     "exec": CommandSpec("exec", handle_exec, RootPolicy.always_required()),
-    "chroots": CommandSpec("chroots", handle_chroots, RootPolicy.for_subcommands("chroots_command", "remove")),
+    "chroots": CommandSpec("chroots", handle_chroots, RootPolicy.for_subcommands("chroots_command", "remove", "export", "import")),
+    "transfer": CommandSpec("transfer", handle_transfer, RootPolicy.for_subcommands("transfer_command", "export", "import")),
     "users": CommandSpec("users", handle_users, RootPolicy.always_required()),
     "tools": CommandSpec("tools", handle_tools, RootPolicy.for_subcommands("tools_command", "apply")),
     "addons": CommandSpec("addons", handle_addons, RootPolicy.for_subcommands("addons_command", "apply")),
     "install": CommandSpec("install", handle_install, RootPolicy.always_required()),
     "upgrade": CommandSpec("upgrade", handle_upgrade, RootPolicy.always_required()),
+    "magisk": CommandSpec("magisk", handle_magisk),
 }
 
 
@@ -101,3 +106,20 @@ def maybe_reexec_with_sudo(args: argparse.Namespace, runner: SystemRunner) -> No
         raise PermissionError("root privileges required; rerun without --no-sudo to auto-escalate")
     code = runner.reexec_with_sudo(runner.python_reexec_argv())
     raise SystemExit(code)
+
+
+def handle_events(context: "RuntimeContext") -> None:
+    args = context.args
+    if args.events_command == "list":
+        emit_table(context, "Audit Events", context.services.audit().recent(limit=args.limit))
+        return
+    raise RuntimeError(f"unsupported events command: {args.events_command}")
+
+
+def handle_support_bundle(context: "RuntimeContext") -> None:
+    args = context.args
+    result = progress_call(
+        "Exporting support bundle",
+        lambda: context.services.support().export_bundle(args.archive, jobs=getattr(context, "jobs", None)),
+    )
+    emit_panel(context, "Support Bundle", result)

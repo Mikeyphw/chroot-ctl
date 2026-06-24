@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import pwd
 import shlex
 import shutil
@@ -129,5 +130,45 @@ class SystemRunner:
         stat = termux_home.stat()
         return stat.st_uid, stat.st_gid
 
+
+    def host_arch(self) -> str:
+        machine = platform.machine().lower()
+        aliases = {
+            "x86_64": "amd64",
+            "amd64": "amd64",
+            "aarch64": "arm64",
+            "arm64": "arm64",
+        }
+        return aliases.get(machine, machine)
+
     def current_username(self) -> str:
         return pwd.getpwuid(os.getuid()).pw_name
+
+    def command_exists(self, command: str) -> bool:
+        return shutil.which(command) is not None
+
+    def can_execute_foreign_arch(self, arch: str) -> bool:
+        qemu_binary = f"qemu-{arch}-static"
+        if not self.command_exists(qemu_binary):
+            return False
+        binfmt_misc = Path("/proc/sys/fs/binfmt_misc")
+        if not binfmt_misc.exists():
+            return False
+        status_path = binfmt_misc / "status"
+        try:
+            status_text = status_path.read_text(encoding="utf-8", errors="replace").strip().lower()
+        except OSError:
+            status_text = ""
+        if status_text and status_text not in {"1", "enabled"}:
+            return False
+        for candidate in (f"qemu-{arch}", f"qemu-{arch}-static", arch, arch.upper()):
+            entry = binfmt_misc / candidate
+            if not entry.exists():
+                continue
+            try:
+                entry_text = entry.read_text(encoding="utf-8", errors="replace").lower()
+            except OSError:
+                continue
+            if "enabled" in entry_text:
+                return True
+        return False

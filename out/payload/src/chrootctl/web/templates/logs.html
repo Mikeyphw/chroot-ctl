@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Logs</p>
+      <h2 class="page-title">Live tail{% if selected_name %} · {{ selected_name }}{% endif %}</h2>
+      <p class="panel-copy">Follow the current log file live, filter by level, and jump back to the affected chroot, user, tool, or addon pages.</p>
+    </div>
+    <span class="badge {{ 'ok' if follow else 'warn' }}" id="log-follow-badge">{{ "live" if follow else "paused" }}</span>
+  </div>
+</section>
+
+<section class="collapsible-grid">
+  <details class="card fold-card" open>
+    <summary class="fold-summary">
+      <div class="fold-summary-copy">
+        <p class="eyebrow">Filters</p>
+        <h3 class="section-title">Tail, level, and target</h3>
+      </div>
+      <div class="fold-summary-meta">
+        <span class="badge subtle">{{ tail }} lines</span>
+        <span class="fold-arrow">⌄</span>
+      </div>
+    </summary>
+    <div class="fold-body">
+      <form method="get" action="/logs" class="toolbar" data-toast="Updating log filters…" data-toast-kind="ok">
+        <label>
+          Chroot
+          <select name="name">
+            <option value="">All logs</option>
+            {% for chroot in chroots %}
+            <option value="{{ chroot.name }}" {% if selected_name == chroot.name %}selected{% endif %}>{{ chroot.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Level
+          <select name="level">
+            {% for item in levels %}
+            <option value="{{ item }}" {% if selected_level == item %}selected{% endif %}>{{ item or "all" }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Tail
+          <input type="number" name="tail" min="10" max="2000" step="10" value="{{ tail }}">
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="follow" value="true" {% if follow %}checked{% endif %}>
+          <span>Follow live</span>
+        </label>
+        <div class="toolbar-action">
+          <button type="submit">Apply filters</button>
+        </div>
+      </form>
+    </div>
+  </details>
+</section>
+
+<section class="detail-grid">
+  <details class="card fold-card" open>
+    <summary class="fold-summary">
+      <div class="fold-summary-copy">
+        <p class="eyebrow">Context</p>
+        <h3 class="section-title">Current source</h3>
+      </div>
+      <div class="fold-summary-meta">
+        <span class="badge ok" id="log-count">{{ snapshot.entries | length }} lines</span>
+        <span class="fold-arrow">⌄</span>
+      </div>
+    </summary>
+    <div class="fold-body tight">
+      <dl class="kv">
+        <div class="kv-pair">
+          <dt>Path</dt>
+          <dd><code class="code-token" id="log-path">{{ snapshot.log_file }}</code></dd>
+        </div>
+        <div class="kv-pair">
+          <dt>Level</dt>
+          <dd id="log-level">{{ snapshot.level or "all" }}</dd>
+        </div>
+        <div class="kv-pair">
+          <dt>Mode</dt>
+          <dd id="log-mode">{{ "follow" if follow else "snapshot" }}</dd>
+        </div>
+        <div class="kv-pair">
+          <dt>Target</dt>
+          <dd>{{ selected_name or "all chroots" }}</dd>
+        </div>
+      </dl>
+    </div>
+  </details>
+
+  <details class="card fold-card" {% if recent_jobs or snapshot.related_links %}open{% endif %}>
+    <summary class="fold-summary">
+      <div class="fold-summary-copy">
+        <p class="eyebrow">Related</p>
+        <h3 class="section-title">Jobs and deep links</h3>
+      </div>
+      <div class="fold-summary-meta">
+        <span class="badge warn">{{ (recent_jobs | length) + (snapshot.related_links | length) }}</span>
+        <span class="fold-arrow">⌄</span>
+      </div>
+    </summary>
+    <div class="fold-body">
+      {% if snapshot.related_links %}
+      <div class="link-cloud">
+        {% for link in snapshot.related_links %}
+        <a class="button-link subtle" href="{{ link.href }}">{{ link.label }}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if recent_jobs %}
+      <ul class="list jobs-list">
+        {% for job in recent_jobs %}
+        <li class="item-card">
+          <div class="item-header">
+            <div>
+              <a class="item-title" href="/jobs/{{ job.job_id }}">{{ job.title }}</a>
+              <p class="item-summary">{{ job.progress_text }}</p>
+            </div>
+            <span class="badge {{ 'ok' if job.state == 'succeeded' else ('bad' if job.state == 'failed' else 'warn') }}">{{ job.state }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif not snapshot.related_links %}
+      <article class="empty-state">
+        <span class="empty-icon">↗</span>
+        <h3>No related links yet</h3>
+        <p class="muted">As jobs and parsed log references appear, deep links will collect here.</p>
+      </article>
+      {% endif %}
+    </div>
+  </details>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Stream</p>
+      <h2 class="section-title">Live output</h2>
+      <p class="panel-copy">The stream keeps the current path visible and updates in place while follow mode is active.</p>
+    </div>
+  </div>
+
+  <div class="stream-frame">
+    <div class="boot-skeleton skeleton-stack" id="log-loading">
+      <div class="skeleton-card"></div>
+      <div class="skeleton-line medium"></div>
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line short"></div>
+    </div>
+
+    <div id="log-stream" class="log-stream">
+      {% for entry in snapshot.entries %}
+      <article class="log-entry {% if entry.level %}level-{{ entry.level | lower }}{% endif %}">
+        <pre class="log-line">{{ entry.line }}</pre>
+        {% if entry.links %}
+        <div class="inline-links">
+          {% for link in entry.links %}
+          <a class="button-link subtle" href="{{ link.href }}">{{ link.label }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </article>
+      {% else %}
+      <article class="empty-state">
+        <span class="empty-icon">…</span>
+        <h3>No log lines yet</h3>
+        <p class="muted">Increase the tail size or follow live updates to wait for new output.</p>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<script>
+(() => {
+  const enabled = {{ follow | tojson }};
+  const sourcePathNode = document.getElementById("log-path");
+  const levelNode = document.getElementById("log-level");
+  const modeNode = document.getElementById("log-mode");
+  const countNode = document.getElementById("log-count");
+  const followBadge = document.getElementById("log-follow-badge");
+  const streamNode = document.getElementById("log-stream");
+  const loadingNode = document.getElementById("log-loading");
+
+  function renderEntries(entries) {
+    loadingNode?.remove();
+    if (!entries.length) {
+      streamNode.innerHTML = '<article class="empty-state"><span class="empty-icon">…</span><h3>No log lines yet</h3><p class="muted">Increase the tail size or follow live updates to wait for new output.</p></article>';
+      countNode.textContent = '0 lines';
+      return;
+    }
+    const atBottom = Math.abs((streamNode.scrollTop + streamNode.clientHeight) - streamNode.scrollHeight) < 48;
+    streamNode.innerHTML = "";
+    for (const entry of entries) {
+      const article = document.createElement("article");
+      article.className = "log-entry";
+      if (entry.level) {
+        article.className += ` level-${entry.level.toLowerCase()}`;
+      }
+
+      const pre = document.createElement("pre");
+      pre.className = "log-line";
+      pre.textContent = entry.line;
+      article.appendChild(pre);
+
+      if (entry.links && entry.links.length) {
+        const linkBox = document.createElement("div");
+        linkBox.className = "inline-links";
+        for (const link of entry.links) {
+          const anchor = document.createElement("a");
+          anchor.className = "button-link subtle";
+          anchor.href = link.href;
+          anchor.textContent = link.label;
+          linkBox.appendChild(anchor);
+        }
+        article.appendChild(linkBox);
+      }
+
+      streamNode.appendChild(article);
+    }
+    countNode.textContent = `${entries.length} lines`;
+    if (atBottom) {
+      streamNode.scrollTop = streamNode.scrollHeight;
+    }
+  }
+
+  if (!enabled) {
+    loadingNode?.remove();
+    return;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  params.set("follow", "true");
+  const source = new EventSource(`/api/logs/events?${params.toString()}`);
+
+  source.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    const snapshot = data.snapshot || {};
+    sourcePathNode.textContent = snapshot.log_file || "—";
+    levelNode.textContent = snapshot.level || "all";
+    modeNode.textContent = "follow";
+    followBadge.textContent = "live";
+    followBadge.className = "badge ok";
+    renderEntries(snapshot.entries || []);
+  };
+
+  source.onerror = () => {
+    followBadge.textContent = "reconnecting";
+    followBadge.className = "badge warn";
+    if (window.chrootctlToast) {
+      window.chrootctlToast("Log stream interrupted. Reconnecting…", "warn", 2200);
+    }
+  };
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,7 @@
+description: Prepare common shared-folder mount points and helpers
+distro: all
+categories:
+- filesystem
+- desktop
+script: setup-shared-folders.sh
+name: setup-shared-folders

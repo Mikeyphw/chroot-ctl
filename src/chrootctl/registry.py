@@ -26,6 +26,17 @@ FOR EACH ROW
 BEGIN
     UPDATE chroots SET updated_at = CURRENT_TIMESTAMP WHERE name = OLD.name;
 END;
+
+CREATE TABLE IF NOT EXISTS events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    result TEXT NOT NULL DEFAULT 'ok',
+    message TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 class ChrootRegistry:
@@ -99,3 +110,70 @@ class ChrootRegistry:
                 "SELECT name, distro, path, release_name, version, phase, installed, created_at, updated_at FROM chroots ORDER BY name"
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def add_event(
+        self,
+        *,
+        event_type: str,
+        actor: str,
+        target: str = "",
+        result: str = "ok",
+        message: str = "",
+        metadata: dict[str, Any] | None = None,
+    ):
+        payload = json.dumps(metadata or {}, sort_keys=True)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO events (event_type, actor, target, result, message, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (event_type, actor, target, result, message, payload),
+            )
+            event_id = int(cursor.lastrowid)
+        return self.get_event(event_id)
+
+    def get_event(self, event_id: int):
+        row = None
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM events WHERE event_id = ?", (event_id,)).fetchone()
+        if row is None:
+            raise KeyError(event_id)
+        from .models import AuditEvent
+
+        metadata = json.loads(str(row["metadata_json"] or "{}"))
+        return AuditEvent(
+            event_id=int(row["event_id"]),
+            event_type=str(row["event_type"]),
+            actor=str(row["actor"]),
+            target=str(row["target"]),
+            result=str(row["result"]),
+            message=str(row["message"]),
+            created_at=str(row["created_at"]),
+            metadata={str(key): str(value) for key, value in metadata.items()} if isinstance(metadata, dict) else {},
+        )
+
+    def list_events(self, *, limit: int = 20):
+        from .models import AuditEvent
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM events ORDER BY event_id DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        events = []
+        for row in rows:
+            metadata = json.loads(str(row["metadata_json"] or "{}"))
+            events.append(
+                AuditEvent(
+                    event_id=int(row["event_id"]),
+                    event_type=str(row["event_type"]),
+                    actor=str(row["actor"]),
+                    target=str(row["target"]),
+                    result=str(row["result"]),
+                    message=str(row["message"]),
+                    created_at=str(row["created_at"]),
+                    metadata={str(key): str(value) for key, value in metadata.items()} if isinstance(metadata, dict) else {},
+                )
+            )
+        return events

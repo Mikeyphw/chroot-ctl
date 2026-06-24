@@ -1,0 +1,7 @@
+description: Install locale packages and generate en_US.UTF-8
+distro: all
+categories:
+- localization
+- system
+script: setup-locales.sh
+name: setup-locales

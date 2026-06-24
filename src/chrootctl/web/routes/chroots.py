@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse
 
 from ..deps import get_jobs, get_services, get_templates, resolve_log_path
@@ -19,13 +19,28 @@ def _bool_from_form(value: str | None) -> bool:
 
 
 @router.get("")
-def list_chroots(request: Request, services=Depends(get_services), templates=Depends(get_templates)):
+def list_chroots(
+    request: Request,
+    left: str | None = Query(default=None),
+    right: str | None = Query(default=None),
+    services=Depends(get_services),
+    templates=Depends(get_templates),
+):
+    chroots = services.chroots().list()
+    diff_result = None
+    if left and right:
+        try:
+            diff_result = services.chroots().package_diff(left, right)
+        except Exception as exc:
+            diff_result = {"error": str(exc), "left": left, "right": right}
     return templates.TemplateResponse(
         request,
         "chroots.html",
         {
             "page_title": "Chroots",
-            "chroots": services.chroots().list(),
+            "chroots": chroots,
+            "chroot_names": [item.name for item in chroots],
+            "diff_result": diff_result,
         },
     )
 
@@ -40,6 +55,8 @@ def show_chroot(name: str, request: Request, services=Depends(get_services), tem
             "chroot": services.chroots().get(name),
             "status_rows": services.system().status(name),
             "doctor_rows": services.system().doctor(name),
+            "shell_command": f"chrootctl --name {name} start --login",
+            "exec_command": f"chrootctl --name {name} exec -- command -v python3",
         },
     )
 

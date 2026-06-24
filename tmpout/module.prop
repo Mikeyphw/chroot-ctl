@@ -1,0 +1,7 @@
+id=chrootctl-magisk
+name=chrootctl Magisk Module
+version=1.2.5
+versionCode=13
+author=chrootctl
+description=Self-contained Magisk/KSU module for boot startup, helper commands, and the chrootctl Web UI.
+webuiIcon=webroot/icon.svg

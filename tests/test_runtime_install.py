@@ -359,3 +359,52 @@ def test_maybe_run_post_install_actions_syncs_and_starts(monkeypatch, tmp_path: 
     assert sync_calls == [("devuser", True)]
     assert start_calls == [(True, False)]
     assert panels == [("User Sync", {"username": "devuser", "ownership_fixed": True})]
+
+
+def test_handle_install_allows_fresh_install_with_explicit_username(monkeypatch, tmp_path: Path) -> None:
+    context = build_context(tmp_path)
+    context.args.username = "devuser"
+    install_calls: list[dict[str, object]] = []
+
+    class Installer:
+        def list_versions(self):
+            return []
+
+        def install(self, **kwargs):
+            install_calls.append(kwargs)
+            return [InstallFinalizeResult(installed=True, uid_sync=True, snapshot="snap-1")]
+
+    monkeypatch.setattr(install_runtime, "build_installer", lambda *args, **kwargs: Installer())
+    monkeypatch.setattr(install_runtime, "progress_call", lambda description, fn: fn())
+    monkeypatch.setattr(install_runtime, "install_selection_names", lambda **kwargs: kwargs["explicit_names"])
+    monkeypatch.setattr(install_runtime, "emit_table", lambda context, title, rows: None)
+    monkeypatch.setattr(install_runtime, "emit_panel", lambda context, title, data: None)
+
+    install_runtime.handle_install(context)
+
+    assert install_calls[0]["username"] == "devuser"
+
+
+def test_handle_install_uses_default_username_for_fresh_install(monkeypatch, tmp_path: Path) -> None:
+    context = build_context(tmp_path)
+    context.args.username = None
+    context.config = context.config.with_overrides(username=None)
+    install_calls: list[dict[str, object]] = []
+
+    class Installer:
+        def list_versions(self):
+            return []
+
+        def install(self, **kwargs):
+            install_calls.append(kwargs)
+            return [InstallFinalizeResult(installed=True, uid_sync=True, snapshot="snap-1")]
+
+    monkeypatch.setattr(install_runtime, "build_installer", lambda *args, **kwargs: Installer())
+    monkeypatch.setattr(install_runtime, "progress_call", lambda description, fn: fn())
+    monkeypatch.setattr(install_runtime, "install_selection_names", lambda **kwargs: kwargs["explicit_names"])
+    monkeypatch.setattr(install_runtime, "emit_table", lambda context, title, rows: None)
+    monkeypatch.setattr(install_runtime, "emit_panel", lambda context, title, data: None)
+
+    install_runtime.handle_install(context)
+
+    assert install_calls[0]["username"] == "mike"

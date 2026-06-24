@@ -1,0 +1,7 @@
+description: Install baseline developer packages
+distro: all
+categories:
+- development
+- package-management
+script: setup-dev-basics.sh
+name: setup-dev-basics

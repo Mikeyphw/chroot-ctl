@@ -67,12 +67,14 @@ class JobSnapshot:
     error: str | None = None
     next_steps: tuple[str, ...] = ()
     log_lines: tuple[str, ...] = ()
+    progress_detail: dict[str, Any] = field(default_factory=dict)
+    progress_events: tuple[dict[str, Any], ...] = ()
 
     @property
     def complete(self) -> bool:
         return self.state in TERMINAL_JOB_STATES
 
-    def to_event_payload(self) -> dict[str, Any]:
+    def to_event_payload(self, *, log_download_url: str | None = None) -> dict[str, Any]:
         return {
             "job_id": self.job_id,
             "kind": self.kind,
@@ -84,10 +86,15 @@ class JobSnapshot:
             "finished_at": self.finished_at,
             "target_name": self.target_name,
             "log_path": str(self.log_path) if self.log_path is not None else None,
+            "log_download_url": log_download_url,
             "result_payload": _serialize(self.result_payload),
             "error": self.error,
             "next_steps": list(self.next_steps),
             "log_lines": list(self.log_lines),
+            "progress_detail": _serialize(self.progress_detail),
+            "progress_events": [_serialize(item) for item in self.progress_events],
+            "progress_percent": self.progress_detail.get("percent"),
+            "progress_phase": self.progress_detail.get("phase"),
             "complete": self.complete,
         }
 
@@ -107,6 +114,8 @@ class _JobRecord:
     result_payload: Any = None
     error: str | None = None
     next_steps: tuple[str, ...] = field(default_factory=tuple)
+    progress_detail: dict[str, Any] = field(default_factory=dict)
+    progress_events: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=40))
 
     def snapshot(self, *, tail: int = 50) -> JobSnapshot:
         return JobSnapshot(
@@ -124,6 +133,8 @@ class _JobRecord:
             error=self.error,
             next_steps=self.next_steps,
             log_lines=_tail_log_lines(self.log_path, tail),
+            progress_detail=dict(self.progress_detail),
+            progress_events=tuple(dict(item) for item in self.progress_events),
         )
 
 
@@ -188,8 +199,13 @@ class WebJobManager:
     def _run_job(self, job_id: str, runner: Callable[[Callable[[str], None]], Any]) -> None:
         self._update(job_id, state=JOB_RUNNING, started_at=time.time(), progress_text="Starting")
 
-        def progress(text: str) -> None:
-            self._update(job_id, progress_text=text)
+        def progress(update: Any) -> None:
+            if isinstance(update, dict):
+                detail = {str(key): value for key, value in update.items()}
+                text = str(detail.get("message") or detail.get("phase") or "Working")
+                self._update_progress(job_id, text=text, detail=detail)
+            else:
+                self._update_progress(job_id, text=str(update), detail={"message": str(update)})
 
         try:
             result = runner(progress)
@@ -211,6 +227,16 @@ class WebJobManager:
             result_payload=result,
             next_steps=_extract_next_steps(result),
         )
+
+    def _update_progress(self, job_id: str, *, text: str, detail: dict[str, Any]) -> None:
+        event = dict(detail)
+        event.setdefault("message", text)
+        event["timestamp"] = time.time()
+        with self._lock:
+            record = self._jobs[job_id]
+            record.progress_text = text
+            record.progress_detail = event
+            record.progress_events.append(event)
 
     def _update(self, job_id: str, **changes: Any) -> None:
         with self._lock:

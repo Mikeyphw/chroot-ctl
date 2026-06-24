@@ -83,6 +83,7 @@ class ChrootConfig:
     chroot_root: Path = Path("/data/local/tmp")
     distro_name: str = "ubuntu"
     username: str = "mike"
+    target_arch: str = "arm64"
     termux_home: Path = Path("/data/data/com.termux/files/home")
     termux_prefix: Path = Path("/data/data/com.termux/files/usr")
     log_file: Path = Path("/sdcard/.logs/chrootctl.log")
@@ -144,6 +145,7 @@ class ChrootConfig:
             "chroot_root": Path(payload.get("chroot_root", str(current.chroot_root))),
             "distro_name": payload.get("distro_name", current.distro_name),
             "username": payload.get("username", current.username),
+            "target_arch": payload.get("target_arch", current.target_arch),
             "termux_home": Path(payload.get("termux_home", str(current.termux_home))),
             "termux_prefix": Path(payload.get("termux_prefix", str(current.termux_prefix))),
             "log_file": Path(payload.get("log_file", str(current.log_file))),

@@ -15,7 +15,10 @@ def dashboard(
     jobs=Depends(get_jobs),
     templates=Depends(get_templates),
 ):
-    summary = services.system().dashboard()
+    try:
+        summary = services.system().dashboard()
+    except Exception:
+        summary = None
     cards: list[DashboardChrootCard] = []
     for chroot in services.chroots().list():
         try:
@@ -53,6 +56,91 @@ def dashboard(
             "summary": summary,
             "cards": cards,
             "recent_jobs": jobs.list_recent(),
+            "system_state": _lifecycle_status(request, services),
+            "install_state": _safe_install_state(services),
+            "cross_arch_state": _safe_cross_arch_state(services),
+            "host_doctor_rows": _safe_host_doctor_rows(services),
+            "foreign_arch_advisories": _safe_foreign_arch_advisories(services),
             "page_title": "Dashboard",
+            "recent_builds": _recent_builds(jobs),
+            "recent_events": services.audit().recent(limit=8),
+            "quickstart": _safe_quickstart(services),
         },
     )
+
+
+def _lifecycle_status(request: Request, services):
+    if hasattr(services, "lifecycle"):
+        return services.lifecycle().status(
+            host=request.app.state.web_security.bind_host,
+            port=request.app.state.web_security.bind_port,
+        )
+    return {
+        "state": "running",
+        "enabled": False,
+        "python": {"dependencies_ready": True},
+        "module": {"version": None},
+    }
+
+
+def _safe_install_state(services):
+    try:
+        return services.install().install_form_state()
+    except Exception:
+        return {
+            "defaults": {"distro": None, "name": None, "username": None, "profile": "minimal", "desktop": "none", "release": None, "version": None},
+            "distros": [],
+            "profiles": [],
+            "desktops": [],
+            "users": [],
+            "requirements": {"username_required": True, "root_required": True},
+            "rules": {},
+        }
+
+def _safe_cross_arch_state(services):
+    try:
+        return services.system().cross_arch_state()
+    except Exception:
+        return {"host_arch": "unknown", "targets": []}
+
+def _safe_host_doctor_rows(services):
+    try:
+        return services.system().host_doctor()
+    except Exception:
+        return []
+
+def _safe_foreign_arch_advisories(services):
+    try:
+        return services.system().foreign_arch_advisories()
+    except Exception:
+        return []
+
+
+def _recent_builds(jobs):
+    try:
+        return [job for job in jobs.list_recent(limit=6, tail=4) if getattr(job, "kind", "") == "build"]
+    except Exception:
+        return []
+
+
+def _safe_quickstart(services):
+    try:
+        return services.system().quickstart()
+    except Exception:
+        return {
+            "blockers": [],
+            "warnings": [],
+            "chroot_count": 0,
+            "recommended_name": "ubuntu",
+            "defaults": {"distro": "ubuntu", "preset": "minimal-server", "release": "noble", "name": "ubuntu"},
+            "target_user": "",
+            "can_install": False,
+            "shell_target": None,
+            "shell_command": "",
+            "install_command": "sudo chrootctl install ubuntu --name ubuntu --preset minimal-server --release noble",
+            "use_steps": [
+                "Open Install and review the guided plan.",
+                "Pick or create a target user, then start the install job.",
+                "Open the created chroot and copy the shell command.",
+            ],
+        }

@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="page-intro">
+    <div>
+      <p class="eyebrow">Overview</p>
+      <h2 class="page-title">Local chroot control, built for small screens</h2>
+      <p class="panel-copy">Monitor active chroots, current health, recent jobs, and log activity from one compact dashboard.</p>
+    </div>
+    <div class="metric-grid">
+      <article class="metric-card">
+        <span class="stat-label">Registered chroots</span>
+        <span class="metric-value">{{ cards | length }}</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Running now</span>
+        <span class="metric-value">{{ cards | selectattr('running') | list | length }}</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Users</span>
+        <span class="metric-value">{{ cards | map(attribute='user_count') | sum }}</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Recent jobs</span>
+        <span class="metric-value">{{ recent_jobs | length }}</span>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">System readiness</p>
+      <h2 class="section-title">Ready to install?</h2>
+    </div>
+    <a class="button-link subtle" href="/ksu">Open module panel</a>
+  </div>
+  <div class="status-grid">
+    <article class="card soft">
+      <div class="item-header">
+        <div><h3 class="card-title">Python runtime</h3><p class="card-copy">FastAPI and installer dependencies.</p></div>
+        <span class="badge {{ 'ok' if system_state.python.dependencies_ready else 'bad' }}">{{ "ready" if system_state.python.dependencies_ready else "missing" }}</span>
+      </div>
+      <div class="actions">{% if not system_state.python.dependencies_ready %}<a class="button-link subtle" href="/doctor">Open checks</a>{% endif %}</div>
+    </article>
+    <article class="card soft">
+      <div class="item-header">
+        <div><h3 class="card-title">Root access</h3><p class="card-copy">Mutating install actions usually require root.</p></div>
+        <span class="badge {{ 'ok' if request.state.web_security.running_as_root else 'bad' }}">{{ "ready" if request.state.web_security.running_as_root else "missing" }}</span>
+      </div>
+    </article>
+    <article class="card soft">
+      <div class="item-header">
+        <div><h3 class="card-title">Module path</h3><p class="card-copy">Detected module or source install.</p></div>
+        <span class="badge {{ 'ok' if system_state.module.version else 'warn' }}">{{ system_state.module.version or "source" }}</span>
+      </div>
+      <div class="actions"><a class="button-link subtle" href="/ksu">Open module panel</a></div>
+    </article>
+    <article class="card soft">
+      <div class="item-header">
+        <div><h3 class="card-title">Non-root Linux user</h3><p class="card-copy">The installer needs a target user before it queues.</p></div>
+        <span class="badge {{ 'ok' if install_state.users else 'bad' }}">{{ "ready" if install_state.users else "missing" }}</span>
+      </div>
+      <div class="actions"><a class="button-link subtle" href="/install#target-user-step">{{ "Open installer" if install_state.users else "Fix target user" }}</a></div>
+    </article>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Installed chroots</p>
+      <h2 class="section-title">Runtime targets</h2>
+    </div>
+    <a class="button-link subtle" href="/chroots">Open all chroots</a>
+  </div>
+  <div class="card-grid columns-3">
+    {% for card in cards %}
+    <article class="item-card">
+      <div class="item-header">
+        <div>
+          <a class="item-title" href="/chroots/{{ card.name }}">{{ card.name }}</a>
+          <p class="item-summary">{{ card.distro }} · phase={{ card.phase }}</p>
+        </div>
+        <span class="badge {{ 'ok' if card.running else 'warn' }}">{{ "running" if card.running else "stopped" }}</span>
+      </div>
+      <div class="chip-list">
+        <span class="chip">{{ "installed" if card.installed else "pending" }}</span>
+        <span class="chip">{{ card.user_count }} users</span>
+        <span class="chip">{{ card.doctor_failures }} fail / {{ card.doctor_warnings }} warn</span>
+      </div>
+      <div class="actions">
+        <a class="button-link" href="/chroots/{{ card.name }}">Open</a>
+        <a class="button-link subtle" href="/logs?name={{ card.name }}">Logs</a>
+      </div>
+    </article>
+    {% else %}
+    <article class="empty-state">
+      <span class="empty-icon">+</span>
+      <h3>No chroots registered</h3>
+      <p class="muted">Start a guided install to create your first local environment.</p>
+      <a class="button-link" href="/install">Start an install</a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Doctor summary</p>
+        <h2 class="section-title">Health checks{% if summary.target_name %} · {{ summary.target_name }}{% endif %}</h2>
+      </div>
+      {% if summary.target_name %}
+      <a class="button-link subtle" href="/doctor?name={{ summary.target_name }}">Open doctor</a>
+      {% endif %}
+    </div>
+    <div class="status-list">
+      {% for row in summary.doctor_checks %}
+      <article class="status-card">
+        <div class="item-header">
+          <strong class="item-title">{{ row.check }}</strong>
+          <span class="badge {{ 'bad' if row.result == 'FAIL' else ('warn' if row.result == 'WARN' else 'ok') }}">{{ row.result }}</span>
+        </div>
+        {% if row.detail %}
+        <p class="item-summary">{{ row.detail }}</p>
+        {% endif %}
+        {% if row.next %}
+        <code class="code-token">{{ row.next }}</code>
+        {% else %}
+        <span class="muted">No action needed.</span>
+        {% endif %}
+      </article>
+      {% else %}
+      <article class="empty-state">
+        <span class="empty-icon">•</span>
+        <h3>No target selected yet</h3>
+        <p class="muted">Choose a chroot from the list to load current doctor and status checks.</p>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Recent jobs</p>
+        <h2 class="section-title">Latest activity</h2>
+      </div>
+    </div>
+    <div class="jobs-list">
+      {% for job in recent_jobs %}
+      <article class="item-card">
+        <div class="item-header">
+          <a class="item-title" href="/jobs/{{ job.job_id }}">{{ job.title }}</a>
+          <span class="badge {{ 'ok' if job.state == 'succeeded' else ('bad' if job.state == 'failed' else 'warn') }}">{{ job.state }}</span>
+        </div>
+        <p class="item-summary">{{ job.progress_text or "Queued" }}</p>
+      </article>
+      {% else %}
+      <article class="empty-state">
+        <span class="empty-icon">J</span>
+        <h3>No jobs yet</h3>
+        <p class="muted">Queued installs, upgrades, and apply actions will show up here.</p>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+{% if summary.logs %}
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Recent logs</p>
+      <h2 class="section-title">{% if summary.target_name %}{{ summary.target_name }}{% else %}System log tail{% endif %}</h2>
+      <p class="panel-copy"><code class="code-token">{{ summary.logs.log_file }}</code></p>
+    </div>
+    <a class="button-link subtle" href="/logs{% if summary.target_name %}?name={{ summary.target_name }}{% endif %}">Open logs</a>
+  </div>
+  <pre class="code-block">{{ summary.logs.text }}</pre>
+</section>
+{% endif %}
+{% endblock %}

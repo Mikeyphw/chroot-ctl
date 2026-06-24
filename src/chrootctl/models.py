@@ -92,6 +92,163 @@ class ChrootRenameResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ChrootExportResult:
+    name: str
+    archive: Path
+    arch: str
+    checksum: str | None = None
+    checksum_path: Path | None = None
+    encrypted: bool = False
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "archive": display_value(self.archive),
+            "arch": self.arch,
+            "checksum": display_value(self.checksum),
+            "checksum_path": display_value(self.checksum_path),
+            "encrypted": display_value(self.encrypted),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ChrootImportResult:
+    name: str
+    archive: Path
+    arch: str
+    path: Path
+    checksum_verified: bool | None = None
+    checksum_path: Path | None = None
+    conflict_strategy: str = "rename"
+    encrypted: bool = False
+    validation_ok: bool | None = None
+    validation_summary: str = ""
+    post_import_action: str = "register"
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "archive": display_value(self.archive),
+            "arch": self.arch,
+            "path": display_value(self.path),
+            "checksum_verified": display_value(self.checksum_verified),
+            "encrypted": display_value(self.encrypted),
+            "checksum_path": display_value(self.checksum_path),
+            "conflict_strategy": self.conflict_strategy,
+            "validation_ok": display_value(self.validation_ok),
+            "validation_summary": self.validation_summary,
+            "post_import_action": self.post_import_action,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PackageDiffResult:
+    left: str
+    right: str
+    left_count: int
+    right_count: int
+    only_left: tuple[str, ...] = ()
+    only_right: tuple[str, ...] = ()
+    common_count: int = 0
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "left": self.left,
+            "right": self.right,
+            "left_count": display_value(self.left_count),
+            "right_count": display_value(self.right_count),
+            "only_left": display_value(self.only_left),
+            "only_right": display_value(self.only_right),
+            "common_count": display_value(self.common_count),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ChrootArchiveInspection:
+    archive: Path
+    source_name: str
+    suggested_name: str
+    path_name: str
+    distro: str
+    arch: str
+    release_name: str
+    version: str
+    phase: str
+    installed: bool
+    metadata: dict[str, str] = field(default_factory=dict)
+    size_bytes: int = 0
+    created_at: str = ""
+    checksum: str | None = None
+    checksum_path: Path | None = None
+    checksum_verified: bool | None = None
+    encrypted: bool = False
+    target_exists: bool = False
+    conflict_strategy_options: tuple[str, ...] = ("rename", "overwrite")
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "archive": display_value(self.archive),
+            "source_name": self.source_name,
+            "suggested_name": self.suggested_name,
+            "path_name": self.path_name,
+            "distro": self.distro,
+            "arch": self.arch,
+            "release_name": self.release_name,
+            "version": self.version,
+            "phase": self.phase,
+            "installed": display_value(self.installed),
+            "metadata": display_value(self.metadata),
+            "size_bytes": display_value(self.size_bytes),
+            "created_at": self.created_at,
+            "checksum": display_value(self.checksum),
+            "checksum_path": display_value(self.checksum_path),
+            "checksum_verified": display_value(self.checksum_verified),
+            "target_exists": display_value(self.target_exists),
+            "conflict_strategy_options": display_value(self.conflict_strategy_options),
+        }
+
+
+
+@dataclass(frozen=True, slots=True)
+class AuditEvent:
+    event_id: int
+    event_type: str
+    actor: str
+    target: str
+    result: str
+    message: str
+    created_at: str
+    metadata: dict[str, str] = field(default_factory=dict)
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "event_id": display_value(self.event_id),
+            "event_type": self.event_type,
+            "actor": self.actor,
+            "target": self.target,
+            "result": self.result,
+            "message": self.message,
+            "created_at": self.created_at,
+            "metadata": display_value(self.metadata),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SupportBundleResult:
+    archive: Path
+    included: tuple[str, ...] = ()
+
+    @property
+    def next_steps(self) -> tuple[str, ...]:
+        return (f"Share support bundle: {self.archive.name}",)
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "archive": display_value(self.archive),
+            "included": display_value(self.included),
+        }
+
+@dataclass(frozen=True, slots=True)
 class ChrootUserDetails:
     username: str
     uid: str
@@ -486,6 +643,7 @@ class InstallWizardDefaults:
     distro: str | None = None
     name: str | None = None
     username: str | None = None
+    preset: str | None = None
     profile: str | None = None
     desktop: str | None = None
     release: str | None = None
@@ -499,10 +657,12 @@ class InstallRequest:
     distro: str
     name: str
     username: str
+    preset: str | None = None
     profile: str | None = None
     desktop: str | None = None
     release: str | None = None
     version: str | None = None
+    mirror: str | None = None
     phase: str | None = None
     force_phase: bool = False
     resume: bool = False
@@ -563,4 +723,24 @@ class DashboardChrootCard:
             "user_count": display_value(self.user_count),
             "doctor_warnings": display_value(self.doctor_warnings),
             "doctor_failures": display_value(self.doctor_failures),
+        }
+
+
+@dataclass(slots=True)
+class AppBuildResult:
+    artifact_name: str
+    artifact_path: Path
+    output_dir: Path
+    startup_targets: tuple[str, ...] = ()
+
+    @property
+    def next_steps(self) -> tuple[str, ...]:
+        return (f"Download artifact: {self.artifact_name}",)
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "artifact_name": self.artifact_name,
+            "artifact_path": str(self.artifact_path),
+            "output_dir": str(self.output_dir),
+            "startup_targets": ",".join(self.startup_targets),
         }

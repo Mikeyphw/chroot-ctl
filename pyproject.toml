@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["rich>=13.7.0", "PyYAML>=6.0", "fastapi>=0.115.0", "Jinja2>=3.1.0", "uvicorn>=0.30.0"]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5.0", "mypy>=1.10.0"]
+
 [project.scripts]
 chrootctl = "chrootctl.cli:main"
 chrootctl-web = "chrootctl.web.app:main"
@@ -25,3 +28,16 @@ testpaths = ["tests"]
 
 [tool.setuptools.package-data]
 chrootctl = ["resources/tools/*.yaml", "resources/addons/*.yaml", "resources/tool-scripts/*.sh", "resources/tool-scripts/*.py", "resources/addon-scripts/*.sh", "resources/addon-scripts/*.py", "web/templates/*.html", "web/static/*"]
+
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true

@@ -60,6 +60,29 @@ def doctor(
     )
 
 
+
+@router.get("/doctor/host")
+def doctor_host(
+    request: Request,
+    services=Depends(get_services),
+    templates=Depends(get_templates),
+):
+    rows = _check_rows_payload(services.system().host_doctor(), name="host")
+    return templates.TemplateResponse(
+        request,
+        "checks.html",
+        {
+            "page_title": "Doctor · Host",
+            "title": "Doctor",
+            "rows": rows,
+            "target_name": "host",
+            "summary": _check_summary(rows),
+            "advisories": services.system().foreign_arch_advisories(),
+            "host_doctor": True,
+        },
+    )
+
+
 @router.get("/logs")
 def logs(
     request: Request,
@@ -339,9 +362,9 @@ def _next_action(command: str, *, name: str) -> dict[str, str | None]:
     if " logs " in f" {command} ":
         return {"label": "Open logs", "href": f"/logs?name={name}"}
     if " doctor" in f" {command} ":
-        return {"label": "Open doctor", "href": f"/doctor?name={name}"}
+        return {"label": "Open doctor", "href": "/doctor/host" if name == "host" else f"/doctor?name={name}"}
     if " status" in f" {command} ":
-        return {"label": "Open status", "href": f"/status?name={name}"}
+        return {"label": "Open status", "href": "/status" if name == "host" else f"/status?name={name}"}
     if " start" in f" {command} " or " restart" in f" {command} ":
         return {"label": "Open chroot", "href": f"/chroots/{name}"}
     if "users sync-id" in command:

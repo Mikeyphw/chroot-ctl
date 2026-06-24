@@ -133,13 +133,13 @@ def test_install_without_phase_runs_remaining_phases_by_default(tmp_path: Path) 
         auto=False,
         resume=False,
         repair=False,
-        profile=None,
+        profile="xfce4",
     )
 
     assert installer.called == ["bootstrap", "desktop", "finalize"]
     assert result == [
-        InstallBootstrapResult(username="mike", profile="minimal"),
-        InstallDesktopResult(desktop="xfce4", snapshot="", profile="minimal"),
+        InstallBootstrapResult(username="mike", profile="xfce4"),
+        InstallDesktopResult(desktop="xfce4", snapshot="", profile="xfce4"),
         InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
     ]
 
@@ -158,11 +158,11 @@ def test_explicit_phase_runs_single_phase_without_auto(tmp_path: Path) -> None:
         auto=False,
         resume=False,
         repair=False,
-        profile=None,
+        profile="xfce4",
     )
 
     assert installer.called == ["bootstrap"]
-    assert result == [InstallBootstrapResult(username="mike", profile="minimal")]
+    assert result == [InstallBootstrapResult(username="mike", profile="xfce4")]
 
 
 def test_explicit_phase_with_auto_runs_remaining_phases(tmp_path: Path) -> None:
@@ -179,11 +179,11 @@ def test_explicit_phase_with_auto_runs_remaining_phases(tmp_path: Path) -> None:
         auto=True,
         resume=False,
         repair=False,
-        profile=None,
+        profile="xfce4",
     )
 
     assert installer.called == ["bootstrap", "desktop", "finalize"]
-    assert result[0] == InstallBootstrapResult(username="mike", profile="minimal")
+    assert result[0] == InstallBootstrapResult(username="mike", profile="xfce4")
     assert result[-1] == InstallFinalizeResult(installed=True, uid_sync=True, snapshot="")
 
 
@@ -201,12 +201,12 @@ def test_auto_install_runs_remaining_phases(tmp_path: Path) -> None:
         auto=True,
         resume=False,
         repair=False,
-        profile=None,
+        profile="xfce4",
     )
 
     assert installer.called == ["desktop", "finalize"]
     assert result == [
-        InstallDesktopResult(desktop="xfce4", snapshot="", profile="minimal"),
+        InstallDesktopResult(desktop="xfce4", snapshot="", profile="xfce4"),
         InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
     ]
 
@@ -432,3 +432,159 @@ def test_default_profile_is_minimal_and_default_desktop_is_none(tmp_path: Path) 
 
     assert installer._selected_profile(None) == "minimal"
     assert installer._selected_desktop(None, None) == "none"
+
+
+def test_minimal_profile_rejects_explicit_desktop(tmp_path: Path) -> None:
+    installer, registry = build_stub_installer(tmp_path)
+    registry.upsert(name="stub", distro="stub", path="/tmp/stub", phase="extract")
+
+    with pytest.raises(ValueError, match="minimal profile does not allow desktop"):
+        installer.install(
+            phase=None,
+            username="mike",
+            desktop="xfce4",
+            version=None,
+            release=None,
+            force_phase=False,
+            auto=False,
+            resume=False,
+            repair=False,
+            profile="minimal",
+        )
+
+
+def test_minimal_profile_forces_auto_desktop_to_none(tmp_path: Path) -> None:
+    installer, registry = build_stub_installer(tmp_path)
+    registry.upsert(name="stub", distro="stub", path="/tmp/stub", phase="bootstrap")
+
+    result = installer.install(
+        phase=None,
+        username="mike",
+        desktop="auto",
+        version=None,
+        release=None,
+        force_phase=False,
+        auto=False,
+        resume=False,
+        repair=False,
+        profile="minimal",
+    )
+
+    assert result == [
+        InstallDesktopResult(desktop="none", snapshot="", profile="minimal"),
+        InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
+    ]
+
+
+def test_ubuntu_desktop_phase_installs_light_packages_not_flavor_metapackage(tmp_path: Path) -> None:
+    installer, runner = build_real_installer(UbuntuInstaller, tmp_path)
+    (installer.config.chroot_base / "etc").mkdir(parents=True)
+
+    result = installer.run_phase_desktop(desktop="xfce4", profile="xfce4", force_phase=True)
+
+    shell_commands = [
+        command[-1]
+        for command in runner.commands
+        if command[:4] == ["busybox", "chroot", str(installer.config.chroot_base), "/bin/bash"]
+    ]
+    install_command = next(command for command in shell_commands if "apt install" in command)
+    assert result.desktop == "xfce4"
+    assert "--no-install-recommends" in install_command
+    assert " xfce4 " in f" {install_command} "
+    assert "xubuntu-desktop" not in install_command
+    assert "kubuntu-desktop" not in install_command
+
+
+def test_foreign_arch_upgrade_allows_qemu_binfmt_support(tmp_path: Path) -> None:
+    config = ChrootConfig(chroot_root=tmp_path / "chroots", database_path=tmp_path / "db.sqlite3", distro_name="work", username="mike", target_arch="arm64")
+    registry = ChrootRegistry(config.database_path)
+    runner = InstallerRunner()
+    runner.host_arch = lambda: "amd64"
+    runner.can_execute_foreign_arch = lambda arch: arch == "arm64"
+    controller = ChrootController(config, runner, logging.getLogger("test"))
+    user_sync = UserSyncManager(config, runner, logging.getLogger("test"))
+    installer = StubInstaller(config, runner, controller, registry, user_sync, logging.getLogger("test"))
+
+    result = installer.upgrade()
+
+    assert result.status == "upgraded"
+
+
+def test_foreign_arch_upgrade_requires_emulation_without_qemu(tmp_path: Path) -> None:
+    config = ChrootConfig(chroot_root=tmp_path / "chroots", database_path=tmp_path / "db.sqlite3", distro_name="work", username="mike", target_arch="arm64")
+    registry = ChrootRegistry(config.database_path)
+    runner = InstallerRunner()
+    runner.host_arch = lambda: "amd64"
+    runner.can_execute_foreign_arch = lambda arch: False
+    controller = ChrootController(config, runner, logging.getLogger("test"))
+    user_sync = UserSyncManager(config, runner, logging.getLogger("test"))
+    installer = StubInstaller(config, runner, controller, registry, user_sync, logging.getLogger("test"))
+
+    with pytest.raises(RuntimeError, match="enable binfmt_misc"):
+        installer.upgrade()
+
+
+def test_base_installer_download_retries_alternate_mirrors(tmp_path: Path) -> None:
+    config = ChrootConfig(chroot_root=tmp_path / "chroots", database_path=tmp_path / "db.sqlite3", distro_name="work", username="mike")
+    registry = ChrootRegistry(config.database_path)
+    runner = InstallerRunner()
+    controller = ChrootController(config, runner, logging.getLogger("test"))
+    user_sync = UserSyncManager(config, runner, logging.getLogger("test"))
+    installer = StubInstaller(config, runner, controller, registry, user_sync, logging.getLogger("test"))
+    installer.configure_mirror_plan(
+        selection="mirror-a",
+        base_url="https://mirror-a.example",
+        candidates=(
+            {"id": "mirror-a", "url": "https://mirror-a.example"},
+            {"id": "mirror-b", "url": "https://mirror-b.example"},
+        ),
+    )
+
+    attempts: list[str] = []
+
+    def fake_download(url: str, target: Path) -> None:
+        attempts.append(url)
+        if "mirror-a" in url:
+            raise RuntimeError("primary down")
+
+    installer._download = fake_download  # type: ignore[method-assign]
+
+    resolved = installer._download_with_mirror_fallback("https://mirror-a.example/releases/rootfs.tar.gz", tmp_path / "rootfs.tar.gz")
+
+    assert attempts == [
+        "https://mirror-a.example/releases/rootfs.tar.gz",
+        "https://mirror-b.example/releases/rootfs.tar.gz",
+    ]
+    assert resolved == "https://mirror-b.example/releases/rootfs.tar.gz"
+
+
+def test_ubuntu_apt_commands_retry_alternate_mirrors(tmp_path: Path) -> None:
+    config = ChrootConfig(chroot_root=tmp_path / "chroots", database_path=tmp_path / "db.sqlite3", distro_name="work", username="mike", target_arch="arm64")
+    registry = ChrootRegistry(config.database_path)
+    runner = InstallerRunner()
+    controller = ChrootController(config, runner, logging.getLogger("test"))
+    user_sync = UserSyncManager(config, runner, logging.getLogger("test"))
+    installer = UbuntuInstaller(config, runner, controller, registry, user_sync, logging.getLogger("test"))
+    installer.configure_mirror_plan(
+        selection="archive.ubuntu.com",
+        base_url="https://archive.ubuntu.com/ubuntu",
+        candidates=(
+            {"id": "archive.ubuntu.com", "url": "https://archive.ubuntu.com/ubuntu"},
+            {"id": "ports.ubuntu.com", "url": "https://ports.ubuntu.com/ubuntu-ports"},
+        ),
+    )
+
+    commands: list[str] = []
+
+    def fake_shell(command: str) -> None:
+        commands.append(command)
+        if "apt update" in command and "ports.ubuntu.com/ubuntu-ports" not in "".join(commands):
+            raise RuntimeError("archive down")
+
+    installer._chroot_shell = fake_shell  # type: ignore[method-assign]
+
+    installer._apt_with_mirror_fallback("apt update")
+
+    assert any("archive.ubuntu.com/ubuntu" in command for command in commands)
+    assert any("ports.ubuntu.com/ubuntu-ports" in command for command in commands)
+    assert commands[-1] == "apt update"

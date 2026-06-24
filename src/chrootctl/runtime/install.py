@@ -40,6 +40,53 @@ WIZARD_CANCEL = "__cancel__"
 WIZARD_STEPS = ("distro", "name", "release", "profile", "desktop", "username", "tools", "addons")
 
 
+
+DEFAULT_INSTALL_USERNAME = "mike"
+
+
+INSTALL_PRESETS: dict[str, dict[str, object]] = {
+    "minimal-server": {
+        "profile": "minimal",
+        "desktop": "none",
+        "tools": (),
+        "addons": (),
+    },
+    "desktop-xfce": {
+        "profile": "xfce4",
+        "desktop": "xfce4",
+        "tools": (),
+        "addons": (),
+    },
+    "development": {
+        "profile": "dev",
+        "desktop": "none",
+        "tools": ("sync-uid",),
+        "addons": (),
+    },
+    "recovery-debug": {
+        "profile": "custom",
+        "desktop": "none",
+        "tools": (),
+        "addons": (),
+    },
+}
+
+
+def _preset_values(preset: str | None) -> dict[str, object]:
+    if not preset:
+        return {}
+    return dict(INSTALL_PRESETS.get(preset, {}))
+
+
+def _resolve_install_username(context, *, explicit_username: str | None) -> str:
+    if explicit_username:
+        return validate_username(explicit_username)
+    config_username = getattr(context.config, "username", None)
+    if config_username:
+        return validate_username(config_username)
+    return DEFAULT_INSTALL_USERNAME
+
+
 @dataclass(slots=True)
 class InstallWizardState:
     distro: str | None = None
@@ -82,27 +129,34 @@ def handle_install(context) -> None:
         emit_table(context, "Available Versions", progress_call("Fetching versions", installer.list_versions))
         return
 
+    preset_values = _preset_values(getattr(args, "preset", None))
+    explicit_tools = list(args.tools)
+    explicit_addons = list(args.addons)
+    if not explicit_tools and preset_values.get("tools"):
+        explicit_tools = list(preset_values["tools"])
+    if not explicit_addons and preset_values.get("addons"):
+        explicit_addons = list(preset_values["addons"])
+    if not getattr(args, "profile", None) and preset_values.get("profile"):
+        args.profile = str(preset_values["profile"])
+    if not getattr(args, "desktop", None) and preset_values.get("desktop"):
+        args.desktop = str(preset_values["desktop"])
+
     selected_tools = install_selection_names(
         catalog=ManifestCatalog("tool", config=context.config),
         distro=args.distro,
-        explicit_names=args.tools,
+        explicit_names=explicit_tools,
         select_flag=args.select_tools,
         non_interactive=non_interactive,
     )
     selected_addons = install_selection_names(
         catalog=ManifestCatalog("addon", config=context.config),
         distro=args.distro,
-        explicit_names=args.addons,
+        explicit_names=explicit_addons,
         select_flag=args.select_addons,
         non_interactive=non_interactive,
     )
-    username = resolve_user_reference(
-        args.username,
-        context.chroot_users,
-        prompt="Choose user",
-        non_interactive=non_interactive,
-    )
-    install_config = context.config.with_overrides(distro_name=target_name, username=username)
+    username = _resolve_install_username(context, explicit_username=args.username)
+    install_config = context.config.with_overrides(distro_name=target_name, username=username, target_arch=getattr(args, "arch", None) or context.config.target_arch)
     installer = _build_installer(context, distro=args.distro, config=install_config)
     results = progress_call(
         f"Installing {args.distro}",

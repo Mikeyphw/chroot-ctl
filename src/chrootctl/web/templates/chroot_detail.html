@@ -1,6 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card hero">
+
+<section class="detail-grid" data-reveal="up">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Use</p>
+        <h2 class="section-title">Use this chroot</h2>
+        <p class="panel-copy">Start the runtime, then copy the shell or exec command. These commands are shown here so you do not need to remember flags.</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="button-link subtle" onclick="window.chrootctlCopyText({{ shell_command|tojson }}, 'Shell command copied')">Copy shell command</button>
+      <button type="button" class="button-link subtle" onclick="window.chrootctlCopyText({{ exec_command|tojson }}, 'Exec command copied')">Copy exec command</button>
+    </div>
+    <div class="detail-grid">
+      <article class="card soft">
+        <h3>Interactive shell</h3>
+        <pre class="log-box">{{ shell_command }}</pre>
+      </article>
+      <article class="card soft">
+        <h3>Run one command</h3>
+        <pre class="log-box">{{ exec_command }}</pre>
+      </article>
+    </div>
+  </article>
+</section>
+<section class="card hero" data-reveal="up">
   <div class="section-header">
     <div>
       <p class="eyebrow">{{ chroot.distro }}</p>
@@ -11,6 +37,7 @@
       <form method="post" action="/chroots/{{ chroot.name }}/start">
         {{ csrf_token_input(request) }}
         <button type="submit">Start</button>
+        <button type="button" class="button-link subtle" onclick="window.chrootctlCopyText({{ shell_command|tojson }}, 'Shell command copied')">Copy shell</button>
       </form>
       <form method="post" action="/chroots/{{ chroot.name }}/restart">
         {{ csrf_token_input(request) }}
@@ -31,6 +58,58 @@
 </section>
 
 <section class="detail-grid">
+<section class="card" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Import validation</p>
+      <h2 class="section-title">Imported chroot integrity</h2>
+      <p class="panel-copy">Validate required directories, architecture markers, and runtime layout after moving a chroot between hosts.</p>
+    </div>
+    <div class="actions">
+      <button
+        type="button"
+        class="subtle"
+        data-validate-import="{{ chroot.name }}"
+        data-validate-target="import-validation-output"
+      >
+        Re-run validation
+      </button>
+      <button
+        type="button"
+        class="button-link subtle"
+        onclick="window.chrootctlCopyText({{ ('chrootctl chroots validate-import ' ~ chroot.name)|tojson }}, 'Validate-import command copied')"
+      >
+        Copy validate command
+      </button>
+    </div>
+  </div>
+  <div id="import-validation-output" class="status-list">
+    {% if validation %}
+    <article class="status-card">
+      <div class="item-header">
+        <strong class="item-title">{{ 'Ready' if validation.ok else 'Needs attention' }}</strong>
+        <span class="badge {{ 'ok' if validation.ok else 'warn' }}">{{ 'PASS' if validation.ok else 'WARN' }}</span>
+      </div>
+      <p class="item-summary">{{ validation.summary }}</p>
+      {% if validation.missing %}
+      <code class="code-token">Missing: {{ validation.missing|join(', ') }}</code>
+      {% endif %}
+      {% if validation.arch %}
+      <p class="muted">Detected arch: {{ validation.arch }}</p>
+      {% endif %}
+    </article>
+    {% else %}
+    <article class="status-card">
+      <div class="item-header">
+        <strong class="item-title">Validation not available yet</strong>
+        <span class="badge warn">WAIT</span>
+      </div>
+      <p class="item-summary">Use the button above to query the latest imported-chroot validation state.</p>
+    </article>
+    {% endif %}
+  </div>
+</section>
+
   <article class="card">
     <div class="section-header">
       <div>
@@ -128,6 +207,7 @@
   <div class="actions">
     <a class="button-link" href="/chroots/{{ chroot.name }}/users">Manage users</a>
     <a class="button-link subtle" href="/logs?name={{ chroot.name }}">Logs</a>
+    <button type="button" class="button-link" onclick="window.chrootctlCopyText({{ exec_command|tojson }}, 'Exec command copied')">Copy exec</button>
     <a class="button-link ghost" href="/doctor?name={{ chroot.name }}">Doctor</a>
   </div>
 </section>
@@ -176,4 +256,46 @@
     </form>
   </div>
 </dialog>
+
+<script>
+  document.querySelectorAll("[data-validate-import]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const name = button.getAttribute("data-validate-import");
+      const targetId = button.getAttribute("data-validate-target");
+      const target = document.getElementById(targetId || "");
+      if (!name || !target) return;
+      button.disabled = true;
+      try {
+        const response = await fetch(`/api/chroots/validate-import/${encodeURIComponent(name)}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error?.message || "Validation failed");
+        }
+        const result = payload.validation || {};
+        const badge = result.ok ? "ok" : "warn";
+        const missing = Array.isArray(result.missing) && result.missing.length
+          ? `<code class="code-token">Missing: ${result.missing.join(", ")}</code>`
+          : "";
+        const arch = result.arch ? `<p class="muted">Detected arch: ${result.arch}</p>` : "";
+        target.innerHTML = `
+          <article class="status-card">
+            <div class="item-header">
+              <strong class="item-title">${result.ok ? "Ready" : "Needs attention"}</strong>
+              <span class="badge ${badge}">${result.ok ? "PASS" : "WARN"}</span>
+            </div>
+            <p class="item-summary">${result.summary || "Validation complete."}</p>
+            ${missing}
+            ${arch}
+          </article>
+        `;
+        if (window.chrootctlToast) window.chrootctlToast("Import validation refreshed", "ok");
+      } catch (error) {
+        if (window.chrootctlToast) window.chrootctlToast(error.message || "Validation failed", "warn");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+</script>
 {% endblock %}
+

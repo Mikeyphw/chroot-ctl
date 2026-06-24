@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Transfer</p>
+      <h2 class="page-title">Export, inspect, and import tar.zst chroots</h2>
+      <p class="panel-copy">Checksums are generated on export and verified on import when present.</p>
+    </div>
+    <div class="chip-list">
+      <span class="chip">host {{ cross_arch_state.host_arch }}</span>
+      {% for item in cross_arch_state.targets %}
+      <span class="chip {{ 'ok' if item.ready else 'warn' }}">{{ item.arch }} {{ item.mode }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{% if foreign_arch_advisories %}
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Cross-arch handoff</p>
+      <h2 class="section-title">Finalize on device later</h2>
+      <p class="panel-copy">Foreign-arch extracts can move to the phone as tar.zst archives and complete there when host emulation is not ready.</p>
+    </div>
+    <a class="button-link subtle" href="/doctor/host">Open host doctor</a>
+  </div>
+  <div class="stack-list">
+    {% for advisory in foreign_arch_advisories %}
+    <article class="item-card">
+      <div class="item-header">
+        <div>
+          <h3 class="card-title">{{ advisory.name }}</h3>
+          <p class="card-copy">{{ advisory.summary }}</p>
+        </div>
+        <span class="badge {{ 'warn' if advisory.mode == 'deferred' else 'ok' }}">{{ advisory.arch }}</span>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="detail-grid">
+  <article class="card" id="transfer-activity-card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Recent activity</p>
+        <h2 class="section-title">Latest transfer jobs</h2>
+      </div>
+      <div class="chip-list">
+        <span class="chip">{{ recent_transfer_jobs|length }} jobs</span>
+        <span class="chip">{{ transfer_temp_state.count }} temp files</span>
+      </div>
+    </div>
+    {% if recent_transfer_jobs %}
+    <div class="stack-list" id="transfer-jobs-list">
+      {% for job in recent_transfer_jobs %}
+      <article class="item-card">
+        <div class="item-header">
+          <div>
+            <h3 class="card-title">{{ job.title }}</h3>
+            <p class="card-copy">{{ job.progress_text }}{% if job.target_name %} · target={{ job.target_name }}{% endif %}</p>
+          </div>
+          <span class="badge {{ 'ok' if job.state == 'succeeded' else 'danger' if job.state == 'failed' else 'warn' }}">{{ job.state }}</span>
+        </div>
+        {% if job.error %}<p class="danger-text">{{ job.error }}</p>{% endif %}
+        {% if job.log_lines %}<pre class="code-block compact-code">{% for line in job.log_lines %}{{ line }}
+{% endfor %}</pre>{% endif %}
+        <div class="action-row"><a class="button-link subtle" href="/jobs/{{ job.job_id }}">Open job</a></div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="stack-list" id="transfer-jobs-list"><article class="empty-state"><span class="empty-icon">⌛</span><h3>No recent transfer jobs</h3><p class="muted">Start an export or import and the latest status will appear here.</p></article></div>
+    {% endif %}
+  </article>
+
+  <article class="card" id="transfer-temp-card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Archive cache</p>
+        <h2 class="section-title">Temporary transfer files</h2>
+      </div>
+      <div class="action-row">
+        <button type="button" class="button-link subtle" id="transfer-temp-clear" data-api-url="/api/transfer/temp">Delete temp archives now</button>
+      </div>
+    </div>
+    <dl class="kv">
+      <div class="kv-pair"><dt>Directory</dt><dd><code class="code-token" id="transfer-temp-path">{{ transfer_temp_state.path }}</code></dd></div>
+      <div class="kv-pair"><dt>Retention</dt><dd>24 hours</dd></div>
+      <div class="kv-pair"><dt>Current files</dt><dd id="transfer-temp-count">{{ transfer_temp_state.count }}</dd></div>
+    </dl>
+    {% if transfer_temp_state.files %}
+    <div class="stack-list" id="transfer-temp-files">
+      {% for file in transfer_temp_state.files %}
+      <article class="item-card compact-item">
+        <div class="item-header">
+          <div>
+            <h3 class="card-title">{{ file.name }}</h3>
+            <p class="card-copy">{{ file.size }} bytes</p>
+          </div>
+          <div class="action-row"><button type="button" class="button-link subtle transfer-temp-delete" data-api-url="/api/transfer/temp" data-path="{{ file.path }}">Delete</button></div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted" id="transfer-temp-empty">No transfer temp files are currently cached.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Step 1</p>
+        <h2 class="section-title">Export an existing chroot</h2>
+      </div>
+    </div>
+    <div class="card-grid">
+      {% for chroot in chroots %}
+      <article class="item-card">
+        <div class="item-header">
+          <div>
+            <h3 class="card-title">{{ chroot.name }}</h3>
+            <p class="card-copy">{{ chroot.distro }} · phase={{ chroot.phase }}</p>
+          </div>
+          <span class="badge {{ 'ok' if chroot.installed else 'warn' }}">{{ 'installed' if chroot.installed else 'pending' }}</span>
+        </div>
+        <div class="form-stack">
+          <form method="post" action="/transfer/export" class="form-stack" data-toast="Export queued…" data-toast-kind="ok">
+            {{ csrf_token_input(request) }}
+            <input type="hidden" name="name" value="{{ chroot.name }}">
+            <label>Archive path
+              <input type="text" name="archive" placeholder="./{{ chroot.name }}.tar.zst">
+            </label>
+            <label>Encryption password
+              <input type="password" name="password" placeholder="Optional openssl password">
+            </label>
+            <button type="submit">Queue export</button>
+          </form>
+          <a class="button-link" href="/transfer/download/{{ chroot.name }}">Download {{ chroot.name }}.tar.zst</a>
+        </div>
+      </article>
+      {% else %}
+      <article class="empty-state"><span class="empty-icon">⇅</span><h3>No chroots available</h3><p class="muted">Create or import a chroot first.</p></article>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Step 2</p>
+        <h2 class="section-title">Inspect a tar.zst archive</h2>
+      </div>
+    </div>
+    <form method="post" action="/transfer/inspect" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <label>Archive path
+        <input type="text" name="archive" value="{{ archive_value }}" placeholder="/path/to/chroot.tar.zst" required>
+      </label>
+      <label>Password
+        <input type="password" name="password" placeholder="Required for encrypted .enc archives">
+      </label>
+      <button type="submit">Inspect archive path</button>
+    </form>
+    <form method="post" action="/transfer/inspect-upload" class="form-stack" enctype="multipart/form-data">
+      {{ csrf_token_input(request) }}
+      <label>Upload tar.zst
+        <input type="file" name="archive_file" accept=".tar.zst,.tzst,.enc,application/zstd" required>
+      </label>
+      <label>Password
+        <input type="password" name="password" placeholder="Required for encrypted .enc archives">
+      </label>
+      <button type="submit">Upload and inspect</button>
+    </form>
+
+    {% if inspection %}
+      {% if inspection.error %}
+      <article class="card soft">
+        <p class="eyebrow">Inspect error</p>
+        <p class="card-copy">{{ inspection.error }}</p>
+      </article>
+      {% else %}
+      <article class="card soft">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Archive summary</p>
+            <h3 class="card-title">{{ inspection.source_name }}</h3>
+            <p class="card-copy">{{ inspection.distro }} · {{ inspection.arch }} · phase={{ inspection.phase }}</p>
+          </div>
+          <span class="badge {{ 'ok' if inspection.installed else 'warn' }}">{{ 'installed' if inspection.installed else 'pending' }}</span>
+        </div>
+        <dl class="kv">
+          <div class="kv-pair"><dt>Archive</dt><dd><code class="code-token">{{ inspection.archive }}</code></dd></div>
+          <div class="kv-pair"><dt>Suggested name</dt><dd>{{ inspection.suggested_name }}</dd></div>
+          <div class="kv-pair"><dt>Release</dt><dd>{{ inspection.release_name or '—' }}</dd></div>
+          <div class="kv-pair"><dt>Version</dt><dd>{{ inspection.version or '—' }}</dd></div>
+          <div class="kv-pair"><dt>Path name</dt><dd>{{ inspection.path_name }}</dd></div>
+          <div class="kv-pair"><dt>Size</dt><dd>{{ inspection.size_bytes }} bytes</dd></div>
+          <div class="kv-pair"><dt>Created</dt><dd>{{ inspection.created_at or '—' }}</dd></div>
+          <div class="kv-pair"><dt>Checksum</dt><dd>{{ inspection.checksum or 'missing' }}</dd></div>
+          <div class="kv-pair"><dt>Checksum verify</dt><dd>{{ inspection.checksum_verified if inspection.checksum_verified is not none else 'not checked' }}</dd></div>
+          <div class="kv-pair"><dt>Encrypted</dt><dd>{{ inspection.encrypted }}</dd></div>
+          <div class="kv-pair"><dt>Name conflict</dt><dd>{{ 'existing chroot detected' if inspection.target_exists else 'none' }}</dd></div>
+        </dl>
+        {% if inspection.metadata %}
+        <pre class="code-block">{{ inspection.metadata | tojson(indent=2) }}</pre>
+        {% endif %}
+      </article>
+      {% endif %}
+    {% endif %}
+  </article>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Step 3</p>
+      <h2 class="section-title">Import onto this host</h2>
+      <p class="panel-copy">Choose how to handle an existing target name before you queue the import.</p>
+    </div>
+  </div>
+  <form method="post" action="/transfer/import" class="form-stack" data-toast="Import queued…" data-toast-kind="ok">
+    {{ csrf_token_input(request) }}
+    <label>Archive path
+      <input type="text" name="archive" value="{{ archive_value }}" placeholder="/path/to/chroot.tar.zst" required>
+    </label>
+    <label>Target name
+      <input type="text" name="import_name" value="{{ inspection.suggested_name if inspection and not inspection.error else '' }}" placeholder="Optional override">
+    </label>
+    <label>Conflict handling
+      <select name="conflict">
+        <option value="rename">Rename automatically</option>
+        <option value="overwrite">Overwrite existing target</option>
+      </select>
+    </label>
+    <label>Post-import action
+      <select name="post_import">
+        <option value="register">Register only</option>
+        <option value="validate">Validate imported rootfs</option>
+        <option value="fixups">Validate + suggest fixups</option>
+        <option value="shell">Validate + prepare shell handoff</option>
+      </select>
+    </label>
+    <label>Password
+      <input type="password" name="password" placeholder="Required for encrypted .enc archives">
+    </label>
+    <button type="submit">Import archive</button>
+  </form>
+  <form method="post" action="/transfer/import-upload" class="form-stack" enctype="multipart/form-data" data-toast="Import queued…" data-toast-kind="ok">
+    {{ csrf_token_input(request) }}
+    <label>Upload tar.zst
+      <input type="file" name="archive_file" accept=".tar.zst,.tzst,application/zstd" required>
+    </label>
+    <label>Target name
+      <input type="text" name="import_name" placeholder="Optional override">
+    </label>
+    <label>Conflict handling
+      <select name="conflict">
+        <option value="rename">Rename automatically</option>
+        <option value="overwrite">Overwrite existing target</option>
+      </select>
+    </label>
+    <label>Post-import action
+      <select name="post_import">
+        <option value="register">Register only</option>
+        <option value="validate">Validate imported rootfs</option>
+        <option value="fixups">Validate + suggest fixups</option>
+        <option value="shell">Validate + prepare shell handoff</option>
+      </select>
+    </label>
+    <label>Password
+      <input type="password" name="password" placeholder="Required for encrypted .enc archives">
+    </label>
+    <button type="submit">Upload and import</button>
+  </form>
+</section>
+
+
+<script>
+(() => {
+  const transferJobsList = document.getElementById("transfer-jobs-list");
+  if (!transferJobsList) return;
+  const renderEmpty = () => {
+    transferJobsList.innerHTML = `<article class="empty-state"><span class="empty-icon">⌛</span><h3>No recent transfer jobs</h3><p class="muted">Start an export or import and the latest status will appear here.</p></article>`;
+  };
+  window.chrootctlPoll?.({
+    url: "/api/jobs?kind=chroot-export&kind=chroot-import&limit=6&tail=5",
+    interval: 2500,
+    onData: (data) => {
+      const items = data.items || [];
+      window.chrootctlJobNotifier?.update(items.filter((item) => item.complete));
+      transferJobsList.innerHTML = "";
+      if (!items.length) {
+        renderEmpty();
+        return;
+      }
+      for (const job of items) {
+        const badge = job.state === "succeeded" ? "ok" : (job.state === "failed" ? "bad" : "warn");
+        const article = document.createElement("article");
+        article.className = "item-card";
+        article.innerHTML = `<div class="item-header"><div><h3 class="card-title">${job.title}</h3><p class="card-copy">${job.progress_text || "Queued"}${job.target_name ? ` · target=${job.target_name}` : ""}</p></div><span class="badge ${badge}">${job.state}</span></div>${job.error ? `<p class="danger-text">${job.error}</p>` : ""}<pre class="code-block compact-code">${(job.log_lines || []).join("\n")}</pre><div class="action-row"><a class="button-link subtle" href="/jobs/${job.job_id}">Open job</a></div>`;
+        transferJobsList.appendChild(article);
+      }
+    },
+  });
+})();
+</script>
+
+<script>
+(() => {
+  const tempCard = document.getElementById("transfer-temp-card");
+  const fileList = document.getElementById("transfer-temp-files");
+  const clearButton = document.getElementById("transfer-temp-clear");
+  const countNode = document.getElementById("transfer-temp-count");
+  const pathNode = document.getElementById("transfer-temp-path");
+  if (!tempCard || !clearButton || !countNode || !pathNode) return;
+
+  const escapeHtml = (value) => String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+
+  const renderFiles = (payload) => {
+    countNode.textContent = String(payload.count ?? 0);
+    pathNode.textContent = payload.path || "";
+    let list = document.getElementById("transfer-temp-files");
+    let empty = document.getElementById("transfer-temp-empty");
+    if (!payload.files || !payload.files.length) {
+      if (list) {
+        list.remove();
+      }
+      if (!empty) {
+        empty = document.createElement("p");
+        empty.className = "muted";
+        empty.id = "transfer-temp-empty";
+        empty.textContent = "No transfer temp files are currently cached.";
+        tempCard.appendChild(empty);
+      }
+      return;
+    }
+    if (empty) {
+      empty.remove();
+    }
+    if (!list) {
+      list = document.createElement("div");
+      list.className = "stack-list";
+      list.id = "transfer-temp-files";
+      tempCard.appendChild(list);
+    }
+    list.innerHTML = payload.files.map((file) => `
+      <article class="item-card compact-item">
+        <div class="item-header">
+          <div>
+            <h3 class="card-title">${escapeHtml(file.name)}</h3>
+            <p class="card-copy">${escapeHtml(file.size)} bytes</p>
+          </div>
+          <div class="action-row">
+            <button type="button" class="button-link subtle transfer-temp-delete" data-api-url="/api/transfer/temp" data-path="${escapeHtml(file.path)}">Delete</button>
+          </div>
+        </div>
+      </article>
+    `).join("");
+  };
+
+  const refreshTempState = async () => {
+    const response = await fetch("/api/transfer/temp", { headers: { "Accept": "application/json" } });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || "Could not load temp archives.");
+    }
+    renderFiles(payload);
+    return payload;
+  };
+
+  const callDelete = async (params) => {
+    const query = new URLSearchParams(params);
+    const response = await fetch(`/api/transfer/temp?${query.toString()}`, {
+      method: "DELETE",
+      headers: { "Accept": "application/json" },
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || "Could not update temp archives.");
+    }
+    renderFiles(payload);
+    return payload;
+  };
+
+  clearButton.addEventListener("click", async () => {
+    clearButton.disabled = true;
+    try {
+      await callDelete({ delete_all: "true" });
+      window.chrootctlToast?.show("Temp archives removed.", "ok");
+    } catch (error) {
+      window.chrootctlToast?.show(error.message || "Could not clear temp archives.", "bad");
+    } finally {
+      clearButton.disabled = false;
+    }
+  });
+
+  tempCard.addEventListener("click", async (event) => {
+    const button = event.target.closest(".transfer-temp-delete");
+    if (!button) return;
+    event.preventDefault();
+    button.disabled = true;
+    try {
+      await callDelete({ path: button.dataset.path || "" });
+      window.chrootctlToast?.show("Temp archive deleted.", "ok");
+    } catch (error) {
+      window.chrootctlToast?.show(error.message || "Could not delete temp archive.", "bad");
+      button.disabled = false;
+    }
+  });
+
+  window.chrootctlPoll?.({
+    url: "/api/transfer/temp",
+    interval: 4000,
+    onData: (payload) => {
+      renderFiles(payload || {});
+    },
+  });
+})();
+
+</script>
+
+
+{% endblock %}

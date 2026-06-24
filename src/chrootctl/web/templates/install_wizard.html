@@ -1,21 +1,115 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card hero">
+<section class="card hero" data-reveal="up">
   <div class="section-header">
     <div>
       <p class="eyebrow">Install wizard</p>
       <h2 class="page-title">Queue a guided install job</h2>
-      <p class="panel-copy">This wizard submits one install job, then streams progress, logs, and next steps. Install operations usually require root.</p>
+      <p class="panel-copy">This flow blocks unsafe installs before they queue. Pick a target user, review the resolved plan, then start the job.</p>
     </div>
     <div class="chip-list">
       <span class="chip">{{ distros | length }} distros</span>
+      <span class="chip">{{ form_state.presets | default([]) | length }} presets</span>
       <span class="chip">{{ tools | length }} tools</span>
       <span class="chip">{{ addons | length }} addons</span>
     </div>
   </div>
 </section>
 
-<form method="post" action="/install" class="form-stack" data-toast="Install job queued…" data-toast-kind="ok">
+
+<section class="card" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Need the shortest path?</p>
+      <h2 class="section-title">Use the recommended values</h2>
+      <p class="panel-copy">For the smoothest first install, keep the preset at <strong>{{ form_state.defaults.preset or 'minimal-server' }}</strong>, release at <strong>{{ form_state.defaults.release or 'noble' }}</strong>, and choose or create a target user before submit.</p>
+    </div>
+    <div class="actions">
+      <a class="button-link subtle" href="/quickstart">Open quick start</a>
+      <a class="button-link subtle" href="/doctor/host">Open host doctor</a>
+    </div>
+  </div>
+</section>
+
+<section class="detail-grid" id="install-feedback-panel">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Preflight</p>
+        <h2 class="section-title">Install readiness</h2>
+        <p class="panel-copy">Blocking issues stop submit. Warnings and auto-resolved choices stay visible before the job starts.</p>
+      </div>
+      <span class="badge warn" id="install-preview-status">checking</span>
+    </div>
+    <div class="status-grid" id="install-blocking-list">
+      <article class="empty-state">
+        <span class="empty-icon">…</span>
+        <h3>Waiting for validation</h3>
+        <p class="muted">The wizard validates the request as you edit it.</p>
+      </article>
+    </div>
+    <div class="status-grid" id="install-resolved-list"></div>
+  </article>
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Summary</p>
+        <h2 class="section-title">Resolved install plan</h2>
+        <p class="panel-copy">Backend-driven values only. The frontend never guesses final defaults.</p>
+      </div>
+    </div>
+    <div class="metric-grid">
+      <article class="metric-card">
+        <span class="stat-label">Distro</span>
+        <span class="metric-value" id="install-preview-distro">—</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Release</span>
+        <span class="metric-value" id="install-preview-release">—</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Profile</span>
+        <span class="metric-value" id="install-preview-profile">—</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Desktop</span>
+        <span class="metric-value" id="install-preview-desktop">—</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Target user</span>
+        <span class="metric-value" id="install-preview-user">—</span>
+      </article>
+      <article class="metric-card">
+        <span class="stat-label">Packages</span>
+        <span class="metric-value" id="install-preview-packages">base system only</span>
+      </article>
+    </div>
+    <ol class="timeline-list" id="install-preview-steps">
+      <li class="muted">Loading plan…</li>
+    </ol>
+    <ul class="list" id="install-preview-warnings"></ul>
+  </article>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Install jobs</p>
+      <h2 class="section-title">Recent install activity</h2>
+      <p class="panel-copy">Keep this page open while queued installs update in place.</p>
+    </div>
+    <a class="button-link subtle" href="/jobs">Open all jobs</a>
+  </div>
+  <div class="stack-list" id="install-jobs-list">
+    <article class="empty-state">
+      <span class="empty-icon">⌛</span>
+      <h3>No install jobs yet</h3>
+      <p class="muted">Queued installs will appear here.</p>
+    </article>
+  </div>
+</section>
+
+<form method="post" action="/install"  class="form-stack" data-toast="Install job queued…" data-toast-kind="ok" id="install-form">
   {{ csrf_token_input(request) }}
 
   <section class="collapsible-grid">
@@ -46,11 +140,98 @@
       </div>
     </details>
 
-    <details class="card fold-card" open>
+    <details class="card fold-card" open id="target-user-step">
       <summary class="fold-summary">
         <div class="fold-summary-copy">
           <p class="eyebrow">Step 2</p>
-          <h3 class="section-title">User and profile</h3>
+          <h3 class="section-title">Target user</h3>
+        </div>
+        <div class="fold-summary-meta">
+          <span class="badge {{ 'ok' if target_users else 'warn' }}">{{ target_users | length }} found</span>
+          <span class="fold-arrow">⌄</span>
+        </div>
+      </summary>
+      <div class="fold-body form-stack">
+        <article class="card soft" id="existing-user-panel">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Existing users</p>
+              <h3 class="card-title">Choose a non-root Linux user</h3>
+            </div>
+            <button type="button" class="button-link subtle" id="show-create-user">+ Create new user</button>
+          </div>
+          {% if target_users %}
+          <label>Target user
+            <select id="target-user-select">
+              <option value="">Select a user</option>
+              {% for user in target_users %}
+              <option value="{{ user.username }}" {% if defaults.username == user.username %}selected{% endif %}>
+                {{ user.username }} · uid {{ user.uid }} · {{ user.shell }}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="muted">Pick an existing user or create a new target username for this install.</p>
+          {% else %}
+          <article class="empty-state">
+            <span class="empty-icon">!</span>
+            <h3>No non-root users found</h3>
+            <p class="muted">Create a user before installing this chroot, or use advanced install with <code class="code-token">--username</code>.</p>
+            <div class="actions">
+              <button type="button" id="empty-create-user">Create user</button>
+              <button type="button" class="button-link subtle" id="use-advanced-username">Use advanced install with --username</button>
+            </div>
+          </article>
+          {% endif %}
+        </article>
+
+        <article class="card soft" id="create-user-card" hidden>
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Create user</p>
+              <h3 class="card-title">Create and continue</h3>
+              <p class="card-copy">This creates the target install username for the installer request and auto-selects it.</p>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <label>Username
+              <input type="text" id="create-user-username" placeholder="alice">
+            </label>
+            <label>Password
+              <input type="password" id="create-user-password" placeholder="optional">
+            </label>
+            <label class="checkbox-row compact">
+              <input type="checkbox" id="create-user-sudo" checked>
+              <span>Sudo access</span>
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" id="create-user-apply">Create and continue</button>
+            <button type="button" class="button-link subtle" id="create-user-cancel">Cancel</button>
+          </div>
+          <p class="muted">Password and sudo are captured for the guided flow now; the current backend install still uses the selected username as the authoritative requirement.</p>
+        </article>
+
+        <article class="card soft">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Advanced</p>
+              <h3 class="card-title">Manual username override</h3>
+            </div>
+          </div>
+          <label>Resolved <code class="code-token">--username</code>
+            <input type="text" name="username" id="username-input" value="{{ defaults.username or '' }}" required>
+          </label>
+          <p class="muted">Submit stays disabled until this resolves to a valid non-root target user.</p>
+        </article>
+      </div>
+    </details>
+
+    <details class="card fold-card" open id="profile-step">
+      <summary class="fold-summary">
+        <div class="fold-summary-copy">
+          <p class="eyebrow">Step 3</p>
+          <h3 class="section-title">Profile and desktop</h3>
         </div>
         <div class="fold-summary-meta">
           <span class="badge ok">required</span>
@@ -59,22 +240,28 @@
       </summary>
       <div class="fold-body">
         <div class="detail-grid">
-          <label>Username
-            <input type="text" name="username" value="{{ defaults.username or '' }}" required>
+          <label>Preset
+            <select name="preset" id="install-preset">
+              <option value="">Custom</option>
+              {% for preset in form_state.presets | default([]) %}
+              <option value="{{ preset.id }}" {% if form_state.defaults.preset == preset.id %}selected{% endif %}>{{ preset.label }}</option>
+              {% endfor %}
+            </select>
+            <small class="muted">Backend-driven presets resolve profile, desktop, and default package selections.</small>
           </label>
           <label>Profile
             <select name="profile">
               <option value="">default</option>
-              {% for profile in profiles %}
-              <option value="{{ profile }}" {% if defaults.profile == profile %}selected{% endif %}>{{ profile }}</option>
+              {% for option in profile_options %}
+              <option value="{{ option.id }}" data-desktop-allowed="{{ '1' if option.desktop_allowed else '0' }}" data-default-desktop="{{ option.default_desktop }}" {% if defaults.profile == option.id %}selected{% endif %}>{{ option.label }}</option>
               {% endfor %}
             </select>
           </label>
           <label>Desktop
             <select name="desktop">
               <option value="">auto</option>
-              {% for desktop in desktops %}
-              <option value="{{ desktop }}" {% if defaults.desktop == desktop %}selected{% endif %}>{{ desktop }}</option>
+              {% for option in desktop_options %}
+              <option value="{{ option.id }}" {% if (defaults.desktop or 'none') == option.id %}selected{% endif %}>{{ option.label }}</option>
               {% endfor %}
             </select>
           </label>
@@ -82,10 +269,29 @@
       </div>
     </details>
 
+    <article class="card soft">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Compatibility</p>
+          <h3 class="section-title">Backend compatibility matrix</h3>
+        </div>
+      </div>
+      <div class="status-grid compact-grid">
+        <article class="item-card compact-item">
+          <h4 class="card-title">Releases</h4>
+          <p class="card-copy">{{ (form_state.compatibility.releases | default([])) | join(', ') or 'auto' }}</p>
+        </article>
+        <article class="item-card compact-item">
+          <h4 class="card-title">Profiles</h4>
+          <p class="card-copy">{{ (form_state.compatibility.profiles | default([])) | join(', ') or 'auto' }}</p>
+        </article>
+      </div>
+    </article>
+
     <details class="card fold-card">
       <summary class="fold-summary">
         <div class="fold-summary-copy">
-          <p class="eyebrow">Step 3</p>
+          <p class="eyebrow">Step 4</p>
           <h3 class="section-title">Release and version</h3>
         </div>
         <div class="fold-summary-meta">
@@ -109,20 +315,13 @@
             </select>
           </label>
         </div>
-        {% if not versions %}
-        <article class="empty-state">
-          <span class="empty-icon">v</span>
-          <h3>No version list loaded yet</h3>
-          <p class="muted">Choose a distro first, then refresh the page if you want a release/version suggestion list.</p>
-        </article>
-        {% endif %}
       </div>
     </details>
 
     <details class="card fold-card">
       <summary class="fold-summary">
         <div class="fold-summary-copy">
-          <p class="eyebrow">Step 4</p>
+          <p class="eyebrow">Step 5</p>
           <h3 class="section-title">Tools</h3>
         </div>
         <div class="fold-summary-meta">
@@ -156,7 +355,7 @@
     <details class="card fold-card">
       <summary class="fold-summary">
         <div class="fold-summary-copy">
-          <p class="eyebrow">Step 5</p>
+          <p class="eyebrow">Step 6</p>
           <h3 class="section-title">Addons</h3>
         </div>
         <div class="fold-summary-meta">
@@ -190,7 +389,7 @@
     <details class="card fold-card">
       <summary class="fold-summary">
         <div class="fold-summary-copy">
-          <p class="eyebrow">Step 6</p>
+          <p class="eyebrow">Step 7</p>
           <h3 class="section-title">Repair mode</h3>
         </div>
         <div class="fold-summary-meta">
@@ -215,13 +414,267 @@
     <div class="sticky-action-meta">
       <span class="badge ok">1 job</span>
       <span class="chip">guided install</span>
-      <span class="chip">live logs</span>
-      <span class="chip">next steps included</span>
+      <span class="chip">preflight checks</span>
+      <span class="chip">user guardrails</span>
     </div>
     <div class="actions">
-      <button type="submit">Queue install job</button>
+      <button type="submit" id="install-submit">Start install</button>
       <a class="button-link subtle" href="/chroots">Review current chroots</a>
     </div>
   </section>
 </form>
+
+<script>
+(() => {
+  const form = document.getElementById("install-form");
+  const profile = form?.querySelector('select[name="profile"]');
+  const desktop = form?.querySelector('select[name="desktop"]');
+  const usernameInput = document.getElementById("username-input");
+  const userSelect = document.getElementById("target-user-select");
+  const createUserCard = document.getElementById("create-user-card");
+  const createUserButton = document.getElementById("show-create-user");
+  const emptyCreateUserButton = document.getElementById("empty-create-user");
+  const advancedUsernameButton = document.getElementById("use-advanced-username");
+  const createUserApply = document.getElementById("create-user-apply");
+  const createUserCancel = document.getElementById("create-user-cancel");
+  const createUserUsername = document.getElementById("create-user-username");
+  const submitButton = document.getElementById("install-submit");
+  const csrfToken = form.querySelector('[name="csrf_token"]')?.value || "";
+  const statusNode = document.getElementById("install-preview-status");
+  const mirrorNode = document.getElementById("install-preview-mirror");
+  const spaceNode = document.getElementById("install-preview-space");
+  const profileNode = document.getElementById("install-preview-profile");
+  const desktopNode = document.getElementById("install-preview-desktop");
+  const distroNode = document.getElementById("install-preview-distro");
+  const releaseNode = document.getElementById("install-preview-release");
+  const userNode = document.getElementById("install-preview-user");
+  const packagesNode = document.getElementById("install-preview-packages");
+  const stepsNode = document.getElementById("install-preview-steps");
+  const warningsNode = document.getElementById("install-preview-warnings");
+  const blockingNode = document.getElementById("install-blocking-list");
+  const resolvedNode = document.getElementById("install-resolved-list");
+  if (!form || !profile || !desktop || !usernameInput || !submitButton) return;
+
+  function selectedCheckboxes(name) {
+    return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`)).map((node) => node.value);
+  }
+
+  function openCreateUser() {
+    if (createUserCard) createUserCard.hidden = false;
+    createUserUsername?.focus();
+  }
+
+  function closeCreateUser() {
+    if (createUserCard) createUserCard.hidden = true;
+  }
+
+  const presetOptions = {{ form_state.presets | default([]) | tojson }};
+  function applyPresetSelection() {
+    const selectedPreset = preset?.value || "";
+    const match = presetOptions.find((item) => item.id === selectedPreset);
+    if (!match) return;
+    if (profile && match.profile) profile.value = match.profile;
+    const desktopField = form.querySelector('[name="desktop"]');
+    if (desktopField && match.desktop) desktopField.value = match.desktop;
+  }
+
+  function applyProfileRules() {
+    const selected = profile.options[profile.selectedIndex];
+    const allowed = selected && selected.dataset.desktopAllowed === "1";
+    const defaultDesktop = selected && selected.dataset.defaultDesktop ? selected.dataset.defaultDesktop : "none";
+    if (!allowed) {
+      desktop.value = "none";
+      desktop.disabled = true;
+    } else {
+      desktop.disabled = false;
+      if (!desktop.value || desktop.value === "auto") {
+        desktop.value = defaultDesktop;
+      }
+    }
+  }
+
+  function renderIssueCard(issue) {
+    const article = document.createElement("article");
+    article.className = "card soft issue-card";
+    const actions = (issue.actions || []).map((action) => `<a class="button-link subtle" href="${action.href}">${action.label}</a>`).join("");
+    article.innerHTML = `<div class="item-header"><div><h3 class="card-title">${issue.code || "issue"}</h3><p class="card-copy">${issue.message || ""}</p></div><span class="badge bad">blocking</span></div><div class="actions">${actions}</div>`;
+    return article;
+  }
+
+  function renderResolvedItem(text, kind = "ok") {
+    const article = document.createElement("article");
+    article.className = "card soft";
+    article.innerHTML = `<div class="item-header"><div><h3 class="card-title">${kind === "warn" ? "Warning" : "Resolved"}</h3><p class="card-copy">${text}</p></div><span class="badge ${kind}">${kind}</span></div>`;
+    return article;
+  }
+
+  function renderPlan(plan) {
+    distroNode.textContent = plan.distro || "—";
+    releaseNode.textContent = plan.release || "auto";
+    profileNode.textContent = plan.profile || "minimal";
+    desktopNode.textContent = plan.desktop || "none";
+    userNode.textContent = plan.username || "—";
+    packagesNode.textContent = (plan.tools && plan.tools.length) || (plan.addons && plan.addons.length)
+      ? `${(plan.tools || []).length} tools · ${(plan.addons || []).length} addons`
+      : "base system only";
+    stepsNode.innerHTML = "";
+    for (const step of plan.steps || []) {
+      const li = document.createElement("li");
+      li.className = "item-card";
+      li.innerHTML = `<strong>${step.label || step.id}</strong><p class="item-summary">${step.description || ""}</p>`;
+      stepsNode.appendChild(li);
+    }
+  }
+
+  function renderValidation(data, responseOk) {
+    blockingNode.innerHTML = "";
+    resolvedNode.innerHTML = "";
+    warningsNode.innerHTML = "";
+
+    const hasBlocking = !!(data.blocking && data.blocking.length);
+    submitButton.disabled = hasBlocking;
+
+    if (hasBlocking) {
+      statusNode.textContent = "blocked";
+      statusNode.className = "badge bad";
+      for (const issue of data.blocking) blockingNode.appendChild(renderIssueCard(issue));
+    } else {
+      statusNode.textContent = "ready";
+      statusNode.className = "badge ok";
+      blockingNode.innerHTML = `<article class="empty-state"><span class="empty-icon">✓</span><h3>Preflight passed</h3><p class="muted">No blocking issues found.</p></article>`;
+    }
+
+    if (data.plan) {
+      renderPlan(data.plan);
+      mirrorNode.textContent = data.plan.mirror || "auto";
+    }
+    const storage = data.preview?.storage || {};
+    if (spaceNode) {
+      const requiredMiB = storage.required_bytes ? Math.round(storage.required_bytes / (1024 * 1024)) : 0;
+      const freeMiB = storage.free_bytes ? Math.round(storage.free_bytes / (1024 * 1024)) : 0;
+      spaceNode.textContent = requiredMiB ? `${requiredMiB} MiB required · ${freeMiB} MiB free` : "—";
+    }
+
+    for (const item of data.resolved || []) {
+      resolvedNode.appendChild(renderResolvedItem(item, "ok"));
+    }
+    for (const warning of data.warnings || []) {
+      warningsNode.appendChild(renderResolvedItem(warning, "warn"));
+    }
+    const mirror = data.preview?.mirror;
+    if (mirror?.fallback_chain?.length) {
+      resolvedNode.appendChild(renderResolvedItem(`Mirror fallback chain: ${mirror.fallback_chain.join(" → ")}`, "ok"));
+    }
+  }
+
+  function buildPayload() {
+    return {
+      distro: form.querySelector('[name="distro"]')?.value || "",
+      name: form.querySelector('[name="name"]')?.value || "",
+      username: usernameInput.value || "",
+      preset: form.querySelector('[name="preset"]')?.value || "",
+      profile: form.querySelector('[name="profile"]')?.value || "",
+      desktop: form.querySelector('[name="desktop"]')?.value || "",
+      release: form.querySelector('[name="release"]')?.value || "",
+      version: form.querySelector('[name="version"]')?.value || "",
+      mirror: form.querySelector('[name="mirror"]')?.value || "",
+      tools: selectedCheckboxes("tools"),
+      addons: selectedCheckboxes("addons"),
+      repair: !!form.querySelector('[name="repair"]:checked'),
+    };
+  }
+
+  let timer = null;
+  async function refreshPreview() {
+    applyPresetSelection();
+    applyProfileRules();
+    try {
+      const response = await fetch(`/api/install/preview`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "Accept": "application/json", "x-csrf-token": csrfToken},
+        body: JSON.stringify(buildPayload()),
+      });
+      const data = response.ok ? await response.json() : (await response.json()).detail;
+      renderValidation(data, response.ok);
+    } catch (error) {
+      statusNode.textContent = "offline";
+      statusNode.className = "badge warn";
+      submitButton.disabled = true;
+      blockingNode.innerHTML = `<article class="card soft issue-card"><div class="item-header"><div><h3 class="card-title">preview_unavailable</h3><p class="card-copy">Preflight validation is unavailable, so submit is blocked until validation returns.</p></div><span class="badge bad">blocking</span></div></article>`;
+    }
+  }
+
+  function schedulePreview() {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(refreshPreview, 150);
+  }
+
+  userSelect?.addEventListener("change", () => {
+    usernameInput.value = userSelect.value || "";
+    schedulePreview();
+  });
+  createUserButton?.addEventListener("click", openCreateUser);
+  emptyCreateUserButton?.addEventListener("click", openCreateUser);
+  advancedUsernameButton?.addEventListener("click", () => usernameInput.focus());
+  createUserCancel?.addEventListener("click", closeCreateUser);
+  createUserApply?.addEventListener("click", () => {
+    const value = (createUserUsername?.value || "").trim();
+    if (!value) {
+      window.chrootctlToast?.("Enter a username first.", "warn", 2800);
+      createUserUsername?.focus();
+      return;
+    }
+    usernameInput.value = value;
+    if (userSelect) {
+      let option = Array.from(userSelect.options).find((item) => item.value === value);
+      if (!option) {
+        option = document.createElement("option");
+        option.value = value;
+        option.textContent = `${value} · new target user`;
+        userSelect.appendChild(option);
+      }
+      userSelect.value = value;
+    }
+    closeCreateUser();
+    schedulePreview();
+  });
+
+  preset?.addEventListener("change", () => { applyPresetSelection(); applyProfileRules(); schedulePreview(); });
+  form.addEventListener("input", schedulePreview);
+  form.addEventListener("change", schedulePreview);
+  profile.addEventListener("change", () => {
+    applyProfileRules();
+    schedulePreview();
+  });
+  applyProfileRules();
+  refreshPreview();
+})();
+</script>
 {% endblock %}
+
+<script>
+(() => {
+  const installJobsList = document.getElementById("install-jobs-list");
+  if (!installJobsList) return;
+  window.chrootctlPoll?.({
+    url: "/api/jobs?kind=install&limit=5&tail=4",
+    interval: 2500,
+    onData: (data) => {
+      const items = data.items || [];
+      window.chrootctlJobNotifier?.update(items.filter((item) => item.complete));
+      installJobsList.innerHTML = "";
+      if (!items.length) {
+        installJobsList.innerHTML = `<article class="empty-state"><span class="empty-icon">⌛</span><h3>No install jobs yet</h3><p class="muted">Queued installs will appear here.</p></article>`;
+        return;
+      }
+      for (const job of items) {
+        const badge = job.state === "succeeded" ? "ok" : (job.state === "failed" ? "bad" : "warn");
+        const article = document.createElement("article");
+        article.className = "item-card compact-item";
+        article.innerHTML = `<div class="item-header"><div><h3 class="card-title">${job.title}</h3><p class="card-copy">${job.progress_text || "Queued"}</p></div><span class="badge ${badge}">${job.state}</span></div><div class="actions"><a class="button-link subtle" href="/jobs/${job.job_id}">Open job</a></div>`;
+        installJobsList.appendChild(article);
+      }
+    },
+  });
+})();
+</script>

@@ -60,6 +60,21 @@ class ServiceContainer:
 
         return UserService(self, chroot_name=name)
 
+    def audit(self) -> "AuditService":
+        from .audit import AuditService
+
+        return AuditService(self)
+
+    def support(self) -> "SupportService":
+        from .support import SupportService
+
+        return SupportService(self)
+
+    def lifecycle(self) -> "LifecycleService":
+        from .lifecycle import LifecycleService
+
+        return LifecycleService()
+
     def catalog(self, kind: str, *, name: str | None = None) -> "CatalogService":
         from .catalog import CatalogService
 
