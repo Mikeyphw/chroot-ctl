@@ -65,10 +65,13 @@ def dashboard(
 
 def _lifecycle_status(request: Request, services):
     if hasattr(services, "lifecycle"):
-        return services.lifecycle().status(
-            host=request.app.state.web_security.bind_host,
-            port=request.app.state.web_security.bind_port,
-        )
+        try:
+            return services.lifecycle().status(
+                host=request.app.state.web_security.bind_host,
+                port=request.app.state.web_security.bind_port,
+            )
+        except Exception:
+            pass
     return {
         "state": "running",
         "enabled": False,

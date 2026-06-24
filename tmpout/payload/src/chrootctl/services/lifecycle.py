@@ -127,7 +127,7 @@ class LifecycleService:
     def _read_pid(path: Path) -> int | None:
         try:
             return int(path.read_text(encoding="utf-8").strip())
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, PermissionError, ValueError):
             return None
 
     @staticmethod

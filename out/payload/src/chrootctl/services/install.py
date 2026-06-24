@@ -624,12 +624,12 @@ class InstallService:
         runtime = self.services.runtime_for(name, username=target_username)
         installer = build_installer(
             str(record.get("distro") or ""),
-            runtime.config,
-            runtime.runner,
-            runtime.controller,
-            self.services.registry,
-            runtime.user_sync,
-            self.services.logger,
+            config=runtime.config,
+            runner=runtime.runner,
+            controller=runtime.controller,
+            registry=self.services.registry,
+            user_sync=runtime.user_sync,
+            logger=self.services.logger,
         )
         if progress is not None:
             progress("Upgrading chroot")
