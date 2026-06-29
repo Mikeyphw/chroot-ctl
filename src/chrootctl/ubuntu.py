@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from .base_install import BaseInstaller, LinkParser, ReleaseRef
+from .models import InstallBootstrapResult, InstallDesktopResult, InstallExtractResult
+
 
 class UbuntuInstaller(BaseInstaller):
     distro = "ubuntu"
@@ -8,9 +10,14 @@ class UbuntuInstaller(BaseInstaller):
     PREREQ_PACKAGES = ("passwd", "login", "libc-bin", "sudo")
     BASE_PACKAGES = ("nano", "vim", "net-tools", "git", "locales", "dbus-x11", "curl", "wget")
     DEV_PACKAGES = ("build-essential", "pkg-config", "python3", "python3-pip")
+    DESKTOP_PACKAGES = {
+        "xfce4": ("xfce4", "xfce4-terminal", "dbus-x11", "adwaita-icon-theme"),
+        "plasma": ("plasma-desktop", "konsole", "dbus-x11", "breeze-icon-theme"),
+        "none": (),
+    }
 
     def list_versions(self) -> list[ReleaseRef]:
-        html = self._fetch_text(self.RELEASE_INDEX_URL)
+        html = self._fetch_text_with_mirror_fallback(self.RELEASE_INDEX_URL)
         parser = LinkParser()
         parser.feed(html)
         refs: list[ReleaseRef] = []
@@ -43,26 +50,36 @@ class UbuntuInstaller(BaseInstaller):
         for key in [version, release, "24.04.4", "24.04", "noble"]:
             if key and key in refs:
                 return refs[key]
-        raise ValueError("could not resolve Ubuntu release")
+        raise ValueError("could not resolve ubuntu release; pass --version or --release")
 
     def _resolve_tarball(self, ref: ReleaseRef) -> tuple[str, str]:
-        html = self._fetch_text(ref.url)
+        html = self._fetch_text_with_mirror_fallback(ref.url)
         parser = LinkParser()
         parser.feed(html)
-        tarballs = [link for link in parser.links if link.endswith("-base-arm64.tar.gz")]
-        if not tarballs:
-            raise ValueError("no Ubuntu arm64 rootfs tarball found")
-        name = tarballs[0].split("/")[-1]
-        return name, f"{ref.url}{name}"
+        suffix_map = {"arm64": "-base-arm64.tar.gz", "amd64": "-base-amd64.tar.gz"}
+        suffix = suffix_map.get(self.arch)
+        if suffix is None:
+            raise RuntimeError(f"unsupported ubuntu target arch: {self.arch}")
+        for link in parser.links:
+            name = link.split("/")[-1]
+            if name.startswith("ubuntu-base-") and name.endswith(suffix):
+                return name, f"{ref.url}{name}"
+        raise RuntimeError(f"could not find ubuntu-base {self.arch} tarball under {ref.url}")
 
-    def run_phase_extract(self, *, version: str | None, release: str | None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_extract(
+        self,
+        *,
+        version: str | None,
+        release: str | None,
+        force_phase: bool = False,
+    ) -> InstallExtractResult:
         self.runner.require_root()
         self.assert_phase_allowed("extract", force_phase)
         ref = self._resolve_release(version, release)
         filename, url = self._resolve_tarball(ref)
         self.config.chroot_base.mkdir(parents=True, exist_ok=True)
         tarball = self.config.chroot_base / filename
-        self._download(url, tarball)
+        resolved_url = self._download_with_mirror_fallback(url, tarball)
         self.runner.run(
             ["tar", "xpvf", str(tarball), "--numeric-owner"],
             cwd=self.config.chroot_base,
@@ -71,8 +88,10 @@ class UbuntuInstaller(BaseInstaller):
         for rel in ("dev/pts", "dev/shm", "proc", "sys", "sdcard", "tmp", f"home/{self.config.username}"):
             if not self.runner.dry_run:
                 (self.config.chroot_base / rel).mkdir(parents=True, exist_ok=True)
-        self.mark_phase("extract", version=version or ref.label, release_name=release or ref.label, metadata={"tarball": filename, "url": url})
-        return {"phase": "extract", "version": version or ref.label, "release": release or ref.label, "tarball": filename}
+        resolved_version = version or ref.label
+        resolved_release = release or ref.label
+        self.mark_phase("extract", version=resolved_version, release_name=resolved_release, metadata={"tarball": filename, "url": resolved_url, "requested_url": url, "mirror": self.current_mirror_selection()})
+        return InstallExtractResult(version=resolved_version, release=resolved_release, tarball=filename)
 
     def _bootstrap_packages(self, profile: str | None) -> tuple[str, ...]:
         packages = list(self.PREREQ_PACKAGES) + list(self.BASE_PACKAGES)
@@ -81,24 +100,78 @@ class UbuntuInstaller(BaseInstaller):
         packages.extend(self._extra_packages_for_profile(profile))
         return tuple(dict.fromkeys(packages))
 
+    def _mirror_priority(self) -> list[tuple[str, str]]:
+        selected_url = ""
+        for item in getattr(self, "_mirror_candidates", ()):
+            if item["id"] == self.current_mirror_selection():
+                selected_url = item["url"]
+                break
+        ordered: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        if selected_url:
+            ordered.append((self.current_mirror_selection(), selected_url))
+            seen.add(selected_url)
+        for item in getattr(self, "_mirror_candidates", ()):
+            if item["url"] in seen:
+                continue
+            ordered.append((item["id"], item["url"]))
+            seen.add(item["url"])
+        return ordered
+
+    def _apply_apt_mirror(self, mirror_url: str) -> None:
+        normalized = mirror_url.rstrip("/")
+        self._chroot_shell(
+            "for file in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do "
+            "[ -f \"$file\" ] || continue; "
+            f"sed -i 's#https\?://archive\.ubuntu\.com/ubuntu#{normalized}#g; "
+            f"s#https\?://ports\.ubuntu\.com/ubuntu-ports#{normalized}#g; "
+            f"s#https\?://ports\.ubuntu\.com#{normalized}#g' \"$file\"; "
+            "done"
+        )
+
+    def _apt_with_mirror_fallback(self, command: str) -> None:
+        mirrors = self._mirror_priority()
+        if not mirrors:
+            self._chroot_shell(command)
+            return
+        last_error: Exception | None = None
+        for mirror_id, mirror_url in mirrors:
+            try:
+                self.logger.info("running apt command via mirror %s", mirror_id)
+                self._apply_apt_mirror(mirror_url)
+                self._chroot_shell(command)
+                return
+            except Exception as exc:
+                last_error = exc
+                self.logger.warning("apt command failed via mirror %s: %s", mirror_id, exc)
+        if last_error is not None:
+            raise RuntimeError(f"apt command failed across mirrors: {last_error}") from last_error
+
     def _install_bootstrap_prerequisites(self) -> None:
         packages = " ".join(self.PREREQ_PACKAGES)
-        self._chroot_shell(f"DEBIAN_FRONTEND=noninteractive apt install -y {packages}")
+        self._apt_with_mirror_fallback(f"DEBIAN_FRONTEND=noninteractive apt install -y {packages}")
 
-    def run_phase_bootstrap(self, *, username: str, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_bootstrap(
+        self,
+        *,
+        username: str,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallBootstrapResult:
         self.runner.require_root()
+        self._ensure_chroot_execution_supported()
         self.assert_phase_allowed("bootstrap", force_phase)
         user = self._validated_username(username)
         self._ensure_common_bootstrap_prereqs()
         self._require_chroot_commands("apt")
-        self._chroot_shell("apt update")
+        self._apt_with_mirror_fallback("apt update")
         self._install_bootstrap_prerequisites()
         self._require_chroot_commands("getent", "groupadd", "usermod", "useradd", "id")
         self._ensure_android_groups()
-        self._chroot_shell("DEBIAN_FRONTEND=noninteractive apt -y upgrade")
+        self._apt_with_mirror_fallback("DEBIAN_FRONTEND=noninteractive apt -y upgrade")
         packages = " ".join(self._bootstrap_packages(profile))
         if packages:
-            self._chroot_shell(f"DEBIAN_FRONTEND=noninteractive apt install -y {packages}")
+            self._apt_with_mirror_fallback(f"DEBIAN_FRONTEND=noninteractive apt install -y {packages}")
         self._ensure_common_user_groups()
         self._chroot_shell("id _apt >/dev/null 2>&1 && usermod -g 3003 -G 3003,3004 -a _apt || true")
         self._chroot_shell("usermod -G 3003 -a root || true")
@@ -109,27 +182,35 @@ class UbuntuInstaller(BaseInstaller):
         self._write_sudoers(user)
         self._chroot_shell(f"locale-gen {self.config.locale}")
         self.mark_phase("bootstrap", metadata={"username": user, "profile": profile or ""})
-        return {"phase": "bootstrap", "username": user, "profile": profile or ""}
+        return InstallBootstrapResult(username=user, profile=profile or "")
 
-    def run_phase_desktop(self, *, desktop: str | None, profile: str | None = None, force_phase: bool = False) -> dict[str, str]:
+    def run_phase_desktop(
+        self,
+        *,
+        desktop: str | None,
+        profile: str | None = None,
+        force_phase: bool = False,
+    ) -> InstallDesktopResult:
         self.runner.require_root()
+        self._ensure_chroot_execution_supported()
         self.assert_phase_allowed("desktop", force_phase)
         snapshot = self._create_snapshot("desktop")
         selected_desktop = desktop or "none"
-        pkg = {"xfce4": "xubuntu-desktop", "plasma": "kubuntu-desktop", "none": ""}[selected_desktop]
-        if pkg:
+        packages = self.DESKTOP_PACKAGES[selected_desktop]
+        if packages:
             self.controller.mount()
             self.controller.fix_tty()
-            self._chroot_shell(f"DEBIAN_FRONTEND=noninteractive apt install -y {pkg}")
+            package_list = " ".join(packages)
+            self._apt_with_mirror_fallback(f"DEBIAN_FRONTEND=noninteractive apt install --no-install-recommends -y {package_list}")
         pref = self.config.chroot_base / "etc/apt/preferences.d/nosnap.pref"
         if not self.runner.dry_run:
             pref.parent.mkdir(parents=True, exist_ok=True)
             pref.write_text("Package: snapd\nPin: release a=*\nPin-Priority: -10\n", encoding="utf-8")
         self._chroot_shell("apt-get -y autopurge snapd || true")
         self.mark_phase("desktop", metadata={"desktop": selected_desktop, "desktop_snapshot": snapshot or "", "profile": profile or ""})
-        return {"phase": "desktop", "desktop": selected_desktop, "snapshot": snapshot or "", "profile": profile or ""}
+        return InstallDesktopResult(desktop=selected_desktop, snapshot=snapshot or "", profile=profile or "")
 
     def _run_upgrade(self) -> None:
-        self._chroot_shell("apt update")
-        self._chroot_shell("DEBIAN_FRONTEND=noninteractive apt -y upgrade")
+        self._apt_with_mirror_fallback("apt update")
+        self._apt_with_mirror_fallback("DEBIAN_FRONTEND=noninteractive apt -y upgrade")
         self._chroot_shell("DEBIAN_FRONTEND=noninteractive apt -y autoremove")

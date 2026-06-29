@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Quick start</p>
+      <h2 class="page-title">Install a chroot and start using it</h2>
+      <p class="panel-copy">Use this page when you just want the shortest working path. Fix any host blockers, run the guided install, then open the chroot and copy the shell command.</p>
+    </div>
+    <div class="actions">
+      <a class="button-link" href="/install?name={{ guide.recommended_name }}">Open install</a>
+      <a class="button-link subtle" href="/doctor/host">Open host doctor</a>
+    </div>
+  </div>
+</section>
+
+<section class="detail-grid" data-reveal="up">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Recommended command</p>
+        <h2 class="section-title">CLI quick path</h2>
+      </div>
+      <button type="button" class="button-link subtle" onclick="window.chrootctlCopyText({{ guide.install_command|tojson }}, 'Install command copied')">Copy install command</button>
+    </div>
+    <pre class="log-box">{{ guide.install_command }}</pre>
+    <ul class="list">
+      <li>Preset: {{ guide.defaults.preset or 'minimal-server' }}</li>
+      <li>Release: {{ guide.defaults.release or 'noble' }}</li>
+      <li>Target user: {{ guide.target_user or 'not selected yet' }}</li>
+    </ul>
+  </article>
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Readiness</p>
+        <h2 class="section-title">Before you install</h2>
+      </div>
+      <span class="badge {% if guide.blockers %}fail{% elif guide.warnings %}warn{% else %}ok{% endif %}">
+        {% if guide.blockers %}blocked{% elif guide.warnings %}attention{% else %}ready{% endif %}
+      </span>
+    </div>
+    <div class="status-grid">
+      {% if guide.blockers %}
+        {% for row in guide.blockers %}
+        <article class="status-card fail">
+          <h3>{{ row.check|replace('_', ' ')|title }}</h3>
+          <p>{{ row.detail }}</p>
+          {% if row.next %}<p class="muted">{{ row.next }}</p>{% endif %}
+        </article>
+        {% endfor %}
+      {% else %}
+        <article class="status-card ok">
+          <h3>No hard blockers</h3>
+          <p>The host looks ready for the guided install flow.</p>
+        </article>
+      {% endif %}
+      {% for row in guide.warnings %}
+      <article class="status-card warn">
+        <h3>{{ row.check|replace('_', ' ')|title }}</h3>
+        <p>{{ row.detail }}</p>
+        {% if row.next %}<p class="muted">{{ row.next }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Next steps</p>
+        <h2 class="section-title">Shortest path to a working shell</h2>
+      </div>
+    </div>
+    <ol class="timeline-list">
+      {% for step in guide.use_steps %}
+      <li>{{ step }}</li>
+      {% endfor %}
+    </ol>
+  </article>
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">After install</p>
+        <h2 class="section-title">Use the chroot</h2>
+      </div>
+      {% if guide.shell_command %}
+      <button type="button" class="button-link subtle" onclick="window.chrootctlCopyText({{ guide.shell_command|tojson }}, 'Shell command copied')">Copy shell command</button>
+      {% endif %}
+    </div>
+    {% if guide.shell_target %}
+      <p class="panel-copy">The first registered chroot is <strong>{{ guide.shell_target }}</strong>. Open its detail page for status, doctor output, and command shortcuts.</p>
+      <pre class="log-box">{{ guide.shell_command }}</pre>
+      <a class="button-link" href="/chroots/{{ guide.shell_target }}">Open {{ guide.shell_target }}</a>
+    {% else %}
+      <p class="panel-copy">No chroot is registered yet. Finish the guided install first.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

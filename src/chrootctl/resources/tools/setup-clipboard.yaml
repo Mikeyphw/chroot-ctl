@@ -1,4 +1,4 @@
-description: Install common clipboard helpers for X11 sessions
+description: Install X11 clipboard helpers plus Termux host clipboard wrappers
 distro: all
 categories:
 - desktop

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Chroots</p>
+      <h2 class="page-title">Installed and pending environments</h2>
+      <p class="panel-copy">Start, restart, inspect, and continue provisioning from one mobile-friendly surface.</p>
+    </div>
+    <a class="button-link" href="/install">New install</a>
+    <a class="button-link subtle" href="/transfer">Transfer</a>
+  </div>
+</section>
+
+<section class="card" data-reveal="up">
+  <div class="card-grid columns-3">
+    {% for chroot in chroots %}
+    <article class="item-card">
+      <div class="item-header">
+        <div>
+          <a class="item-title" href="/chroots/{{ chroot.name }}">{{ chroot.name }}</a>
+          <p class="item-summary">{{ chroot.distro }} · phase={{ chroot.phase }}</p>
+        </div>
+        <span class="badge {{ 'ok' if chroot.installed else 'warn' }}">{{ "installed" if chroot.installed else "pending" }}</span>
+      </div>
+      <code class="code-token">{{ chroot.path }}</code>
+      <div class="actions">
+        <form method="post" action="/chroots/{{ chroot.name }}/start">
+          {{ csrf_token_input(request) }}
+          <button type="submit">Start</button>
+        </form>
+        <form method="post" action="/chroots/{{ chroot.name }}/restart">
+          {{ csrf_token_input(request) }}
+          <button type="submit" class="subtle">Restart</button>
+        </form>
+        <a class="button-link ghost" href="/chroots/{{ chroot.name }}">Details</a>
+        <button type="button" class="button-link subtle" onclick="window.chrootctlCopyText({{ ("chrootctl --name " ~ chroot.name ~ " start --login")|tojson }}, 'Shell command copied')">Copy shell</button>
+        <a class="button-link subtle" href="/transfer">Export</a>
+      </div>
+    </article>
+    {% else %}
+    <article class="empty-state">
+      <span class="empty-icon">+</span>
+      <h3>No chroots found</h3>
+      <p class="muted">Queue a guided install to create your first chroot.</p>
+      <a class="button-link" href="/install">Open install wizard</a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Compare</p>
+      <h2 class="section-title">Package diff</h2>
+      <p class="panel-copy">Compare installed package inventories between two chroots when package metadata is available.</p>
+    </div>
+  </div>
+  <form method="get" action="/chroots" class="form-grid">
+    <label>Left chroot
+      <select name="left">
+        {% for name in chroot_names %}
+        <option value="{{ name }}" {% if diff_result and diff_result.left == name %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Right chroot
+      <select name="right">
+        {% for name in chroot_names %}
+        <option value="{{ name }}" {% if diff_result and diff_result.right == name %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="actions"><button type="submit">Compare</button></div>
+  </form>
+  {% if diff_result %}
+    {% if diff_result.error %}
+      <article class="error-card"><h3>Diff unavailable</h3><p class="card-copy">{{ diff_result.error }}</p></article>
+    {% else %}
+      <div class="detail-grid">
+        <article class="card">
+          <h3 class="card-title">{{ diff_result.left }} only</h3>
+          <p class="card-copy">{{ diff_result.only_left|length }} packages</p>
+          <pre class="code-block">{{ diff_result.only_left | join('\n') }}</pre>
+        </article>
+        <article class="card">
+          <h3 class="card-title">{{ diff_result.right }} only</h3>
+          <p class="card-copy">{{ diff_result.only_right|length }} packages · common={{ diff_result.common_count }}</p>
+          <pre class="code-block">{{ diff_result.only_right | join('\n') }}</pre>
+        </article>
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

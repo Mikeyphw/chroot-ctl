@@ -39,7 +39,7 @@ def test_show_id_reads_paths(tmp_path: Path) -> None:
     (cfg.chroot_base / "etc/passwd").write_text("mike:x:1000:1000::/home/mike:/bin/bash\n", encoding="utf-8")
     mgr = UserSyncManager(cfg, RecordingRunner(), logging.getLogger("test"))
     data = mgr.show_id("mike")
-    assert data["username"] == "mike"
+    assert data.username == "mike"
 
 
 def test_sync_id_uses_quoted_username_and_paths(tmp_path: Path) -> None:
@@ -47,7 +47,7 @@ def test_sync_id_uses_quoted_username_and_paths(tmp_path: Path) -> None:
 
     result = mgr.sync_id("mike", fix_ownership=True)
 
-    assert result["ownership_fixed"] == "yes"
+    assert result.ownership_fixed is True
     commands = [cmd[-1] for cmd in runner.commands]
     assert "groupadd mike" in commands[0]
     assert "useradd -m -s /bin/bash mike" in commands[1]
@@ -69,7 +69,7 @@ def test_sync_id_can_skip_ownership_fix(tmp_path: Path) -> None:
 
     result = mgr.sync_id("mike", fix_ownership=False)
 
-    assert result["ownership_fixed"] == "no"
+    assert result.ownership_fixed is False
     assert len(runner.commands) == 4
 
 

@@ -63,9 +63,40 @@ def test_list_and_show_users_parse_passwd(tmp_path: Path) -> None:
     rows = manager.user_rows()
     data = manager.show_user("mike")
 
-    assert [row["username"] for row in rows] == ["root", "mike"]
-    assert data["uid"] == "2000"
-    assert data["shell"] == "/usr/bin/zsh"
+    assert [row.username for row in rows] == ["root", "mike"]
+    assert data.uid == "2000"
+    assert data.shell == "/usr/bin/zsh"
+
+
+def test_show_user_reports_sudo_yes_when_sudoers_fragment_matches(tmp_path: Path) -> None:
+    manager, config, _, _ = build_manager(tmp_path)
+    write_passwd(config)
+    sudoers = config.chroot_base / "etc" / "sudoers.d" / "90-chrootctl-mike"
+    sudoers.parent.mkdir(parents=True)
+    sudoers.write_text("mike ALL=(ALL:ALL) ALL\n", encoding="utf-8")
+
+    data = manager.show_user("mike")
+
+    assert data.sudo is True
+    assert data.to_display_dict()["sudo"] == "yes"
+
+
+def test_show_user_reports_sudo_no_when_sudoers_fragment_is_missing_or_invalid(tmp_path: Path) -> None:
+    manager, config, _, _ = build_manager(tmp_path)
+    write_passwd(config)
+
+    missing = manager.show_user("mike")
+    assert missing.sudo is False
+    assert missing.to_display_dict()["sudo"] == "no"
+
+    sudoers = config.chroot_base / "etc" / "sudoers.d" / "90-chrootctl-mike"
+    sudoers.parent.mkdir(parents=True)
+    sudoers.write_text("mike ALL=(ALL) NOPASSWD: /usr/bin/id\n", encoding="utf-8")
+
+    invalid = manager.show_user("mike")
+
+    assert invalid.sudo is False
+    assert invalid.to_display_dict()["sudo"] == "no"
 
 
 def test_add_user_generates_sanitized_chroot_commands(tmp_path: Path) -> None:
@@ -73,7 +104,7 @@ def test_add_user_generates_sanitized_chroot_commands(tmp_path: Path) -> None:
 
     result = manager.add_user("mike", shell="/bin/zsh", sudo=True)
 
-    assert result["created"] == "yes"
+    assert result.created is True
     commands = [command[-1] for command in runner.commands if command[-2:] != ["passwd", "mike"]]
     assert any("groupadd mike" in command for command in commands)
     assert any("useradd -m -s /bin/zsh -g mike mike" in command for command in commands)

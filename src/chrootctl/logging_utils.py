@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+
 def configure_logging(log_file: Path, verbose: bool = False) -> logging.Logger:
-    log_file.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("chrootctl")
     logger.setLevel(logging.DEBUG)
     logger.handlers.clear()
@@ -17,8 +17,15 @@ def configure_logging(log_file: Path, verbose: bool = False) -> logging.Logger:
     console.setFormatter(fmt)
     logger.addHandler(console)
 
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(fmt)
-    logger.addHandler(file_handler)
+    try:
+        parent = log_file.parent
+        if not parent.exists():
+            parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(fmt)
+        logger.addHandler(file_handler)
+    except OSError as exc:
+        logger.warning("File logging disabled for %s: %s", log_file, exc)
+
     return logger

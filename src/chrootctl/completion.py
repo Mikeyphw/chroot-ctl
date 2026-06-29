@@ -13,8 +13,9 @@ def generate_zsh_completion(prog: str = "chrootctl") -> str:
     completion_subcommands = "zsh"
     chroots_subcommands = "list show remove rename"
     users_subcommands = "list show add remove password shell sudo show-id sync-id"
-    tools_subcommands = "categories list show apply select"
-    addons_subcommands = "categories list show apply select"
+    tools_subcommands = "categories list show apply"
+    addons_subcommands = "categories list show apply"
+    log_levels = "DEBUG INFO WARNING ERROR CRITICAL"
 
     return f"""#compdef {prog}
 
@@ -60,11 +61,24 @@ typeset -g {fn}_prog="{prog}"
   compadd -a names
 }}
 
+{fn}_compadd_installed_chroots() {{
+  local -a names
+  names=($({fn}_dynamic __complete installed-chroots))
+  compadd -a names
+}}
+
 {fn}_fzf_chroot() {{
   local selection
   selection=$({fn}_fzf_pick "{fn}_dynamic __complete chroot-details" "{fn}_dynamic __complete chroot-preview {{1}}")
   [[ -n "$selection" ]] || return 1
-  compadd -- "${{selection%%$'\\t'*}}"
+  compadd -- "${{selection%%$'\t'*}}"
+}}
+
+{fn}_fzf_installed_chroot() {{
+  local selection
+  selection=$({fn}_fzf_pick "{fn}_dynamic __complete installed-chroots" "{fn}_dynamic __complete chroot-preview {{1}}")
+  [[ -n "$selection" ]] || return 1
+  compadd -- "${{selection%%$'\t'*}}"
 }}
 
 {fn}_complete_chroot_arg() {{
@@ -72,6 +86,13 @@ typeset -g {fn}_prog="{prog}"
     {fn}_fzf_chroot && return
   fi
   {fn}_compadd_chroots
+}}
+
+{fn}_complete_installed_chroot_arg() {{
+  if {fn}_have fzf; then
+    {fn}_fzf_installed_chroot && return
+  fi
+  {fn}_compadd_installed_chroots
 }}
 
 {fn}_complete_config_path() {{
@@ -101,6 +122,42 @@ typeset -g {fn}_prog="{prog}"
   compadd -a names
 }}
 
+{fn}_compadd_tool_categories() {{
+  local distro="${{opt_args[--distro]}}"
+  local -a categories
+  categories=($({fn}_dynamic __complete tool-categories "$distro"))
+  compadd -a categories
+}}
+
+{fn}_compadd_addon_categories() {{
+  local distro="${{opt_args[--distro]}}"
+  local -a categories
+  categories=($({fn}_dynamic __complete addon-categories "$distro"))
+  compadd -a categories
+}}
+
+{fn}_fzf_catalog_pick() {{
+  local topic_prefix="$1"
+  local selection
+  selection=$({fn}_fzf_pick "{fn}_dynamic __complete ${{topic_prefix}}-details" "{fn}_dynamic __complete ${{topic_prefix}}-preview {{1}}")
+  [[ -n "$selection" ]] || return 1
+  compadd -- "${{selection%%$'\t'*}}"
+}}
+
+{fn}_complete_tool_arg() {{
+  if {fn}_have fzf; then
+    {fn}_fzf_catalog_pick tool && return
+  fi
+  {fn}_compadd_tools
+}}
+
+{fn}_complete_addon_arg() {{
+  if {fn}_have fzf; then
+    {fn}_fzf_catalog_pick addon && return
+  fi
+  {fn}_compadd_addons
+}}
+
 {fn}_complete_after_dashdash() {{
   _normal
 }}
@@ -109,13 +166,15 @@ typeset -g {fn}_prog="{prog}"
   local curcontext="$curcontext" state line
   typeset -A opt_args
 
-  _arguments -C \\
-    '--config[Path to config file]:config:{fn}_complete_config_path' \\
-    '--dry-run[Do not execute commands]' \\
-    '--verbose[Enable verbose output]' \\
-    '--no-sudo[Disable automatic sudo escalation]' \\
-    '--name[Chroot name]:chroot name:{fn}_complete_chroot_arg' \\
-    '1:command:({commands})' \\
+  _arguments -C \
+    '--config[Path to config file]:config:{fn}_complete_config_path' \
+    '--dry-run[Do not execute commands]' \
+    '--verbose[Enable verbose output]' \
+    '--json[Emit machine-readable JSON for supported commands]' \
+    '--no-sudo[Disable automatic sudo escalation]' \
+    '--name[Target chroot name]:chroot name:{fn}_complete_chroot_arg' \
+    '--non-interactive[Fail instead of prompting]' \
+    '1:command:({commands})' \
     '*::args:->args'
 
   case $state in
@@ -125,49 +184,53 @@ typeset -g {fn}_prog="{prog}"
           _arguments '1:shell:({completion_subcommands})'
           ;;
         status)
-          _arguments '--verbose[Show path existence and extra details]'
+          _arguments '--details[Show path existence and extra details]'
           ;;
         mount|unmount|fix-tty|doctor)
           ;;
         logs)
-          _arguments '--tail[Number of lines to show]:lines' '--all[Show full log]'
+          _arguments \
+            '--tail[Number of lines to show]:lines' \
+            '--all[Show full log]' \
+            '--follow[Keep streaming appended log lines]' \
+            '--level[Minimum severity to include]:level:({log_levels})'
           ;;
         start|restart)
           if (( CURRENT > 2 )) && [[ " ${{words[*]}} " == *" -- "* ]]; then
             {fn}_complete_after_dashdash
             return
           fi
-          _arguments \\
-            '--login[Open login shell for configured user]' \\
-            '--root-login[Open login shell as root]' \\
-            '--exec-command[Execute command string]:command'
+          _arguments \
+            '--login[Open login shell for configured user]' \
+            '--root-login[Open login shell as root]' \
+            '--x11[Prepare Termux:X11 on host and export DISPLAY/PULSE_SERVER]'
           ;;
         exec)
           if (( CURRENT > 2 )) && [[ " ${{words[*]}} " == *" -- "* ]]; then
             {fn}_complete_after_dashdash
             return
           fi
-          _arguments \\
-            '--root[Execute as root]' \\
-            '--command[Execute command string]:command'
+          _arguments \
+            '--root[Execute as root]' \
+            '--command[Execute command string]:command' \
+            '--x11[Prepare Termux:X11 on host and export DISPLAY/PULSE_SERVER]'
           ;;
         install)
-          _arguments \\
-            '1:distro:({distros})' \\
-            '--phase[Installation phase]:phase:({phases})' \\
-            '--force-phase[Bypass phase gating]' \\
-            '--auto[Run remaining phases from --phase]' \\
-            '--resume[Resume from next actionable phase]' \\
-            '--repair[Re-run current phase in repair mode]' \\
-            '--list-versions[List available versions]' \\
-            '--version[Version label]:version' \\
-            '--release[Release codename]:release' \\
-            '--username[Username to create or sync]:username' \\
-            '--desktop[Desktop selection]:desktop:({desktops})' \\
-            '--profile[Install profile]:profile:({profiles})' \\
-            '--tool[Tool to apply after finalize]:tool' \\
-            '--addon[Addon to apply after finalize]:addon' \\
-            '--select-tools[Select tools with fzf if available]' \\
+          _arguments \
+            '1:distro:({distros})' \
+            '--phase[Installation phase]:phase:({phases})' \
+            '--force-phase[Bypass phase gating]' \
+            '--resume[Resume from next actionable phase]' \
+            '--repair[Re-run current phase in repair mode]' \
+            '--list-versions[List available versions]' \
+            '--version[Version label]:version' \
+            '--release[Release codename]:release' \
+            '--username[Username to create or sync]:username' \
+            '--desktop[Desktop selection]:desktop:({desktops})' \
+            '--profile[Install profile]:profile:({profiles})' \
+            '--tool[Tool to apply after finalize]:tool:{fn}_complete_tool_arg' \
+            '--addon[Addon to apply after finalize]:addon:{fn}_complete_addon_arg' \
+            '--select-tools[Select tools with fzf if available]' \
             '--select-addons[Select addons with fzf if available]'
           ;;
         upgrade)
@@ -179,17 +242,8 @@ typeset -g {fn}_prog="{prog}"
             return
           fi
           case $words[3] in
-            list)
-              ;;
-            show|remove)
-              {fn}_complete_chroot_arg
-              ;;
             rename)
-              if (( CURRENT == 4 )); then
-                {fn}_complete_chroot_arg
-              else
-                {fn}_complete_chroot_arg
-              fi
+              _arguments '1:new-name:'
               ;;
           esac
           ;;
@@ -200,25 +254,24 @@ typeset -g {fn}_prog="{prog}"
           fi
           case $words[3] in
             list)
-              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg'
               ;;
             show|remove|password)
-              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '1:user:{fn}_compadd_users'
+              _arguments '1:user:{fn}_compadd_users'
               ;;
             add)
-              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--shell[Login shell]:shell:_files' '--sudo[Grant sudo access]' '1:username:'
+              _arguments '--shell[Login shell]:shell:_files' '--sudo[Grant sudo access]' '1:username:'
               ;;
             shell)
-              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--shell[Login shell]:shell:_files' '1:user:{fn}_compadd_users'
+              _arguments '--shell[Login shell]:shell:_files' '1:user:{fn}_compadd_users'
               ;;
             sudo)
-              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--enable[Enable sudo]' '--disable[Disable sudo]' '1:user:{fn}_compadd_users'
+              _arguments '--enable[Enable sudo]' '--disable[Disable sudo]' '1:user:{fn}_compadd_users'
               ;;
             show-id)
-              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--username[Username to inspect]:username:{fn}_compadd_users'
+              _arguments '1:user:{fn}_compadd_users'
               ;;
             sync-id)
-              _arguments '--name[Chroot name]:chroot:{fn}_complete_chroot_arg' '--username[Username to sync]:username:{fn}_compadd_users' '--no-fix-ownership[Skip recursive chown]'
+              _arguments '--no-fix-ownership[Skip recursive chown]' '1:user:{fn}_compadd_users'
               ;;
           esac
           ;;
@@ -232,13 +285,13 @@ typeset -g {fn}_prog="{prog}"
               _arguments '--distro[Filter by distro]:distro:({distros})'
               ;;
             list)
-              _arguments '--distro[Filter by distro]:distro:({distros})' '--category[Filter by category]:category'
+              _arguments '--distro[Filter by distro]:distro:({distros})' '--category[Filter by category]:category:{fn}_compadd_tool_categories'
               ;;
-            select)
-              _arguments '--category[Filter by category]:category'
+            apply)
+              _arguments '--category[Filter interactive selection by category]:category:{fn}_compadd_tool_categories' '1:tool:{fn}_complete_tool_arg' '*:tool:{fn}_compadd_tools'
               ;;
-            show|apply)
-              _arguments '1:tool:{fn}_compadd_tools' '*:tool:{fn}_compadd_tools'
+            show)
+              _arguments '1:tool:{fn}_complete_tool_arg'
               ;;
           esac
           ;;
@@ -252,13 +305,13 @@ typeset -g {fn}_prog="{prog}"
               _arguments '--distro[Filter by distro]:distro:({distros})'
               ;;
             list)
-              _arguments '--distro[Filter by distro]:distro:({distros})' '--category[Filter by category]:category'
+              _arguments '--distro[Filter by distro]:distro:({distros})' '--category[Filter by category]:category:{fn}_compadd_addon_categories'
               ;;
-            select)
-              _arguments '--category[Filter by category]:category'
+            apply)
+              _arguments '--category[Filter interactive selection by category]:category:{fn}_compadd_addon_categories' '1:addon:{fn}_complete_addon_arg' '*:addon:{fn}_compadd_addons'
               ;;
-            show|apply)
-              _arguments '1:addon:{fn}_compadd_addons' '*:addon:{fn}_compadd_addons'
+            show)
+              _arguments '1:addon:{fn}_complete_addon_arg'
               ;;
           esac
           ;;
@@ -273,6 +326,15 @@ compdef {fn} {prog}
 
 def completion_chroot_names(records: Iterable[dict[str, object]]) -> str:
     names = sorted(str(record["name"]) for record in records if "name" in record)
+    return "\n".join(names)
+
+
+def completion_installed_chroot_names(records: Iterable[dict[str, object]]) -> str:
+    names = sorted(
+        str(record["name"])
+        for record in records
+        if "name" in record and bool(record.get("installed"))
+    )
     return "\n".join(names)
 
 

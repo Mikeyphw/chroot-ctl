@@ -1,0 +1,7 @@
+description: Install the Cinnamon desktop environment
+distro: all
+categories:
+- desktop-environment
+- desktop
+script: install-cinnamon.sh
+name: cinnamon

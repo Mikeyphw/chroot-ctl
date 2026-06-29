@@ -88,7 +88,7 @@ def test_tool_apply_runs_bundled_script_and_updates_registry_metadata(tmp_path: 
         logger=logger,
     )
 
-    assert result["applied"] == "yes"
+    assert result.applied is True
     assert runner.commands
     assert runner.commands[-1][:4] == ["busybox", "chroot", str(config.chroot_base), "/bin/bash"]
     assert runner.kwargs[-1]["chroot_env"] is True
@@ -115,7 +115,7 @@ def test_tool_apply_runs_python_script_inside_chroot(tmp_path: Path) -> None:
         logger=logger,
     )
 
-    assert result["applied"] == "yes"
+    assert result.applied is True
     assert runner.commands[-2] == ["busybox", "chroot", str(config.chroot_base), "python3", "--version"]
     assert runner.commands[-1] == ["busybox", "chroot", str(config.chroot_base), "python3", "-"]
     assert "CHROOTCTL_NAME" in runner.kwargs[-1]["input_text"]
@@ -172,7 +172,7 @@ def test_addon_apply_runs_bundled_script_and_updates_registry_metadata(tmp_path:
         logger=logger,
     )
 
-    assert result["applied"] == "yes"
+    assert result.applied is True
     assert runner.commands[-1][:4] == ["busybox", "chroot", str(config.chroot_base), "/bin/bash"]
     assert registry.get("ubuntu")["metadata"]["addons"] == "nala"
 
@@ -203,7 +203,7 @@ def test_sync_uid_tool_uses_user_sync_manager(tmp_path: Path, monkeypatch) -> No
         logger=logger,
     )
 
-    assert result["name"] == "sync-uid"
+    assert result.name == "sync-uid"
     assert called == [("mike", True)]
     assert registry.get("ubuntu")["metadata"]["tools"] == "sync-uid"
 

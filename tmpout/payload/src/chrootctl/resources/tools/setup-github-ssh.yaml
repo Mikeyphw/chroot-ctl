@@ -1,0 +1,8 @@
+description: Configure SSH keys and GitHub host settings for the chroot user
+distro: all
+categories:
+- development
+- ssh
+- git
+script: setup-github-ssh.sh
+name: setup-github-ssh

@@ -1,0 +1,7 @@
+description: Install Nautilus file manager
+distro: all
+categories:
+- file-manager
+- desktop
+script: install-nautilus.sh
+name: nautilus

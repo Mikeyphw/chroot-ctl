@@ -1,0 +1,6 @@
+name: nala
+description: Install nala
+distro: ubuntu
+categories:
+  - package-management
+script: install-nala.sh

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -94,3 +95,27 @@ def test_run_passes_input_text(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert captured_input == "print('ok')"
     assert result.stdout == "ok"
+
+
+def test_can_execute_foreign_arch_requires_qemu_and_binfmt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = SystemRunner(logging.getLogger("test"))
+    binfmt_root = tmp_path / "binfmt_misc"
+    binfmt_root.mkdir()
+    (binfmt_root / "status").write_text("enabled\n", encoding="utf-8")
+    (binfmt_root / "qemu-arm64").write_text("enabled\n", encoding="utf-8")
+
+    monkeypatch.setattr("chrootctl.system.shutil.which", lambda command: f"/usr/bin/{command}" if command == "qemu-aarch64-static" else None)
+
+    def fake_path(value: str):
+        if value == "/proc/sys/fs/binfmt_misc":
+            return binfmt_root
+        return Path(value)
+
+    monkeypatch.setattr("chrootctl.system.Path", fake_path)
+    assert runner.can_execute_foreign_arch("arm64") is True
+
+
+def test_can_execute_foreign_arch_returns_false_without_qemu(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = SystemRunner(logging.getLogger("test"))
+    monkeypatch.setattr("chrootctl.system.shutil.which", lambda command: None)
+    assert runner.can_execute_foreign_arch("arm64") is False

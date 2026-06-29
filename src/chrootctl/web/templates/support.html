@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Support</p>
+      <h2 class="page-title">Support bundle and audit history</h2>
+      <p class="panel-copy">Export a sanitized support bundle and review recent operational events.</p>
+    </div>
+  </div>
+  <form method="post" action="/support/bundle" class="inline-form">
+    <label class="field grow">
+      <span class="field-label">Output archive</span>
+      <input class="text-input" type="text" name="archive" placeholder="./chrootctl-support-bundle.tar.gz">
+    </label>
+    <button class="button-link" type="submit">Build support bundle</button>
+  </form>
+</section>
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header"><div><p class="eyebrow">Audit</p><h2 class="section-title">Recent events</h2></div></div>
+    <div class="stack-list">
+      {% for event in events %}
+      <article class="item-card">
+        <div class="item-header">
+          <div>
+            <h3 class="card-title">{{ event.event_type }}</h3>
+            <p class="card-copy">{{ event.message or event.target }}</p>
+          </div>
+          <span class="badge {{ 'ok' if event.result == 'ok' else 'warn' }}">{{ event.result }}</span>
+        </div>
+        <p class="muted">{{ event.actor }} · {{ event.created_at }}</p>
+      </article>
+      {% else %}
+      <p class="empty-state">No events yet.</p>
+      {% endfor %}
+    </div>
+  </article>
+  <article class="card">
+    <div class="section-header"><div><p class="eyebrow">Jobs</p><h2 class="section-title">Recent jobs</h2></div></div>
+    <div class="stack-list">
+      {% for job in recent_jobs %}
+      <article class="item-card">
+        <div class="item-header">
+          <div>
+            <h3 class="card-title">{{ job.title }}</h3>
+            <p class="card-copy">{{ job.progress_text }}</p>
+          </div>
+          <a class="button-link subtle" href="/jobs/{{ job.job_id }}">Open</a>
+        </div>
+      </article>
+      {% else %}
+      <p class="empty-state">No jobs yet.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

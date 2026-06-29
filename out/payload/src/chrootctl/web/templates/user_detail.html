@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">User</p>
+      <h2 class="page-title">{{ user.username }}</h2>
+      <p class="panel-copy">{{ chroot_name }} · Password changes and removals require explicit confirmation.</p>
+    </div>
+    <div class="actions">
+      <a class="button-link subtle" href="/chroots/{{ chroot_name }}/users">Back to users</a>
+      <button type="button" class="danger" onclick="document.getElementById('remove-user-dialog').showModal()">Remove</button>
+    </div>
+  </div>
+
+  <dl class="kv">
+    {% for key, value in user.to_display_dict().items() %}
+    <div class="kv-pair">
+      <dt>{{ key }}</dt>
+      <dd>{{ value }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">ID sync</p>
+        <h2 class="section-title">Host/chroot ids</h2>
+      </div>
+    </div>
+    <dl class="kv">
+      {% for key, value in ids.to_display_dict().items() %}
+      <div class="kv-pair">
+        <dt>{{ key }}</dt>
+        <dd>{{ value }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+    <form method="post" action="/chroots/{{ chroot_name }}/users/{{ user.username }}/sync-id" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <label class="checkbox-row">
+        <input type="checkbox" name="fix_ownership" value="true" checked>
+        <span>Fix ownership after syncing ids</span>
+      </label>
+      <div class="actions">
+        <button type="submit">Run users sync-id</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Sudo</p>
+        <h2 class="section-title">Privilege</h2>
+        <p class="panel-copy">Current state: <strong>{{ "enabled" if user.sudo else "disabled" }}</strong></p>
+      </div>
+    </div>
+    <form method="post" action="/chroots/{{ chroot_name }}/users/{{ user.username }}/sudo" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <input type="hidden" name="enabled" value="{{ 'false' if user.sudo else 'true' }}">
+      <div class="actions">
+        <button type="submit">{{ "Disable sudo" if user.sudo else "Enable sudo" }}</button>
+      </div>
+    </form>
+  </article>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Shell</p>
+        <h2 class="section-title">Login shell</h2>
+      </div>
+    </div>
+    <form method="post" action="/chroots/{{ chroot_name }}/users/{{ user.username }}/shell" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <label>Shell path
+        <input type="text" name="shell" value="{{ user.shell }}" required>
+      </label>
+      <div class="actions">
+        <button type="submit">Update shell</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Password</p>
+        <h2 class="section-title">Set a new password</h2>
+        <p class="panel-copy">This uses a dedicated web form. No terminal passthrough is required.</p>
+      </div>
+    </div>
+    <form method="post" action="/chroots/{{ chroot_name }}/users/{{ user.username }}/password" class="form-stack narrow">
+      {{ csrf_token_input(request) }}
+      <label>New password
+        <input type="password" name="password" autocomplete="new-password" required>
+      </label>
+      <label>Confirm password
+        <input type="password" name="confirm_password" autocomplete="new-password" required>
+      </label>
+      <label>Type <code class="code-token">{{ user.username }}</code> to confirm
+        <input type="text" name="confirm_username" autocomplete="off" required>
+      </label>
+      <div class="actions">
+        <button type="submit">Set password</button>
+      </div>
+    </form>
+  </article>
+</section>
+
+<dialog id="remove-user-dialog" class="modal">
+  <div class="modal-inner">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Remove user</p>
+        <h2 class="section-title">{{ user.username }}</h2>
+      </div>
+      <button type="button" class="button-link subtle" onclick="document.getElementById('remove-user-dialog').close()">Close</button>
+    </div>
+    <form method="post" action="/chroots/{{ chroot_name }}/users/{{ user.username }}/remove" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <label>Type <code class="code-token">{{ user.username }}</code> to confirm
+        <input type="text" name="confirm_username" autocomplete="off" required>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="delete_home" value="true">
+        <span>Delete the home directory too</span>
+      </label>
+      <div class="actions">
+        <button type="submit" class="danger">Remove user</button>
+        <button type="button" class="subtle" onclick="document.getElementById('remove-user-dialog').close()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}

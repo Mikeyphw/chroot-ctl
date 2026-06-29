@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Help</p>
+      <h2 class="page-title">FAQ and troubleshooting</h2>
+      <p class="panel-copy">Quick answers for transfer, cross-arch installs, and support collection.</p>
+    </div>
+  </div>
+</section>
+<section class="card">
+  <div class="stack-list">
+    {% for item in faq_items %}
+    <article class="item-card">
+      <h3 class="card-title">{{ item.question }}</h3>
+      <p class="card-copy">{{ item.answer }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

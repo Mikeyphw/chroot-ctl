@@ -1,0 +1,92 @@
+#!/system/bin/sh
+set -e
+set +u
+
+resolve_moddir() {
+  _script_dir="${0%/*}"
+  _candidate="$_script_dir/../.."
+  if [ -f "$_candidate/module.prop" ] && grep -q '^id=chrootctl-magisk$' "$_candidate/module.prop" 2>/dev/null; then
+    cd "$_candidate" 2>/dev/null && pwd
+    return 0
+  fi
+
+  for _candidate in     "/data/adb/modules/chrootctl-magisk"     "/data/adb/modules_update/chrootctl-magisk"     "/data/adb/ksu/modules/chrootctl-magisk"     "/data/adb/ksu/modules_update/chrootctl-magisk"; do
+    if [ -f "$_candidate/module.prop" ] && grep -q '^id=chrootctl-magisk$' "$_candidate/module.prop" 2>/dev/null; then
+      echo "$_candidate"
+      return 0
+    fi
+  done
+
+  echo "$_script_dir/../.."
+}
+MODDIR="$(resolve_moddir)"
+SITE_PACKAGES="$MODDIR/python/site-packages"
+PAYLOAD_SRC="$MODDIR/payload/src"
+[ -f "$MODDIR/config/chrootctl/python.env" ] && . "$MODDIR/config/chrootctl/python.env"
+# Always recompute module-local import paths from the active module directory.
+SITE_PACKAGES="$MODDIR/python/site-packages"
+PAYLOAD_SRC="$MODDIR/payload/src"
+PYTHONPATH=""
+
+python_candidate_runs() {
+  _candidate_bin="$1"
+  _candidate_lib="$2"
+  [ -n "$_candidate_bin" ] || return 1
+  [ -x "$_candidate_bin" ] || return 1
+  if [ -n "$_candidate_lib" ] && [ ! -d "$_candidate_lib" ]; then
+    return 1
+  fi
+  if [ -n "$_candidate_lib" ]; then
+    LD_LIBRARY_PATH="$_candidate_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
+  else
+    "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
+  fi
+}
+
+try_python_candidate() {
+  _candidate_bin="$1"
+  [ -n "$_candidate_bin" ] || return 1
+  [ -x "$_candidate_bin" ] || return 1
+  _candidate_prefix="$(dirname "$(dirname "$_candidate_bin")")"
+  for _candidate_lib in "" "$_candidate_prefix/lib" /system/lib64 /system/lib /data/data/com.termux/files/usr/lib /data/adb/py2droid/usr/lib; do
+    if python_candidate_runs "$_candidate_bin" "$_candidate_lib"; then
+      PYTHON_BIN="$_candidate_bin"
+      PYTHON_LD_LIBRARY_PATH="$_candidate_lib"
+      return 0
+    fi
+  done
+  return 1
+}
+
+select_python_runtime() {
+  PYTHON_PATH_BIN="$(command -v python3 2>/dev/null || true)"
+  for _candidate_bin in "${CHROOTCTL_PYTHON_BIN:-}" /system/bin/python3 "$PYTHON_PATH_BIN" /data/data/com.termux/files/usr/bin/python3 /data/adb/py2droid/usr/bin/python3 "${PYTHON_BIN:-}"; do
+    try_python_candidate "$_candidate_bin" && return 0
+  done
+  return 1
+}
+
+select_python_runtime || {
+  echo "no runnable python3 found for chrootctl" >&2
+  exit 1
+}
+if [ -n "${PYTHON_LD_LIBRARY_PATH:-}" ]; then
+  export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+SITE_PACKAGES="$MODDIR/python/site-packages"
+PAYLOAD_SRC="$MODDIR/payload/src"
+export PYTHONPATH="$PAYLOAD_SRC:$SITE_PACKAGES"
+
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import chrootctl
+PY
+then
+  echo "chrootctl package is not importable" >&2
+  echo "MODDIR=$MODDIR" >&2
+  echo "PYTHON_BIN=$PYTHON_BIN" >&2
+  echo "PYTHONPATH=$PYTHONPATH" >&2
+  exit 1
+fi
+
+exec "$PYTHON_BIN" -m chrootctl.cli "$@"

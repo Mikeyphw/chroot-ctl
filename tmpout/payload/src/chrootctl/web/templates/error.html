@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero-card error-shell">
+  <p class="eyebrow">Request failed</p>
+  <h2>{{ error.title }}</h2>
+  <p class="muted">{{ error.message }}</p>
+  {% if error.details %}
+  <div class="summary-grid">
+    {% for key, value in error.details.items() %}
+    <div class="summary-row">
+      <span>{{ key.replace('_', ' ') }}</span>
+      <strong>{{ value }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if error.hints %}
+  <div class="inline-actions">
+    {% for hint in error.hints %}
+    <span class="badge badge-warn">{{ hint }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if error.actions %}
+  <div class="inline-actions">
+    {% for action in error.actions %}
+      {% if action.href %}
+      <a class="button-link" href="{{ action.href }}">{{ action.label }}</a>
+      {% elif action.command %}
+      <code>{{ action.command }}</code>
+      {% else %}
+      <span class="badge">{{ action.label }}</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+  <details class="technical-details">
+    <summary>Technical details</summary>
+    <pre>{{ error.model_dump() | tojson(indent=2) }}</pre>
+  </details>
+</section>
+{% endblock %}

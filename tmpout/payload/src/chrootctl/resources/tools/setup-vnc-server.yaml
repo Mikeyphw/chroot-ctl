@@ -1,0 +1,7 @@
+description: Install and prepare a TigerVNC server profile for the chroot user
+distro: all
+categories:
+- remote-access
+- desktop
+script: setup-vnc-server.sh
+name: setup-vnc-server

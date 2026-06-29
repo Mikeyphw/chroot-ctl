@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">KernelSU / Magisk</p>
+      <h2 class="page-title">Module control panel</h2>
+      <p class="panel-copy">Manage the main chrootctl Web server and inspect module readiness from the same backend lifecycle state.</p>
+    </div>
+    <span id="status-badge" class="badge warn">checking</span>
+  </div>
+</section>
+
+<section class="card">
+  <div class="detail-grid">
+    <div>
+      <span class="stat-label">Server</span>
+      <strong id="server-state">loading…</strong>
+    </div>
+    <div>
+      <span class="stat-label">URL</span>
+      <strong id="server-url">{{ open_url }}</strong>
+    </div>
+    <div>
+      <span class="stat-label">Python</span>
+      <strong id="python-state">loading…</strong>
+    </div>
+    <div>
+      <span class="stat-label">Module</span>
+      <strong id="module-state">loading…</strong>
+    </div>
+  </div>
+
+  <p id="mode-copy" class="panel-copy">Loading runtime mode…</p>
+  <div class="form-actions">
+    <button type="button" id="control-start" onclick="control('start')">Start</button>
+    <button type="button" id="control-stop" onclick="control('stop')">Stop</button>
+    <button type="button" id="control-restart" onclick="control('restart')">Restart</button>
+    <button type="button" onclick="refresh()">Refresh</button>
+    <a class="button-link" href="{{ open_url }}" target="_blank" rel="noreferrer">Open in browser</a>
+  </div>
+
+  <h3 class="section-title">Raw state</h3>
+  <pre id="raw-state" class="log-block">loading…</pre>
+</section>
+
+<script>
+const STATUS_URL = "{{ status_url }}";
+const CONTROL_URL = "{{ control_url }}";
+
+function setText(id, text) {
+  const node = document.getElementById(id);
+  if (node) node.textContent = text;
+}
+
+async function refresh() {
+  const response = await fetch(STATUS_URL);
+  const state = await response.json();
+  const running = state.webui === "running";
+  const badge = document.getElementById("status-badge");
+  badge.textContent = state.webui || "unknown";
+  badge.className = "badge " + (running ? "ok" : "warn");
+  setText("server-state", state.webui + (state.server && state.server.url ? " · " + state.server.url : ""));
+  setText("server-url", state.server && state.server.url ? state.server.url : "{{ open_url }}");
+  setText("python-state", state.python && state.python.binary ? state.python.binary : "not detected");
+  setText("module-state", state.module && state.module.version ? state.module.name + " " + state.module.version : "unknown");
+  const privileged = Boolean(state.mode && state.mode.privileged);
+  setText("mode-copy", privileged ? "Privileged module controls are available." : "Running in pip/source mode. Module control actions are disabled.");
+  for (const id of ["control-start", "control-stop", "control-restart"]) {
+    const node = document.getElementById(id);
+    if (node) node.disabled = !privileged;
+  }
+  setText("raw-state", JSON.stringify(state, null, 2));
+}
+
+async function control(action) {
+  await fetch(CONTROL_URL, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action})
+  });
+  setTimeout(refresh, 700);
+}
+
+setInterval(refresh, 2500);
+refresh();
+</script>
+{% endblock %}

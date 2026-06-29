@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">{{ page_title }}</p>
+      <h2 class="page-title">Search, preview, and apply {{ page_title | lower }}</h2>
+      <p class="panel-copy">Use category and distro filters, then apply one or many entries to an installed chroot without leaving the page.</p>
+    </div>
+    <a class="button-link subtle" href="/{{ kind_slug }}">Reset filters</a>
+  </div>
+
+  <form method="get" action="/{{ kind_slug }}" class="toolbar">
+    <label>Search
+      <input type="search" name="q" value="{{ query }}" placeholder="name, description, category">
+    </label>
+    <label>Distro
+      <select name="distro">
+        <option value="">all</option>
+        {% for distro_name in distros %}
+        <option value="{{ distro_name }}" {% if selected_distro == distro_name %}selected{% endif %}>{{ distro_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Category
+      <select name="category">
+        <option value="">all</option>
+        {% for category in categories %}
+        <option value="{{ category }}" {% if selected_category == category %}selected{% endif %}>{{ category }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="toolbar-action">
+      <button type="submit">Apply filters</button>
+    </div>
+  </form>
+</section>
+
+<section class="split-grid catalog-grid">
+  <article class="card">
+    <form method="post" action="/{{ kind_slug }}/apply" class="form-stack">
+      {{ csrf_token_input(request) }}
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Catalog</p>
+          <h2 class="section-title">{{ entries | length }} result{{ '' if entries | length == 1 else 's' }}</h2>
+        </div>
+        <label>Target chroot
+          <select name="name" required>
+            {% for chroot in chroots %}
+            <option value="{{ chroot.name }}">{{ chroot.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="item-list">
+        {% for entry in entries %}
+        <article class="item-card {% if selected_entry and selected_entry.name == entry.name %}selected{% endif %}">
+          <div class="item-header">
+            <label class="choice-card {% if selected_entry and selected_entry.name == entry.name %}selected{% endif %}">
+              <input type="checkbox" name="entries" value="{{ entry.name }}">
+              <div>
+                <strong>{{ entry.name }}</strong>
+                <p class="muted">{{ entry.description }}</p>
+              </div>
+            </label>
+            <a class="button-link subtle" href="/{{ kind_slug }}?{% if query %}q={{ query | urlencode }}&{% endif %}{% if selected_distro %}distro={{ selected_distro | urlencode }}&{% endif %}{% if selected_category %}category={{ selected_category | urlencode }}&{% endif %}selected={{ entry.name | urlencode }}">Preview</a>
+          </div>
+          <div class="chip-list">
+            {% for category in entry.categories %}
+            <span class="chip">{{ category }}</span>
+            {% endfor %}
+            {% for distro in entry.distros %}
+            <span class="chip">{{ distro }}</span>
+            {% endfor %}
+          </div>
+          <div class="actions">
+            <a class="button-link ghost" href="/{{ kind_slug }}/{{ entry.name }}">Full details</a>
+          </div>
+        </article>
+        {% else %}
+        <article class="empty-state">
+          <span class="empty-icon">?</span>
+          <h3>No entries found</h3>
+          <p class="muted">Try a broader search or clear the current distro/category filters.</p>
+        </article>
+        {% endfor %}
+      </div>
+
+      <div class="actions">
+        <button type="submit">Apply selected {{ page_title | lower }}</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card">
+    {% if selected_entry %}
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Preview</p>
+        <h2 class="section-title">Preview · {{ selected_entry.name }}</h2>
+        <p class="panel-copy">{{ selected_entry.description }}</p>
+      </div>
+      <a class="button-link subtle" href="/{{ kind_slug }}/{{ selected_entry.name }}">Full details</a>
+    </div>
+    <div class="chip-list">
+      {% for distro in selected_entry.distros %}
+      <span class="chip">{{ distro }}</span>
+      {% endfor %}
+      {% for category in selected_entry.categories %}
+      <span class="chip">{{ category }}</span>
+      {% endfor %}
+    </div>
+    <p class="panel-copy"><code class="code-token">{{ selected_entry.script }}</code></p>
+    <pre class="code-block">{{ selected_entry.script_text }}</pre>
+    {% else %}
+    <article class="empty-state">
+      <span class="empty-icon">↗</span>
+      <h3>Choose a {{ kind }}</h3>
+      <p class="muted">Select an entry from the list to preview its manifest details and script contents.</p>
+    </article>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

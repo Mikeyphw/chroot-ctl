@@ -13,6 +13,7 @@ from chrootctl.system import RunResult
 class FakeRunner:
     def __init__(self) -> None:
         self.calls: list[tuple[list[str], dict]] = []
+        self.exec_calls: list[tuple[list[str], dict]] = []
         self.mount_returncodes: dict[str, int] = {}
         self.dry_run = True
 
@@ -24,6 +25,15 @@ class FakeRunner:
 
     def is_root(self) -> bool:
         return False
+
+    def host_termux_uid_gid(self, termux_home: Path) -> tuple[int, int]:
+        return (10123, 10123)
+
+
+    def exec(self, args, **kwargs):
+        argv = list(args)
+        self.exec_calls.append((argv, kwargs))
+        raise SystemExit(0)
 
     def run(self, args, **kwargs) -> RunResult:
         argv = list(args)
@@ -70,6 +80,21 @@ def test_start_login_opens_user_session(tmp_path: Path) -> None:
     assert argv[-3:] == ["/bin/su", "-", "mike"]
     assert "-c" not in argv
     assert kwargs["env"]["USER"] == "mike"
+
+
+def test_start_login_x11_prepares_host_and_exports_session_env(tmp_path: Path) -> None:
+    controller, runner = build_controller(tmp_path)
+
+    code = controller.start(login=True, root_login=False, x11=True)
+
+    assert code == 0
+    launch_calls = [call for call in runner.calls if call[0] and call[0][0] == "am"]
+    assert launch_calls
+    argv, kwargs = runner.calls[-1]
+    assert argv[:4] == ["chroot", str(controller.config.chroot_base), "/bin/su", "-"]
+    assert argv[-2:] == ["-c", "export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713; exec /usr/bin/zsh -il"]
+    assert kwargs["env"]["DISPLAY"] == ":0"
+    assert kwargs["env"]["PULSE_SERVER"] == "tcp:127.0.0.1:4713"
 
 
 def test_start_defaults_to_root_login_shell(tmp_path: Path) -> None:
@@ -174,3 +199,43 @@ def test_mount_applies_read_only_remount_for_configured_mount(tmp_path: Path) ->
 
     commands = [call[0] for call in runner.calls]
     assert ["busybox", "mount", "-o", "remount,bind,ro", str(cfg.chroot_base / "mnt/shared")] in commands
+
+
+def test_exec_user_x11_wraps_command_with_login_shell_and_display_env(tmp_path: Path) -> None:
+    controller, runner = build_controller(tmp_path)
+
+    code = controller.exec(root=False, command="glxinfo", x11=True)
+
+    assert code == 0
+    argv, kwargs = runner.calls[-1]
+    assert argv[:4] == ["chroot", str(controller.config.chroot_base), "/bin/su", "-"]
+    assert "export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713;" in argv[-1]
+    assert "exec /usr/bin/zsh -ilc glxinfo" in argv[-1]
+    assert kwargs["env"]["DISPLAY"] == ":0"
+
+
+def test_start_interactive_execs_user_session_and_never_returns(tmp_path: Path) -> None:
+    controller, runner = build_controller(tmp_path)
+
+    with pytest.raises(SystemExit) as exc:
+        controller.start_interactive(login=True, root_login=False)
+
+    assert exc.value.code == 0
+    argv, kwargs = runner.exec_calls[-1]
+    assert argv[-3:] == ["/bin/su", "-", "mike"]
+    assert "-c" not in argv
+    assert kwargs["env"]["USER"] == "mike"
+    assert kwargs["chroot_env"] is True
+
+
+def test_start_interactive_root_login_execs_shell(tmp_path: Path) -> None:
+    controller, runner = build_controller(tmp_path)
+
+    with pytest.raises(SystemExit) as exc:
+        controller.start_interactive(login=False, root_login=True)
+
+    assert exc.value.code == 0
+    argv, kwargs = runner.exec_calls[-1]
+    assert argv[:2] == ["chroot", str(controller.config.chroot_base)]
+    assert argv[-2:] == ["/usr/bin/zsh", "-l"]
+    assert kwargs["env"]["HOME"] == "/root"

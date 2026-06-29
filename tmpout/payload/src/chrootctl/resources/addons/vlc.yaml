@@ -1,0 +1,7 @@
+description: Install VLC media player
+distro: all
+categories:
+- media
+- desktop
+script: install-vlc.sh
+name: vlc

@@ -1,0 +1,7 @@
+description: Install the GNOME desktop environment
+distro: all
+categories:
+- desktop-environment
+- desktop
+script: install-gnome.sh
+name: gnome

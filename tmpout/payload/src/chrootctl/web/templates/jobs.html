@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Jobs</p>
+      <h2 class="page-title">Recent activity</h2>
+      <p class="panel-copy">Track recent install, transfer, and chroot actions from one page.</p>
+    </div>
+    <div class="chip-list">
+      <span class="chip" id="jobs-count">{{ jobs|length }} jobs</span>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Latest jobs</p>
+      <h2 class="section-title">Live status</h2>
+    </div>
+  </div>
+  <div class="stack-list" id="jobs-list">
+    {% for job in jobs %}
+    <article class="item-card" data-job-id="{{ job.job_id }}">
+      <div class="item-header">
+        <div>
+          <h3 class="card-title">{{ job.title }}</h3>
+          <p class="card-copy">{{ job.progress_text or "Queued" }}</p>
+        </div>
+        <span class="badge {{ 'ok' if job.state == 'succeeded' else ('bad' if job.state == 'failed' else 'warn') }}">{{ job.state }}</span>
+      </div>
+      <div class="actions">
+        <a class="button-link subtle" href="/jobs/{{ job.job_id }}">Open job</a>
+      </div>
+    </article>
+    {% else %}
+    <article class="empty-state">
+      <span class="empty-icon">⌛</span>
+      <h3>No jobs yet</h3>
+      <p class="muted">Queue an install, transfer, or chroot action and it will appear here.</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+(() => {
+  const jobsList = document.getElementById("jobs-list");
+  const countNode = document.getElementById("jobs-count");
+  if (!jobsList) return;
+  window.chrootctlPoll?.({
+    url: "/api/jobs?tail=5&limit=20",
+    interval: 2000,
+    onData: (data) => {
+      const items = data.items || [];
+      countNode.textContent = `${items.length} jobs`;
+      jobsList.innerHTML = "";
+      if (!items.length) {
+        jobsList.innerHTML = `<article class="empty-state"><span class="empty-icon">⌛</span><h3>No jobs yet</h3><p class="muted">Queue an install, transfer, or chroot action and it will appear here.</p></article>`;
+        return;
+      }
+      for (const job of items) {
+        const badge = job.state === "succeeded" ? "ok" : (job.state === "failed" ? "bad" : "warn");
+        const article = document.createElement("article");
+        article.className = "item-card";
+        article.innerHTML = `<div class="item-header"><div><h3 class="card-title">${job.title}</h3><p class="card-copy">${job.progress_text || "Queued"}</p></div><span class="badge ${badge}">${job.state}</span></div><div class="actions"><a class="button-link subtle" href="/jobs/${job.job_id}">Open job</a></div>`;
+        jobsList.appendChild(article);
+      }
+    },
+  });
+})();
+</script>
+{% endblock %}
