@@ -239,3 +239,26 @@ def test_start_interactive_root_login_execs_shell(tmp_path: Path) -> None:
     assert argv[:2] == ["chroot", str(controller.config.chroot_base)]
     assert argv[-2:] == ["/usr/bin/zsh", "-l"]
     assert kwargs["env"]["HOME"] == "/root"
+
+
+def test_exec_invocation_honors_explicit_username(tmp_path: Path) -> None:
+    controller, _ = build_controller(tmp_path)
+
+    argv, env = controller.exec_invocation(root=False, command="pwd", username="alice")
+
+    assert argv[:4] == ["chroot", str(controller.config.chroot_base), "/bin/su", "-"]
+    assert argv[-3:] == ["alice", "-c", "pwd"]
+    assert env["USER"] == "alice"
+    assert env["HOME"] == "/home/alice"
+
+
+def test_service_invocation_uses_login_shell_for_user_services(tmp_path: Path) -> None:
+    controller, _ = build_controller(tmp_path)
+
+    argv, env = controller.service_invocation(root=False, command="/tmp/chrootctl-services/vscode-web.sh", username="mike")
+
+    assert argv[:4] == ["chroot", str(controller.config.chroot_base), "/bin/su", "-"]
+    assert argv[4:6] == ["mike", "-c"]
+    assert "exec /usr/bin/zsh -ilc /tmp/chrootctl-services/vscode-web.sh" in argv[-1]
+    assert env["USER"] == "mike"
+    assert env["HOME"] == "/home/mike"

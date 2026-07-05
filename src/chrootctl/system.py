@@ -130,6 +130,52 @@ class SystemRunner:
             raise RuntimeError(result.stderr.strip() or f"command failed: {shlex.join(list(args))}")
         return result
 
+    def spawn(
+        self,
+        args: Sequence[str],
+        *,
+        env: dict[str, str] | None = None,
+        clean_env: bool = False,
+        chroot_env: bool = False,
+        cwd: Path | None = None,
+        stdout_path: Path | None = None,
+        append: bool = True,
+    ) -> int:
+        self.logger.debug("spawn: %s", shlex.join(list(args)))
+        if self.dry_run:
+            return 0
+        process_env = {} if clean_env else os.environ.copy()
+        if chroot_env:
+            for key in CHROOT_ENV_BLOCKLIST:
+                process_env.pop(key, None)
+            process_env.update(CHROOT_ENV_DEFAULTS)
+            process_env["TERM"] = os.environ.get("TERM") or "xterm-256color"
+        if env is not None:
+            process_env.update(env)
+
+        stdout_handle = None
+        stderr_stream = subprocess.DEVNULL
+        try:
+            if stdout_path is not None:
+                stdout_path.parent.mkdir(parents=True, exist_ok=True)
+                stdout_handle = stdout_path.open("a" if append else "w", encoding="utf-8")
+                stderr_stream = subprocess.STDOUT
+            process = subprocess.Popen(
+                list(args),
+                env=process_env,
+                stdout=stdout_handle or subprocess.DEVNULL,
+                stderr=stderr_stream,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                cwd=str(cwd) if cwd else None,
+                start_new_session=True,
+            )
+            return int(process.pid)
+        finally:
+            if stdout_handle is not None:
+                stdout_handle.close()
+
+
 
     def exec(
         self,

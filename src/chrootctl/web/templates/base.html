@@ -32,6 +32,7 @@
             <a class="nav-link {% if path.startswith('/transfer') %}active{% endif %}" href="/transfer">Transfer</a>
             <a class="nav-link {% if path.startswith('/build') %}active{% endif %}" href="/build">Build</a>
             <a class="nav-link {% if path.startswith('/jobs') %}active{% endif %}" href="/jobs">Jobs</a>
+            <a class="nav-link {% if path.startswith('/services') %}active{% endif %}" href="/services">Services</a>
             <a class="nav-link {% if path.startswith('/tools') %}active{% endif %}" href="/tools">Tools</a>
             <a class="nav-link {% if path.startswith('/addons') %}active{% endif %}" href="/addons">Addons</a>
             <a class="nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">Logs</a>
@@ -94,6 +95,9 @@
           </a>
           <a class="mobile-nav-link {% if path.startswith('/jobs') %}active{% endif %}" href="/jobs">
             <span>Jobs</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/services') %}active{% endif %}" href="/services">
+            <span>Services</span>
           </a>
           <a class="mobile-nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">
             <span>Logs</span>

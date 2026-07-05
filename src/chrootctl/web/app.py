@@ -13,7 +13,7 @@ from ..services import create_service_container
 from .jobs import WebJobManager
 from .error_handling import install_exception_handlers
 from .e2e_fixtures import install_e2e_fixtures
-from .routes import api_router, build_router, catalog_router, chroots_router, dashboard_router, docs_router, faq_router, install_router, jobs_router, quickstart_router, system_router, users_router, ksu_router, transfer_router, support_router
+from .routes import api_router, build_router, catalog_router, chroots_router, dashboard_router, docs_router, faq_router, install_router, jobs_router, quickstart_router, system_router, users_router, ksu_router, transfer_router, support_router, services_router
 from .security import WebSecurityConfig, csrf_token_input, install_security, is_local_host
 
 DEFAULT_HOST = "127.0.0.1"
@@ -42,6 +42,7 @@ def create_app(
             {"name": "docs", "description": "Human-friendly API help pages."},
             {"name": "support", "description": "Support bundle, FAQ, and audit pages."},
             {"name": "build", "description": "Magisk module build page and download flows."},
+            {"name": "services", "description": "Systemd-inspired chroot service units, enablement, and journals."},
         ],
     )
     template_dir = Path(files("chrootctl").joinpath("web/templates"))
@@ -60,6 +61,7 @@ def create_app(
     app.include_router(docs_router)
     app.include_router(faq_router)
     app.include_router(support_router)
+    app.include_router(services_router)
     app.include_router(api_router)
     app.include_router(chroots_router)
     app.include_router(transfer_router)

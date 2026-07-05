@@ -1,7 +1,0 @@
-description: Install Flatpak and add the Flathub remote
-distro: all
-categories:
-- package-management
-- desktop
-script: setup-flatpak.sh
-name: setup-flatpak

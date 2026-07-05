@@ -1,7 +1,0 @@
-description: Install X11 clipboard helpers plus Termux host clipboard wrappers
-distro: all
-categories:
-- desktop
-- desktop-utility
-script: setup-clipboard.sh
-name: setup-clipboard

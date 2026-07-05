@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Services</p>
+      <h2 class="page-title">Chroot service units</h2>
+      <p class="panel-copy">Start, stop, enable, disable, and inspect systemd-inspired services without editing module scripts.</p>
+    </div>
+    <code class="code-token">chrootctl run --list</code>
+  </div>
+</section>
+
+<section class="card" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Configured units</p>
+      <h2 class="section-title">Bound services</h2>
+      <p class="panel-copy">Each service is bound to exactly one chroot through <code>Chroot=</code>.</p>
+    </div>
+  </div>
+  <div class="card-grid columns-3">
+    {% for service in services %}
+    <article class="item-card">
+      <div class="item-header">
+        <div>
+          <a class="item-title" href="/services/{{ service.service }}">{{ service.service }}</a>
+          <p class="item-summary">{{ service.chroot }} · {{ service.description or "service unit" }}</p>
+        </div>
+        <span class="badge {{ 'ok' if service.status == 'running' else ('warn' if service.enabled == 'yes' else 'subtle') }}">{{ service.status }}</span>
+      </div>
+      <dl class="kv compact">
+        <div class="kv-pair"><dt>Enabled</dt><dd>{{ service.enabled }}</dd></div>
+        <div class="kv-pair"><dt>Boot</dt><dd>{{ service.boot }}</dd></div>
+        <div class="kv-pair"><dt>After</dt><dd>{{ service.after or "—" }}</dd></div>
+        <div class="kv-pair"><dt>Requires</dt><dd>{{ service.requires or "—" }}</dd></div>
+      </dl>
+      <div class="actions">
+        <form method="post" action="/services/{{ service.service }}/start">
+          {{ csrf_token_input(request) }}
+          <input type="hidden" name="chroot" value="{{ service.chroot }}">
+          <button type="submit">Start</button>
+        </form>
+        <form method="post" action="/services/{{ service.service }}/stop">
+          {{ csrf_token_input(request) }}
+          <input type="hidden" name="chroot" value="{{ service.chroot }}">
+          <button type="submit" class="subtle">Stop</button>
+        </form>
+        {% if service.enabled == 'yes' %}
+        <form method="post" action="/services/{{ service.service }}/disable">
+          {{ csrf_token_input(request) }}
+          <input type="hidden" name="chroot" value="{{ service.chroot }}">
+          <button type="submit" class="subtle">Disable</button>
+        </form>
+        {% else %}
+        <form method="post" action="/services/{{ service.service }}/enable">
+          {{ csrf_token_input(request) }}
+          <input type="hidden" name="chroot" value="{{ service.chroot }}">
+          <button type="submit" class="subtle">Enable</button>
+        </form>
+        {% endif %}
+        <a class="button-link ghost" href="/services/{{ service.service }}?chroot={{ service.chroot }}">Journal</a>
+      </div>
+    </article>
+    {% else %}
+    <article class="empty-state">
+      <span class="empty-icon">⚙</span>
+      <h3>No service units found</h3>
+      <p class="muted">Create <code>*.service</code> files in one of the configured service directories.</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Paths</p>
+      <h2 class="section-title">Service storage</h2>
+    </div>
+  </div>
+  <dl class="kv">
+    <div class="kv-pair"><dt>Unit dirs</dt><dd>{% for item in service_dirs %}<code class="code-token">{{ item }}</code>{% if not loop.last %} {% endif %}{% endfor %}</dd></div>
+    <div class="kv-pair"><dt>State</dt><dd><code class="code-token">{{ service_state_dir }}</code></dd></div>
+    <div class="kv-pair"><dt>Journals</dt><dd><code class="code-token">{{ service_log_dir }}</code></dd></div>
+  </dl>
+</section>
+{% endblock %}

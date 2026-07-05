@@ -13,6 +13,7 @@ from .users import router as users_router
 from .transfer import router as transfer_router
 from .build import router as build_router
 from .support import router as support_router
+from .services import router as services_router
 
 __all__ = [
     "api_router",
@@ -30,4 +31,5 @@ __all__ = [
     "transfer_router",
     "build_router",
     "support_router",
+    "services_router",
 ]

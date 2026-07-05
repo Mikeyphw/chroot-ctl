@@ -77,11 +77,12 @@ class ChrootController:
             if not self.runner.dry_run:
                 path.mkdir(parents=True, exist_ok=True)
 
-    def _session_env(self, *, root: bool, x11: bool = False) -> dict[str, str]:
+    def _session_env(self, *, root: bool, x11: bool = False, username: str | None = None) -> dict[str, str]:
+        session_user = "root" if root else (username or self.config.username)
         env = {
             "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "HOME": "/root" if root else f"/home/{self.config.username}",
-            "USER": "root" if root else self.config.username,
+            "HOME": "/root" if root else f"/home/{session_user}",
+            "USER": session_user,
             "SHELL": self._resolved_shell(),
             "TERM": "xterm-256color",
             "LANG": "C.UTF-8",
@@ -287,22 +288,18 @@ class ChrootController:
         rows.append({"check": "mounts", "status": "ok" if mounted else "warning", "detail": f"{mounted}/{len(self._mount_specs())} mounted"})
         return rows
 
-    def exec(
+    def exec_invocation(
         self,
         *,
         root: bool,
         argv: list[str] | None = None,
         command: str | None = None,
         x11: bool = False,
-    ) -> int:
-        self.runner.require_root()
+        username: str | None = None,
+    ) -> tuple[list[str], dict[str, str]]:
         if not command and not argv:
             raise ValueError("no command specified")
-        self.mount()
-        self.fix_tty()
-        if x11:
-            self._prepare_x11_host()
-        exec_user = "root" if root else self.config.username
+        exec_user = "root" if root else (username or self.config.username)
         shell = self._resolved_shell()
         command_text = command or shlex.join(argv or [])
         if root:
@@ -315,11 +312,62 @@ class ChrootController:
                 chroot_argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", launch]
             else:
                 chroot_argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", command_text]
+        return chroot_argv, self._session_env(root=root, x11=x11, username=exec_user if not root else None)
 
+    def service_invocation(
+        self,
+        *,
+        root: bool,
+        command: str,
+        x11: bool = False,
+        username: str | None = None,
+    ) -> tuple[list[str], dict[str, str]]:
+        """Return argv/env for long-running services.
+
+        Services intentionally use a fuller login-session command path than a
+        plain non-interactive exec.  In practice this matches the interactive
+        `chrootctl start --login` context more closely: the target user's login
+        shell is entered first, then an interactive login shell executes the
+        generated service script.  This preserves user shell startup behaviour
+        that tools such as VS Code Server often depend on for PATH, HOME, and
+        permission-sensitive helper setup.
+        """
+        if not command:
+            raise ValueError("no service command specified")
+        exec_user = "root" if root else (username or self.config.username)
+        shell = self._resolved_shell()
+        env = self._session_env(root=root, x11=x11, username=exec_user if not root else None)
+        quoted_command = shlex.quote(command)
+        if root:
+            shell_flags = "-ilc"
+            chroot_argv = ["chroot", str(self.config.chroot_base), shell, shell_flags, command]
+        else:
+            exports = ""
+            if x11:
+                exports = "export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713; "
+            launch = f"{exports}exec {shell} -ilc {quoted_command}"
+            chroot_argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", launch]
+        return chroot_argv, env
+
+    def exec(
+        self,
+        *,
+        root: bool,
+        argv: list[str] | None = None,
+        command: str | None = None,
+        x11: bool = False,
+        username: str | None = None,
+    ) -> int:
+        self.runner.require_root()
+        self.mount()
+        self.fix_tty()
+        if x11:
+            self._prepare_x11_host()
+        chroot_argv, env = self.exec_invocation(root=root, argv=argv, command=command, x11=x11, username=username)
         result = self.runner.run(
             chroot_argv,
             check=False,
-            env=self._session_env(root=root, x11=x11),
+            env=env,
             chroot_env=True,
             capture_output=False,
         )

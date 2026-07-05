@@ -129,3 +129,9 @@ def test_ensure_json_supported_allows_supported_command() -> None:
 def test_ensure_json_supported_rejects_unsupported_command() -> None:
     with pytest.raises(RuntimeError, match="--json is not supported for command: logs"):
         ensure_json_supported(argparse.Namespace(command="logs", json=True))
+
+
+def test_run_command_requires_root() -> None:
+    args = argparse.Namespace(command="run", no_sudo=False)
+
+    assert command_requires_root(args) is True

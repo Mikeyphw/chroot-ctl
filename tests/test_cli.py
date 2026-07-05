@@ -397,3 +397,33 @@ def test_clipboard_doctor_parser_accepts_overrides() -> None:
     assert args.clipboard_command == "doctor"
     assert str(args.socket) == "/tmp/clip.sock"
     assert str(args.pid_file) == "/tmp/clip.pid"
+
+
+def test_run_parser_supports_chroot_and_service_targets() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["run", "code", "serve-web", "--logs", "--tail", "100"])
+    name_args = parser.parse_args(["--name", "code", "run", "serve-web", "--status"])
+    boot_args = parser.parse_args(["run", "--boot"])
+    list_args = parser.parse_args(["run", "--list"])
+
+    assert args.command == "run"
+    assert args.run_targets == ["code", "serve-web"]
+    assert args.logs is True
+    assert args.tail == 100
+    assert name_args.name == "code"
+    assert name_args.run_targets == ["serve-web"]
+    assert name_args.run_status is True
+    assert boot_args.boot is True
+    assert list_args.run_list is True
+
+
+def test_run_parser_rejects_invalid_target_shapes() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "a", "b", "c"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "--boot", "serve-web"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "serve-web", "--tail", "10"])

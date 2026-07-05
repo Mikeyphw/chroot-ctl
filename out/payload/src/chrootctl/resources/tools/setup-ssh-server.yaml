@@ -1,8 +1,0 @@
-description: Install OpenSSH server and generate host keys
-distro: all
-categories:
-- remote-access
-- ssh
-- networking
-script: setup-ssh-server.sh
-name: setup-ssh-server

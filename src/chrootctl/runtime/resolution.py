@@ -267,6 +267,11 @@ def resolve_target_chroot_name(
 
 
 def _runtime_chroot_prompt(args) -> str | None:
+    if args.command == "run":
+        targets = list(getattr(args, "run_targets", []) or [])
+        if getattr(args, "boot", False) or getattr(args, "run_list", False) or len(targets) >= 2:
+            return None
+        return "Choose chroot"
     if args.command in {"status", "mount", "unmount", "fix-tty", "doctor", "start", "restart", "exec", "upgrade", "users"}:
         return "Choose chroot"
     if args.command in {"tools", "addons"} and getattr(args, f"{args.command}_command", None) == "apply":

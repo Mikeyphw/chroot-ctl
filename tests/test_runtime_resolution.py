@@ -185,3 +185,19 @@ def test_resolve_user_reference_requires_username_when_no_non_root_users() -> No
 
     with pytest.raises(RuntimeError, match="no non-root users available; pass --username"):
         resolution.resolve_user_reference(None, RootOnlyManager(), prompt="Choose user")
+
+
+def test_run_two_targets_skip_global_chroot_resolution() -> None:
+    args = type("Args", (), {"command": "run", "name": None, "run_targets": ["code", "serve-web"], "boot": False, "run_list": False})()
+
+    value = resolution.resolve_runtime_chroot_name(args, None, Registry())
+
+    assert value is None
+
+
+def test_run_single_target_uses_single_installed_chroot() -> None:
+    args = type("Args", (), {"command": "run", "name": None, "run_targets": ["serve-web"], "boot": False, "run_list": False})()
+
+    value = resolution.resolve_runtime_chroot_name(args, None, Registry())
+
+    assert value == "ubuntu"

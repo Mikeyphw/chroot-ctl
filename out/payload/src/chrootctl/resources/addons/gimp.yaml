@@ -1,7 +1,0 @@
-description: Install GIMP image editor
-distro: all
-categories:
-- graphics
-- desktop
-script: install-gimp.sh
-name: gimp

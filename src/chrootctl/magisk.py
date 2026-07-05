@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 DEFAULT_MODULE_ID = "chrootctl-magisk"
 DEFAULT_MODULE_NAME = "chrootctl Magisk Module"
-DEFAULT_MODULE_VERSION = "1.2.5"
-DEFAULT_MODULE_VERSION_CODE = 13
+DEFAULT_MODULE_VERSION = "1.2.6"
+DEFAULT_MODULE_VERSION_CODE = 14
 ANDROID_PYDANTIC_CORE_INDEX_URL = "https://eutalix.github.io/android-pydantic-core/"
 SUPPORTED_ANDROID_PYDANTIC_CORE_PYTHONS = ("3.9", "3.10", "3.11", "3.12", "3.13")
 
@@ -194,7 +194,7 @@ SITE_PACKAGES="$MODPATH/python/site-packages"
 PAYLOAD_SRC="$MODPATH/payload/src"
 PIP_TMP_DIR="$MODPATH/tmp"
 
-mkdir -p "$CONFIG_DIR" "$SITE_PACKAGES" "$PIP_TMP_DIR"
+mkdir -p "$CONFIG_DIR" "$SITE_PACKAGES" "$PIP_TMP_DIR" /data/adb/chrootctl/services /data/adb/chrootctl/run/services /data/adb/chrootctl/logs/services
 
 ui_print "- Checking python3"
 PYTHON_PATH_BIN="$(command -v python3 2>/dev/null || true)"
@@ -405,6 +405,7 @@ export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
 
 [ -x "$HELPER" ] && [ -f "$STATE_FILE" ] && "$HELPER" boot "$STATE_FILE" "$MODDIR" >/dev/null 2>&1 || true
 "$MODDIR/system/bin/chrootctl" clipboard daemon start >/dev/null 2>&1 || true
+"$MODDIR/system/bin/chrootctl" run --boot >/dev/null 2>&1 || true
 
 [ -x "$WEBUI_SERVICE" ] && "$WEBUI_SERVICE" start "$MODDIR" >/dev/null 2>&1 || true
 [ -x "$WEBUI_SERVICE" ] && "$WEBUI_SERVICE" watch "$MODDIR" >/dev/null 2>&1 &
@@ -760,7 +761,7 @@ READY_FILE="$CONFIG_DIR/dependencies.ready"
 BOOTSTRAP_LOG="$CONFIG_DIR/dependency-bootstrap.log"
 PIP_TMP_DIR="$MODDIR/tmp"
 
-mkdir -p "$CONFIG_DIR" "$SITE_PACKAGES" "$PIP_TMP_DIR"
+mkdir -p "$CONFIG_DIR" "$SITE_PACKAGES" "$PIP_TMP_DIR" /data/adb/chrootctl/services /data/adb/chrootctl/run/services /data/adb/chrootctl/logs/services
 
 [ -f "$CONFIG_DIR/python.env" ] && . "$CONFIG_DIR/python.env"
 # Always recompute module-local import paths from the active MODDIR.

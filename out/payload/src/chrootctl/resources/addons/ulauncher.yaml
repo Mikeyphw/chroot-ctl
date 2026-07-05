@@ -1,7 +1,0 @@
-description: Install Ulauncher application launcher
-distro: ubuntu
-categories:
-- launcher
-- desktop-utility
-script: install-ulauncher.sh
-name: ulauncher

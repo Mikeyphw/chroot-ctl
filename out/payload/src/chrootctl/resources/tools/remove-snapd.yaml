@@ -1,7 +1,0 @@
-name: remove-snapd
-description: Remove snapd, remove Firefox snap, and block snapd reinstall
-distro: ubuntu
-categories:
-  - system
-  - package-management
-script: ubuntu-remove-snapd.sh
