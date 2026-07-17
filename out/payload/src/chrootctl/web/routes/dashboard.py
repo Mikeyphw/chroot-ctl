@@ -65,9 +65,27 @@ def dashboard(
             "recent_builds": _recent_builds(jobs),
             "recent_events": services.audit().recent(limit=8),
             "quickstart": _safe_quickstart(services),
+            "registry_repair": _safe_registry_repair(services),
         },
     )
 
+
+
+@router.get("/repair")
+def repair_page(
+    request: Request,
+    services=Depends(get_services),
+    templates=Depends(get_templates),
+):
+    return templates.TemplateResponse(
+        request,
+        "repair.html",
+        {
+            "page_title": "Registry repair",
+            "repair_items": services.repair().preview_items(),
+            "registry_repair": _safe_registry_repair(services),
+        },
+    )
 
 def _lifecycle_status(request: Request, services):
     if hasattr(services, "lifecycle"):
@@ -83,6 +101,7 @@ def _lifecycle_status(request: Request, services):
         "enabled": False,
         "python": {"dependencies_ready": True},
         "module": {"version": None},
+        "mode": {"id": "pip", "label": "Pip/source", "privileged": False},
     }
 
 
@@ -147,3 +166,11 @@ def _safe_quickstart(services):
                 "Open the created chroot and copy the shell command.",
             ],
         }
+
+
+
+def _safe_registry_repair(services):
+    try:
+        return services.repair().preview_registry_repair()
+    except Exception:
+        return None

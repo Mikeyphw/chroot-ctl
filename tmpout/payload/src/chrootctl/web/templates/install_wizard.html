@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card hero">
+<section class="card hero" data-reveal="up">
   <div class="section-header">
     <div>
       <p class="eyebrow">Install wizard</p>
@@ -9,8 +9,24 @@
     </div>
     <div class="chip-list">
       <span class="chip">{{ distros | length }} distros</span>
+      <span class="chip">{{ form_state.presets | default([]) | length }} presets</span>
       <span class="chip">{{ tools | length }} tools</span>
       <span class="chip">{{ addons | length }} addons</span>
+    </div>
+  </div>
+</section>
+
+
+<section class="card" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Need the shortest path?</p>
+      <h2 class="section-title">Use the recommended values</h2>
+      <p class="panel-copy">For the smoothest first install, keep the preset at <strong>{{ form_state.defaults.preset or 'minimal-server' }}</strong>, release at <strong>{{ form_state.defaults.release or 'noble' }}</strong>, and choose or create a target user before submit.</p>
+    </div>
+    <div class="actions">
+      <a class="button-link subtle" href="/quickstart">Open quick start</a>
+      <a class="button-link subtle" href="/doctor/host">Open host doctor</a>
     </div>
   </div>
 </section>
@@ -75,7 +91,25 @@
   </article>
 </section>
 
-<form method="post" action="/install" class="form-stack" data-toast="Install job queued…" data-toast-kind="ok" id="install-form">
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Install jobs</p>
+      <h2 class="section-title">Recent install activity</h2>
+      <p class="panel-copy">Keep this page open while queued installs update in place.</p>
+    </div>
+    <a class="button-link subtle" href="/jobs">Open all jobs</a>
+  </div>
+  <div class="stack-list" id="install-jobs-list">
+    <article class="empty-state">
+      <span class="empty-icon">⌛</span>
+      <h3>No install jobs yet</h3>
+      <p class="muted">Queued installs will appear here.</p>
+    </article>
+  </div>
+</section>
+
+<form method="post" action="/install"  class="form-stack" data-toast="Install job queued…" data-toast-kind="ok" id="install-form">
   {{ csrf_token_input(request) }}
 
   <section class="collapsible-grid">
@@ -206,6 +240,15 @@
       </summary>
       <div class="fold-body">
         <div class="detail-grid">
+          <label>Preset
+            <select name="preset" id="install-preset">
+              <option value="">Custom</option>
+              {% for preset in form_state.presets | default([]) %}
+              <option value="{{ preset.id }}" {% if form_state.defaults.preset == preset.id %}selected{% endif %}>{{ preset.label }}</option>
+              {% endfor %}
+            </select>
+            <small class="muted">Backend-driven presets resolve profile, desktop, and default package selections.</small>
+          </label>
           <label>Profile
             <select name="profile">
               <option value="">default</option>
@@ -225,6 +268,25 @@
         </div>
       </div>
     </details>
+
+    <article class="card soft">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Compatibility</p>
+          <h3 class="section-title">Backend compatibility matrix</h3>
+        </div>
+      </div>
+      <div class="status-grid compact-grid">
+        <article class="item-card compact-item">
+          <h4 class="card-title">Releases</h4>
+          <p class="card-copy">{{ (form_state.compatibility.releases | default([])) | join(', ') or 'auto' }}</p>
+        </article>
+        <article class="item-card compact-item">
+          <h4 class="card-title">Profiles</h4>
+          <p class="card-copy">{{ (form_state.compatibility.profiles | default([])) | join(', ') or 'auto' }}</p>
+        </article>
+      </div>
+    </article>
 
     <details class="card fold-card">
       <summary class="fold-summary">
@@ -379,6 +441,8 @@
   const submitButton = document.getElementById("install-submit");
   const csrfToken = form.querySelector('[name="csrf_token"]')?.value || "";
   const statusNode = document.getElementById("install-preview-status");
+  const mirrorNode = document.getElementById("install-preview-mirror");
+  const spaceNode = document.getElementById("install-preview-space");
   const profileNode = document.getElementById("install-preview-profile");
   const desktopNode = document.getElementById("install-preview-desktop");
   const distroNode = document.getElementById("install-preview-distro");
@@ -402,6 +466,16 @@
 
   function closeCreateUser() {
     if (createUserCard) createUserCard.hidden = true;
+  }
+
+  const presetOptions = {{ form_state.presets | default([]) | tojson }};
+  function applyPresetSelection() {
+    const selectedPreset = preset?.value || "";
+    const match = presetOptions.find((item) => item.id === selectedPreset);
+    if (!match) return;
+    if (profile && match.profile) profile.value = match.profile;
+    const desktopField = form.querySelector('[name="desktop"]');
+    if (desktopField && match.desktop) desktopField.value = match.desktop;
   }
 
   function applyProfileRules() {
@@ -470,13 +544,26 @@
       blockingNode.innerHTML = `<article class="empty-state"><span class="empty-icon">✓</span><h3>Preflight passed</h3><p class="muted">No blocking issues found.</p></article>`;
     }
 
-    if (data.plan) renderPlan(data.plan);
+    if (data.plan) {
+      renderPlan(data.plan);
+      mirrorNode.textContent = data.plan.mirror || "auto";
+    }
+    const storage = data.preview?.storage || {};
+    if (spaceNode) {
+      const requiredMiB = storage.required_bytes ? Math.round(storage.required_bytes / (1024 * 1024)) : 0;
+      const freeMiB = storage.free_bytes ? Math.round(storage.free_bytes / (1024 * 1024)) : 0;
+      spaceNode.textContent = requiredMiB ? `${requiredMiB} MiB required · ${freeMiB} MiB free` : "—";
+    }
 
     for (const item of data.resolved || []) {
       resolvedNode.appendChild(renderResolvedItem(item, "ok"));
     }
     for (const warning of data.warnings || []) {
       warningsNode.appendChild(renderResolvedItem(warning, "warn"));
+    }
+    const mirror = data.preview?.mirror;
+    if (mirror?.fallback_chain?.length) {
+      resolvedNode.appendChild(renderResolvedItem(`Mirror fallback chain: ${mirror.fallback_chain.join(" → ")}`, "ok"));
     }
   }
 
@@ -485,10 +572,12 @@
       distro: form.querySelector('[name="distro"]')?.value || "",
       name: form.querySelector('[name="name"]')?.value || "",
       username: usernameInput.value || "",
+      preset: form.querySelector('[name="preset"]')?.value || "",
       profile: form.querySelector('[name="profile"]')?.value || "",
       desktop: form.querySelector('[name="desktop"]')?.value || "",
       release: form.querySelector('[name="release"]')?.value || "",
       version: form.querySelector('[name="version"]')?.value || "",
+      mirror: form.querySelector('[name="mirror"]')?.value || "",
       tools: selectedCheckboxes("tools"),
       addons: selectedCheckboxes("addons"),
       repair: !!form.querySelector('[name="repair"]:checked'),
@@ -497,9 +586,10 @@
 
   let timer = null;
   async function refreshPreview() {
+    applyPresetSelection();
     applyProfileRules();
     try {
-      const response = await fetch(`/api/install/validate`, {
+      const response = await fetch(`/api/install/preview`, {
         method: "POST",
         headers: {"Content-Type": "application/json", "Accept": "application/json", "x-csrf-token": csrfToken},
         body: JSON.stringify(buildPayload()),
@@ -549,6 +639,7 @@
     schedulePreview();
   });
 
+  preset?.addEventListener("change", () => { applyPresetSelection(); applyProfileRules(); schedulePreview(); });
   form.addEventListener("input", schedulePreview);
   form.addEventListener("change", schedulePreview);
   profile.addEventListener("change", () => {
@@ -560,3 +651,30 @@
 })();
 </script>
 {% endblock %}
+
+<script>
+(() => {
+  const installJobsList = document.getElementById("install-jobs-list");
+  if (!installJobsList) return;
+  window.chrootctlPoll?.({
+    url: "/api/jobs?kind=install&limit=5&tail=4",
+    interval: 2500,
+    onData: (data) => {
+      const items = data.items || [];
+      window.chrootctlJobNotifier?.update(items.filter((item) => item.complete));
+      installJobsList.innerHTML = "";
+      if (!items.length) {
+        installJobsList.innerHTML = `<article class="empty-state"><span class="empty-icon">⌛</span><h3>No install jobs yet</h3><p class="muted">Queued installs will appear here.</p></article>`;
+        return;
+      }
+      for (const job of items) {
+        const badge = job.state === "succeeded" ? "ok" : (job.state === "failed" ? "bad" : "warn");
+        const article = document.createElement("article");
+        article.className = "item-card compact-item";
+        article.innerHTML = `<div class="item-header"><div><h3 class="card-title">${job.title}</h3><p class="card-copy">${job.progress_text || "Queued"}</p></div><span class="badge ${badge}">${job.state}</span></div><div class="actions"><a class="button-link subtle" href="/jobs/${job.job_id}">Open job</a></div>`;
+        installJobsList.appendChild(article);
+      }
+    },
+  });
+})();
+</script>

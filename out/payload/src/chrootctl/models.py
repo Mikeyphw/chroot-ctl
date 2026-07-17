@@ -209,6 +209,81 @@ class ChrootArchiveInspection:
 
 
 
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotRecord:
+    snapshot_id: int
+    name: str
+    chroot_name: str
+    path: str
+    kind: str
+    created_at: str
+    note: str = ""
+    size_bytes: int = 0
+    metadata: dict[str, str] = field(default_factory=dict)
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "snapshot_id": display_value(self.snapshot_id),
+            "name": self.name,
+            "chroot_name": self.chroot_name,
+            "path": self.path,
+            "kind": self.kind,
+            "created_at": self.created_at,
+            "note": self.note,
+            "size_bytes": display_value(self.size_bytes),
+            "metadata": display_value(self.metadata),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotActionResult:
+    chroot_name: str
+    snapshot_name: str
+    path: str
+    action: str
+    created_at: str = ""
+    exported_archive: str | None = None
+    next_steps: tuple[str, ...] = ()
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "chroot_name": self.chroot_name,
+            "snapshot_name": self.snapshot_name,
+            "path": self.path,
+            "action": self.action,
+            "created_at": self.created_at,
+            "exported_archive": display_value(self.exported_archive),
+            "next_steps": display_value(self.next_steps),
+        }
+
+
+
+@dataclass(frozen=True, slots=True)
+class RegistryRepairResult:
+    scanned_paths: int
+    missing_records: tuple[str, ...] = ()
+    missing_paths: tuple[str, ...] = ()
+    mismatched_paths: tuple[str, ...] = ()
+    repaired_records: tuple[str, ...] = ()
+    removed_records: tuple[str, ...] = ()
+    preview: bool = True
+    next_steps: tuple[str, ...] = ()
+
+    def to_display_dict(self) -> dict[str, str]:
+        return {
+            "scanned_paths": display_value(self.scanned_paths),
+            "missing_records": display_value(self.missing_records),
+            "missing_paths": display_value(self.missing_paths),
+            "mismatched_paths": display_value(self.mismatched_paths),
+            "repaired_records": display_value(self.repaired_records),
+            "removed_records": display_value(self.removed_records),
+            "preview": display_value(self.preview),
+            "next_steps": display_value(self.next_steps),
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class AuditEvent:
     event_id: int

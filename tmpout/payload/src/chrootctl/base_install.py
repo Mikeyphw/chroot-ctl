@@ -6,7 +6,7 @@ import shlex
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -82,7 +82,88 @@ class BaseInstaller:
         self.registry = registry
         self.user_sync = user_sync
         self.logger = logger
+        self._mirror_selection = "auto"
+        self._mirror_candidates: tuple[dict[str, str], ...] = ()
+        self._mirror_base_url: str | None = None
 
+    def configure_mirror_plan(
+        self,
+        *,
+        selection: str,
+        base_url: str | None,
+        candidates: list[dict[str, str]] | tuple[dict[str, str], ...],
+    ) -> None:
+        self._mirror_selection = selection or "auto"
+        self._mirror_base_url = (base_url or "").rstrip("/") or None
+        cleaned: list[dict[str, str]] = []
+        for item in candidates:
+            candidate_id = str(item.get("id", "")).strip()
+            candidate_url = str(item.get("url", "")).strip().rstrip("/")
+            if not candidate_id or not candidate_url:
+                continue
+            cleaned.append({"id": candidate_id, "url": candidate_url})
+        self._mirror_candidates = tuple(cleaned)
+
+    def current_mirror_selection(self) -> str:
+        return self._mirror_selection
+
+    def _mirror_label(self, url: str) -> str:
+        for item in self._mirror_candidates:
+            if item["url"] == url.rstrip("/"):
+                return item["id"]
+        return url
+
+    def _mirror_variants(self, url: str) -> list[tuple[str, str]]:
+        selected = url.rstrip("/")
+        if self._mirror_base_url and selected.startswith(self._mirror_base_url.rstrip("/")):
+            selected = self._mirror_base_url.rstrip("/")
+        variants: list[tuple[str, str]] = [(self._mirror_label(selected), selected)]
+        seen = {selected}
+        for item in self._mirror_candidates:
+            candidate_url = item["url"]
+            if candidate_url in seen:
+                continue
+            variants.append((item["id"], candidate_url))
+            seen.add(candidate_url)
+        return variants
+
+    def _rewrite_url_to_mirror(self, url: str, mirror_url: str) -> str:
+        if not self._mirror_base_url:
+            return url
+        normalized_base = self._mirror_base_url.rstrip("/")
+        if not url.startswith(normalized_base):
+            return url
+        return f"{mirror_url.rstrip('/')}{url[len(normalized_base):]}"
+
+    def _fetch_text_with_mirror_fallback(self, url: str) -> str:
+        last_error: Exception | None = None
+        for mirror_id, mirror_url in self._mirror_variants(url):
+            candidate = self._rewrite_url_to_mirror(url, mirror_url)
+            try:
+                self.logger.info("fetching %s via mirror %s", candidate, mirror_id)
+                return self._fetch_text(candidate)
+            except Exception as exc:
+                last_error = exc
+                self.logger.warning("failed to fetch %s via mirror %s: %s", candidate, mirror_id, exc)
+        if last_error is not None:
+            raise RuntimeError(f"failed to fetch {url} across mirrors: {last_error}") from last_error
+        return self._fetch_text(url)
+
+    def _download_with_mirror_fallback(self, url: str, target: Path) -> str:
+        last_error: Exception | None = None
+        for mirror_id, mirror_url in self._mirror_variants(url):
+            candidate = self._rewrite_url_to_mirror(url, mirror_url)
+            try:
+                self.logger.info("downloading %s via mirror %s", candidate, mirror_id)
+                self._download(candidate, target)
+                return candidate
+            except Exception as exc:
+                last_error = exc
+                self.logger.warning("failed to download %s via mirror %s: %s", candidate, mirror_id, exc)
+        if last_error is not None:
+            raise RuntimeError(f"failed to download {url} across mirrors: {last_error}") from last_error
+        self._download(url, target)
+        return url
 
     def _requires_foreign_arch_emulation(self) -> bool:
         host_arch_fn = getattr(self.runner, "host_arch", None)
@@ -92,13 +173,18 @@ class BaseInstaller:
     def _ensure_chroot_execution_supported(self) -> None:
         if not self._requires_foreign_arch_emulation():
             return
+        can_execute_fn = getattr(self.runner, "can_execute_foreign_arch", None)
+        if callable(can_execute_fn) and can_execute_fn(self.arch):
+            self.logger.info("detected foreign-arch execution support for %s via qemu/binfmt", self.arch)
+            return
         host_arch_fn = getattr(self.runner, "host_arch", None)
         host_arch = host_arch_fn() if callable(host_arch_fn) else "unknown"
         qemu_binary = f"qemu-{self.arch}-static"
         raise RuntimeError(
             f"target arch {self.arch} differs from host arch {host_arch}; "
             f"extract is supported, but bootstrap/desktop/finalize/upgrade require user-mode emulation such as {qemu_binary}. "
-            f"Create the rootfs with 'chrootctl install ... --phase extract --arch {self.arch}', then export/import it to your {self.arch} phone."
+            f"Install {qemu_binary} and enable binfmt_misc, or create the rootfs with 'chrootctl install ... --phase extract --arch {self.arch}', "
+            f"then export/import it to your {self.arch} phone."
         )
 
     def _fetch_text(self, url: str) -> str:

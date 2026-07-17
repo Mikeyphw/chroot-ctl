@@ -140,7 +140,7 @@
             <label>Encryption password
               <input type="password" name="password" placeholder="Optional openssl password">
             </label>
-            <button type="submit">Queue export</button>
+            <button type="submit" data-confirm-transfer="export">Queue export</button>
           </form>
           <a class="button-link" href="/transfer/download/{{ chroot.name }}">Download {{ chroot.name }}.tar.zst</a>
         </div>
@@ -250,7 +250,7 @@
     <label>Password
       <input type="password" name="password" placeholder="Required for encrypted .enc archives">
     </label>
-    <button type="submit">Import archive</button>
+    <button type="submit" data-confirm-transfer="import">Import archive</button>
   </form>
   <form method="post" action="/transfer/import-upload" class="form-stack" enctype="multipart/form-data" data-toast="Import queued…" data-toast-kind="ok">
     {{ csrf_token_input(request) }}
@@ -430,5 +430,128 @@
 
 </script>
 
+
+
+<script>
+(() => {
+  document.querySelectorAll("[data-confirm-transfer]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const form = button.closest("form");
+      if (!form) return;
+      const kind = button.getAttribute("data-confirm-transfer");
+      const archiveInput = form.querySelector('input[name="archive"]');
+      const nameInput = form.querySelector('input[name="name"], input[name="import_name"]');
+      const archiveValue = archiveInput?.value || archiveInput?.getAttribute("placeholder") || "archive path not set";
+      const targetValue = nameInput?.value || nameInput?.getAttribute("value") || nameInput?.getAttribute("placeholder") || "transfer target";
+      const exportMode = kind === "export";
+      await window.chrootctlConfirmAction({
+        title: exportMode ? "Confirm chroot export" : "Confirm archive import",
+        copy: exportMode ? "Queue an export archive for this chroot." : "Queue an import job for the selected archive.",
+        kind: exportMode ? "Transfer export" : "Transfer import",
+        target: exportMode ? targetValue : archiveValue,
+        mode: "Queued job",
+        before: [exportMode ? `Chroot ${targetValue} is ready to export.` : `Archive selected: ${archiveValue}`],
+        after: [exportMode ? `An export job will write ${archiveValue}.` : `An import job will create or update ${targetValue}.`],
+        warnings: [exportMode ? "Export may use temporary storage before the final archive is ready." : "Import may overwrite or rename depending on conflict handling."],
+        confirmLabel: button.textContent?.trim() || "Continue",
+        onConfirm: async () => form.submit(),
+      });
+    });
+  });
+})();
+</script>
+
+  <article class="card soft" id="resumable-upload-card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Resumable upload</p>
+        <h3 class="card-title">Chunked upload for large archives</h3>
+        <p class="card-copy">Start a resumable upload session, send chunks, then inspect or import the finalized archive path.</p>
+      </div>
+      <span class="badge ok">beta</span>
+    </div>
+    <div class="form-stack">
+      <label>Archive file
+        <input id="resumable-upload-file" type="file" accept=".tar.zst,.tzst,.enc,application/zstd">
+      </label>
+      <div class="action-row">
+        <button type="button" id="resumable-upload-start">Start resumable upload</button>
+        <a class="button-link subtle" href="/docs">API reference</a>
+      </div>
+      <p class="muted" id="resumable-upload-status">No resumable upload started.</p>
+    </div>
+  </article>
+
+
+<script>
+(() => {
+  const fileNode = document.getElementById("resumable-upload-file");
+  const startNode = document.getElementById("resumable-upload-start");
+  const statusNode = document.getElementById("resumable-upload-status");
+  if (!fileNode || !startNode || !statusNode) return;
+  const chunkSize = 2 * 1024 * 1024;
+
+  async function uploadFile(file) {
+    statusNode.textContent = "Creating resumable upload session…";
+    const initResponse = await fetch("/api/transfer/upload/init", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({filename: file.name, total_size: file.size, content_type: file.type || "application/octet-stream"}),
+    });
+    if (!initResponse.ok) throw new Error("Failed to start upload session");
+    const session = await initResponse.json();
+    let offset = Number(session.received_bytes || 0);
+    while (offset < file.size) {
+      const chunk = file.slice(offset, offset + chunkSize);
+      statusNode.textContent = `Uploading ${Math.min(offset + chunk.size, file.size)} / ${file.size} bytes…`;
+      const chunkResponse = await fetch(`/api/transfer/upload/${session.session_id}/chunk?offset=${offset}`, {
+        method: "PUT",
+        headers: {"Content-Type": "application/octet-stream"},
+        body: chunk,
+      });
+      if (chunkResponse.status === 409) {
+        const conflict = await chunkResponse.json();
+        const expected = conflict?.error?.details?.expected_offset;
+        if (typeof expected === "number") {
+          offset = expected;
+          continue;
+        }
+      }
+      if (!chunkResponse.ok) throw new Error("Chunk upload failed");
+      const chunkState = await chunkResponse.json();
+      offset = Number(chunkState.received_bytes || 0);
+    }
+    statusNode.textContent = "Finalizing upload…";
+    const completeResponse = await fetch(`/api/transfer/upload/${session.session_id}/complete`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({expected_size: file.size}),
+    });
+    if (!completeResponse.ok) throw new Error("Failed to finalize upload");
+    const completed = await completeResponse.json();
+    statusNode.innerHTML = `Upload ready: <code class="code-token">${completed.final_path}</code>`;
+    window.chrootctlToast?.("Resumable upload complete", "ok");
+  }
+
+  startNode.addEventListener("click", async () => {
+    const files = fileNode.files || [];
+    const file = files[0];
+    if (!file) {
+      window.chrootctlToast?.("Choose a file first", "warn");
+      return;
+    }
+    startNode.disabled = true;
+    try {
+      await uploadFile(file);
+    } catch (error) {
+      statusNode.textContent = error?.message || "Upload failed";
+      window.chrootctlToast?.(error?.message || "Upload failed", "bad");
+    } finally {
+      startNode.disabled = false;
+    }
+  });
+})();
+</script>
 
 {% endblock %}

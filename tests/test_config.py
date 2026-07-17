@@ -85,3 +85,81 @@ def test_load_supports_structured_mounts_and_overrides(tmp_path: Path) -> None:
     assert cfg.post_install_hooks == ("echo done",)
     assert work_cfg.extra_packages == ("git-lfs",)
     assert work_cfg.install_profile == "dev"
+
+
+def test_non_android_defaults_stay_home_scoped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("chrootctl.config.is_android_runtime", lambda: False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    cfg = ChrootConfig()
+
+    assert cfg.database_path == tmp_path / ".local" / "share" / "chrootctl" / "chroots.sqlite3"
+    assert cfg.snapshot_dir == tmp_path / ".local" / "share" / "chrootctl" / "snapshots"
+    assert ChrootConfig.default_config_path() == tmp_path / ".config" / "chrootctl" / "config.json"
+
+
+def test_android_defaults_use_stable_adb_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("chrootctl.config.is_android_runtime", lambda: True)
+
+    cfg = ChrootConfig()
+
+    assert cfg.database_path == Path("/data/adb/chrootctl/chroots.sqlite3")
+    assert cfg.snapshot_dir == Path("/data/adb/chrootctl/snapshots")
+    assert ChrootConfig.default_config_path() == Path("/data/adb/chrootctl/config.json")
+
+
+def test_android_load_migrates_termux_home_registry_and_snapshots(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import chrootctl.config as config_mod
+
+    stable_root = tmp_path / "adb" / "chrootctl"
+    legacy_home = tmp_path / "termux-home"
+    legacy_config = legacy_home / ".config" / "chrootctl" / "config.json"
+    legacy_db = legacy_home / ".local" / "share" / "chrootctl" / "chroots.sqlite3"
+    legacy_snapshots = legacy_home / ".local" / "share" / "chrootctl" / "snapshots"
+    legacy_config.parent.mkdir(parents=True, exist_ok=True)
+    legacy_db.parent.mkdir(parents=True, exist_ok=True)
+    legacy_snapshots.mkdir(parents=True, exist_ok=True)
+
+    legacy_config.write_text(
+        json.dumps(
+            {
+                "database_path": str(legacy_db),
+                "snapshot_dir": str(legacy_snapshots),
+                "username": "mike",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    import sqlite3
+
+    with sqlite3.connect(legacy_db) as conn:
+        conn.execute(
+            "CREATE TABLE chroots (name TEXT PRIMARY KEY, distro TEXT NOT NULL, path TEXT NOT NULL, arch TEXT, release_name TEXT, version TEXT, phase TEXT NOT NULL, installed INTEGER NOT NULL DEFAULT 0, metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO chroots (name, distro, path, phase, installed, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
+            ("androidos", "ubuntu", "/data/local/tmp/androidos", "ready", 1, "{}"),
+        )
+        conn.commit()
+
+    (legacy_snapshots / "snap1.tar.zst").write_text("snapshot", encoding="utf-8")
+
+    monkeypatch.setattr(config_mod, "is_android_runtime", lambda: True)
+    monkeypatch.setattr(config_mod, "ANDROID_STATE_ROOT", stable_root)
+    monkeypatch.setattr(config_mod, "LEGACY_TERMUX_HOME", legacy_home)
+
+    cfg = ChrootConfig.load()
+
+    assert cfg.database_path == stable_root / "chroots.sqlite3"
+    assert cfg.snapshot_dir == stable_root / "snapshots"
+    assert ChrootConfig.default_config_path() == stable_root / "config.json"
+    assert (stable_root / "config.json").exists()
+    assert (stable_root / "chroots.sqlite3").exists()
+    assert (stable_root / "snapshots" / "snap1.tar.zst").exists()
+
+    with sqlite3.connect(stable_root / "chroots.sqlite3") as conn:
+        names = [row[0] for row in conn.execute("SELECT name FROM chroots")]
+    assert names == ["androidos"]

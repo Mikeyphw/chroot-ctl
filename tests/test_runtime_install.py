@@ -120,7 +120,7 @@ def test_handle_install_applies_selected_tools_and_addons_after_finalize(monkeyp
 
     install_runtime.handle_install(context)
 
-    assert applied_calls == [("tool", ("tool-a",)), ("addon", ("addon-a",))]
+    assert applied_calls == [("tool", ("tool-a", "setup-clipboard")), ("addon", ("addon-a",))]
     assert rendered["title"] == "Install Results"
     rows = rendered["rows"]
     assert [type(row).__name__ for row in rows] == [
@@ -140,6 +140,86 @@ def test_handle_install_applies_selected_tools_and_addons_after_finalize(monkeyp
             },
         )
     ]
+
+
+def test_handle_install_auto_applies_setup_clipboard_after_finalize(monkeypatch, tmp_path: Path) -> None:
+    context = build_context(tmp_path)
+    rendered: dict[str, object] = {}
+    applied_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    class Installer:
+        def list_versions(self):
+            return []
+
+        def install(self, **kwargs):
+            context.registry.upsert(
+                name="ubuntu",
+                distro="ubuntu",
+                path=str(context.config.chroot_base),
+                phase="finalize",
+                installed=True,
+            )
+            return [InstallFinalizeResult(installed=True, uid_sync=True, snapshot="snap-1")]
+
+    def fake_apply_catalog_entries(*, catalog, names, config, runner, registry, logger):
+        applied_calls.append((catalog.kind, tuple(names)))
+        return [
+            CatalogApplyResult(
+                kind=catalog.kind,
+                name=names[0],
+                distro="ubuntu",
+                categories=("desktop",),
+                applied=True,
+            )
+        ]
+
+    monkeypatch.setattr(install_runtime, "build_installer", lambda *args, **kwargs: Installer())
+    monkeypatch.setattr(install_runtime, "apply_catalog_entries", fake_apply_catalog_entries)
+    monkeypatch.setattr(install_runtime, "progress_call", lambda description, fn: fn())
+    monkeypatch.setattr(install_runtime, "install_selection_names", lambda **kwargs: kwargs["explicit_names"])
+    monkeypatch.setattr(install_runtime, "emit_table", lambda context, title, rows: rendered.update({"title": title, "rows": rows}))
+    monkeypatch.setattr(install_runtime, "emit_panel", lambda context, title, data: None)
+
+    install_runtime.handle_install(context)
+
+    assert applied_calls == [("tool", ("setup-clipboard",))]
+    assert rendered["title"] == "Install Results"
+    rows = rendered["rows"]
+    assert [type(row).__name__ for row in rows] == [
+        "InstallFinalizeResult",
+        "CatalogApplyResult",
+    ]
+
+
+def test_handle_install_does_not_reapply_setup_clipboard_when_already_recorded(monkeypatch, tmp_path: Path) -> None:
+    context = build_context(tmp_path)
+    applied_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    class Installer:
+        def list_versions(self):
+            return []
+
+        def install(self, **kwargs):
+            context.registry.upsert(
+                name="ubuntu",
+                distro="ubuntu",
+                path=str(context.config.chroot_base),
+                phase="finalize",
+                installed=True,
+                metadata={"tools": "setup-clipboard"},
+            )
+            return [InstallFinalizeResult(installed=True, uid_sync=True, snapshot="snap-1")]
+
+    monkeypatch.setattr(install_runtime, "build_installer", lambda *args, **kwargs: Installer())
+    monkeypatch.setattr(install_runtime, "apply_catalog_entries", lambda **kwargs: applied_calls.append((kwargs["catalog"].kind, tuple(kwargs["names"]))) or [])
+    monkeypatch.setattr(install_runtime, "progress_call", lambda description, fn: fn())
+    monkeypatch.setattr(install_runtime, "install_selection_names", lambda **kwargs: kwargs["explicit_names"])
+    monkeypatch.setattr(install_runtime, "emit_table", lambda context, title, rows: None)
+    monkeypatch.setattr(install_runtime, "emit_panel", lambda context, title, data: None)
+
+    install_runtime.handle_install(context)
+
+    assert applied_calls == []
 
 
 def test_handle_install_shows_resume_next_steps_for_incomplete_install(monkeypatch, tmp_path: Path) -> None:
@@ -193,6 +273,7 @@ def test_handle_install_uses_selected_chroot_name_for_registry_lookup(monkeypatc
             return [InstallFinalizeResult(installed=True, uid_sync=True, snapshot="snap-1")]
 
     monkeypatch.setattr(install_runtime, "build_installer", lambda *args, **kwargs: Installer())
+    monkeypatch.setattr(install_runtime, "apply_catalog_entries", lambda **kwargs: [])
     monkeypatch.setattr(install_runtime, "progress_call", lambda description, fn: fn())
     monkeypatch.setattr(install_runtime, "install_selection_names", lambda **kwargs: kwargs["explicit_names"])
     monkeypatch.setattr(install_runtime, "emit_table", lambda context, title, rows: rendered.update({"title": title, "rows": rows}))

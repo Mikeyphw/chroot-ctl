@@ -104,7 +104,7 @@ def test_can_execute_foreign_arch_requires_qemu_and_binfmt(tmp_path: Path, monke
     (binfmt_root / "status").write_text("enabled\n", encoding="utf-8")
     (binfmt_root / "qemu-arm64").write_text("enabled\n", encoding="utf-8")
 
-    monkeypatch.setattr("chrootctl.system.shutil.which", lambda command: f"/usr/bin/{command}" if command == "qemu-arm64-static" else None)
+    monkeypatch.setattr("chrootctl.system.shutil.which", lambda command: f"/usr/bin/{command}" if command == "qemu-aarch64-static" else None)
 
     def fake_path(value: str):
         if value == "/proc/sys/fs/binfmt_misc":

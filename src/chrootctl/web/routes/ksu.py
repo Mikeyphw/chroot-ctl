@@ -20,6 +20,7 @@ def _status(app: Any) -> dict[str, Any]:
             "url": lifecycle["url"],
         },
         "module": lifecycle["module"],
+        "mode": lifecycle["mode"],
         "python": lifecycle["python"],
         "control_file": lifecycle["control_file"],
         "pid_file": lifecycle["pid_file"],

@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
-from ..deps import get_jobs, get_templates
+from ..deps import get_jobs, get_services, get_templates
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -35,7 +35,7 @@ def list_jobs(request: Request, jobs=Depends(get_jobs), templates=Depends(get_te
 
 
 @router.get("/{job_id}")
-def show_job(job_id: str, request: Request, jobs=Depends(get_jobs), templates=Depends(get_templates)):
+def show_job(job_id: str, request: Request, jobs=Depends(get_jobs), services=Depends(get_services), templates=Depends(get_templates)):
     try:
         job = jobs.get(job_id)
     except KeyError as exc:
@@ -46,6 +46,7 @@ def show_job(job_id: str, request: Request, jobs=Depends(get_jobs), templates=De
         {
             "page_title": f"Job · {job.title}",
             "job": _job_payload(job, job_id),
+            "recovery_snapshot": _latest_recovery_snapshot(services, job.target_name),
         },
     )
 
@@ -76,3 +77,16 @@ def download_job_log(job_id: str, jobs=Depends(get_jobs)):
     if job.log_path is None:
         raise HTTPException(status_code=404, detail="job log not found")
     return FileResponse(path=job.log_path, media_type="text/plain; charset=utf-8", filename=job.log_path.name)
+
+
+def _latest_recovery_snapshot(services, target_name: str | None):
+    if not target_name:
+        return None
+    try:
+        snapshots = services.snapshots().list(chroot_name=target_name, limit=1)
+    except Exception:
+        return None
+    if not snapshots:
+        return None
+    item = snapshots[0]
+    return {"name": item.name, "chroot_name": item.chroot_name, "created_at": item.created_at}

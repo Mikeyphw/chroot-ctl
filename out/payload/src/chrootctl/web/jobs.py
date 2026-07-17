@@ -69,6 +69,7 @@ class JobSnapshot:
     log_lines: tuple[str, ...] = ()
     progress_detail: dict[str, Any] = field(default_factory=dict)
     progress_events: tuple[dict[str, Any], ...] = ()
+    retry: dict[str, Any] | None = None
 
     @property
     def complete(self) -> bool:
@@ -96,6 +97,7 @@ class JobSnapshot:
             "progress_percent": self.progress_detail.get("percent"),
             "progress_phase": self.progress_detail.get("phase"),
             "complete": self.complete,
+            "retry": _serialize(self.retry),
         }
 
 
@@ -116,6 +118,7 @@ class _JobRecord:
     next_steps: tuple[str, ...] = field(default_factory=tuple)
     progress_detail: dict[str, Any] = field(default_factory=dict)
     progress_events: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=40))
+    retry: dict[str, Any] | None = None
 
     def snapshot(self, *, tail: int = 50) -> JobSnapshot:
         return JobSnapshot(
@@ -135,6 +138,7 @@ class _JobRecord:
             log_lines=_tail_log_lines(self.log_path, tail),
             progress_detail=dict(self.progress_detail),
             progress_events=tuple(dict(item) for item in self.progress_events),
+            retry=dict(self.retry) if isinstance(self.retry, dict) else None,
         )
 
 
@@ -152,6 +156,7 @@ class WebJobManager:
         runner: Callable[[Callable[[str], None]], Any],
         target_name: str | None = None,
         log_path: Path | None = None,
+        retry: dict[str, Any] | None = None,
     ) -> JobSnapshot:
         job_id = uuid.uuid4().hex[:12]
         record = _JobRecord(
@@ -163,6 +168,7 @@ class WebJobManager:
             created_at=time.time(),
             target_name=target_name,
             log_path=log_path,
+            retry=dict(retry) if isinstance(retry, dict) else None,
         )
         with self._lock:
             self._jobs[job_id] = record

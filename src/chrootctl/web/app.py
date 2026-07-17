@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from ..services import create_service_container
 from .jobs import WebJobManager
 from .error_handling import install_exception_handlers
+from .e2e_fixtures import install_e2e_fixtures
 from .routes import api_router, build_router, catalog_router, chroots_router, dashboard_router, docs_router, faq_router, install_router, jobs_router, quickstart_router, system_router, users_router, ksu_router, transfer_router, support_router
 from .security import WebSecurityConfig, csrf_token_input, install_security, is_local_host
 
@@ -52,6 +53,7 @@ def create_app(
     app.state.templates.env.globals["csrf_token_input"] = csrf_token_input
     install_security(app)
     install_exception_handlers(app)
+    install_e2e_fixtures(app)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     app.include_router(dashboard_router)
     app.include_router(quickstart_router)

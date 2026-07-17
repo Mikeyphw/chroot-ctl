@@ -9,6 +9,14 @@ from ...models import InstallRequest
 router = APIRouter(prefix="/install", tags=["install"])
 
 
+def _submit_job(jobs, **kwargs):
+    try:
+        return jobs.submit(**kwargs)
+    except TypeError:
+        kwargs.pop("retry", None)
+        return jobs.submit(**kwargs)
+
+
 def _install_request_from_values(
     *,
     distro: str,
@@ -167,11 +175,12 @@ def submit_install(
     if not validation["ok"]:
         detail = validation["blocking"][0]["message"] if validation["blocking"] else "install request is not valid"
         raise HTTPException(status_code=400, detail=detail)
-    job = jobs.submit(
+    job = _submit_job(jobs, 
         kind="install",
         title=f"Install {install_request.name}",
         target_name=install_request.name,
         log_path=resolve_log_path(services, name=install_request.name, username=install_request.username),
+        retry={"action": "install.submit", "payload": {"distro": install_request.distro, "name": install_request.name, "username": install_request.username, "preset": install_request.preset, "profile": install_request.profile, "desktop": install_request.desktop, "release": install_request.release, "version": install_request.version, "mirror": install_request.mirror, "tools": list(install_request.tools), "addons": list(install_request.addons), "repair": bool(install_request.repair)}, "href": f"/install?name={install_request.name}", "label": "Retry install"},
         runner=lambda progress: services.install().install(install_request, progress=progress),
     )
     return RedirectResponse(url=f"/jobs/{job.job_id}?toast=Install+job+queued&toast_kind=ok", status_code=303)

@@ -42,6 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_install_commands(subs)
     _add_completion_commands(subs)
     _add_chroot_commands(subs)
+    _add_transfer_commands(subs)
+    _add_events_commands(subs)
+    _add_support_commands(subs)
     _add_user_commands(subs)
     _add_catalog_commands(subs, name="tools", item_label="tool")
     _add_catalog_commands(subs, name="addons", item_label="addon")
@@ -247,8 +250,10 @@ def _add_install_commands(subs: argparse._SubParsersAction[argparse.ArgumentPars
     install.add_argument("--list-versions", action="store_true", help="List available distro versions/releases and exit.")
     install.add_argument("--version", default=None, help="Requested version identifier, if the installer supports it.")
     install.add_argument("--release", default=None, help="Requested release name, if the installer supports it.")
+    install.add_argument("--mirror", default=None, help="Preferred package or rootfs mirror identifier. Use auto to let the backend choose.")
     install.add_argument("--username", default=None, help="Initial non-root username to create during bootstrap/finalize.")
     install.add_argument("--arch", choices=["arm64", "amd64"], default=None, help="Target rootfs architecture. Use arm64 on amd64 hosts for phone-bound exports.")
+    install.add_argument("--preset", choices=["minimal-server", "desktop-xfce", "development", "recovery-debug"], default=None, help="Backend-driven install preset that resolves profile, desktop, and default package selections.")
     install.add_argument("--desktop", choices=["xfce4", "plasma", "none"], default=None, help="Optional desktop environment to configure.")
     install.add_argument("--profile", choices=INSTALL_PROFILES, default=None, help="Install profile to apply during bootstrap/desktop phases.")
     install.add_argument("--tool", dest="tools", action="append", default=[], help="Tool to apply after finalize. May be passed multiple times.")
@@ -371,6 +376,7 @@ def _add_chroot_commands(subs: argparse._SubParsersAction[argparse.ArgumentParse
         """,
     )
     export_cmd.add_argument("archive", nargs="?", type=Path, help="Destination tar.zst path. Defaults to ./<name>.tar.zst")
+    export_cmd.add_argument("--password", default=None, help="Optional password to encrypt the archive with openssl.")
 
     import_cmd = _add_parser(
         chroots_sub,
@@ -385,6 +391,96 @@ def _add_chroot_commands(subs: argparse._SubParsersAction[argparse.ArgumentParse
     )
     import_cmd.add_argument("archive", type=Path, help="Source tar.zst archive.")
     import_cmd.add_argument("--name", dest="import_name", default=None, help="Optional new chroot name for the imported archive.")
+    import_cmd.add_argument("--conflict", choices=("rename", "overwrite"), default="rename", help="How to handle an existing target name.")
+    import_cmd.add_argument("--password", default=None, help="Password for encrypted .enc archives.")
+    import_cmd.add_argument("--post-import", choices=("register", "validate", "fixups", "shell"), default="register", help="Optional action to run after import registration.")
+
+    diff_cmd = _add_parser(
+        chroots_sub,
+        "diff",
+        help="Compare package sets between two chroots.",
+        description="Read package databases from two chroots and show what differs.",
+        examples="""
+        examples:
+          chrootctl chroots diff work dev
+        """,
+    )
+    diff_cmd.add_argument("left_name", help="Left-hand chroot name.")
+    diff_cmd.add_argument("right_name", help="Right-hand chroot name.")
+
+    validate_import_cmd = _add_parser(
+        chroots_sub,
+        "validate-import",
+        help="Validate an imported chroot on disk.",
+        description="Check an imported chroot for required directories, config layout, and architecture markers.",
+        examples="""
+        examples:
+          chrootctl --name work chroots validate-import
+          chrootctl chroots validate-import work
+        """,
+    )
+    validate_import_cmd.add_argument("validate_name", nargs="?", help="Imported chroot name. Defaults to --name or the single installed chroot.")
+
+
+def _add_transfer_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    transfer = _add_parser(
+        subs,
+        "transfer",
+        help="Export or import chroots as tar.zst archives.",
+        description="Move chroots between hosts with portable tar.zst archives.",
+        examples="""
+        examples:
+          chrootctl --name work transfer export
+          chrootctl transfer inspect /tmp/work.tar.zst
+          chrootctl --name work transfer export /tmp/work.tar.zst
+          chrootctl transfer import /tmp/work.tar.zst --name phone-work
+        """,
+    )
+    transfer_sub = transfer.add_subparsers(dest="transfer_command", required=True, metavar="action")
+
+    export_cmd = _add_parser(
+        transfer_sub,
+        "export",
+        help="Export a chroot to tar.zst.",
+        description="Create a tar.zst archive for transfer to another host or phone.",
+        examples="""
+        examples:
+          chrootctl --name work transfer export
+          chrootctl --name work transfer export /tmp/work.tar.zst
+        """,
+    )
+    export_cmd.add_argument("archive", nargs="?", type=Path, help="Destination tar.zst path. Defaults to ./<name>.tar.zst")
+    export_cmd.add_argument("--password", default=None, help="Optional password to encrypt the archive with openssl.")
+
+    inspect_cmd = _add_parser(
+        transfer_sub,
+        "inspect",
+        help="Inspect a tar.zst transfer archive.",
+        description="Read the embedded export manifest and preview metadata before import.",
+        examples="""
+        examples:
+          chrootctl transfer inspect /tmp/work.tar.zst
+        """,
+    )
+    inspect_cmd.add_argument("archive", type=Path, help="Source tar.zst archive to inspect.")
+    inspect_cmd.add_argument("--password", default=None, help="Password for encrypted .enc archives.")
+
+    import_cmd = _add_parser(
+        transfer_sub,
+        "import",
+        help="Import a chroot from tar.zst.",
+        description="Extract a previously exported tar.zst archive into the chroot root and register it.",
+        examples="""
+        examples:
+          chrootctl transfer import /tmp/work.tar.zst
+          chrootctl transfer import /tmp/work.tar.zst --name phone-work
+        """,
+    )
+    import_cmd.add_argument("archive", type=Path, help="Source tar.zst archive.")
+    import_cmd.add_argument("--name", dest="import_name", default=None, help="Optional new chroot name for the imported archive.")
+    import_cmd.add_argument("--conflict", choices=("rename", "overwrite"), default="rename", help="How to handle an existing target name.")
+    import_cmd.add_argument("--password", default=None, help="Password for encrypted .enc archives.")
+    import_cmd.add_argument("--post-import", choices=("register", "validate", "fixups", "shell"), default="register", help="Optional action to run after import registration.")
 
 
 def _add_user_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -715,3 +811,29 @@ def _add_parser(
 
 def _examples(text: str) -> str:
     return dedent(text).strip()
+
+
+def _add_events_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    events = _add_parser(
+        subs,
+        "events",
+        help="List recent audit events.",
+        description="Show recent install, transfer, build, and support-bundle events.",
+        examples="""
+        examples:
+          chrootctl events list
+        """,
+    )
+    events_sub = events.add_subparsers(dest="events_command", required=True, metavar="action")
+    list_cmd = _add_parser(events_sub, "list", help="List recent events.", description="Show recent audit events.")
+    list_cmd.add_argument("--limit", type=int, default=20, help="Maximum number of events to show.")
+
+
+def _add_support_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    support = _add_parser(
+        subs,
+        "support-bundle",
+        help="Export a sanitized support bundle.",
+        description="Bundle logs, doctor output, config, and recent jobs for debugging.",
+    )
+    support.add_argument("archive", nargs="?", type=Path, help="Destination tar.gz path. Defaults to ./chrootctl-support-bundle.tar.gz")

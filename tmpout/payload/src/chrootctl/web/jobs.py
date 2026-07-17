@@ -69,12 +69,13 @@ class JobSnapshot:
     log_lines: tuple[str, ...] = ()
     progress_detail: dict[str, Any] = field(default_factory=dict)
     progress_events: tuple[dict[str, Any], ...] = ()
+    retry: dict[str, Any] | None = None
 
     @property
     def complete(self) -> bool:
         return self.state in TERMINAL_JOB_STATES
 
-    def to_event_payload(self) -> dict[str, Any]:
+    def to_event_payload(self, *, log_download_url: str | None = None) -> dict[str, Any]:
         return {
             "job_id": self.job_id,
             "kind": self.kind,
@@ -86,6 +87,7 @@ class JobSnapshot:
             "finished_at": self.finished_at,
             "target_name": self.target_name,
             "log_path": str(self.log_path) if self.log_path is not None else None,
+            "log_download_url": log_download_url,
             "result_payload": _serialize(self.result_payload),
             "error": self.error,
             "next_steps": list(self.next_steps),
@@ -95,6 +97,7 @@ class JobSnapshot:
             "progress_percent": self.progress_detail.get("percent"),
             "progress_phase": self.progress_detail.get("phase"),
             "complete": self.complete,
+            "retry": _serialize(self.retry),
         }
 
 
@@ -115,6 +118,7 @@ class _JobRecord:
     next_steps: tuple[str, ...] = field(default_factory=tuple)
     progress_detail: dict[str, Any] = field(default_factory=dict)
     progress_events: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=40))
+    retry: dict[str, Any] | None = None
 
     def snapshot(self, *, tail: int = 50) -> JobSnapshot:
         return JobSnapshot(
@@ -134,6 +138,7 @@ class _JobRecord:
             log_lines=_tail_log_lines(self.log_path, tail),
             progress_detail=dict(self.progress_detail),
             progress_events=tuple(dict(item) for item in self.progress_events),
+            retry=dict(self.retry) if isinstance(self.retry, dict) else None,
         )
 
 
@@ -151,6 +156,7 @@ class WebJobManager:
         runner: Callable[[Callable[[str], None]], Any],
         target_name: str | None = None,
         log_path: Path | None = None,
+        retry: dict[str, Any] | None = None,
     ) -> JobSnapshot:
         job_id = uuid.uuid4().hex[:12]
         record = _JobRecord(
@@ -162,6 +168,7 @@ class WebJobManager:
             created_at=time.time(),
             target_name=target_name,
             log_path=log_path,
+            retry=dict(retry) if isinstance(retry, dict) else None,
         )
         with self._lock:
             self._jobs[job_id] = record

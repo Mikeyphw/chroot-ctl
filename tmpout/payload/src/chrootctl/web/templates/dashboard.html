@@ -1,6 +1,67 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card hero">
+
+
+{% if registry_repair and (registry_repair.missing_records or registry_repair.missing_paths or registry_repair.mismatched_paths) %}
+<section class="card" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Registry repair</p>
+      <h2 class="section-title">Filesystem and registry drift detected</h2>
+      <p class="panel-copy">This host has chroot directories or registry records that no longer match. Preview the drift below, then run a safe repair job.</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="button-link subtle" id="registry-repair-preview-refresh">Refresh preview</button>
+      <a class="button-link subtle" href="/repair">Review fixes</a>
+      <button type="button" onclick="window.chrootctlPostAndRedirect('/api/registry/repair/apply', {}, 'Repair queued')">Run repair</button>
+    </div>
+  </div>
+  <div class="status-grid" id="registry-repair-preview">
+    <article class="status-card warn">
+      <h3>Missing registry records</h3>
+      <p>{{ registry_repair.missing_records | join(', ') if registry_repair.missing_records else 'None' }}</p>
+    </article>
+    <article class="status-card {{ 'bad' if registry_repair.missing_paths else 'ok' }}">
+      <h3>Missing filesystem paths</h3>
+      <p>{{ registry_repair.missing_paths | join(', ') if registry_repair.missing_paths else 'None' }}</p>
+    </article>
+    <article class="status-card {{ 'warn' if registry_repair.mismatched_paths else 'ok' }}">
+      <h3>Mismatched paths</h3>
+      <p>{{ registry_repair.mismatched_paths | join(', ') if registry_repair.mismatched_paths else 'None' }}</p>
+    </article>
+  </div>
+</section>
+{% endif %}
+<section class="detail-grid" data-reveal="up">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Getting started</p>
+        <h2 class="section-title">Fastest working path</h2>
+        <p class="panel-copy">Use the quick start flow to fix host blockers, run the guided install, and copy the shell command afterward.</p>
+      </div>
+      <div class="actions">
+        <a class="button-link" href="/quickstart">Open quick start</a>
+        <a class="button-link subtle" href="/install?name={{ quickstart.recommended_name }}">Install now</a>
+      </div>
+    </div>
+    <div class="status-grid">
+      <article class="status-card {% if quickstart.blockers %}fail{% elif quickstart.warnings %}warn{% else %}ok{% endif %}">
+        <h3>{% if quickstart.blockers %}Host needs fixes{% elif quickstart.warnings %}Host has warnings{% else %}Host ready{% endif %}</h3>
+        <p>Recommended chroot name: <strong>{{ quickstart.recommended_name }}</strong></p>
+        <p>Recommended target user: <strong>{{ quickstart.target_user or 'choose or create one in the install wizard' }}</strong></p>
+      </article>
+      {% if quickstart.shell_target %}
+      <article class="status-card ok">
+        <h3>Use {{ quickstart.shell_target }}</h3>
+        <p>Copy the shell command from the chroot detail page or quick start page.</p>
+        <a class="button-link subtle" href="/chroots/{{ quickstart.shell_target }}">Open chroot</a>
+      </article>
+      {% endif %}
+    </div>
+  </article>
+</section>
+<section class="card hero" data-reveal="up">
   <div class="page-intro">
     <div>
       <p class="eyebrow">Overview</p>
@@ -26,9 +87,23 @@
       </article>
     </div>
   </div>
+    <article class="card soft">
+      <div class="item-header">
+        <div><h3 class="card-title">Transfer archive</h3><p class="card-copy">Inspect tar.zst exports and import them onto this host.</p></div>
+        <span class="badge ok">ready</span>
+      </div>
+      <div class="actions"><a class="button-link subtle" href="/transfer">Open transfer</a></div>
+    </article>
+    <article class="card soft">
+      <div class="item-header">
+        <div><h3 class="card-title">Module builds</h3><p class="card-copy">Build Magisk artifacts and watch the latest build state.</p></div>
+        <span class="badge {{ 'ok' if recent_builds else 'warn' }}">{{ recent_builds[0].state if recent_builds else "idle" }}</span>
+      </div>
+      <div class="actions"><a class="button-link subtle" href="/build">Open builds</a></div>
+    </article>
 </section>
 
-<section class="card">
+<section class="card" data-reveal="up">
   <div class="section-header">
     <div>
       <p class="eyebrow">System readiness</p>
@@ -37,6 +112,18 @@
     <a class="button-link subtle" href="/ksu">Open module panel</a>
   </div>
   <div class="status-grid">
+    <article class="card soft">
+      <div class="item-header">
+        <div><h3 class="card-title">Cross-arch readiness</h3><p class="card-copy">Host {{ cross_arch_state.host_arch }} with qemu/binfmt guidance for transfer and finalize.</p></div>
+        <a class="button-link subtle" href="/doctor/host">Open host doctor</a>
+      </div>
+      <div class="chip-list">
+        {% for item in cross_arch_state.targets %}
+        <span class="chip {{ 'ok' if item.ready else 'warn' }}">{{ item.arch }} · {{ item.mode }}</span>
+        {% endfor %}
+      </div>
+    </article>
+
     <article class="card soft">
       <div class="item-header">
         <div><h3 class="card-title">Python runtime</h3><p class="card-copy">FastAPI and installer dependencies.</p></div>
@@ -52,10 +139,16 @@
     </article>
     <article class="card soft">
       <div class="item-header">
-        <div><h3 class="card-title">Module path</h3><p class="card-copy">Detected module or source install.</p></div>
-        <span class="badge {{ 'ok' if system_state.module.version else 'warn' }}">{{ system_state.module.version or "source" }}</span>
+        <div><h3 class="card-title">Runtime mode</h3><p class="card-copy">Detected module or pip/source install.</p></div>
+        <span class="badge {{ 'ok' if system_state.mode.id == 'magisk' else 'warn' }}">{{ system_state.mode.label }}</span>
       </div>
-      <div class="actions"><a class="button-link subtle" href="/ksu">Open module panel</a></div>
+      <div class="actions">
+        {% if system_state.mode.id == 'magisk' %}
+        <a class="button-link subtle" href="/ksu">Open module panel</a>
+        {% else %}
+        <a class="button-link subtle" href="/docs">Open API docs</a>
+        {% endif %}
+      </div>
     </article>
     <article class="card soft">
       <div class="item-header">
@@ -65,6 +158,116 @@
       <div class="actions"><a class="button-link subtle" href="/install#target-user-step">{{ "Open installer" if install_state.users else "Fix target user" }}</a></div>
     </article>
   </div>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Recent jobs</p>
+      <h2 class="section-title">Live activity</h2>
+      <p class="panel-copy">The dashboard refreshes recent job state without a full page reload.</p>
+    </div>
+    <a class="button-link subtle" href="/jobs">Open jobs</a>
+  </div>
+  <div class="stack-list" id="dashboard-jobs-list">
+    {% for job in recent_jobs %}
+    <article class="item-card">
+      <div class="item-header">
+        <div><h3 class="card-title">{{ job.title }}</h3><p class="card-copy">{{ job.progress_text }}</p></div>
+        <span class="badge {{ 'ok' if job.state == 'succeeded' else ('bad' if job.state == 'failed' else 'warn') }}">{{ job.state }}</span>
+      </div>
+      <div class="actions"><a class="button-link subtle" href="/jobs/{{ job.job_id }}">Open job</a></div>
+    </article>
+    {% else %}
+    <article class="empty-state"><span class="empty-icon">⌛</span><h3>No recent jobs</h3><p class="muted">Queue an action and it will appear here.</p></article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="detail-grid">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Build status</p>
+        <h2 class="section-title">Latest module builds</h2>
+      </div>
+      <a class="button-link subtle" href="/build">Open build page</a>
+    </div>
+    <div class="stack-list">
+      {% for job in recent_builds %}
+      <article class="item-card">
+        <div class="item-header">
+          <div><h3 class="card-title">{{ job.title }}</h3><p class="card-copy">{{ job.progress_text }}</p></div>
+          <span class="badge {{ 'ok' if job.state == 'succeeded' else ('bad' if job.state == 'failed' else 'warn') }}">{{ job.state }}</span>
+        </div>
+        <div class="actions"><a class="button-link subtle" href="/jobs/{{ job.job_id }}">Open job</a></div>
+      </article>
+      {% else %}
+      <p class="empty-state">No build jobs yet.</p>
+      {% endfor %}
+    </div>
+  </article>
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Audit</p>
+        <h2 class="section-title">Recent events</h2>
+      </div>
+      <a class="button-link subtle" href="/support">Open support</a>
+    </div>
+    <div class="stack-list">
+      {% for event in recent_events %}
+      <article class="item-card">
+        <div class="item-header">
+          <div><h3 class="card-title">{{ event.event_type }}</h3><p class="card-copy">{{ event.message or event.target }}</p></div>
+          <span class="badge {{ 'ok' if event.result == 'ok' else 'warn' }}">{{ event.result }}</span>
+        </div>
+      </article>
+      {% else %}
+      <p class="empty-state">No events recorded yet.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Host doctor summary</p>
+      <h2 class="section-title">Foreign-arch and archive readiness</h2>
+    </div>
+    <a class="button-link subtle" href="/doctor/host">Open host doctor</a>
+  </div>
+  <div class="status-grid">
+    {% for row in host_doctor_rows %}
+    <article class="card soft">
+      <div class="item-header">
+        <div>
+          <h3 class="card-title">{{ row.check }}</h3>
+          <p class="card-copy">{{ row.detail }}</p>
+        </div>
+        <span class="badge {{ 'ok' if row.result == 'PASS' else 'warn' if row.result == 'WARN' else 'bad' }}">{{ row.result }}</span>
+      </div>
+      {% if row.next %}<code class="code-token">{{ row.next }}</code>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% if foreign_arch_advisories %}
+  <div class="stack-list">
+    {% for advisory in foreign_arch_advisories %}
+    <article class="item-card">
+      <div class="item-header">
+        <div>
+          <h3 class="card-title">{{ advisory.name }}</h3>
+          <p class="card-copy">{{ advisory.summary }}</p>
+        </div>
+        <span class="badge {{ 'warn' if advisory.mode == 'deferred' else 'ok' }}">{{ advisory.arch }}</span>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
 </section>
 
 <section class="card">
@@ -184,3 +387,48 @@
 </section>
 {% endif %}
 {% endblock %}
+
+<script>
+(() => {
+  const jobsList = document.getElementById("dashboard-jobs-list");
+  if (!jobsList) return;
+  window.chrootctlPoll?.({
+    url: "/api/jobs?limit=6&tail=5",
+    interval: 2500,
+    onData: (data) => {
+      const items = data.items || [];
+      window.chrootctlJobNotifier?.update(items.filter((item) => item.complete));
+      jobsList.innerHTML = "";
+      if (!items.length) {
+        jobsList.innerHTML = `<article class="empty-state"><span class="empty-icon">⌛</span><h3>No recent jobs</h3><p class="muted">Queue an action and it will appear here.</p></article>`;
+        return;
+      }
+      for (const job of items) {
+        const badge = job.state === "succeeded" ? "ok" : (job.state === "failed" ? "bad" : "warn");
+        const article = document.createElement("article");
+        article.className = "item-card";
+        article.innerHTML = `<div class="item-header"><div><h3 class="card-title">${job.title}</h3><p class="card-copy">${job.progress_text || "Queued"}</p></div><span class="badge ${badge}">${job.state}</span></div><div class="actions"><a class="button-link subtle" href="/jobs/${job.job_id}">Open job</a></div>`;
+        jobsList.appendChild(article);
+      }
+    },
+  });
+})();
+</script>
+
+<script>
+(() => {
+  const refreshButton = document.getElementById("registry-repair-preview-refresh");
+  const previewNode = document.getElementById("registry-repair-preview");
+  if (!refreshButton || !previewNode) return;
+  refreshButton.addEventListener("click", async () => {
+    const response = await fetch("/api/registry/repair/preview");
+    if (!response.ok) return;
+    const data = await response.json();
+    previewNode.innerHTML = `
+      <article class="status-card warn"><h3>Missing registry records</h3><p>${(data.missing_records || []).join(", ") || "None"}</p></article>
+      <article class="status-card ${(data.missing_paths || []).length ? "bad" : "ok"}"><h3>Missing filesystem paths</h3><p>${(data.missing_paths || []).join(", ") || "None"}</p></article>
+      <article class="status-card ${(data.mismatched_paths || []).length ? "warn" : "ok"}"><h3>Mismatched paths</h3><p>${(data.mismatched_paths || []).join(", ") || "None"}</p></article>
+    `;
+  });
+})();
+</script>

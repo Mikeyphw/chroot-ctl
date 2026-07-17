@@ -13,6 +13,14 @@ from ..deps import get_jobs, get_services, get_templates, resolve_log_path
 
 router = APIRouter(prefix="/transfer", tags=["transfer"])
 
+
+def _submit_job(jobs, **kwargs):
+    try:
+        return jobs.submit(**kwargs)
+    except TypeError:
+        kwargs.pop("retry", None)
+        return jobs.submit(**kwargs)
+
 _TRANSFER_MAX_AGE_SECONDS = 60 * 60 * 24
 
 
@@ -47,9 +55,22 @@ def transfer_page(
             "cross_arch_state": _cross_arch_state(services),
             "foreign_arch_advisories": _foreign_arch_advisories(services),
             "recent_transfer_jobs": _recent_transfer_jobs(jobs),
-            "transfer_temp_state": _transfer_temp_state(),
+            "transfer_temp_state": _transfer_temp_state(services),
         },
     )
+
+
+@router.get("/temp")
+def transfer_temp_listing(services=Depends(get_services)) -> dict[str, object]:
+    _cleanup_transfer_dir()
+    state = services.transfer().temp_state()
+    return {
+        "items": state["items"],
+        "count": state["count"],
+        "total_bytes": state["total_bytes"],
+        "max_age_seconds": _TRANSFER_MAX_AGE_SECONDS,
+        "runtime_mode": services.lifecycle().status().get("mode", {}),
+    }
 
 
 @router.get("/download/{name}")
@@ -58,7 +79,7 @@ def download_archive(name: str, password: str | None = None, services=Depends(ge
     export_dir = _transfer_upload_dir()
     export_dir.mkdir(parents=True, exist_ok=True)
     archive_path = export_dir / f"{name.strip()}.tar.zst"
-    result = services.chroots().export(name.strip(), archive=archive_path, password=password)
+    result = services.transfer().export(name.strip(), archive=archive_path, password=password)
     final_path = Path(getattr(result, "archive", archive_path)).expanduser().resolve()
     return FileResponse(path=final_path, media_type="application/zstd", filename=final_path.name)
 
@@ -92,7 +113,7 @@ def inspect_archive(
             "cross_arch_state": _cross_arch_state(services),
             "foreign_arch_advisories": _foreign_arch_advisories(services),
             "recent_transfer_jobs": _recent_transfer_jobs(jobs),
-            "transfer_temp_state": _transfer_temp_state(),
+            "transfer_temp_state": _transfer_temp_state(services),
         },
         status_code=200 if inspection or not error else 400,
     )
@@ -126,7 +147,7 @@ async def inspect_uploaded_archive(
             "cross_arch_state": _cross_arch_state(services),
             "foreign_arch_advisories": _foreign_arch_advisories(services),
             "recent_transfer_jobs": _recent_transfer_jobs(jobs),
-            "transfer_temp_state": _transfer_temp_state(),
+            "transfer_temp_state": _transfer_temp_state(services),
         },
         status_code=200 if inspection or not error else 400,
     )
@@ -143,11 +164,12 @@ def export_archive(
     _cleanup_transfer_dir()
     target = name.strip()
     archive_path = Path(archive.strip()).expanduser() if archive.strip() else None
-    job = jobs.submit(
+    job = _submit_job(jobs, 
         kind="chroot-export",
         title=f"Export chroot {target}",
         target_name=target,
         log_path=resolve_log_path(services, name=target),
+        retry={"action": "transfer.export", "payload": {"name": target, "archive": str(archive_path), "password": password.strip() or None}, "href": f"/transfer?archive={archive_path}", "label": "Retry export"},
         runner=lambda progress: _run_export(services, name=target, archive=archive_path, password=password.strip() or None, progress=progress),
     )
     return _job_redirect(job.job_id, toast="Export queued")
@@ -166,11 +188,12 @@ def import_archive(
     _cleanup_transfer_dir()
     archive_path = Path(archive.strip()).expanduser()
     target_name = import_name.strip() or None
-    job = jobs.submit(
+    job = _submit_job(jobs, 
         kind="chroot-import",
         title=f"Import archive {archive_path.name}",
         target_name=target_name,
         log_path=resolve_log_path(services, name=target_name),
+        retry={"action": "transfer.import", "payload": {"archive": str(archive_path), "name": target_name, "conflict": conflict, "password": password.strip() or None, "post_import": post_import}, "href": f"/transfer?archive={archive_path}", "label": "Retry import"},
         runner=lambda progress: _run_import(services, archive=archive_path, name=target_name, conflict=conflict, password=password.strip() or None, post_import=post_import, progress=progress),
     )
     return _job_redirect(job.job_id, toast="Import queued")
@@ -189,11 +212,12 @@ async def import_uploaded_archive(
     _cleanup_transfer_dir()
     uploaded_path = await _save_upload(archive_file)
     target_name = import_name.strip() or None
-    job = jobs.submit(
+    job = _submit_job(jobs, 
         kind="chroot-import",
         title=f"Import archive {uploaded_path.name}",
         target_name=target_name,
         log_path=resolve_log_path(services, name=target_name),
+        retry={"action": "transfer.import", "payload": {"archive": str(uploaded_path), "name": target_name, "conflict": conflict, "password": password.strip() or None, "post_import": post_import}, "href": f"/transfer?archive={uploaded_path}", "label": "Retry import"},
         runner=lambda progress: _run_import(services, archive=uploaded_path, name=target_name, conflict=conflict, password=password.strip() or None, post_import=post_import, progress=progress),
     )
     return _job_redirect(job.job_id, toast="Import queued")
@@ -225,12 +249,12 @@ def clear_temp_archives():
 
 def _run_export(services, *, name: str, archive: Path | None, password: str | None, progress):
     progress("Exporting chroot to tar.zst")
-    return services.chroots().export(name, archive=archive, password=password)
+    return services.transfer().export(name, archive=archive, password=password)
 
 
 def _run_import(services, *, archive: Path, name: str | None, conflict: str, password: str | None, post_import: str, progress):
     progress("Importing tar.zst archive")
-    return services.chroots().import_archive(archive, name=name, conflict=conflict, password=password, post_import=post_import)
+    return services.transfer().import_archive(archive, name=name, conflict=conflict, password=password, post_import=post_import)
 
 
 def _cross_arch_state(services) -> dict[str, object]:
@@ -244,9 +268,9 @@ def _cross_arch_state(services) -> dict[str, object]:
 
 
 def _inspect_archive(services, archive: Path, password: str | None = None):
-    chroots = services.chroots()
-    if hasattr(chroots, "inspect_archive"):
-        return chroots.inspect_archive(archive, password=password)
+    transfer = services.transfer()
+    if hasattr(transfer, "inspect"):
+        return transfer.inspect(str(archive))
     archive_path = archive.expanduser().resolve()
     source_name = archive_path.name.removesuffix(".tar.zst").replace(".tar", "")
     return {
@@ -296,25 +320,19 @@ def _recent_transfer_jobs(jobs) -> list[dict[str, object]]:
     return items
 
 
-def _transfer_temp_state() -> dict[str, object]:
+def _transfer_temp_state(services=None) -> dict[str, object]:
+    if services is not None and hasattr(services, "transfer"):
+        state = services.transfer().temp_state()
+        state["files"] = state.get("items", [])[:12]
+        state["items"] = state.get("items", [])[:12]
+        state["path"] = state.get("directory", state.get("path", ""))
+        return state
     transfer_dir = _transfer_upload_dir()
     if not transfer_dir.exists():
-        return {"path": str(transfer_dir), "files": [], "count": 0}
-    files = sorted(
-        (
-            {
-                "name": item.name,
-                "path": str(item),
-                "size": item.stat().st_size,
-                "modified_at": item.stat().st_mtime,
-            }
-            for item in transfer_dir.iterdir()
-            if item.is_file()
-        ),
-        key=lambda item: item["modified_at"],
-        reverse=True,
-    )
-    return {"path": str(transfer_dir), "files": files[:12], "count": len(files)}
+        return {"path": str(transfer_dir), "files": [], "items": [], "count": 0, "total_bytes": 0}
+    files = sorted(({"name": item.name, "path": str(item), "size": item.stat().st_size, "modified_at": item.stat().st_mtime} for item in transfer_dir.iterdir() if item.is_file()), key=lambda item: item["modified_at"], reverse=True)
+    total_bytes = sum(int(item["size"]) for item in files)
+    return {"path": str(transfer_dir), "files": files[:12], "items": files[:12], "count": len(files), "total_bytes": total_bytes}
 
 
 def _transfer_upload_dir() -> Path:

@@ -54,11 +54,12 @@ def test_install_parser_rejects_wizard_in_non_interactive_mode() -> None:
 def test_start_parser_collects_login_flags() -> None:
     parser = build_parser()
 
-    args = parser.parse_args(["start", "--login"])
+    args = parser.parse_args(["start", "--login", "--x11"])
 
     assert args.command == "start"
     assert args.login is True
     assert args.root_login is False
+    assert args.x11 is True
 
 
 def test_start_parser_defaults_to_interactive_root_shell() -> None:
@@ -68,15 +69,17 @@ def test_start_parser_defaults_to_interactive_root_shell() -> None:
 
     assert args.login is False
     assert args.root_login is False
+    assert args.x11 is False
 
 
 def test_exec_parser_collects_command_and_root_flag() -> None:
     parser = build_parser()
 
-    args = parser.parse_args(["exec", "--root", "--command", "id -u"])
+    args = parser.parse_args(["exec", "--root", "--x11", "--command", "id -u"])
 
     assert args.command == "exec"
     assert args.root is True
+    assert args.x11 is True
     assert args.exec_text == "id -u"
 
 
@@ -368,3 +371,29 @@ def test_non_interactive_global_flag_parses() -> None:
     args = parser.parse_args(["--non-interactive", "status"])
 
     assert args.non_interactive is True
+
+
+def test_clipboard_parser_supports_daemon_and_io_commands() -> None:
+    parser = build_parser()
+
+    daemon_args = parser.parse_args(["clipboard", "daemon", "start"])
+    set_args = parser.parse_args(["clipboard", "set", "hello"])
+    get_args = parser.parse_args(["clipboard", "get"])
+
+    assert daemon_args.command == "clipboard"
+    assert daemon_args.clipboard_command == "daemon"
+    assert daemon_args.daemon_action == "start"
+    assert set_args.clipboard_command == "set"
+    assert set_args.text == ["hello"]
+    assert get_args.clipboard_command == "get"
+
+
+def test_clipboard_doctor_parser_accepts_overrides() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["clipboard", "doctor", "--socket", "/tmp/clip.sock", "--pid-file", "/tmp/clip.pid"])
+
+    assert args.command == "clipboard"
+    assert args.clipboard_command == "doctor"
+    assert str(args.socket) == "/tmp/clip.sock"
+    assert str(args.pid_file) == "/tmp/clip.pid"

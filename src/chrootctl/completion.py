@@ -202,7 +202,8 @@ typeset -g {fn}_prog="{prog}"
           fi
           _arguments \
             '--login[Open login shell for configured user]' \
-            '--root-login[Open login shell as root]'
+            '--root-login[Open login shell as root]' \
+            '--x11[Prepare Termux:X11 on host and export DISPLAY/PULSE_SERVER]'
           ;;
         exec)
           if (( CURRENT > 2 )) && [[ " ${{words[*]}} " == *" -- "* ]]; then
@@ -211,7 +212,8 @@ typeset -g {fn}_prog="{prog}"
           fi
           _arguments \
             '--root[Execute as root]' \
-            '--command[Execute command string]:command'
+            '--command[Execute command string]:command' \
+            '--x11[Prepare Termux:X11 on host and export DISPLAY/PULSE_SERVER]'
           ;;
         install)
           _arguments \

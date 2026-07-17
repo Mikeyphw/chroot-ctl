@@ -139,6 +139,7 @@ def test_render_magisk_module_writes_full_module_files(tmp_path: Path) -> None:
     assert 'validate_static_environment' in bootstrap_text
     assert 'Fix the static Python module environment' in bootstrap_text
     assert 'TypeAdapter' in bootstrap_text
+    assert '"$MODDIR/system/bin/chrootctl" clipboard daemon start' in service_text
     assert '[ -x "$WEBUI_SERVICE" ] && "$WEBUI_SERVICE" start "$MODDIR"' in service_text
     assert '"$CLI" --name "$name" mount' in helper_text
     assert 'MODDIR="$(resolve_moddir)"' in launcher_text

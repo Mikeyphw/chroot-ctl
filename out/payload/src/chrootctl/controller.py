@@ -76,6 +76,72 @@ class ChrootController:
             if not self.runner.dry_run:
                 path.mkdir(parents=True, exist_ok=True)
 
+    def _session_env(self, *, root: bool, x11: bool = False) -> dict[str, str]:
+        env = {
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME": "/root" if root else f"/home/{self.config.username}",
+            "USER": "root" if root else self.config.username,
+            "SHELL": self._resolved_shell(),
+            "TERM": "xterm-256color",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        if x11:
+            env.update(
+                {
+                    "DISPLAY": ":0",
+                    "PULSE_SERVER": "tcp:127.0.0.1:4713",
+                }
+            )
+        return env
+
+    def _termux_host_env(self) -> dict[str, str]:
+        termux_bin = self.config.termux_prefix / "bin"
+        return {
+            "HOME": str(self.config.termux_home),
+            "PREFIX": str(self.config.termux_prefix),
+            "TMPDIR": str(self.config.termux_prefix / "tmp"),
+            "PATH": f"{termux_bin}:/system/bin:/system/xbin:/vendor/bin",
+            "LD_LIBRARY_PATH": str(self.config.termux_prefix / "lib"),
+        }
+
+    def _prepare_x11_host(self) -> None:
+        host_env = self._termux_host_env()
+        termux_uid, termux_gid = self.runner.host_termux_uid_gid(self.config.termux_home)
+        self.runner.run(
+            ["am", "start", "--user", "0", "-n", "com.termux.x11/com.termux.x11.MainActivity"],
+            check=False,
+            capture_output=False,
+        )
+        pulseaudio = self.config.termux_prefix / "bin" / "pulseaudio"
+        if pulseaudio.exists():
+            self.runner.run(
+                [str(pulseaudio), "--start", "--exit-idle-time=-1"],
+                check=False,
+                env=host_env,
+                capture_output=False,
+                uid=termux_uid,
+                gid=termux_gid,
+            )
+        termux_x11 = self.config.termux_prefix / "bin" / "termux-x11"
+        if termux_x11.exists():
+            self.runner.run(
+                [str(termux_x11), ":0", "-ac"],
+                check=False,
+                env=host_env,
+                capture_output=False,
+                uid=termux_uid,
+                gid=termux_gid,
+                background=True,
+            )
+
+    def x11_host_commands(self) -> list[str]:
+        return [
+            "am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity",
+            f"{self.config.termux_prefix}/bin/pulseaudio --start --exit-idle-time=-1",
+            f"{self.config.termux_prefix}/bin/termux-x11 :0 -ac &",
+        ]
+
     def mount(self) -> OperationResult:
         self.runner.require_root()
         self._ensure_dirs()
@@ -220,33 +286,39 @@ class ChrootController:
         rows.append({"check": "mounts", "status": "ok" if mounted else "warning", "detail": f"{mounted}/{len(self._mount_specs())} mounted"})
         return rows
 
-    def exec(self, *, root: bool, argv: list[str] | None = None, command: str | None = None) -> int:
+    def exec(
+        self,
+        *,
+        root: bool,
+        argv: list[str] | None = None,
+        command: str | None = None,
+        x11: bool = False,
+    ) -> int:
         self.runner.require_root()
         if not command and not argv:
             raise ValueError("no command specified")
         self.mount()
         self.fix_tty()
+        if x11:
+            self._prepare_x11_host()
         exec_user = "root" if root else self.config.username
         shell = self._resolved_shell()
         command_text = command or shlex.join(argv or [])
         if root:
-            chroot_argv = ["chroot", str(self.config.chroot_base), shell, "-lc", command_text]
+            shell_flags = "-ilc" if x11 else "-lc"
+            chroot_argv = ["chroot", str(self.config.chroot_base), shell, shell_flags, command_text]
         else:
-            chroot_argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", command_text]
+            if x11:
+                quoted = shlex.quote(command_text)
+                launch = f"export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713; exec {shell} -ilc {quoted}"
+                chroot_argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", launch]
+            else:
+                chroot_argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", command_text]
 
-        env = {
-            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "HOME": "/root" if root else f"/home/{self.config.username}",
-            "USER": exec_user,
-            "SHELL": shell,
-            "TERM": "xterm-256color",
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-        }
         result = self.runner.run(
             chroot_argv,
             check=False,
-            env=env,
+            env=self._session_env(root=root, x11=x11),
             chroot_env=True,
             capture_output=False,
         )
@@ -257,11 +329,13 @@ class ChrootController:
         *,
         login: bool,
         root_login: bool,
+        x11: bool = False,
     ) -> int:
         self.unmount()
         return self.start(
             login=login,
             root_login=root_login,
+            x11=x11,
         )
 
     def start(
@@ -269,32 +343,32 @@ class ChrootController:
         *,
         login: bool,
         root_login: bool,
+        x11: bool = False,
     ) -> int:
         self.runner.require_root()
         self.mount()
         self.fix_tty()
+        if x11:
+            self._prepare_x11_host()
         use_root_login = root_login or not login
         exec_user = "root" if use_root_login else self.config.username
         shell = self._resolved_shell()
         if use_root_login:
-            argv = ["chroot", str(self.config.chroot_base), shell, "-l"]
+            shell_flags = "-il" if x11 else "-l"
+            argv = ["chroot", str(self.config.chroot_base), shell, shell_flags]
         else:
-            argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user]
+            if x11:
+                launch = f"export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713; exec {shell} -il"
+                argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user, "-c", launch]
+            else:
+                argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user]
 
-        env = {
-            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "HOME": "/root" if use_root_login else f"/home/{self.config.username}",
-            "USER": exec_user,
-            "SHELL": shell,
-            "TERM": "xterm-256color",
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-        }
         result = self.runner.run(
             argv,
             check=False,
-            env=env,
+            env=self._session_env(root=use_root_login, x11=x11),
             chroot_env=True,
             capture_output=False,
         )
         return result.returncode
+

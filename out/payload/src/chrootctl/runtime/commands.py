@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..system import SystemRunner
 from .catalog import handle_addons, handle_tools
+from .clipboard import handle_clipboard
 from .chroots import handle_chroots
 from .install import handle_install, handle_upgrade
 from .magisk import handle_magisk
@@ -79,6 +80,7 @@ COMMAND_SPECS: dict[str, CommandSpec] = {
     "install": CommandSpec("install", handle_install, RootPolicy.always_required()),
     "upgrade": CommandSpec("upgrade", handle_upgrade, RootPolicy.always_required()),
     "magisk": CommandSpec("magisk", handle_magisk),
+    "clipboard": CommandSpec("clipboard", handle_clipboard),
 }
 
 

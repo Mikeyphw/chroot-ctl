@@ -43,15 +43,15 @@ class ArchInstaller(BaseInstaller):
         self.assert_phase_allowed("extract", force_phase)
         self.config.chroot_base.mkdir(parents=True, exist_ok=True)
         tarball = self.config.chroot_base / "ArchLinuxARM-aarch64-latest.tar.gz"
-        self._download(self.ROOTFS_URL, tarball)
-        expected_md5 = self._fetch_text(self.ROOTFS_MD5_URL).split()[0]
+        resolved_url = self._download_with_mirror_fallback(self.ROOTFS_URL, tarball)
+        expected_md5 = self._fetch_text_with_mirror_fallback(self.ROOTFS_MD5_URL).split()[0]
         if not self.runner.dry_run:
             self._verify_md5(tarball, expected_md5)
         self.runner.run(["bsdtar", "-xpf", str(tarball)], cwd=self.config.chroot_base, capture_output=False)
         for rel in ("dev/pts", "dev/shm", "proc", "sys", "tmp", "media/sdcard", f"home/{self.config.username}"):
             if not self.runner.dry_run:
                 (self.config.chroot_base / rel).mkdir(parents=True, exist_ok=True)
-        self.mark_phase("extract", version="latest", release_name="rolling", metadata={"tarball": tarball.name, "url": self.ROOTFS_URL})
+        self.mark_phase("extract", version="latest", release_name="rolling", metadata={"tarball": tarball.name, "url": resolved_url, "requested_url": self.ROOTFS_URL, "mirror": self.current_mirror_selection()})
         return InstallExtractResult(version="latest", release="rolling", tarball=tarball.name)
 
     def _bootstrap_packages(self, profile: str | None) -> tuple[str, ...]:

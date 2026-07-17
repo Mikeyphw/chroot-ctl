@@ -42,6 +42,7 @@ WIZARD_STEPS = ("distro", "name", "release", "profile", "desktop", "username", "
 
 
 DEFAULT_INSTALL_USERNAME = "mike"
+AUTO_POST_FINALIZE_TOOLS: tuple[str, ...] = ("setup-clipboard",)
 
 
 INSTALL_PRESETS: dict[str, dict[str, object]] = {
@@ -173,16 +174,20 @@ def handle_install(context) -> None:
             profile=args.profile,
         ),
     )
-    if selected_tools or selected_addons:
+    tool_names = _merge_unique_names(
+        selected_tools,
+        _auto_post_finalize_tools(results=results, registry=context.registry, chroot_name=install_config.distro_name),
+    )
+    if tool_names or selected_addons:
         record = context.registry.get(install_config.distro_name)
         if record is None or not bool(record.get("installed")):
             raise RuntimeError("tools and addons can only be applied after finalize completes")
-        if selected_tools:
+        if tool_names:
             tool_results = progress_call(
                 "Applying tools",
                 lambda: apply_catalog_entries(
                     catalog=ManifestCatalog("tool", config=context.config),
-                    names=selected_tools,
+                    names=tool_names,
                     config=install_config,
                     runner=context.runner,
                     registry=context.registry,
@@ -206,6 +211,43 @@ def handle_install(context) -> None:
     emit_table(context, "Install Results", results)
     emit_panel(context, "Next Steps", _install_next_steps(context, install_config.distro_name, username, results))
     _maybe_run_post_install_actions(context, install_config, username, results)
+
+
+
+def _auto_post_finalize_tools(*, results: list[object], registry: ChrootRegistry, chroot_name: str) -> list[str]:
+    if not _finalize_completed(results):
+        return []
+    record = registry.get(chroot_name)
+    if record is None or not bool(record.get("installed")):
+        return []
+    metadata = record.get("metadata", {})
+    applied_tools = _metadata_names(metadata.get("tools", "")) if isinstance(metadata, dict) else []
+    return [name for name in AUTO_POST_FINALIZE_TOOLS if name not in applied_tools]
+
+
+def _finalize_completed(results: list[object]) -> bool:
+    return any(
+        isinstance(item, (InstallFinalizeResult, InstallAlreadyCompleteResult)) and bool(getattr(item, "installed", False))
+        for item in results
+    )
+
+
+def _metadata_names(raw: object) -> list[str]:
+    if not isinstance(raw, str):
+        return []
+    return [name for name in (item.strip() for item in raw.split(",")) if name]
+
+
+def _merge_unique_names(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for name in group:
+            if name in seen:
+                continue
+            seen.add(name)
+            merged.append(name)
+    return merged
 
 
 def handle_upgrade(context) -> None:

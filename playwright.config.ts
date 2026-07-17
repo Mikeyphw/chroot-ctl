@@ -7,7 +7,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: process.env.CHROOTCTL_E2E_SKIP_SERVER ? undefined : {
-    command: "python3 -m chrootctl.web",
+    command: "CHROOTCTL_E2E_FIXTURES=1 CHROOTCTL_E2E_DASHBOARD_MODE=dense python3 -m chrootctl.web --dry-run",
     url: "http://127.0.0.1:8420",
     reuseExistingServer: true,
     timeout: 120000,

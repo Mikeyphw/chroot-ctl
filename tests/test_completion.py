@@ -56,6 +56,7 @@ def test_generate_zsh_completion_contains_expected_sections() -> None:
     assert "__complete users" in script
     assert "__complete tools" in script
     assert "__complete addons" in script
+    assert "--x11[Prepare Termux:X11 on host and export DISPLAY/PULSE_SERVER]" in script
 
 
 def test_completion_helpers_render_registry_data() -> None:

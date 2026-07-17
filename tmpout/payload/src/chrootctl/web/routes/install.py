@@ -9,15 +9,25 @@ from ...models import InstallRequest
 router = APIRouter(prefix="/install", tags=["install"])
 
 
+def _submit_job(jobs, **kwargs):
+    try:
+        return jobs.submit(**kwargs)
+    except TypeError:
+        kwargs.pop("retry", None)
+        return jobs.submit(**kwargs)
+
+
 def _install_request_from_values(
     *,
     distro: str,
     name: str,
     username: str,
+    preset: str | None,
     profile: str | None,
     desktop: str | None,
     release: str | None,
     version: str | None,
+    mirror: str | None,
     tools: list[str] | tuple[str, ...] = (),
     addons: list[str] | tuple[str, ...] = (),
     repair: bool = False,
@@ -26,10 +36,12 @@ def _install_request_from_values(
         distro=distro.strip(),
         name=name.strip(),
         username=(username or "").strip(),
+        preset=(preset or "").strip() or None,
         profile=(profile or "").strip() or None,
         desktop=(desktop or "").strip() or None,
         release=(release or "").strip() or None,
         version=(version or "").strip() or None,
+        mirror=(mirror or "").strip() or None,
         tools=tuple(tools),
         addons=tuple(addons),
         repair=repair,
@@ -49,10 +61,13 @@ def install_wizard(
         form_state = install_service.install_form_state(name=name, distro=distro)
     except Exception:
         form_state = {
-            "defaults": {"distro": distro, "name": name, "username": None, "profile": "minimal", "desktop": "none", "release": None, "version": None},
+            "defaults": {"distro": distro, "name": name, "username": None, "preset": "minimal-server", "profile": "minimal", "desktop": "none", "release": None, "version": None, "mirror": "auto"},
             "distros": [{"id": item, "label": item.title()} for item in install_service.distros()],
             "profiles": _profile_options(install_service),
             "desktops": _desktop_options(install_service),
+            "presets": getattr(install_service, "preset_options", lambda _=None: [])(distro),
+            "compatibility": getattr(install_service, "compatibility_matrix", lambda _=None: {})(distro),
+            "mirrors": _mirror_options(install_service, distro),
             "users": [],
             "requirements": {"username_required": True, "root_required": True},
             "rules": {"minimal_forces_desktop": "none", "minimal_rejects_desktop": True},
@@ -71,8 +86,11 @@ def install_wizard(
             "distros": install_service.distros(),
             "profiles": install_service.profiles(),
             "desktops": install_service.desktops(),
+            "preset_options": form_state.get("presets", []),
+            "compatibility": form_state.get("compatibility", {}),
             "profile_options": _profile_options(install_service),
             "desktop_options": _desktop_options(install_service),
+            "mirrors": form_state.get("mirrors", _mirror_options(install_service, distro)),
             "versions": versions,
             "tools": services.catalog("tool").list_entries(distro=distro),
             "addons": services.catalog("addon").list_entries(distro=distro),
@@ -89,10 +107,12 @@ def install_preview(
     distro: str = "ubuntu",
     name: str = "ubuntu",
     username: str = "",
+    preset: str | None = None,
     profile: str | None = None,
     desktop: str | None = None,
     release: str | None = None,
     version: str | None = None,
+    mirror: str | None = None,
     tools: list[str] = [],
     addons: list[str] = [],
 ):
@@ -100,14 +120,16 @@ def install_preview(
         distro=distro,
         name=name,
         username=username,
+        preset=preset,
         profile=profile,
         desktop=desktop,
         release=release,
         version=version,
+        mirror=mirror,
         tools=tools,
         addons=addons,
     )
-    result = services.install().validate_install_submission(install_request)
+    result = services.install().preview_install(install_request)
     status = 200 if result["ok"] else 400
     return JSONResponse(result, status_code=status)
 
@@ -120,10 +142,12 @@ def submit_install(
     distro: str = Form(...),
     name: str = Form(...),
     username: str = Form(""),
+    preset: str | None = Form(None),
     profile: str | None = Form(None),
     desktop: str | None = Form(None),
     release: str | None = Form(None),
     version: str | None = Form(None),
+    mirror: str | None = Form(None),
     tools: list[str] = Form(default=[]),
     addons: list[str] = Form(default=[]),
     repair: str | None = Form(None),
@@ -137,10 +161,12 @@ def submit_install(
         distro=distro,
         name=name,
         username=username,
+        preset=preset,
         profile=profile,
         desktop=desktop,
         release=release,
         version=version,
+        mirror=mirror,
         tools=tools,
         addons=addons,
         repair=repair_enabled,
@@ -149,11 +175,12 @@ def submit_install(
     if not validation["ok"]:
         detail = validation["blocking"][0]["message"] if validation["blocking"] else "install request is not valid"
         raise HTTPException(status_code=400, detail=detail)
-    job = jobs.submit(
+    job = _submit_job(jobs, 
         kind="install",
         title=f"Install {install_request.name}",
         target_name=install_request.name,
         log_path=resolve_log_path(services, name=install_request.name, username=install_request.username),
+        retry={"action": "install.submit", "payload": {"distro": install_request.distro, "name": install_request.name, "username": install_request.username, "preset": install_request.preset, "profile": install_request.profile, "desktop": install_request.desktop, "release": install_request.release, "version": install_request.version, "mirror": install_request.mirror, "tools": list(install_request.tools), "addons": list(install_request.addons), "repair": bool(install_request.repair)}, "href": f"/install?name={install_request.name}", "label": "Retry install"},
         runner=lambda progress: services.install().install(install_request, progress=progress),
     )
     return RedirectResponse(url=f"/jobs/{job.job_id}?toast=Install+job+queued&toast_kind=ok", status_code=303)
@@ -186,3 +213,9 @@ def _desktop_options(install_service):
         }
         for desktop in install_service.desktops()
     ]
+
+
+def _mirror_options(install_service, distro):
+    if hasattr(install_service, "mirror_options"):
+        return install_service.mirror_options(distro)
+    return [{"id": "auto", "label": "Auto-select", "healthy": True}]

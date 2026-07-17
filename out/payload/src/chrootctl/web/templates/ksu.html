@@ -31,10 +31,11 @@
     </div>
   </div>
 
+  <p id="mode-copy" class="panel-copy">Loading runtime mode…</p>
   <div class="form-actions">
-    <button type="button" onclick="control('start')">Start</button>
-    <button type="button" onclick="control('stop')">Stop</button>
-    <button type="button" onclick="control('restart')">Restart</button>
+    <button type="button" id="control-start" onclick="control('start')">Start</button>
+    <button type="button" id="control-stop" onclick="control('stop')">Stop</button>
+    <button type="button" id="control-restart" onclick="control('restart')">Restart</button>
     <button type="button" onclick="refresh()">Refresh</button>
     <a class="button-link" href="{{ open_url }}" target="_blank" rel="noreferrer">Open in browser</a>
   </div>
@@ -63,6 +64,12 @@ async function refresh() {
   setText("server-url", state.server && state.server.url ? state.server.url : "{{ open_url }}");
   setText("python-state", state.python && state.python.binary ? state.python.binary : "not detected");
   setText("module-state", state.module && state.module.version ? state.module.name + " " + state.module.version : "unknown");
+  const privileged = Boolean(state.mode && state.mode.privileged);
+  setText("mode-copy", privileged ? "Privileged module controls are available." : "Running in pip/source mode. Module control actions are disabled.");
+  for (const id of ["control-start", "control-stop", "control-restart"]) {
+    const node = document.getElementById(id);
+    if (node) node.disabled = !privileged;
+  }
   setText("raw-state", JSON.stringify(state, null, 2));
 }
 

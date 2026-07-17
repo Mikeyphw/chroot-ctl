@@ -48,6 +48,8 @@ class Runner:
         (["tools", "apply"], True),
         (["addons", "list"], False),
         (["addons", "apply"], True),
+        (["clipboard", "get"], False),
+        (["clipboard", "daemon"], False),
     ],
 )
 def test_command_requires_root_uses_command_metadata(argv: list[str], expected: bool) -> None:
@@ -57,6 +59,7 @@ def test_command_requires_root_uses_command_metadata(argv: list[str], expected: 
         tools_command=argv[1] if argv[0] == "tools" and len(argv) > 1 else None,
         addons_command=argv[1] if argv[0] == "addons" and len(argv) > 1 else None,
         transfer_command=argv[1] if argv[0] == "transfer" and len(argv) > 1 else None,
+        clipboard_command=argv[1] if argv[0] == "clipboard" and len(argv) > 1 else None,
     )
 
     assert command_requires_root(args) is expected

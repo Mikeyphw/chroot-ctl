@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_transfer_commands(subs)
     _add_events_commands(subs)
     _add_support_commands(subs)
+    _add_clipboard_commands(subs)
     _add_user_commands(subs)
     _add_catalog_commands(subs, name="tools", item_label="tool")
     _add_catalog_commands(subs, name="addons", item_label="addon")
@@ -53,6 +54,66 @@ def build_parser() -> argparse.ArgumentParser:
 
     return parser
 
+
+
+def _add_clipboard_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    clipboard = _add_parser(
+        subs,
+        "clipboard",
+        help="Bridge clipboard access between the chroot and the Termux Android host.",
+        description="Manage the host clipboard daemon and send clipboard get/set requests over the shared Unix socket.",
+        examples="""
+        examples:
+          chrootctl clipboard daemon start
+          chrootctl clipboard get
+          chrootctl clipboard set "hello from host"
+        """,
+    )
+    clipboard_subs = clipboard.add_subparsers(dest="clipboard_command", required=True, metavar="action")
+
+    daemon = _add_parser(
+        clipboard_subs,
+        "daemon",
+        help="Manage the host clipboard socket daemon.",
+        description="Start, stop, inspect, or run the clipboard bridge daemon that serves the shared Unix socket.",
+    )
+    daemon_subs = daemon.add_subparsers(dest="daemon_action", required=True, metavar="daemon-action")
+    for action in ("start", "stop", "status", "run"):
+        daemon_parser = _add_parser(
+            daemon_subs,
+            action,
+            help=f"{action.capitalize()} the clipboard daemon.",
+            description=f"{action.capitalize()} the clipboard daemon.",
+        )
+        daemon_parser.add_argument("--socket", type=Path, default=None, help="Override the host-side clipboard socket path.")
+        daemon_parser.add_argument("--pid-file", type=Path, default=None, help="Override the clipboard daemon PID file.")
+        daemon_parser.add_argument("--log-file", type=Path, default=None, help="Override the clipboard daemon log file.")
+
+    set_parser = _add_parser(
+        clipboard_subs,
+        "set",
+        help="Send text to the host clipboard daemon.",
+        description="Write clipboard text through the shared Unix socket. Reads stdin when no text arguments are provided.",
+    )
+    set_parser.add_argument("--socket", type=Path, default=None, help="Override the clipboard socket path.")
+    set_parser.add_argument("text", nargs="*", help="Clipboard text. Reads stdin when omitted.")
+
+    get_parser = _add_parser(
+        clipboard_subs,
+        "get",
+        help="Read text from the host clipboard daemon.",
+        description="Fetch clipboard text from the shared Unix socket and print it to stdout.",
+    )
+    get_parser.add_argument("--socket", type=Path, default=None, help="Override the clipboard socket path.")
+
+    doctor_parser = _add_parser(
+        clipboard_subs,
+        "doctor",
+        help="Check clipboard bridge readiness for the host and current chroot.",
+        description="Report Termux clipboard commands, daemon/socket state, and whether the current chroot already has clipboard wrapper tools or will auto-adapt on first start.",
+    )
+    doctor_parser.add_argument("--socket", type=Path, default=None, help="Override the clipboard socket path.")
+    doctor_parser.add_argument("--pid-file", type=Path, default=None, help="Override the clipboard daemon PID file.")
 
 
 def _add_magisk_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -195,6 +256,7 @@ def _add_runtime_commands(subs: argparse._SubParsersAction[argparse.ArgumentPars
     )
     start.add_argument("--login", action="store_true", help="Start a login shell as the configured chroot user.")
     start.add_argument("--root-login", action="store_true", help="Start a login shell as root instead of the configured user.")
+    start.add_argument("--x11", action="store_true", help="Prepare Termux:X11 on the host and export DISPLAY/PULSE_SERVER for the session.")
 
     restart = _add_parser(
         subs,
@@ -209,6 +271,7 @@ def _add_runtime_commands(subs: argparse._SubParsersAction[argparse.ArgumentPars
     )
     restart.add_argument("--login", action="store_true", help="Restart into a login shell as the configured chroot user.")
     restart.add_argument("--root-login", action="store_true", help="Restart into a login shell as root.")
+    restart.add_argument("--x11", action="store_true", help="Prepare Termux:X11 on the host and export DISPLAY/PULSE_SERVER for the session.")
 
     exec_parser = _add_parser(
         subs,
@@ -223,6 +286,7 @@ def _add_runtime_commands(subs: argparse._SubParsersAction[argparse.ArgumentPars
     )
     exec_parser.add_argument("--root", action="store_true", help="Run the command as root inside the chroot.")
     exec_parser.add_argument("--command", dest="exec_text", default=None, help="Shell command text to execute inside the chroot.")
+    exec_parser.add_argument("--x11", action="store_true", help="Prepare Termux:X11 on the host and export DISPLAY/PULSE_SERVER for the command.")
     exec_parser.add_argument("argv", nargs=argparse.REMAINDER, help="Command arguments after '--'.")
 
 

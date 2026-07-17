@@ -3,13 +3,15 @@
 {% set actionable = rows | rejectattr('result', 'equalto', 'PASS') | list %}
 {% set healthy = rows | selectattr('result', 'equalto', 'PASS') | list %}
 
-<section class="card hero">
+<section class="card hero" data-reveal="up">
   <div class="section-header">
     <div>
       <p class="eyebrow">{{ title }}</p>
       <h2 class="page-title">{{ title }}{% if target_name %} · {{ target_name }}{% endif %}</h2>
       <p class="panel-copy">
-        {% if title == "Doctor" %}
+        {% if title == "Doctor" and host_doctor %}
+        Host readiness checks for archive tools, root access, qemu/binfmt, and foreign-arch handoff guidance.
+        {% elif title == "Doctor" %}
         PASS / WARN / FAIL checks with exact recovery guidance and direct links where the Web UI can take you there.
         {% else %}
         Current runtime checks for the selected chroot, including the next recovery command when one is available.
@@ -20,12 +22,38 @@
       <span class="badge ok">{{ summary.pass }} pass</span>
       <span class="badge warn">{{ summary.warn }} warn</span>
       <span class="badge bad">{{ summary.fail }} fail</span>
-      {% if target_name %}
+      {% if target_name and target_name != "host" %}
       <a class="button-link subtle" href="/logs?name={{ target_name }}">Open logs</a>
+      {% elif host_doctor %}
+      <a class="button-link subtle" href="/transfer">Open transfer</a>
       {% endif %}
     </div>
   </div>
 </section>
+
+{% if advisories %}
+<section class="card" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Cross-arch handoff</p>
+      <h2 class="section-title">Finalize on device later</h2>
+    </div>
+  </div>
+  <div class="stack-list">
+    {% for advisory in advisories %}
+    <article class="item-card">
+      <div class="item-header">
+        <div>
+          <h3 class="card-title">{{ advisory.name }}</h3>
+          <p class="card-copy">{{ advisory.summary }}</p>
+        </div>
+        <span class="badge {{ 'warn' if advisory.mode == 'deferred' else 'ok' }}">{{ advisory.arch }}</span>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <section class="collapsible-grid">
   <details class="card fold-card" open>

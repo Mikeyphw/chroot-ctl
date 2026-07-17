@@ -127,6 +127,41 @@
 
 
 
+
+      window.chrootctlPostJson = async (url, payload = {}) => {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        let data = {};
+        try {
+          data = await response.json();
+        } catch (error) {
+          data = {};
+        }
+        if (!response.ok) {
+          const message = data?.error?.message || data?.detail || `Request failed: ${response.status}`;
+          throw new Error(message);
+        }
+        return data;
+      };
+
+      window.chrootctlPostAndRedirect = async (url, payload = {}, toast = "Queued") => {
+        const data = await window.chrootctlPostJson(url, payload);
+        if (data.location) {
+          window.location.href = data.location + (toast ? `${data.location.includes("?") ? "&" : "?"}toast=${encodeURIComponent(toast)}` : "");
+          return data;
+        }
+        if (toast) {
+          window.chrootctlToast?.(toast, "ok", 1800);
+        }
+        return data;
+      };
+
       window.chrootctlCopyText = async (text, label = "Copied") => {
         try {
           await navigator.clipboard.writeText(text);
@@ -241,5 +276,168 @@
       window.requestAnimationFrame(() => body.classList.add("app-ready"));
     })();
     </script>
+
+    <dialog class="sheet-dialog" id="global-confirmation-dialog">
+      <form method="dialog" class="sheet-card">
+        <div class="sheet-header">
+          <div>
+            <p class="eyebrow" id="global-confirmation-eyebrow">Confirmation</p>
+            <h2 class="section-title" id="global-confirmation-title">Confirm action</h2>
+            <p class="panel-copy" id="global-confirmation-copy">Review this action before queueing it.</p>
+          </div>
+          <button type="submit" class="button-link subtle" id="global-confirmation-cancel-top" aria-label="Close confirmation">Close</button>
+        </div>
+        <div class="status-grid">
+          <article class="status-card">
+            <h3>Kind</h3>
+            <p id="global-confirmation-kind">Queued action</p>
+          </article>
+          <article class="status-card">
+            <h3>Target</h3>
+            <p id="global-confirmation-target">—</p>
+          </article>
+          <article class="status-card">
+            <h3>Mode</h3>
+            <p id="global-confirmation-mode">Direct</p>
+          </article>
+        </div>
+        <div class="detail-grid">
+          <article class="card soft">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Before</p>
+                <h3 class="card-title">Current state</h3>
+              </div>
+            </div>
+            <ul class="list" id="global-confirmation-before">
+              <li class="muted">No current state details.</li>
+            </ul>
+          </article>
+          <article class="card soft">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">After</p>
+                <h3 class="card-title">Planned state</h3>
+              </div>
+            </div>
+            <ul class="list" id="global-confirmation-after">
+              <li class="muted">No planned state details.</li>
+            </ul>
+          </article>
+        </div>
+        <div class="stack-list">
+          <div>
+            <h3 class="card-title">Warnings</h3>
+            <ul class="list" id="global-confirmation-warnings">
+              <li class="muted">No warnings.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="actions actions-end">
+          <button type="button" class="button-link subtle" id="global-confirmation-cancel">Back</button>
+          <button type="button" id="global-confirmation-confirm">Queue action</button>
+        </div>
+      </form>
+    </dialog>
+    <script>
+      (() => {
+        const dialog = document.getElementById("global-confirmation-dialog");
+        const titleNode = document.getElementById("global-confirmation-title");
+        const copyNode = document.getElementById("global-confirmation-copy");
+        const kindNode = document.getElementById("global-confirmation-kind");
+        const targetNode = document.getElementById("global-confirmation-target");
+        const modeNode = document.getElementById("global-confirmation-mode");
+        const beforeNode = document.getElementById("global-confirmation-before");
+        const afterNode = document.getElementById("global-confirmation-after");
+        const warningsNode = document.getElementById("global-confirmation-warnings");
+        const cancelNode = document.getElementById("global-confirmation-cancel");
+        const cancelTopNode = document.getElementById("global-confirmation-cancel-top");
+        const confirmNode = document.getElementById("global-confirmation-confirm");
+        let pendingAction = null;
+
+        function renderList(node, items, emptyText) {
+          if (!node) return;
+          node.innerHTML = "";
+          const values = items && items.length ? items : [emptyText];
+          for (const item of values) {
+            const li = document.createElement("li");
+            li.className = values === items ? "item-card" : "muted";
+            if (typeof item === "string") {
+              li.textContent = item;
+            } else {
+              li.innerHTML = `<div class="item-header"><strong>${item.name || item.title || "Planned action"}</strong><span class="badge ${item.severity || "subtle"}">${item.action || item.kind || "planned"}</span></div><p class="item-summary">${item.summary || item.message || ""}</p><p class="muted">${item.impact || ""}</p>`;
+            }
+            node.appendChild(li);
+          }
+        }
+
+        function openDialog() {
+          if (!dialog) return;
+          if (typeof dialog.showModal === "function") {
+            dialog.showModal();
+            return;
+          }
+          dialog.setAttribute("open", "open");
+        }
+
+        function closeDialog() {
+          if (!dialog) return;
+          if (typeof dialog.close === "function") {
+            dialog.close();
+            return;
+          }
+          dialog.removeAttribute("open");
+        }
+
+        async function chrootctlConfirmAction(options) {
+          const {
+            title,
+            copy,
+            kind,
+            target,
+            mode,
+            before,
+            after,
+            warnings,
+            confirmLabel,
+            onConfirm,
+          } = options || {};
+          if (!dialog || typeof onConfirm !== "function") {
+            if (typeof onConfirm === "function") {
+              await onConfirm();
+            }
+            return;
+          }
+          pendingAction = onConfirm;
+          titleNode.textContent = title || "Confirm action";
+          copyNode.textContent = copy || "Review this action before queueing it.";
+          kindNode.textContent = kind || "Queued action";
+          targetNode.textContent = target || "—";
+          modeNode.textContent = mode || "Direct";
+          confirmNode.textContent = confirmLabel || "Queue action";
+          renderList(beforeNode, before || [], "No current state details.");
+          renderList(afterNode, after || [], "No planned state details.");
+          renderList(warningsNode, warnings || [], "No warnings.");
+          openDialog();
+        }
+
+        cancelNode?.addEventListener("click", () => closeDialog());
+        cancelTopNode?.addEventListener("click", () => closeDialog());
+        confirmNode?.addEventListener("click", async () => {
+          try {
+            const action = pendingAction;
+            pendingAction = null;
+            closeDialog();
+            if (action) await action();
+          } catch (error) {
+            window.chrootctlToast?.(error?.message || "Action failed", "warn");
+          }
+        });
+
+        window.chrootctlRenderSimpleList = renderList;
+        window.chrootctlConfirmAction = chrootctlConfirmAction;
+      })();
+    </script>
+
   </body>
 </html>

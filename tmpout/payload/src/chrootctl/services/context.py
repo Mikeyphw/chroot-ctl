@@ -50,6 +50,21 @@ class ServiceContainer:
 
         return SystemService(self)
 
+    def doctor(self) -> "DoctorService":
+        from .doctor import DoctorService
+
+        return DoctorService(self)
+
+    def preview(self) -> "PreviewService":
+        from .preview import PreviewService
+
+        return PreviewService(self)
+
+    def transfer(self) -> "TransferService":
+        from .transfer import TransferService
+
+        return TransferService(self)
+
     def chroots(self) -> "ChrootService":
         from .chroots import ChrootService
 
@@ -60,7 +75,15 @@ class ServiceContainer:
 
         return UserService(self, chroot_name=name)
 
+    def audit(self) -> "AuditService":
+        from .audit import AuditService
 
+        return AuditService(self)
+
+    def support(self) -> "SupportService":
+        from .support import SupportService
+
+        return SupportService(self)
 
     def lifecycle(self) -> "LifecycleService":
         from .lifecycle import LifecycleService
@@ -76,6 +99,16 @@ class ServiceContainer:
         from .install import InstallService
 
         return InstallService(self)
+
+    def snapshots(self) -> "SnapshotService":
+        from .snapshots import SnapshotService
+
+        return SnapshotService(self)
+
+    def repair(self) -> "RepairService":
+        from .repair import RepairService
+
+        return RepairService(self)
 
 
 def create_service_container(config_path=None, *, dry_run: bool = False, verbose: bool = False) -> ServiceContainer:

@@ -4,7 +4,7 @@ from typing import Any
 from pathlib import Path
 import tempfile
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from ...errors import AppError, ErrorResponse
@@ -83,6 +83,75 @@ class EventListResponse(BaseModel):
 class SupportBundleApiResponse(BaseModel):
     archive: str
     included: list[str] = Field(default_factory=list)
+
+
+class SnapshotListResponse(BaseModel):
+    items: list[dict[str, Any]]
+
+
+class JobRetryRequest(BaseModel):
+    overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class RegistryRepairResponse(BaseModel):
+    scanned_paths: int
+    missing_records: list[str] = Field(default_factory=list)
+    missing_paths: list[str] = Field(default_factory=list)
+    mismatched_paths: list[str] = Field(default_factory=list)
+    repaired_records: list[str] = Field(default_factory=list)
+    removed_records: list[str] = Field(default_factory=list)
+    preview: bool = True
+    next_steps: list[str] = Field(default_factory=list)
+
+
+class RegistryRepairPlanPreviewResponse(BaseModel):
+    ok: bool = False
+    summary: dict[str, Any] = Field(default_factory=dict)
+    selected: list[dict[str, Any]] = Field(default_factory=list)
+
+class RegistryRepairDecision(BaseModel):
+    item_id: str = Field(..., min_length=1)
+    action: str = Field(..., min_length=1)
+
+
+class RegistryRepairPlanRequest(BaseModel):
+    decisions: list[RegistryRepairDecision] = Field(default_factory=list)
+
+
+class SnapshotRecoveryResponse(BaseModel):
+    snapshot: dict[str, Any] | None = None
+    available: bool = False
+
+
+
+class UploadInitRequest(BaseModel):
+    filename: str = Field(..., min_length=1, examples=["ubuntu.tar.zst"])
+    total_size: int | None = Field(default=None, ge=0, examples=[104857600])
+    content_type: str | None = Field(default=None, examples=["application/zstd"])
+
+
+class UploadSessionResponse(BaseModel):
+    session_id: str
+    filename: str
+    content_type: str | None = None
+    total_size: int | None = None
+    received_bytes: int = 0
+    complete: bool = False
+    resumable: bool = True
+    final_path: str
+    part_path: str | None = None
+    checksum: str | None = None
+    checksum_path: str | None = None
+
+
+class UploadAbortResponse(BaseModel):
+    aborted: bool = True
+    session_id: str
+
+
+class UploadCompleteRequest(BaseModel):
+    expected_size: int | None = Field(default=None, ge=0, examples=[104857600])
+
 
 class JobEventResponse(BaseModel):
     job_id: str
@@ -167,7 +236,7 @@ def validate_install(payload: InstallValidationRequest, services=Depends(get_ser
 
 
 
-@router.post("/install/preview", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
+@router.post("/install/preview", response_model=dict[str, Any], summary="Preview an install plan", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}}, openapi_extra={"requestBody": {"content": {"application/json": {"example": {"distro": "ubuntu", "name": "androidos", "preset": "desktop", "username": "mike"}}}}})
 def preview_install(payload: InstallValidationRequest, services=Depends(get_services)) -> dict[str, Any]:
     install_request = InstallRequest(
         distro=payload.distro,
@@ -198,60 +267,49 @@ def preview_install(payload: InstallValidationRequest, services=Depends(get_serv
     return result
 
 
-@router.get("/transfer/preview/export", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
+@router.get("/transfer/preview/export", response_model=dict[str, Any], summary="Preview a chroot export", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}}, openapi_extra={"parameters": [{"name":"name","in":"query","required":True,"schema":{"type":"string"},"example":"androidos"}]})
 def preview_export(name: str = Query(..., min_length=1), archive: str | None = None, services=Depends(get_services)) -> dict[str, Any]:
-    return services.chroots().export_preview(name.strip(), archive=Path(archive).expanduser() if archive else None)
+    return services.transfer().preview_export(name=name.strip(), archive=archive)
 
 
-@router.get("/transfer/preview/import", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
+@router.get("/transfer/preview/import", response_model=dict[str, Any], summary="Preview an archive import", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}}, openapi_extra={"parameters": [{"name":"archive","in":"query","required":True,"schema":{"type":"string"},"example":"/sdcard/Download/androidos.tar.zst"}]})
 def preview_import(archive: str = Query(..., min_length=1), name: str | None = None, conflict: str = Query("rename"), services=Depends(get_services)) -> dict[str, Any]:
-    return services.chroots().import_preview(Path(archive).expanduser(), name=name, conflict=conflict)
+    return services.transfer().preview_import(archive=archive, name=name, conflict=conflict)
 
 
 @router.get("/transfer/preview/delete", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
 def preview_delete(name: str = Query(..., min_length=1), services=Depends(get_services)) -> dict[str, Any]:
-    return services.chroots().delete_preview(name.strip())
+    return services.transfer().preview_delete(name=name.strip())
+
+@router.get("/install/preview/upgrade", response_model=dict[str, Any], summary="Preview a chroot upgrade", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}}, openapi_extra={"parameters": [{"name":"name","in":"query","required":True,"schema":{"type":"string"},"example":"androidos"}]})
+def preview_upgrade(name: str = Query(..., min_length=1), services=Depends(get_services)) -> dict[str, Any]:
+    return services.transfer().preview_upgrade(name=name.strip())
 
 
-@router.get("/transfer/temp", responses={500: {"model": ErrorEnvelope}})
-def transfer_temp_state() -> dict[str, Any]:
-    return _transfer_temp_payload()
+@router.get("/transfer/temp", response_model=dict[str, Any], summary="List cached transfer artifacts", responses={500: {"model": ErrorEnvelope}})
+def transfer_temp_state(services=Depends(get_services)) -> dict[str, Any]:
+    return services.transfer().temp_state()
 
 
 @router.delete("/transfer/temp", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
-def delete_transfer_temp(path: str | None = None, delete_all: bool = False) -> dict[str, Any]:
-    return _delete_transfer_temp(path=path, delete_all=delete_all)
+def delete_transfer_temp(path: str | None = None, delete_all: bool = False, services=Depends(get_services)) -> dict[str, Any]:
+    return services.transfer().delete_temp(path=path, delete_all=delete_all)
 
 
-@router.get("/transfer/inspect", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
+@router.get("/transfer/inspect", response_model=dict[str, Any], summary="Inspect an archive before import", responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}}, openapi_extra={"parameters": [{"name":"archive","in":"query","required":True,"schema":{"type":"string"},"example":"/sdcard/Download/androidos.tar.zst"}]})
 def inspect_transfer_archive(archive: str, services=Depends(get_services)) -> dict[str, Any]:
-    chroots = services.chroots()
-    if hasattr(chroots, "inspect_archive"):
-        inspection = chroots.inspect_archive(Path(archive))
-    else:
-        inspection = {"archive": str(Path(archive).expanduser().resolve()), "source_name": Path(archive).name.removesuffix(".tar.zst").replace(".tar", ""), "suggested_name": Path(archive).name.removesuffix(".tar.zst").replace(".tar", ""), "path_name": Path(archive).name.removesuffix(".tar.zst").replace(".tar", ""), "distro": "unknown", "arch": "unknown", "release_name": "", "version": "", "phase": "extract", "installed": False, "metadata": {}}
-    return serialize_value(inspection)
+    return services.transfer().inspect(archive)
 
 
-@router.get("/transfer/readiness", response_model=TransferReadinessResponse, responses={500: {"model": ErrorEnvelope}})
+@router.get("/transfer/readiness", response_model=TransferReadinessResponse, summary="Get transfer and foreign-arch readiness", responses={500: {"model": ErrorEnvelope}})
 def transfer_readiness(services=Depends(get_services)) -> dict[str, Any]:
-    return services.system().cross_arch_state()
+    return services.doctor().cross_arch_readiness()
 
 
 
-@router.get("/doctor/host", response_model=DoctorReadinessResponse, responses={500: {"model": ErrorEnvelope}})
+@router.get("/doctor/host", response_model=DoctorReadinessResponse, summary="Run host readiness and doctor checks", responses={500: {"model": ErrorEnvelope}})
 def doctor_host(services=Depends(get_services)) -> dict[str, Any]:
-    rows = services.system().host_doctor()
-    advisories = services.system().foreign_arch_advisories()
-    blockers = [serialize_value(row) for row in rows if getattr(row, "result", "") == "FAIL"]
-    blockers.extend(item for item in advisories if item.get("mode") != "ready")
-    return {
-        "host_arch": services.runtime_for().runner.host_arch(),
-        "checks": [serialize_value(row) for row in rows],
-        "summary": _check_summary_payload(rows),
-        "advisories": advisories,
-        "blockers": blockers,
-    }
+    return services.doctor().host_readiness()
 
 
 
@@ -406,6 +464,222 @@ def api_logs(
         "tail": tail,
         "lines": lines,
     }
+
+
+
+
+@router.get("/snapshots", response_model=SnapshotListResponse, responses={500: {"model": ErrorEnvelope}})
+def list_snapshots(
+    services=Depends(get_services),
+    name: str | None = Query(default=None),
+    limit: int = Query(20, ge=1, le=200),
+) -> dict[str, Any]:
+    return {"items": [serialize_value(item) for item in services.snapshots().list(chroot_name=name, limit=limit)]}
+
+
+@router.post("/snapshots", response_model=ApiActionResponse, responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
+def create_snapshot_action(
+    action: ActionRequest,
+    services=Depends(get_services),
+):
+    if action.action.strip().lower() != "create":
+        raise AppError(code="unsupported_snapshot_action", title="Unsupported snapshot action", message="Only create is currently supported here.")
+    target = str(action.target or "").strip()
+    if not target:
+        raise AppError(code="snapshot_target_required", title="Snapshot target required", message="Choose a chroot before creating a snapshot.")
+    name = str(action.payload.get("name") or "snapshot").strip() or "snapshot"
+    note = str(action.payload.get("note") or "").strip()
+    result = services.snapshots().create(target, name=name, note=note)
+    return {"status": "ok", "result": serialize_value(result)}
+
+
+
+
+@router.post("/jobs/{job_id}/retry", response_model=ApiActionResponse, summary="Replay a failed job with optional overrides", responses={400: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}}, openapi_extra={"requestBody": {"content": {"application/json": {"example": {"overrides": {"username": "mike", "mirror": "https://example.invalid/mirror"}}}}}})
+def retry_job(job_id: str, payload: JobRetryRequest, jobs=Depends(get_jobs), services=Depends(get_services)) -> dict[str, Any]:
+    try:
+        snapshot = jobs.get(job_id, tail=0)
+    except KeyError as exc:
+        raise AppError(
+            code="job_not_found",
+            title="Job not found",
+            message="The requested job does not exist.",
+            details={"job_id": job_id},
+            status_code=404,
+        ) from exc
+    retry = _retry_payload(snapshot)
+    retry["payload"] = _merged_retry_payload(retry.get("payload") if isinstance(retry.get("payload"), dict) else {}, payload.overrides)
+    queued = _submit_retry_job(jobs=jobs, services=services, retry=retry)
+    return {
+        "job_id": queued.job_id,
+        "status": "queued",
+        "location": _job_redirect_url(queued.job_id),
+        "result": {"replayed_from": job_id, "retry": retry},
+    }
+
+
+
+@router.get("/registry/repair/preview-detailed", responses={500: {"model": ErrorEnvelope}})
+def registry_repair_preview_detailed(services=Depends(get_services)) -> dict[str, Any]:
+    return {"items": services.repair().preview_items()}
+
+
+
+@router.post("/registry/repair/preview-selective", response_model=RegistryRepairPlanPreviewResponse, responses={500: {"model": ErrorEnvelope}})
+def registry_repair_preview_selective(
+    payload: RegistryRepairPlanRequest,
+    services=Depends(get_services),
+) -> dict[str, Any]:
+    decisions = [item.model_dump() for item in payload.decisions]
+    return services.repair().preview_plan(decisions)
+
+
+@router.post("/registry/repair/apply-selective", response_model=ApiActionResponse, responses={500: {"model": ErrorEnvelope}})
+def registry_repair_apply_selective(
+    payload: RegistryRepairPlanRequest,
+    jobs=Depends(get_jobs),
+    services=Depends(get_services),
+) -> dict[str, Any]:
+    decisions = [item.model_dump() for item in payload.decisions]
+    job = _submit_job_compat(
+        jobs,
+        kind="registry-repair",
+        title="Repair chroot registry",
+        target_name="registry",
+        log_path=resolve_log_path(services, name="registry"),
+        retry={"action": "registry.repair.apply-selective", "payload": {"decisions": decisions}, "label": "Run repair again", "href": "/repair"},
+        runner=lambda progress: services.repair().apply_registry_repair_plan(decisions),
+    )
+    return {"job_id": job.job_id, "status": "queued", "location": _job_redirect_url(job.job_id)}
+
+
+@router.get("/chroots/{name}/recovery/latest-snapshot", response_model=SnapshotRecoveryResponse, responses={404: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
+def latest_snapshot_recovery(name: str, services=Depends(get_services)) -> dict[str, Any]:
+    snapshots = services.snapshots().list(chroot_name=name, limit=1)
+    if not snapshots:
+        return {"available": False, "snapshot": None}
+    snapshot = snapshots[0]
+    return {"available": True, "snapshot": serialize_value(snapshot)}
+
+
+@router.post("/chroots/{name}/recovery/latest-snapshot", response_model=ApiActionResponse, responses={404: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
+def recover_latest_snapshot(name: str, jobs=Depends(get_jobs), services=Depends(get_services)) -> dict[str, Any]:
+    snapshots = services.snapshots().list(chroot_name=name, limit=1)
+    if not snapshots:
+        raise AppError(code="snapshot_not_found", title="Snapshot not found", message="No snapshots are available for this chroot.", details={"name": name}, status_code=404)
+    snapshot = snapshots[0]
+    payload = {"name": name, "snapshot_name": snapshot.name}
+    job = _submit_job_compat(
+        jobs,
+        kind="snapshot-restore",
+        title=f"Restore {name}:{snapshot.name}",
+        target_name=name,
+        log_path=resolve_log_path(services, name=name),
+        retry={"action": "snapshot.restore", "payload": payload, "label": "Retry restore", "href": f"/chroots/{name}"},
+        runner=lambda progress: services.snapshots().restore(name, snapshot.name),
+    )
+    return {"job_id": job.job_id, "status": "queued", "location": _job_redirect_url(job.job_id)}
+@router.get("/registry/repair/preview", response_model=RegistryRepairResponse, responses={500: {"model": ErrorEnvelope}})
+def registry_repair_preview(services=Depends(get_services)) -> dict[str, Any]:
+    result = services.repair().preview_registry_repair()
+    return {
+        "scanned_paths": result.scanned_paths,
+        "missing_records": list(result.missing_records),
+        "missing_paths": list(result.missing_paths),
+        "mismatched_paths": list(result.mismatched_paths),
+        "repaired_records": list(result.repaired_records),
+        "removed_records": list(result.removed_records),
+        "preview": result.preview,
+        "next_steps": list(result.next_steps),
+    }
+
+
+@router.post("/registry/repair/apply", response_model=ApiActionResponse, responses={500: {"model": ErrorEnvelope}})
+def registry_repair_apply(jobs=Depends(get_jobs), services=Depends(get_services)) -> dict[str, Any]:
+    job = _submit_job_compat(
+        jobs,
+        kind="registry-repair",
+        title="Repair chroot registry",
+        target_name="registry",
+        log_path=resolve_log_path(services, name="registry"),
+        retry={"action": "registry.repair.apply", "payload": {}, "label": "Run repair again", "href": "/doctor/host"},
+        runner=lambda progress: services.repair().apply_registry_repair(),
+    )
+    return {"job_id": job.job_id, "status": "queued", "location": _job_redirect_url(job.job_id)}
+
+@router.post(
+    "/transfer/upload/init",
+    response_model=UploadSessionResponse,
+    summary="Start a resumable transfer upload session",
+    responses={400: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}},
+)
+def init_transfer_upload(
+    payload: UploadInitRequest,
+    services=Depends(get_services),
+) -> dict[str, Any]:
+    return serialize_value(
+        services.transfer().start_upload(
+            filename=payload.filename,
+            total_size=payload.total_size,
+            content_type=payload.content_type,
+        )
+    )
+
+
+@router.get(
+    "/transfer/upload/{session_id}",
+    response_model=UploadSessionResponse,
+    summary="Get resumable upload session status",
+    responses={404: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}},
+)
+def transfer_upload_status(
+    session_id: str,
+    services=Depends(get_services),
+) -> dict[str, Any]:
+    return serialize_value(services.transfer().upload_status(session_id))
+
+
+@router.put(
+    "/transfer/upload/{session_id}/chunk",
+    response_model=UploadSessionResponse,
+    summary="Upload a resumable transfer chunk",
+    responses={404: {"model": ErrorEnvelope}, 409: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}},
+)
+async def transfer_upload_chunk(
+    session_id: str,
+    request: Request,
+    offset: int = Query(..., ge=0, description="Byte offset expected by the server before this chunk is written."),
+    services=Depends(get_services),
+) -> dict[str, Any]:
+    body = await request.body()
+    return serialize_value(services.transfer().upload_chunk(session_id=session_id, offset=offset, data=body))
+
+
+@router.post(
+    "/transfer/upload/{session_id}/complete",
+    response_model=UploadSessionResponse,
+    summary="Finalize a resumable transfer upload",
+    responses={404: {"model": ErrorEnvelope}, 409: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}},
+)
+def transfer_upload_complete(
+    session_id: str,
+    payload: UploadCompleteRequest,
+    services=Depends(get_services),
+) -> dict[str, Any]:
+    return serialize_value(services.transfer().complete_upload(session_id=session_id, expected_size=payload.expected_size))
+
+
+@router.delete(
+    "/transfer/upload/{session_id}",
+    response_model=UploadAbortResponse,
+    summary="Abort a resumable transfer upload",
+    responses={404: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}},
+)
+def transfer_upload_abort(
+    session_id: str,
+    services=Depends(get_services),
+) -> dict[str, Any]:
+    return serialize_value(services.transfer().abort_upload(session_id=session_id))
 
 
 
@@ -623,4 +897,192 @@ def api_validate_imported_chroot(name: str, services=Depends(get_services)) -> d
         raise AppError(code="chroot_not_found", title="Chroot not found", message=str(exc), status_code=404) from exc
     return {"name": name, "validation": serialize_value(result)}
 
+
+
+
+
+def _submit_job_compat(jobs, **kwargs):
+    try:
+        return jobs.submit(**kwargs)
+    except TypeError:
+        kwargs.pop("retry", None)
+        return jobs.submit(**kwargs)
+
+
+def _retry_payload(job_snapshot) -> dict[str, Any]:
+    payload = job_snapshot.to_event_payload(log_download_url=f"/jobs/{job_snapshot.job_id}/logs/download")
+    retry = payload.get("retry")
+    if isinstance(retry, dict):
+        return retry
+    raise AppError(
+        code="job_retry_unavailable",
+        title="Retry unavailable",
+        message="This job does not contain enough retry metadata to replay it.",
+        details={"job_id": payload.get("job_id")},
+        hints=["Open the original page and submit the action again."],
+        status_code=400,
+    )
+
+
+def _merged_retry_payload(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    return merged
+
+
+def _job_redirect_url(job_id: str) -> str:
+    return f"/jobs/{job_id}"
+
+
+def _submit_retry_job(*, jobs, services, retry: dict[str, Any]):
+    action = str(retry.get("action", "")).strip()
+    payload = retry.get("payload") if isinstance(retry.get("payload"), dict) else {}
+    log_name = str(payload.get("name") or retry.get("target") or "job")
+    if action == "install.submit":
+        install_payload = InstallRequest(
+            distro=str(payload.get("distro", "")),
+            name=str(payload.get("name", "")),
+            username=str(payload.get("username", "")),
+            preset=_optional_str(payload.get("preset")),
+            profile=_optional_str(payload.get("profile")),
+            desktop=_optional_str(payload.get("desktop")),
+            release=_optional_str(payload.get("release")),
+            version=_optional_str(payload.get("version")),
+            mirror=_optional_str(payload.get("mirror")),
+            tools=tuple(payload.get("tools", []) or []),
+            addons=tuple(payload.get("addons", []) or []),
+            repair=bool(payload.get("repair", False)),
+        )
+        return _submit_job_compat(
+            jobs,
+            kind="install",
+            title=f"Install {install_payload.distro or 'chroot'} ({install_payload.name})",
+            target_name=install_payload.name,
+            log_path=resolve_log_path(services, name=install_payload.name, username=install_payload.username),
+            retry={"action": action, "payload": payload, "label": "Retry install", "href": f"/install?name={install_payload.name}"},
+            runner=lambda progress: services.install().install(install_payload, progress=progress),
+        )
+    if action == "transfer.export":
+        archive = Path(str(payload.get("archive", ""))).expanduser()
+        target = str(payload.get("name", ""))
+        password = _optional_str(payload.get("password"))
+        return _submit_job_compat(
+            jobs,
+            kind="transfer-export",
+            title=f"Export chroot {target}",
+            target_name=target,
+            log_path=resolve_log_path(services, name=target),
+            retry={"action": action, "payload": payload, "label": "Retry export", "href": f"/transfer?archive={archive}"},
+            runner=lambda progress: services.chroots().export(target, archive=archive, password=password),
+        )
+    if action == "transfer.import":
+        archive = Path(str(payload.get("archive", ""))).expanduser()
+        return _submit_job_compat(
+            jobs,
+            kind="transfer-import",
+            title=f"Import archive {archive.name}",
+            target_name=str(payload.get("name", "")) or None,
+            log_path=resolve_log_path(services, name=str(payload.get("name", "")) or None),
+            retry={"action": action, "payload": payload, "label": "Retry import", "href": f"/transfer?archive={archive}"},
+            runner=lambda progress: services.chroots().import_archive(
+                archive,
+                name=_optional_str(payload.get("name")),
+                conflict=str(payload.get("conflict", "rename")),
+                password=_optional_str(payload.get("password")),
+                post_import=str(payload.get("post_import", "register")),
+            ),
+        )
+    if action in {"registry.repair.apply", "registry.repair.apply-selective"}:
+        decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
+        return _submit_job_compat(
+            jobs,
+            kind="registry-repair",
+            title="Repair chroot registry",
+            target_name="registry",
+            log_path=resolve_log_path(services, name="registry"),
+            retry={"action": action, "payload": payload, "label": "Run repair again", "href": "/repair"},
+            runner=lambda progress: services.repair().apply_registry_repair_plan(decisions) if decisions else services.repair().apply_registry_repair(),
+        )
+    if action == "chroot.start":
+        name = str(payload.get("name", ""))
+        return _submit_job_compat(
+            jobs,
+            kind="chroot-start",
+            title=f"Start chroot {name}",
+            target_name=name,
+            log_path=resolve_log_path(services, name=name),
+            retry={"action": action, "payload": payload, "label": "Retry start", "href": f"/chroots/{name}"},
+            runner=lambda progress: services.chroots().start(name),
+        )
+    if action == "chroot.restart":
+        name = str(payload.get("name", ""))
+        return _submit_job_compat(
+            jobs,
+            kind="chroot-restart",
+            title=f"Restart chroot {name}",
+            target_name=name,
+            log_path=resolve_log_path(services, name=name),
+            retry={"action": action, "payload": payload, "label": "Retry restart", "href": f"/chroots/{name}"},
+            runner=lambda progress: services.chroots().restart(name),
+        )
+    if action == "chroot.upgrade":
+        name = str(payload.get("name", ""))
+        return _submit_job_compat(
+            jobs,
+            kind="chroot-upgrade",
+            title=f"Upgrade chroot {name}",
+            target_name=name,
+            log_path=resolve_log_path(services, name=name),
+            retry={"action": action, "payload": payload, "label": "Retry upgrade", "href": f"/chroots/{name}"},
+            runner=lambda progress: services.install().upgrade(name, progress=progress),
+        )
+    if action == "snapshot.create":
+        name = str(payload.get("name", ""))
+        snapshot_name = str(payload.get("snapshot_name", "snapshot"))
+        note = str(payload.get("note", ""))
+        return _submit_job_compat(
+            jobs,
+            kind="snapshot-create",
+            title=f"Snapshot {name}:{snapshot_name}",
+            target_name=name,
+            log_path=resolve_log_path(services, name=name),
+            retry={"action": action, "payload": payload, "label": "Retry snapshot", "href": f"/chroots/{name}"},
+            runner=lambda progress: services.snapshots().create(name, name=snapshot_name, note=note),
+        )
+    if action == "snapshot.restore":
+        name = str(payload.get("name", ""))
+        snapshot_name = str(payload.get("snapshot_name", ""))
+        return _submit_job_compat(
+            jobs,
+            kind="snapshot-restore",
+            title=f"Restore {name}:{snapshot_name}",
+            target_name=name,
+            log_path=resolve_log_path(services, name=name),
+            retry={"action": action, "payload": payload, "label": "Retry restore", "href": f"/chroots/{name}"},
+            runner=lambda progress: services.snapshots().restore(name, snapshot_name),
+        )
+    if action == "snapshot.export":
+        name = str(payload.get("name", ""))
+        snapshot_name = str(payload.get("snapshot_name", ""))
+        return _submit_job_compat(
+            jobs,
+            kind="snapshot-export",
+            title=f"Export snapshot {name}:{snapshot_name}",
+            target_name=name,
+            log_path=resolve_log_path(services, name=name),
+            retry={"action": action, "payload": payload, "label": "Retry export", "href": f"/chroots/{name}"},
+            runner=lambda progress: services.snapshots().export(name, snapshot_name),
+        )
+    raise AppError(
+        code="job_retry_action_unknown",
+        title="Retry action unavailable",
+        message=f"Unsupported retry action: {action or 'unknown'}",
+        details={"retry": retry},
+        hints=["Open the original page and submit the action again."],
+        status_code=400,
+    )
 

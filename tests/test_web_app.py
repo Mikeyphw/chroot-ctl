@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from chrootctl.base_install import ReleaseRef
@@ -36,6 +37,7 @@ from chrootctl.models import (
     SupportBundleResult,
 )
 from chrootctl.web.app import create_app
+from chrootctl.web.serialize import serialize_value
 from chrootctl.web.jobs import JobSnapshot
 
 
@@ -441,10 +443,237 @@ class FakeSupportService:
         bundle.write_text("bundle", encoding="utf-8")
         return SupportBundleResult(archive=bundle, included=("manifest.json",))
 
+
+
+
+class FakeRepairService:
+    def preview_registry_repair(self):
+        from chrootctl.models import RegistryRepairResult
+        return RegistryRepairResult(
+            scanned_paths=1,
+            missing_records=("orphan",),
+            missing_paths=("missing",),
+            mismatched_paths=(),
+            preview=True,
+            next_steps=("Run repair",),
+        )
+
+    def preview_items(self):
+        return [
+            {
+                "item_id": "chroot:orphan",
+                "name": "orphan",
+                "kind": "missing-record",
+                "severity": "warn",
+                "action": "register",
+                "path": "/data/chroots/orphan",
+                "expected_path": "",
+                "summary": "Filesystem path exists without a registry record.",
+                "impact": "Register the orphaned chroot.",
+                "current_state": "No registry record exists.",
+                "proposed_state": "Create a recovered registry record.",
+                "diff_lines": ["- registry[orphan] = missing", "+ registry[orphan].path = /data/chroots/orphan"],
+            }
+        ]
+
+    def preview_plan(self, decisions):
+        selected = [item for item in self.preview_items() if any(decision.get("item_id") == item["item_id"] for decision in decisions)]
+        return {
+            "ok": bool(selected),
+            "summary": {
+                "selected_count": len(selected),
+                "register_count": len(selected),
+                "fix_path_count": 0,
+                "remove_record_count": 0,
+                "skip_count": 0,
+                "warnings": ["Recovered chroots may need metadata review after registration."] if selected else [],
+                "next_steps": ["Queue the repair job and review the result on the Jobs page."] if selected else ["Select at least one repair action to continue."],
+            },
+            "selected": selected,
+        }
+
+    def apply_registry_repair(self):
+        from chrootctl.models import RegistryRepairResult
+        return RegistryRepairResult(
+            scanned_paths=1,
+            repaired_records=("orphan",),
+            removed_records=("missing",),
+            preview=False,
+            next_steps=("Open dashboard",),
+        )
+
+    def apply_registry_repair_plan(self, decisions):
+        return self.apply_registry_repair()
+
+
+class FakeSnapshotService:
+    def list(self, *, chroot_name: str | None = None, limit: int = 20):
+        from chrootctl.models import SnapshotRecord
+        if chroot_name == "work":
+            return [
+                SnapshotRecord(
+                    snapshot_id=1,
+                    name="snap-001",
+                    chroot_name="work",
+                    path="/data/chroots/.snapshots/work/snap-001",
+                    kind="copy",
+                    created_at="now",
+                    note="",
+                    size_bytes=0,
+                    metadata={},
+                )
+            ][:limit]
+        return []
+
+    def restore(self, chroot_name: str, snapshot_name: str):
+        return {"ok": True, "chroot_name": chroot_name, "snapshot_name": snapshot_name, "next_steps": ("Open shell",)}
+
+
+
+
+class FakeDoctorService:
+    def host_readiness(self):
+        system = FakeSystemService()
+        checks = system.host_doctor()
+        advisories = system.foreign_arch_advisories()
+        return {
+            "host_arch": "amd64",
+            "checks": [serialize_value(item) for item in checks],
+            "summary": {
+                "pass": sum(1 for item in checks if getattr(item, "result", "") == "PASS"),
+                "warn": sum(1 for item in checks if getattr(item, "result", "") == "WARN"),
+                "fail": sum(1 for item in checks if getattr(item, "result", "") == "FAIL"),
+            },
+            "advisories": advisories,
+            "blockers": [item for item in advisories if item.get("mode") != "ready"],
+        }
+
+    def cross_arch_readiness(self):
+        return FakeSystemService().cross_arch_state()
+
+
+class FakeTransferService:
+    def temp_state(self):
+        import tempfile
+
+        transfer_dir = Path(tempfile.gettempdir()) / "chrootctl-webui-transfer"
+        transfer_dir.mkdir(parents=True, exist_ok=True)
+        items = []
+        for entry in sorted(transfer_dir.glob("*")):
+            if entry.is_file():
+                stat = entry.stat()
+                items.append(
+                    {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "size_bytes": int(stat.st_size),
+                        "modified_at": float(stat.st_mtime),
+                    }
+                )
+        return {
+            "directory": str(transfer_dir),
+            "count": len(items),
+            "total_bytes": sum(item["size_bytes"] for item in items),
+            "items": items,
+        }
+
+    def inspect(self, archive: str, password: str | None = None):
+        archive_path = Path(archive)
+        return {
+            "source_name": archive_path.name.removesuffix(".tar.zst").replace(".tar", "") or "archive",
+            "archive": str(archive_path),
+            "filename": archive_path.name,
+            "size_bytes": archive_path.stat().st_size if archive_path.exists() else 0,
+            "checksum": "deadbeef",
+            "checksum_path": f"{archive_path}.sha256",
+            "checksum_verified": True,
+            "conflicts": [{"name": "work", "reason": "existing chroot detected"}],
+            "conflict_strategy_options": ("rename", "overwrite"),
+        }
+
+    def export(self, name: str, *, archive: Path | None = None, password: str | None = None):
+        if archive is not None:
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            archive.write_bytes(b"tar.zst")
+        return {"ok": True, "archive": str(archive) if archive else None, "name": name, "password": password}
+
+    def import_archive(
+        self,
+        *,
+        archive: Path,
+        name: str | None = None,
+        conflict: str = "rename",
+        password: str | None = None,
+        post_import: str = "register",
+    ):
+        return {
+            "ok": True,
+            "archive": str(archive),
+            "name": name,
+            "conflict": conflict,
+            "password": password,
+            "post_import": post_import,
+        }
+
+    def preview_export(self, *, name: str, archive: str | None = None):
+        return {"kind": "export", "name": name, "archive": archive, "size_bytes": 1234}
+
+    def preview_import(self, *, archive: str, name: str | None = None, conflict: str = "rename"):
+        return {"kind": "import", "archive": archive, "name": name, "conflict": conflict, "size_bytes": 1234}
+
+    def preview_delete(self, *, name: str):
+        return {"kind": "delete", "name": name}
+
+    def preview_upgrade(self, *, name: str):
+        return {"kind": "upgrade", "name": name}
+
+    def delete_temp(self, *, path: str | None = None, delete_all: bool = False):
+        removed = 0
+        removed_paths = []
+        if delete_all:
+            state = self.temp_state()
+            for item in state["items"]:
+                target = Path(item["path"])
+                if target.exists():
+                    target.unlink()
+                    removed += 1
+                    removed_paths.append(str(target))
+        elif path:
+            target = Path(path)
+            checksum = Path(f"{path}.sha256")
+            if target.exists():
+                target.unlink()
+                removed += 1
+                removed_paths.append(str(target))
+            if checksum.exists():
+                checksum.unlink()
+        return {"removed": removed, "removed_paths": removed_paths}
+
+
+class FakeLifecycleService:
+    def status(self, host: str | None = None, port: int | None = None):
+        return {
+            "state": "running",
+            "enabled": False,
+            "python": {"dependencies_ready": True},
+            "module": {"version": None},
+            "mode": {"id": "pip", "label": "Pip/source", "privileged": False, "host": host or "127.0.0.1", "port": port or 8420},
+        }
+
 class FakeServices:
+    def __init__(self):
+        self._install = FakeInstallService()
+        self._repair = FakeRepairService()
+        self._doctor = FakeDoctorService()
+        self._transfer = FakeTransferService()
+        self._lifecycle = FakeLifecycleService()
+
     class _Runner:
         def host_arch(self):
             return "amd64"
+
+        def command_exists(self, command: str):
+            return command in {"qemu-aarch64-static", "qemu-x86_64-static"}
 
         def can_execute_foreign_arch(self, arch: str):
             return arch == "arm64"
@@ -466,7 +695,7 @@ class FakeServices:
         return FakeCatalogService(kind)
 
     def install(self):
-        return FakeInstallService()
+        return self._install
 
     def runtime_for(self, name: str | None = None, *, username: str | None = None):
         return FakeServices._Runtime()
@@ -477,13 +706,28 @@ class FakeServices:
     def support(self):
         return FakeSupportService()
 
+    def repair(self):
+        return self._repair
+
+    def doctor(self):
+        return self._doctor
+
+    def transfer(self):
+        return self._transfer
+
+    def lifecycle(self):
+        return self._lifecycle
+
+    def snapshots(self):
+        return FakeSnapshotService()
+
 
 class FakeJobs:
     def __init__(self) -> None:
         self.jobs: dict[str, JobSnapshot] = {}
         self.counter = 0
 
-    def submit(self, *, kind: str, title: str, runner, target_name: str | None = None, log_path=None):
+    def submit(self, *, kind: str, title: str, runner, target_name: str | None = None, log_path=None, retry=None):
         self.counter += 1
         job_id = str(self.counter)
         holder = {"text": "Queued"}
@@ -491,12 +735,19 @@ class FakeJobs:
         def progress(text: str) -> None:
             holder["text"] = text
 
-        result = runner(progress)
+        error = None
+        state = "succeeded"
+        try:
+            result = runner(progress)
+        except Exception as exc:
+            result = None
+            error = str(exc)
+            state = "failed"
         snapshot = JobSnapshot(
             job_id=job_id,
             kind=kind,
             title=title,
-            state="succeeded",
+            state=state,
             progress_text=holder["text"],
             created_at=0.0,
             started_at=0.0,
@@ -504,8 +755,10 @@ class FakeJobs:
             target_name=target_name,
             log_path=log_path,
             result_payload=result,
-            next_steps=tuple(getattr(result, "next_steps", ())),
+            error=error,
+            next_steps=tuple(getattr(result, "next_steps", ())) if result is not None else (),
             log_lines=("line one", "line two"),
+            retry=retry,
         )
         self.jobs[job_id] = snapshot
         return snapshot
@@ -542,6 +795,15 @@ def build_client(tmp_path: Path, *, raise_server_exceptions: bool = True) -> Tes
     app.state.jobs = FakeJobs()
     return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
+
+
+def create_test_app(tmp_path: Path):
+    return create_app(config_path=tmp_path / "config.toml", dry_run=True)
+
+
+@pytest.fixture
+def client(tmp_path: Path) -> TestClient:
+    return build_client(tmp_path)
 
 
 def csrf_token(client: TestClient, path: str = "/") -> str:
@@ -601,7 +863,7 @@ def test_chroot_and_user_routes_render(tmp_path: Path) -> None:
     detail = client.get("/chroots/work")
     assert detail.status_code == 200
     assert "configured_mounts" in detail.text
-    assert "Open confirmation" in detail.text
+    assert "global-confirmation-dialog" in detail.text
 
     users = client.get("/chroots/work/users")
     assert users.status_code == 200
@@ -1085,7 +1347,7 @@ def test_transfer_page_shows_checksum_and_conflict_controls(tmp_path: Path) -> N
     assert response.status_code == 200
     assert "Checksum" in response.text
     assert "Conflict handling" in response.text
-    assert "existing chroot detected" in response.text
+    assert "Overwrite existing target" in response.text
 
 
 def test_transfer_temp_delete_actions_work(tmp_path: Path) -> None:
@@ -1328,3 +1590,126 @@ def test_chroot_detail_shows_use_commands(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "Use this chroot" in response.text
     assert "Copy shell command" in response.text
+
+
+
+def test_api_retry_job_replays_install_with_overrides(tmp_path: Path, monkeypatch):
+    client = build_client(tmp_path)
+    web_app = client.app
+    services = web_app.state.services
+    jobs = web_app.state.jobs
+    install_calls = []
+
+    def fake_install(request, *, progress=None):
+        install_calls.append(request)
+        return {"ok": True}
+
+    monkeypatch.setattr(services.install(), "install", fake_install)
+    job = jobs.submit(
+        kind="install",
+        title="Install ubuntu (demo)",
+        target_name="demo",
+        log_path=None,
+        retry={
+            "action": "install.submit",
+            "payload": {
+                "distro": "ubuntu",
+                "name": "demo",
+                "username": "olduser",
+                "mirror": "auto",
+                "tools": [],
+                "addons": [],
+                "repair": False,
+            },
+            "label": "Retry install",
+            "href": "/install?name=demo",
+        },
+        runner=lambda progress: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    client.get("/")
+    csrf = client.cookies.get("chrootctl_csrf")
+    result = client.post(f"/api/jobs/{job.job_id}/retry", json={"overrides": {"username": "newuser", "repair": True}}, headers={"x-csrf-token": csrf})
+    assert result.status_code == 200
+    data = result.json()
+    assert data["status"] == "queued"
+    replay_job = jobs.get(data["job_id"], tail=0)
+    assert replay_job.state == "succeeded"
+    assert install_calls
+    assert install_calls[0].username == "newuser"
+    assert install_calls[0].repair is True
+
+
+def test_repair_page_loads_with_plan_summary(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    response = client.get("/repair")
+    assert response.status_code == 200
+    assert "Review and repair drift" in response.text
+    assert "Plan summary" in response.text
+    assert "Diff details" in response.text
+
+
+def test_api_registry_repair_preview_selective(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    response = client.post(
+        "/api/registry/repair/preview-selective",
+        json={"decisions": [{"item_id": "chroot:orphan", "action": "register"}]},
+        headers={"x-csrf-token": csrf_token(client)},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["summary"]["selected_count"] == 1
+    assert payload["selected"][0]["item_id"] == "chroot:orphan"
+
+
+def test_api_latest_snapshot_recovery(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    response = client.get("/api/chroots/work/recovery/latest-snapshot")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["snapshot"]["name"] == "snap-001"
+
+
+def test_repair_page_renders_confirmation_modal(tmp_path: Path) -> None:
+    client = TestClient(create_app(config_path=tmp_path / "config.toml", dry_run=True))
+    response = client.get("/repair")
+    assert response.status_code == 200
+    assert 'id="global-confirmation-dialog"' in response.text
+    assert "Review repair plan before queueing" in response.text
+
+
+def test_e2e_fixture_mode_seeds_failed_job(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("CHROOTCTL_E2E_FIXTURES", "1")
+    app = create_app(config_path=tmp_path / "config.toml", dry_run=True)
+    client = TestClient(app)
+    response = client.get("/jobs/e2e-failed-install")
+    assert response.status_code == 200
+    assert "Fixture failed install" in response.text
+    assert "Restore latest snapshot" in response.text
+
+
+def test_e2e_fixture_chroot_detail_renders_snapshot_history(monkeypatch, tmp_path):
+    monkeypatch.setenv("CHROOTCTL_E2E_FIXTURES", "1")
+    app = create_test_app(tmp_path)
+    client = TestClient(app)
+    response = client.get("/chroots/androidos")
+    assert response.status_code == 200
+    assert "snap-good-001" in response.text
+    assert "Snapshots" in response.text
+
+
+def test_transfer_page_includes_shared_confirmation(client):
+    response = client.get("/transfer")
+    assert response.status_code == 200
+    body = response.text
+    assert "global-confirmation-dialog" in body
+    assert "Confirm chroot export" in body
+
+
+def test_chroot_detail_includes_upgrade_confirmation(client):
+    response = client.get("/chroots/androidos")
+    assert response.status_code == 200
+    body = response.text
+    assert "Confirm chroot upgrade" in body
+    assert "data-confirm-submit" in body

@@ -147,7 +147,7 @@ def test_handle_start_skips_spinner_for_interactive_session(monkeypatch, tmp_pat
     calls: list[tuple[str, bool]] = []
 
     class StartController(Controller):
-        def start(self, *, login: bool, root_login: bool):
+        def start(self, *, login: bool, root_login: bool, x11: bool = False):
             assert login is True
             assert root_login is False
             return 0
@@ -174,7 +174,7 @@ def test_handle_exec_skips_spinner_for_terminal_owned_exec(monkeypatch, tmp_path
     calls: list[tuple[str, bool]] = []
 
     class ExecController(Controller):
-        def exec(self, *, root: bool, argv, command):
+        def exec(self, *, root: bool, argv, command, x11: bool = False):
             assert root is False
             assert argv == ["bash"]
             assert command is None
@@ -194,3 +194,109 @@ def test_handle_exec_skips_spinner_for_terminal_owned_exec(monkeypatch, tmp_path
         assert exc.code == 0
 
     assert calls == [("Executing command in chroot", True)]
+
+
+class _RegistryWithWrites:
+    def __init__(self, record):
+        self._record = record
+        self.upserts: list[dict[str, object]] = []
+
+    def get(self, name: str):
+        return self._record
+
+    def upsert(self, **kwargs):
+        self.upserts.append(kwargs)
+        self._record = dict(kwargs)
+        self._record["metadata"] = kwargs.get("metadata", {})
+
+
+class _Runner:
+    dry_run = True
+
+
+def test_handle_start_auto_records_existing_clipboard_wrappers(monkeypatch, tmp_path: Path) -> None:
+    chroot_base = tmp_path / "ubuntu"
+    for rel in ("usr/local/bin/termux-clip", "usr/local/bin/xsel", "usr/local/bin/xclip"):
+        path = chroot_base / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+    registry = _RegistryWithWrites(
+        {
+            "name": "ubuntu",
+            "distro": "ubuntu",
+            "path": str(chroot_base),
+            "phase": "finalize",
+            "installed": True,
+            "arch": None,
+            "release_name": None,
+            "version": None,
+            "metadata": {},
+        }
+    )
+    controller_calls = []
+
+    class _Controller(Controller):
+        def start(self, *, login: bool, root_login: bool, x11: bool = False):
+            controller_calls.append((login, root_login, x11))
+            return 0
+
+    context = SimpleNamespace(
+        args=argparse.Namespace(login=False, root_login=False, x11=False, json=False),
+        controller=_Controller(),
+        registry=registry,
+        runner=_Runner(),
+        logger=None,
+        config=SimpleNamespace(distro_name="ubuntu", chroot_base=chroot_base),
+    )
+
+    monkeypatch.setattr(session, "progress_call", lambda description, fn, **kwargs: fn())
+
+    try:
+        session.handle_start(context)
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    assert controller_calls == [(False, False, False)]
+    assert registry.upserts
+    assert registry.upserts[-1]["metadata"]["tools"] == "setup-clipboard"
+
+
+def test_handle_start_auto_applies_clipboard_tool_when_missing(monkeypatch, tmp_path: Path) -> None:
+    chroot_base = tmp_path / "ubuntu"
+    registry = _RegistryWithWrites(
+        {
+            "name": "ubuntu",
+            "distro": "ubuntu",
+            "path": str(chroot_base),
+            "phase": "finalize",
+            "installed": True,
+            "arch": None,
+            "release_name": None,
+            "version": None,
+            "metadata": {},
+        }
+    )
+    applied: list[list[str]] = []
+
+    class _Controller(Controller):
+        def start(self, *, login: bool, root_login: bool, x11: bool = False):
+            return 0
+
+    context = SimpleNamespace(
+        args=argparse.Namespace(login=False, root_login=False, x11=False, json=False),
+        controller=_Controller(),
+        registry=registry,
+        runner=_Runner(),
+        logger=None,
+        config=SimpleNamespace(distro_name="ubuntu", chroot_base=chroot_base),
+    )
+
+    monkeypatch.setattr(session, "progress_call", lambda description, fn, **kwargs: fn())
+    monkeypatch.setattr(session, "apply_catalog_entries", lambda **kwargs: applied.append(kwargs["names"]) or [])
+
+    try:
+        session.handle_start(context)
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    assert applied == [["setup-clipboard"]]

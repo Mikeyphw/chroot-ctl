@@ -27,6 +27,36 @@
   {% endfor %}
 </section>
 
+
+<section class="stack">
+  {% for section in sections %}
+  <article class="card">
+    <div class="card-header">
+      <div>
+        <p class="eyebrow">Reference</p>
+        <h3>{{ section.title }}</h3>
+      </div>
+    </div>
+    <div class="stack">
+      {% for item in section["items"] %}
+      <div class="surface-panel">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">{{ item.method }}</p>
+            <h4><code>{{ item.path }}</code></h4>
+          </div>
+        </div>
+        <p class="muted">{{ item.summary }}</p>
+        {% if item.example %}
+        <pre>curl -s {% if item.method != 'GET' %}-X {{ item.method }} {% endif %}http://127.0.0.1:8420{{ item.path }}   -H 'Content-Type: application/json'   -d '{{ item.example | tojson | replace("'", "'\''") }}'</pre>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+
 <section class="card">
   <div class="card-header">
     <div>

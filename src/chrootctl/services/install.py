@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 from pathlib import Path
 
 from ..base_install import ReleaseRef
 from ..installer_factory import build_installer
-from ..models import InstallRequest, InstallRunResult, InstallWizardDefaults, UpgradeResult
+from ..models import InstallRequest, InstallWizardDefaults
 from ..user_sync import validate_username
 from .context import ServiceContainer
+from .install_execution import InstallExecutionService
 
 PROFILE_OPTIONS = ("minimal", "dev", "xfce4", "plasma", "custom")
 DESKTOP_OPTIONS = ("auto", "none", "xfce4", "plasma")
@@ -479,173 +479,26 @@ class InstallService:
             raise ValueError(f"unsupported desktop: {desktop}")
         return self.install_feedback_plan(request)
 
+    def _execution(self) -> InstallExecutionService:
+        return InstallExecutionService(
+            self.services,
+            apply_preset=self.apply_preset,
+            resolve_username=self._resolved_request_username,
+            validate_install_request=self.validate_install_request,
+            mirror_options=self.mirror_options,
+            resolve_mirror=_resolve_mirror,
+            install_next_steps=_install_next_steps,
+            build_installer_fn=build_installer,
+        )
+
     def list_versions(self, *, distro: str, name: str | None = None, username: str | None = None) -> list[ReleaseRef]:
-        config_name = name or distro
-        runtime = self.services.runtime_for(config_name, username=username or self.services.base_config.username)
-        installer = build_installer(
-            distro,
-            config=runtime.config,
-            runner=runtime.runner,
-            controller=runtime.controller,
-            registry=self.services.registry,
-            user_sync=runtime.user_sync,
-            logger=self.services.logger,
-        )
-        return installer.list_versions()
+        return self._execution().list_versions(distro=distro, name=name, username=username)
 
-    def install(
-        self,
-        request: InstallRequest,
-        *,
-        progress: Callable[[str], None] | None = None,
-    ) -> InstallRunResult:
-        request = self.apply_preset(request)
-        request = replace(request, username=self._resolved_request_username(request))
-        runtime = self.services.runtime_for(request.name, username=request.username)
-        installer = build_installer(
-            request.distro,
-            config=runtime.config,
-            runner=runtime.runner,
-            controller=runtime.controller,
-            registry=self.services.registry,
-            user_sync=runtime.user_sync,
-            logger=self.services.logger,
-        )
-        plan = self.validate_install_request(request)
-        mirror_options = self.mirror_options(request.distro)
-        mirror_info = _resolve_mirror(mirror_options, request.mirror)
-        plan["mirror"] = mirror_info["selected_url"] or mirror_info["selection"]
-        plan["mirror_fallback_chain"] = mirror_info["fallback_chain"]
-        configure_mirror = getattr(installer, "configure_mirror_plan", None)
-        if callable(configure_mirror):
-            configure_mirror(
-                selection=mirror_info["selection"],
-                base_url=mirror_info["selected_url"] or None,
-                candidates=[
-                    {"id": str(item.get("id", "")), "url": str(item.get("url", ""))}
-                    for item in mirror_options
-                    if str(item.get("id", "")) != "auto" and str(item.get("url", "")).strip()
-                ],
-            )
-        phase_results = []
-        if progress is not None:
-            progress({
-                "phase": "validate",
-                "message": "Install request validated",
-                "percent": 8,
-                "plan": plan,
-                "current_step": 1,
-                "total_steps": plan["total_steps"],
-            })
-            progress({
-                "phase": "extract",
-                "message": f"Running install phases via {mirror_info['selection']}",
-                "percent": 12,
-                "plan": plan,
-                "current_step": 2,
-                "total_steps": plan["total_steps"],
-            })
-        phase_index = {"extract": 2, "bootstrap": 3, "desktop": 4, "finalize": 5}
-        for item in installer.install(
-            phase=request.phase,
-            username=request.username,
-            desktop=request.desktop,
-            version=request.version,
-            release=request.release,
-            force_phase=request.force_phase,
-            auto=False,
-            resume=request.resume,
-            repair=request.repair,
-            profile=request.profile,
-        ):
-            phase_results.append(item)
-            phase_name = str(getattr(item, "phase", "install"))
-            if progress is not None:
-                step_number = min(phase_index.get(phase_name, len(phase_results) + 1), plan["total_steps"])
-                progress({
-                    "phase": phase_name,
-                    "message": f"Completed phase: {phase_name}",
-                    "percent": min(92, int((step_number / max(plan["total_steps"], 1)) * 92)),
-                    "plan": plan,
-                    "current_step": step_number,
-                    "total_steps": plan["total_steps"],
-                    "result": item,
-                })
-        tool_results = []
-        addon_results = []
-        record = self.services.registry.get(request.name)
-        if (request.tools or request.addons) and (record is None or not bool(record.get("installed"))):
-            raise RuntimeError("tools and addons can only be applied after finalize completes")
-        if (request.tools or request.addons) and progress is not None:
-            progress({
-                "phase": "catalog",
-                "message": "Applying selected tools and addons",
-                "percent": 94,
-                "plan": plan,
-                "current_step": plan["total_steps"],
-                "total_steps": plan["total_steps"],
-            })
-        if request.tools:
-            tool_results = self.services.catalog("tool", name=request.name).apply(list(request.tools), progress=progress)
-        if request.addons:
-            addon_results = self.services.catalog("addon", name=request.name).apply(list(request.addons), progress=progress)
-        next_steps = tuple(_install_next_steps(request.name, username=request.username))
-        if progress is not None:
-            progress({
-                "phase": "complete",
-                "message": "Install completed",
-                "percent": 100,
-                "plan": plan,
-                "current_step": plan["total_steps"],
-                "total_steps": plan["total_steps"],
-            })
-        return InstallRunResult(
-            chroot_name=request.name,
-            distro=request.distro,
-            phases=tuple(phase_results),
-            tool_results=tuple(tool_results),
-            addon_results=tuple(addon_results),
-            next_steps=next_steps,
-        )
+    def install(self, request: InstallRequest, *, progress=None):
+        return self._execution().install(request, progress=progress)
 
-    def upgrade(
-        self,
-        name: str,
-        *,
-        username: str | None = None,
-        progress: Callable[[str], None] | None = None,
-    ) -> UpgradeResult:
-        record = self.services.registry.get(name)
-        if record is None:
-            raise RuntimeError(f"no registry record for chroot: {name}")
-        target_username = username or _default_username_hint(self.services, name) or self.services.base_config.username
-        if not target_username:
-            raise RuntimeError("upgrade requires a username")
-        runtime = self.services.runtime_for(name, username=target_username)
-        installer = build_installer(
-            str(record.get("distro") or ""),
-            config=runtime.config,
-            runner=runtime.runner,
-            controller=runtime.controller,
-            registry=self.services.registry,
-            user_sync=runtime.user_sync,
-            logger=self.services.logger,
-        )
-        if progress is not None:
-            progress("Upgrading chroot")
-        result = installer.upgrade()
-        if progress is not None:
-            progress("Upgrade completed")
-        return UpgradeResult(
-            status=result.status,
-            snapshot=result.snapshot,
-            next_steps=(
-                f"chrootctl --name {name} restart",
-                f"chrootctl --name {name} logs --all",
-            ),
-        )
-
-
+    def upgrade(self, name: str, *, username: str | None = None, progress=None):
+        return self._execution().upgrade(name, username=username, progress=progress)
 
 
 def _blocking_issue(

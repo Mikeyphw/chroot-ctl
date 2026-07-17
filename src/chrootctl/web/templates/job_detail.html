@@ -44,6 +44,19 @@
       <p class="eyebrow">How to fix</p>
       <p class="card-copy" id="friendly-error-fix">Review the error, fix the blocking issue, then retry the install.</p>
       <div class="actions" id="friendly-error-actions"></div>
+      {% if recovery_snapshot %}
+      <div class="actions">
+        <button type="button" class="button-link subtle" id="recover-latest-snapshot" data-chroot-name="{{ recovery_snapshot.chroot_name }}" data-snapshot-name="{{ recovery_snapshot.name }}">Restore latest snapshot ({{ recovery_snapshot.name }})</button>
+      </div>
+      {% endif %}
+      <div class="form-grid two" id="retry-overrides" hidden>
+        <label>Username override
+          <input type="text" id="retry-username" placeholder="leave empty to keep current">
+        </label>
+        <label>Mirror override
+          <input type="text" id="retry-mirror" placeholder="auto or mirror id/url">
+        </label>
+      </div>
     </article>
   </div>
 </section>
@@ -125,6 +138,8 @@
   </article>
 </section>
 
+
+
 <script>
 (() => {
   const jobId = {{ job.job_id | tojson }};
@@ -150,8 +165,28 @@
   const source = new EventSource(`/jobs/${jobId}/events`);
   const searchNode = document.getElementById("job-log-search");
   const downloadLogsNode = document.getElementById("download-job-logs");
+  const retryOverridesNode = document.getElementById("retry-overrides");
+  const retryUsernameNode = document.getElementById("retry-username");
+  const retryMirrorNode = document.getElementById("retry-mirror");
   let allLogLines = (logLinesNode.textContent || "").split(/\n/).filter(Boolean);
   let announcedTerminalState = false;
+
+
+
+
+
+  actionModalCancel?.addEventListener("click", () => closeActionDialog());
+  actionModalCancelTop?.addEventListener("click", () => closeActionDialog());
+  actionModalConfirm?.addEventListener("click", async () => {
+    try {
+      const action = pendingAction;
+      pendingAction = null;
+      
+      if (action) await action();
+    } catch (error) {
+      window.chrootctlToast?.(error.message || "Action failed", "bad", 2600);
+    }
+  });
 
   function badgeClass(state) {
     if (state === "succeeded") return "badge ok";
@@ -256,27 +291,84 @@
     };
   }
 
-  function renderFriendlyError(message, targetName) {
-    const friendly = parseFriendlyError(message, targetName);
-    if (!friendly) {
-      friendlyCard.hidden = true;
-      return;
-    }
-    friendlyCard.hidden = false;
-    friendlyTitle.textContent = friendly.title;
-    friendlyWhat.textContent = friendly.what;
-    friendlyFix.textContent = friendly.fix;
-    friendlyActions.innerHTML = "";
-    for (const action of friendly.actions || []) {
-      const link = document.createElement("a");
-      link.className = "button-link subtle";
-      link.href = action.href;
-      link.textContent = action.label;
-      friendlyActions.appendChild(link);
+  
+function renderFriendlyError(message, targetName, retryMeta) {
+  const friendly = parseFriendlyError(message, targetName);
+  if (!friendly) {
+    friendlyCard.hidden = true;
+    retryOverridesNode.hidden = true;
+    return;
+  }
+  friendlyCard.hidden = false;
+  friendlyTitle.textContent = friendly.title;
+  friendlyWhat.textContent = friendly.what;
+  friendlyFix.textContent = friendly.fix;
+  friendlyActions.innerHTML = "";
+  const mergedActions = [...(friendly.actions || [])];
+  if (retryMeta && retryMeta.href && !mergedActions.some((item) => item.href === retryMeta.href)) {
+    mergedActions.push({label: retryMeta.label || "Retry", href: retryMeta.href});
+  }
+  const canReplay = retryMeta && retryMeta.action;
+  retryOverridesNode.hidden = !canReplay || retryMeta.action !== "install.submit";
+  for (const action of mergedActions) {
+    const link = document.createElement("a");
+    link.className = "button-link subtle";
+    link.href = action.href;
+    link.textContent = action.label;
+    friendlyActions.appendChild(link);
+  }
+  if (canReplay) {
+    const queueRetry = async (kind, overrides = {}) => {
+      const merged = {...overrides};
+      if (!retryOverridesNode.hidden) {
+        if ((retryUsernameNode?.value || "").trim()) merged.username = retryUsernameNode.value.trim();
+        if ((retryMirrorNode?.value || "").trim()) merged.mirror = retryMirrorNode.value.trim();
+      }
+      await window.chrootctlConfirmAction({
+        title: kind === "repair" ? "Confirm repair-aware retry" : "Confirm retry",
+        copy: kind === "repair"
+          ? "This will replay the job with repair mode enabled and any override fields you filled in."
+          : "This will replay the last failed job using the stored payload and any override fields you filled in.",
+        kind: kind === "repair" ? "Retry with fixes" : "Retry now",
+        mode: kind === "repair" ? "Amended retry" : "Direct retry",
+        before: [
+          `Current job state: ${stateNode.textContent || "failed"}`,
+          `Current target: ${targetName || "unknown"}`,
+          `Current error: ${(message || "").trim() || "No error text recorded."}`,
+        ],
+        after: [
+          `Queue replay action: ${retryMeta.action || "retry"}`,
+          `Apply overrides: ${Object.keys(merged).length ? JSON.stringify(merged) : "none"}`,
+          kind === "repair" ? "Repair mode will be enabled for the replay." : "Stored payload will be replayed without repair unless overridden.",
+        ],
+        warnings: [
+          "Retry reuses the last known job payload.",
+          "Review username and mirror overrides before continuing.",
+        ],
+        confirmLabel: kind === "repair" ? "Queue repair retry" : "Queue retry",
+        onConfirm: async () => window.chrootctlPostAndRedirect(`/api/jobs/${encodeURIComponent(jobId)}/retry`, {overrides: merged}, kind === "repair" ? "Repair retry queued" : "Retry queued"),
+      });
+    };
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button-link";
+    button.textContent = "Retry now";
+    button.addEventListener("click", async () => queueRetry("retry"));
+    friendlyActions.appendChild(button);
+
+    if (retryMeta.action === "install.submit") {
+      const repairButton = document.createElement("button");
+      repairButton.type = "button";
+      repairButton.className = "button-link subtle";
+      repairButton.textContent = "Retry with fixes";
+      repairButton.addEventListener("click", async () => queueRetry("repair", {repair: true}));
+      friendlyActions.appendChild(repairButton);
     }
   }
+}
 
-  function renderLogLines(lines) {
+function renderLogLines(lines) {
     const query = (searchNode?.value || "").trim().toLowerCase();
     const filtered = !query ? lines : lines.filter((line) => line.toLowerCase().includes(query));
     logLinesNode.textContent = filtered.join("\n");
@@ -302,7 +394,37 @@
   }
 
   copyLogsButton?.addEventListener("click", copyLogs);
-  renderFriendlyError(errorNode.textContent || "", document.getElementById("job-target")?.textContent || "");
+  const initialRetry = {{ job.retry | tojson }};
+  renderFriendlyError(errorNode.textContent || "", document.getElementById("job-target")?.textContent || "", initialRetry);
+
+
+  document.getElementById("recover-latest-snapshot")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const chrootName = button?.getAttribute("data-chroot-name") || "";
+    const snapshotName = button?.getAttribute("data-snapshot-name") || "";
+    await window.chrootctlConfirmAction({
+      title: "Confirm latest snapshot recovery",
+      copy: "This will queue a restore of the latest known good snapshot for the failed target.",
+      kind: "Restore latest snapshot",
+      mode: "Recovery",
+      before: [
+        `Current job state: ${stateNode.textContent || "failed"}`,
+        `Current target: ${chrootName || "unknown"}`,
+        `Latest snapshot: ${snapshotName || "not recorded"}`,
+      ],
+      after: [
+        `Queue restore action for ${snapshotName || "latest snapshot"}`,
+        "The target chroot will be rolled back to the selected snapshot state.",
+        "Open the job details page after queueing to follow restore progress.",
+      ],
+      warnings: [
+        "Restoring a snapshot overwrites the current runtime state of the target chroot.",
+        "Export or snapshot current state first if you still need it.",
+      ],
+      confirmLabel: "Queue snapshot recovery",
+      onConfirm: async () => window.chrootctlPostAndRedirect(`/api/chroots/${encodeURIComponent(chrootName)}/recovery/latest-snapshot`, {}, "Snapshot recovery queued"),
+    });
+  });
 
   source.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -321,7 +443,7 @@
     renderLogLines(allLogLines);
     resultNode.textContent = data.result_payload ? JSON.stringify(data.result_payload, null, 2) : "";
     errorNode.textContent = data.error || "";
-    renderFriendlyError(data.error || "", data.target_name || "");
+    renderFriendlyError(data.error || "", data.target_name || "", data.retry || null);
     if (downloadLogsNode) {
       if (data.log_download_url) {
         downloadLogsNode.href = data.log_download_url;

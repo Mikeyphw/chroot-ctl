@@ -19,7 +19,7 @@ from .models import (
     UpgradeResult,
 )
 from .registry import ChrootRegistry
-from .system import SystemRunner
+from .system import SystemRunner, qemu_user_binary_names
 from .user_sync import UserSyncManager, validate_username
 
 InstallPhase = Literal["extract", "bootstrap", "desktop", "finalize"]
@@ -179,7 +179,7 @@ class BaseInstaller:
             return
         host_arch_fn = getattr(self.runner, "host_arch", None)
         host_arch = host_arch_fn() if callable(host_arch_fn) else "unknown"
-        qemu_binary = f"qemu-{self.arch}-static"
+        qemu_binary = qemu_user_binary_names(self.arch)[0]
         raise RuntimeError(
             f"target arch {self.arch} differs from host arch {host_arch}; "
             f"extract is supported, but bootstrap/desktop/finalize/upgrade require user-mode emulation such as {qemu_binary}. "

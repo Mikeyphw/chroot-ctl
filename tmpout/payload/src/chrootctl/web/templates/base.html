@@ -7,11 +7,13 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
     {% set path = request.url.path %}
     {% set toast_message = request.query_params.get('toast') %}
     {% set toast_kind = request.query_params.get('toast_kind') or 'ok' %}
+    <div class="app-backdrop" aria-hidden="true"><span class="app-glow app-glow-a"></span><span class="app-glow app-glow-b"></span><span class="app-grid"></span></div>
     <div class="app-shell">
-      <header class="site-header">
+      <header class="site-header" data-reveal="down">
         <div class="site-header-inner">
           <div class="brand-block">
             <a class="brand-mark" href="/">cc</a>
@@ -24,18 +26,25 @@
 
           <nav class="nav-scroll" aria-label="Primary">
             <a class="nav-link {% if path == '/' %}active{% endif %}" href="/">Dashboard</a>
+            <a class="nav-link {% if path == '/quickstart' %}active{% endif %}" href="/quickstart">Quick Start</a>
             <a class="nav-link {% if path.startswith('/install') %}active{% endif %}" href="/install">Install</a>
             <a class="nav-link {% if path.startswith('/chroots') %}active{% endif %}" href="/chroots">Chroots</a>
+            <a class="nav-link {% if path.startswith('/transfer') %}active{% endif %}" href="/transfer">Transfer</a>
+            <a class="nav-link {% if path.startswith('/build') %}active{% endif %}" href="/build">Build</a>
+            <a class="nav-link {% if path.startswith('/jobs') %}active{% endif %}" href="/jobs">Jobs</a>
             <a class="nav-link {% if path.startswith('/tools') %}active{% endif %}" href="/tools">Tools</a>
             <a class="nav-link {% if path.startswith('/addons') %}active{% endif %}" href="/addons">Addons</a>
             <a class="nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">Logs</a>
             <a class="nav-link {% if path.startswith('/doctor') or path.startswith('/status') %}active{% endif %}" href="/doctor">Checks</a>
+            <a class="nav-link {% if path.startswith('/docs') or path.startswith('/api/openapi') %}active{% endif %}" href="/docs">Docs</a>
+            <a class="nav-link {% if path.startswith('/faq') %}active{% endif %}" href="/faq">FAQ</a>
+            <a class="nav-link {% if path.startswith('/support') %}active{% endif %}" href="/support">Support</a>
           </nav>
         </div>
       </header>
 
-      <main class="page-shell">
-        <section class="status-strip {{ 'root' if request.state.web_security.running_as_root else 'warn' }}">
+      <main class="page-shell" id="main-content">
+        <section class="status-strip" data-reveal="up" {{ 'root' if request.state.web_security.running_as_root else 'warn' }}">
           <div>
             {% if request.state.web_security.running_as_root %}
             <strong>Running as root.</strong>
@@ -69,7 +78,7 @@
         {% block content %}{% endblock %}
       </main>
 
-      <nav class="mobile-nav" aria-label="Mobile">
+      <nav class="mobile-nav" aria-label="Mobile" data-reveal="up">
         <div class="mobile-nav-inner">
           <a class="mobile-nav-link {% if path == '/' %}active{% endif %}" href="/">
             <span>Home</span>
@@ -79,6 +88,12 @@
           </a>
           <a class="mobile-nav-link {% if path.startswith('/chroots') %}active{% endif %}" href="/chroots">
             <span>Chroots</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/transfer') %}active{% endif %}" href="/transfer">
+            <span>Files</span>
+          </a>
+          <a class="mobile-nav-link {% if path.startswith('/jobs') %}active{% endif %}" href="/jobs">
+            <span>Jobs</span>
           </a>
           <a class="mobile-nav-link {% if path.startswith('/logs') %}active{% endif %}" href="/logs">
             <span>Logs</span>
@@ -110,6 +125,104 @@
         }
       };
 
+
+
+
+      window.chrootctlPostJson = async (url, payload = {}) => {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        let data = {};
+        try {
+          data = await response.json();
+        } catch (error) {
+          data = {};
+        }
+        if (!response.ok) {
+          const message = data?.error?.message || data?.detail || `Request failed: ${response.status}`;
+          throw new Error(message);
+        }
+        return data;
+      };
+
+      window.chrootctlPostAndRedirect = async (url, payload = {}, toast = "Queued") => {
+        const data = await window.chrootctlPostJson(url, payload);
+        if (data.location) {
+          window.location.href = data.location + (toast ? `${data.location.includes("?") ? "&" : "?"}toast=${encodeURIComponent(toast)}` : "");
+          return data;
+        }
+        if (toast) {
+          window.chrootctlToast?.(toast, "ok", 1800);
+        }
+        return data;
+      };
+
+      window.chrootctlCopyText = async (text, label = "Copied") => {
+        try {
+          await navigator.clipboard.writeText(text);
+          window.chrootctlToast?.(label, "ok", 1800);
+          return true;
+        } catch (error) {
+          window.chrootctlToast?.("Copy failed", "bad", 2200);
+          return false;
+        }
+      };
+      window.chrootctlPoll = ({ url, interval = 2500, onData, onError, stopWhen }) => {
+        let timer = null;
+        let stopped = false;
+
+        const tick = async () => {
+          if (stopped) return;
+          try {
+            const response = await fetch(url, {
+              headers: { Accept: "application/json" },
+              cache: "no-store",
+            });
+            if (!response.ok) {
+              throw new Error(`poll failed: ${response.status}`);
+            }
+            const data = await response.json();
+            onData?.(data);
+            if (stopWhen?.(data)) {
+              stopped = true;
+              return;
+            }
+          } catch (error) {
+            onError?.(error);
+          }
+          timer = window.setTimeout(tick, interval);
+        };
+
+        tick();
+        return () => {
+          stopped = true;
+          if (timer) window.clearTimeout(timer);
+        };
+      };
+
+      window.chrootctlJobNotifier = (() => {
+        const announced = new Map();
+        return {
+          update(items) {
+            for (const item of items || []) {
+              const prior = announced.get(item.job_id);
+              if (prior === item.state) continue;
+              announced.set(item.job_id, item.state);
+              if (item.state === "succeeded") {
+                window.chrootctlToast?.(`${item.title} completed.`, "ok", 2600);
+              } else if (item.state === "failed") {
+                window.chrootctlToast?.(`${item.title} failed.`, "bad", 3600);
+              }
+            }
+          },
+        };
+      })();
+
       document.querySelectorAll("[data-dismiss='toast']").forEach((button) => {
         button.addEventListener("click", () => button.closest(".toast")?.remove());
       });
@@ -129,8 +242,202 @@
         });
       }, true);
 
+
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      if (!prefersReducedMotion.matches) {
+        const revealNodes = document.querySelectorAll("[data-reveal]");
+        const revealObserver = "IntersectionObserver" in window
+          ? new IntersectionObserver((entries, observer) => {
+              entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add("is-visible");
+                observer.unobserve(entry.target);
+              });
+            }, { threshold: 0.12, rootMargin: "0px 0px -24px 0px" })
+          : null;
+        revealNodes.forEach((node, index) => {
+          node.style.setProperty("--reveal-delay", `${Math.min(index * 45, 260)}ms`);
+          if (revealObserver) {
+            revealObserver.observe(node);
+          } else {
+            node.classList.add("is-visible");
+          }
+        });
+      } else {
+        document.querySelectorAll("[data-reveal]").forEach((node) => node.classList.add("is-visible"));
+      }
+
+      const compactNav = document.querySelector(".mobile-nav-inner");
+      if (compactNav) {
+        const activeLink = compactNav.querySelector(".mobile-nav-link.active");
+        activeLink?.setAttribute("aria-current", "page");
+      }
+
       window.requestAnimationFrame(() => body.classList.add("app-ready"));
     })();
     </script>
+
+    <dialog class="sheet-dialog" id="global-confirmation-dialog">
+      <form method="dialog" class="sheet-card">
+        <div class="sheet-header">
+          <div>
+            <p class="eyebrow" id="global-confirmation-eyebrow">Confirmation</p>
+            <h2 class="section-title" id="global-confirmation-title">Confirm action</h2>
+            <p class="panel-copy" id="global-confirmation-copy">Review this action before queueing it.</p>
+          </div>
+          <button type="submit" class="button-link subtle" id="global-confirmation-cancel-top" aria-label="Close confirmation">Close</button>
+        </div>
+        <div class="status-grid">
+          <article class="status-card">
+            <h3>Kind</h3>
+            <p id="global-confirmation-kind">Queued action</p>
+          </article>
+          <article class="status-card">
+            <h3>Target</h3>
+            <p id="global-confirmation-target">—</p>
+          </article>
+          <article class="status-card">
+            <h3>Mode</h3>
+            <p id="global-confirmation-mode">Direct</p>
+          </article>
+        </div>
+        <div class="detail-grid">
+          <article class="card soft">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Before</p>
+                <h3 class="card-title">Current state</h3>
+              </div>
+            </div>
+            <ul class="list" id="global-confirmation-before">
+              <li class="muted">No current state details.</li>
+            </ul>
+          </article>
+          <article class="card soft">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">After</p>
+                <h3 class="card-title">Planned state</h3>
+              </div>
+            </div>
+            <ul class="list" id="global-confirmation-after">
+              <li class="muted">No planned state details.</li>
+            </ul>
+          </article>
+        </div>
+        <div class="stack-list">
+          <div>
+            <h3 class="card-title">Warnings</h3>
+            <ul class="list" id="global-confirmation-warnings">
+              <li class="muted">No warnings.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="actions actions-end">
+          <button type="button" class="button-link subtle" id="global-confirmation-cancel">Back</button>
+          <button type="button" id="global-confirmation-confirm">Queue action</button>
+        </div>
+      </form>
+    </dialog>
+    <script>
+      (() => {
+        const dialog = document.getElementById("global-confirmation-dialog");
+        const titleNode = document.getElementById("global-confirmation-title");
+        const copyNode = document.getElementById("global-confirmation-copy");
+        const kindNode = document.getElementById("global-confirmation-kind");
+        const targetNode = document.getElementById("global-confirmation-target");
+        const modeNode = document.getElementById("global-confirmation-mode");
+        const beforeNode = document.getElementById("global-confirmation-before");
+        const afterNode = document.getElementById("global-confirmation-after");
+        const warningsNode = document.getElementById("global-confirmation-warnings");
+        const cancelNode = document.getElementById("global-confirmation-cancel");
+        const cancelTopNode = document.getElementById("global-confirmation-cancel-top");
+        const confirmNode = document.getElementById("global-confirmation-confirm");
+        let pendingAction = null;
+
+        function renderList(node, items, emptyText) {
+          if (!node) return;
+          node.innerHTML = "";
+          const values = items && items.length ? items : [emptyText];
+          for (const item of values) {
+            const li = document.createElement("li");
+            li.className = values === items ? "item-card" : "muted";
+            if (typeof item === "string") {
+              li.textContent = item;
+            } else {
+              li.innerHTML = `<div class="item-header"><strong>${item.name || item.title || "Planned action"}</strong><span class="badge ${item.severity || "subtle"}">${item.action || item.kind || "planned"}</span></div><p class="item-summary">${item.summary || item.message || ""}</p><p class="muted">${item.impact || ""}</p>`;
+            }
+            node.appendChild(li);
+          }
+        }
+
+        function openDialog() {
+          if (!dialog) return;
+          if (typeof dialog.showModal === "function") {
+            dialog.showModal();
+            return;
+          }
+          dialog.setAttribute("open", "open");
+        }
+
+        function closeDialog() {
+          if (!dialog) return;
+          if (typeof dialog.close === "function") {
+            dialog.close();
+            return;
+          }
+          dialog.removeAttribute("open");
+        }
+
+        async function chrootctlConfirmAction(options) {
+          const {
+            title,
+            copy,
+            kind,
+            target,
+            mode,
+            before,
+            after,
+            warnings,
+            confirmLabel,
+            onConfirm,
+          } = options || {};
+          if (!dialog || typeof onConfirm !== "function") {
+            if (typeof onConfirm === "function") {
+              await onConfirm();
+            }
+            return;
+          }
+          pendingAction = onConfirm;
+          titleNode.textContent = title || "Confirm action";
+          copyNode.textContent = copy || "Review this action before queueing it.";
+          kindNode.textContent = kind || "Queued action";
+          targetNode.textContent = target || "—";
+          modeNode.textContent = mode || "Direct";
+          confirmNode.textContent = confirmLabel || "Queue action";
+          renderList(beforeNode, before || [], "No current state details.");
+          renderList(afterNode, after || [], "No planned state details.");
+          renderList(warningsNode, warnings || [], "No warnings.");
+          openDialog();
+        }
+
+        cancelNode?.addEventListener("click", () => closeDialog());
+        cancelTopNode?.addEventListener("click", () => closeDialog());
+        confirmNode?.addEventListener("click", async () => {
+          try {
+            const action = pendingAction;
+            pendingAction = null;
+            closeDialog();
+            if (action) await action();
+          } catch (error) {
+            window.chrootctlToast?.(error?.message || "Action failed", "warn");
+          }
+        });
+
+        window.chrootctlRenderSimpleList = renderList;
+        window.chrootctlConfirmAction = chrootctlConfirmAction;
+      })();
+    </script>
+
   </body>
 </html>

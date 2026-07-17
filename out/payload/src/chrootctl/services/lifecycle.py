@@ -59,6 +59,7 @@ class LifecycleService:
     def status(self, *, host: str = "127.0.0.1", port: int = 8420) -> dict[str, Any]:
         pid = self._read_pid(self.paths.webui_pid_file)
         running = self._pid_is_running(pid)
+        mode = self.runtime_mode()
         return {
             "running": running,
             "state": "running" if running else "stopped",
@@ -67,6 +68,7 @@ class LifecycleService:
             "control_file": str(self.paths.control_file),
             "pid_file": str(self.paths.webui_pid_file),
             "enabled": self.paths.enabled_file.exists(),
+            "mode": mode,
             "module": self.module_status(),
             "python": self.python_status(),
             "logs": {
@@ -75,6 +77,23 @@ class LifecycleService:
                 "dependencies": str(self.paths.dependency_log_file),
             },
             "checked_at": int(time.time()),
+        }
+
+    def runtime_mode(self) -> dict[str, Any]:
+        control_accessible = os.access(self.paths.control_dir, os.R_OK | os.X_OK)
+        module_present = self.paths.module_dir.exists() or self.paths.module_update_dir.exists()
+        if control_accessible and module_present:
+            return {
+                "id": "magisk",
+                "label": "Magisk module",
+                "privileged": True,
+                "control_accessible": True,
+            }
+        return {
+            "id": "pip",
+            "label": "Pip/source",
+            "privileged": False,
+            "control_accessible": control_accessible,
         }
 
     def module_status(self) -> dict[str, Any]:

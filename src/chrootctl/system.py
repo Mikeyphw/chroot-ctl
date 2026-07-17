@@ -40,6 +40,15 @@ CHROOT_ENV_DEFAULTS = {
     "TEMP": "/tmp",
 }
 
+
+def qemu_user_binary_names(arch: str) -> tuple[str, ...]:
+    aliases = {
+        "arm64": ("qemu-aarch64-static", "qemu-arm64-static"),
+        "amd64": ("qemu-x86_64-static", "qemu-amd64-static"),
+    }
+    return aliases.get(arch, (f"qemu-{arch}-static",))
+
+
 @dataclass(slots=True)
 class RunResult:
     returncode: int
@@ -62,6 +71,9 @@ class SystemRunner:
         capture_output: bool = True,
         cwd: Path | None = None,
         input_text: str | None = None,
+        uid: int | None = None,
+        gid: int | None = None,
+        background: bool = False,
     ) -> RunResult:
         self.logger.debug("run: %s", shlex.join(list(args)))
         if self.dry_run:
@@ -74,20 +86,46 @@ class SystemRunner:
             process_env["TERM"] = os.environ.get("TERM") or "xterm-256color"
         if env is not None:
             process_env.update(env)
-        completed = subprocess.run(
-            list(args),
-            check=False,
-            env=process_env,
-            capture_output=capture_output,
-            input=input_text,
-            text=True,
-            cwd=str(cwd) if cwd else None,
-        )
-        result = RunResult(
-            returncode=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
-        )
+        preexec_fn = None
+        if uid is not None or gid is not None:
+            def _demote() -> None:
+                if gid is not None:
+                    os.setgid(gid)
+                if uid is not None:
+                    os.setuid(uid)
+            preexec_fn = _demote
+
+        if background:
+            stdout_stream = subprocess.DEVNULL if capture_output else None
+            stderr_stream = subprocess.DEVNULL if capture_output else None
+            subprocess.Popen(
+                list(args),
+                env=process_env,
+                stdout=stdout_stream,
+                stderr=stderr_stream,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                cwd=str(cwd) if cwd else None,
+                preexec_fn=preexec_fn,
+                start_new_session=True,
+            )
+            result = RunResult(returncode=0, stdout="", stderr="")
+        else:
+            completed = subprocess.run(
+                list(args),
+                check=False,
+                env=process_env,
+                capture_output=capture_output,
+                input=input_text,
+                text=True,
+                cwd=str(cwd) if cwd else None,
+                preexec_fn=preexec_fn,
+            )
+            result = RunResult(
+                returncode=completed.returncode,
+                stdout=completed.stdout or "",
+                stderr=completed.stderr or "",
+            )
         if check and result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or f"command failed: {shlex.join(list(args))}")
         return result
@@ -148,8 +186,7 @@ class SystemRunner:
         return shutil.which(command) is not None
 
     def can_execute_foreign_arch(self, arch: str) -> bool:
-        qemu_binary = f"qemu-{arch}-static"
-        if not self.command_exists(qemu_binary):
+        if not any(self.command_exists(candidate) for candidate in qemu_user_binary_names(arch)):
             return False
         binfmt_misc = Path("/proc/sys/fs/binfmt_misc")
         if not binfmt_misc.exists():

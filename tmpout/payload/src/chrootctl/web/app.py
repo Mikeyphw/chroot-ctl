@@ -11,7 +11,9 @@ from fastapi.templating import Jinja2Templates
 
 from ..services import create_service_container
 from .jobs import WebJobManager
-from .routes import api_router, catalog_router, chroots_router, dashboard_router, install_router, jobs_router, system_router, users_router, ksu_router
+from .error_handling import install_exception_handlers
+from .e2e_fixtures import install_e2e_fixtures
+from .routes import api_router, build_router, catalog_router, chroots_router, dashboard_router, docs_router, faq_router, install_router, jobs_router, quickstart_router, system_router, users_router, ksu_router, transfer_router, support_router
 from .security import WebSecurityConfig, csrf_token_input, install_security, is_local_host
 
 DEFAULT_HOST = "127.0.0.1"
@@ -27,7 +29,21 @@ def create_app(
     bind_port: int = DEFAULT_PORT,
     access_token: str | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="chrootctl Web UI")
+    app = FastAPI(
+        title="chrootctl Web UI",
+        description="Local management UI and API for chrootctl installs, jobs, transfer, and diagnostics.",
+        docs_url="/api/openapi",
+        openapi_url="/api/openapi.json",
+        redoc_url=None,
+        openapi_tags=[
+            {"name": "api", "description": "Machine-readable state, validation, transfer, and job APIs."},
+            {"name": "install", "description": "Guided installer pages and install submission flow."},
+            {"name": "transfer", "description": "Archive export, inspect, import, and download flows."},
+            {"name": "docs", "description": "Human-friendly API help pages."},
+            {"name": "support", "description": "Support bundle, FAQ, and audit pages."},
+            {"name": "build", "description": "Magisk module build page and download flows."},
+        ],
+    )
     template_dir = Path(files("chrootctl").joinpath("web/templates"))
     static_dir = Path(files("chrootctl").joinpath("web/static"))
     app.state.services = create_service_container(config_path, dry_run=dry_run, verbose=verbose)
@@ -36,10 +52,18 @@ def create_app(
     app.state.templates = Jinja2Templates(directory=str(template_dir))
     app.state.templates.env.globals["csrf_token_input"] = csrf_token_input
     install_security(app)
+    install_exception_handlers(app)
+    install_e2e_fixtures(app)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     app.include_router(dashboard_router)
+    app.include_router(quickstart_router)
+    app.include_router(docs_router)
+    app.include_router(faq_router)
+    app.include_router(support_router)
     app.include_router(api_router)
     app.include_router(chroots_router)
+    app.include_router(transfer_router)
+    app.include_router(build_router)
     app.include_router(users_router)
     app.include_router(catalog_router)
     app.include_router(system_router)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 
 from ..deps import get_templates
+from ..api_reference import api_reference_sections
 
 router = APIRouter(tags=["docs"])
 
@@ -43,6 +44,7 @@ def api_docs_page(request: Request, templates=Depends(get_templates)):
             "openapi_url": request.app.openapi_url,
             "swagger_url": request.app.docs_url,
             "examples": examples,
+            "sections": api_reference_sections(),
             "error_example": {
                 "error": {
                     "code": "missing_username",

@@ -1,6 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
 
+
+{% if registry_repair and (registry_repair.missing_records or registry_repair.missing_paths or registry_repair.mismatched_paths) %}
+<section class="card" data-reveal="up">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Registry repair</p>
+      <h2 class="section-title">Filesystem and registry drift detected</h2>
+      <p class="panel-copy">This host has chroot directories or registry records that no longer match. Preview the drift below, then run a safe repair job.</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="button-link subtle" id="registry-repair-preview-refresh">Refresh preview</button>
+      <a class="button-link subtle" href="/repair">Review fixes</a>
+      <button type="button" onclick="window.chrootctlPostAndRedirect('/api/registry/repair/apply', {}, 'Repair queued')">Run repair</button>
+    </div>
+  </div>
+  <div class="status-grid" id="registry-repair-preview">
+    <article class="status-card warn">
+      <h3>Missing registry records</h3>
+      <p>{{ registry_repair.missing_records | join(', ') if registry_repair.missing_records else 'None' }}</p>
+    </article>
+    <article class="status-card {{ 'bad' if registry_repair.missing_paths else 'ok' }}">
+      <h3>Missing filesystem paths</h3>
+      <p>{{ registry_repair.missing_paths | join(', ') if registry_repair.missing_paths else 'None' }}</p>
+    </article>
+    <article class="status-card {{ 'warn' if registry_repair.mismatched_paths else 'ok' }}">
+      <h3>Mismatched paths</h3>
+      <p>{{ registry_repair.mismatched_paths | join(', ') if registry_repair.mismatched_paths else 'None' }}</p>
+    </article>
+  </div>
+</section>
+{% endif %}
 <section class="detail-grid" data-reveal="up">
   <article class="card">
     <div class="section-header">
@@ -108,10 +139,16 @@
     </article>
     <article class="card soft">
       <div class="item-header">
-        <div><h3 class="card-title">Module path</h3><p class="card-copy">Detected module or source install.</p></div>
-        <span class="badge {{ 'ok' if system_state.module.version else 'warn' }}">{{ system_state.module.version or "source" }}</span>
+        <div><h3 class="card-title">Runtime mode</h3><p class="card-copy">Detected module or pip/source install.</p></div>
+        <span class="badge {{ 'ok' if system_state.mode.id == 'magisk' else 'warn' }}">{{ system_state.mode.label }}</span>
       </div>
-      <div class="actions"><a class="button-link subtle" href="/ksu">Open module panel</a></div>
+      <div class="actions">
+        {% if system_state.mode.id == 'magisk' %}
+        <a class="button-link subtle" href="/ksu">Open module panel</a>
+        {% else %}
+        <a class="button-link subtle" href="/docs">Open API docs</a>
+        {% endif %}
+      </div>
     </article>
     <article class="card soft">
       <div class="item-header">
@@ -374,6 +411,24 @@
         jobsList.appendChild(article);
       }
     },
+  });
+})();
+</script>
+
+<script>
+(() => {
+  const refreshButton = document.getElementById("registry-repair-preview-refresh");
+  const previewNode = document.getElementById("registry-repair-preview");
+  if (!refreshButton || !previewNode) return;
+  refreshButton.addEventListener("click", async () => {
+    const response = await fetch("/api/registry/repair/preview");
+    if (!response.ok) return;
+    const data = await response.json();
+    previewNode.innerHTML = `
+      <article class="status-card warn"><h3>Missing registry records</h3><p>${(data.missing_records || []).join(", ") || "None"}</p></article>
+      <article class="status-card ${(data.missing_paths || []).length ? "bad" : "ok"}"><h3>Missing filesystem paths</h3><p>${(data.missing_paths || []).join(", ") || "None"}</p></article>
+      <article class="status-card ${(data.mismatched_paths || []).length ? "warn" : "ok"}"><h3>Mismatched paths</h3><p>${(data.mismatched_paths || []).join(", ") || "None"}</p></article>
+    `;
   });
 })();
 </script>

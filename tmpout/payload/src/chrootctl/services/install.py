@@ -493,59 +493,104 @@ class InstallService:
         )
         return installer.list_versions()
 
-    def install(
-        self,
-        request: InstallRequest,
-        *,
-        progress: Callable[[str], None] | None = None,
-    ) -> InstallRunResult:
-        request = self.apply_preset(request)
-        request = replace(request, username=self._resolved_request_username(request))
-        runtime = self.services.runtime_for(request.name, username=request.username)
-        installer = build_installer(
-            request.distro,
-            config=runtime.config,
-            runner=runtime.runner,
-            controller=runtime.controller,
-            registry=self.services.registry,
-            user_sync=runtime.user_sync,
-            logger=self.services.logger,
+
+def _build_installer_for_attempt(
+    self,
+    *,
+    distro: str,
+    name: str,
+    username: str,
+    mirror_selection: str,
+    base_url: str | None,
+    mirror_candidates: list[dict[str, object]],
+):
+    runtime = self.services.runtime_for(name, username=username)
+    installer = build_installer(
+        distro,
+        config=runtime.config,
+        runner=runtime.runner,
+        controller=runtime.controller,
+        registry=self.services.registry,
+        user_sync=runtime.user_sync,
+        logger=self.services.logger,
+    )
+    configure_mirror = getattr(installer, "configure_mirror_plan", None)
+    if callable(configure_mirror):
+        configure_mirror(
+            selection=mirror_selection,
+            base_url=base_url,
+            candidates=[
+                {"id": str(item.get("id", "")), "url": str(item.get("url", ""))}
+                for item in mirror_candidates
+                if str(item.get("id", "")) != "auto" and str(item.get("url", "")).strip()
+            ],
         )
-        plan = self.validate_install_request(request)
-        mirror_options = self.mirror_options(request.distro)
-        mirror_info = _resolve_mirror(mirror_options, request.mirror)
-        plan["mirror"] = mirror_info["selected_url"] or mirror_info["selection"]
-        plan["mirror_fallback_chain"] = mirror_info["fallback_chain"]
-        configure_mirror = getattr(installer, "configure_mirror_plan", None)
-        if callable(configure_mirror):
-            configure_mirror(
-                selection=mirror_info["selection"],
-                base_url=mirror_info["selected_url"] or None,
-                candidates=[
-                    {"id": str(item.get("id", "")), "url": str(item.get("url", ""))}
-                    for item in mirror_options
-                    if str(item.get("id", "")) != "auto" and str(item.get("url", "")).strip()
-                ],
-            )
-        phase_results = []
+    return installer
+
+def _mirror_attempts(self, mirror_options: list[dict[str, object]], mirror_info: dict[str, Any]) -> list[dict[str, str | None]]:
+    selected_url = str(mirror_info.get("selected_url") or "").strip() or None
+    attempts: list[dict[str, str | None]] = [
+        {
+            "selection": str(mirror_info.get("selection", "auto")) or "auto",
+            "base_url": selected_url,
+            "label": str(mirror_info.get("selection", "auto")) or "auto",
+        }
+    ]
+    seen = {(attempts[0]["selection"], attempts[0]["base_url"])}
+    for item in mirror_options:
+        mirror_id = str(item.get("id", "")).strip()
+        mirror_url = str(item.get("url", "")).strip() or None
+        if not mirror_id or mirror_id == "auto":
+            continue
+        key = (mirror_id, mirror_url)
+        if key in seen:
+            continue
+        attempts.append({"selection": mirror_id, "base_url": mirror_url, "label": mirror_id})
+        seen.add(key)
+    return attempts
+
+
+def install(
+    self,
+    request: InstallRequest,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> InstallRunResult:
+    request = self.apply_preset(request)
+    request = replace(request, username=self._resolved_request_username(request))
+    plan = self.validate_install_request(request)
+    mirror_options = self.mirror_options(request.distro)
+    mirror_info = _resolve_mirror(mirror_options, request.mirror)
+    plan["mirror"] = mirror_info["selected_url"] or mirror_info["selection"]
+    plan["mirror_fallback_chain"] = mirror_info["fallback_chain"]
+    plan["mirror_attempts"] = [str(item.get("id", "")) for item in mirror_options if str(item.get("id", "")).strip() and str(item.get("id", "")) != "auto"]
+
+    if progress is not None:
+        progress({
+            "phase": "validate",
+            "message": "Install request validated",
+            "percent": 8,
+            "plan": plan,
+            "current_step": 1,
+            "total_steps": plan["total_steps"],
+        })
+
+    phase_results = []
+    phase_index = {"extract": 2, "bootstrap": 3, "desktop": 4, "finalize": 5}
+    mirror_attempt_errors: list[dict[str, str]] = []
+    install_attempts = self._mirror_attempts(mirror_options, mirror_info)
+
+    def _run_attempt(installer, attempt_label: str) -> list[Any]:
         if progress is not None:
             progress({
-                "phase": "validate",
-                "message": "Install request validated",
-                "percent": 8,
-                "plan": plan,
-                "current_step": 1,
-                "total_steps": plan["total_steps"],
-            })
-            progress({
                 "phase": "extract",
-                "message": f"Running install phases via {mirror_info['selection']}",
+                "message": f"Running install phases via {attempt_label}",
                 "percent": 12,
                 "plan": plan,
                 "current_step": 2,
                 "total_steps": plan["total_steps"],
             })
-        phase_index = {"extract": 2, "bootstrap": 3, "desktop": 4, "finalize": 5}
+        results = []
         for item in installer.install(
             phase=request.phase,
             username=request.username,
@@ -558,10 +603,10 @@ class InstallService:
             repair=request.repair,
             profile=request.profile,
         ):
-            phase_results.append(item)
+            results.append(item)
             phase_name = str(getattr(item, "phase", "install"))
             if progress is not None:
-                step_number = min(phase_index.get(phase_name, len(phase_results) + 1), plan["total_steps"])
+                step_number = min(phase_index.get(phase_name, len(results) + 1), plan["total_steps"])
                 progress({
                     "phase": phase_name,
                     "message": f"Completed phase: {phase_name}",
@@ -571,42 +616,81 @@ class InstallService:
                     "total_steps": plan["total_steps"],
                     "result": item,
                 })
-        tool_results = []
-        addon_results = []
-        record = self.services.registry.get(request.name)
-        if (request.tools or request.addons) and (record is None or not bool(record.get("installed"))):
-            raise RuntimeError("tools and addons can only be applied after finalize completes")
-        if (request.tools or request.addons) and progress is not None:
-            progress({
-                "phase": "catalog",
-                "message": "Applying selected tools and addons",
-                "percent": 94,
-                "plan": plan,
-                "current_step": plan["total_steps"],
-                "total_steps": plan["total_steps"],
-            })
-        if request.tools:
-            tool_results = self.services.catalog("tool", name=request.name).apply(list(request.tools), progress=progress)
-        if request.addons:
-            addon_results = self.services.catalog("addon", name=request.name).apply(list(request.addons), progress=progress)
-        next_steps = tuple(_install_next_steps(request.name, username=request.username))
-        if progress is not None:
-            progress({
-                "phase": "complete",
-                "message": "Install completed",
-                "percent": 100,
-                "plan": plan,
-                "current_step": plan["total_steps"],
-                "total_steps": plan["total_steps"],
-            })
-        return InstallRunResult(
-            chroot_name=request.name,
+        return results
+
+    last_error: Exception | None = None
+    for attempt_index, attempt in enumerate(install_attempts, start=1):
+        installer = self._build_installer_for_attempt(
             distro=request.distro,
-            phases=tuple(phase_results),
-            tool_results=tuple(tool_results),
-            addon_results=tuple(addon_results),
-            next_steps=next_steps,
+            name=request.name,
+            username=request.username,
+            mirror_selection=str(attempt["selection"] or "auto"),
+            base_url=str(attempt["base_url"]) if attempt["base_url"] else None,
+            mirror_candidates=mirror_options,
         )
+        try:
+            phase_results = _run_attempt(installer, str(attempt["label"] or "auto"))
+            plan["mirror_retry_count"] = attempt_index - 1
+            break
+        except Exception as exc:
+            last_error = exc
+            mirror_attempt_errors.append({
+                "attempt": str(attempt["label"] or "auto"),
+                "message": str(exc),
+            })
+            if progress is not None and attempt_index < len(install_attempts):
+                progress({
+                    "phase": "mirror-retry",
+                    "message": f"Mirror {attempt['label']} failed; retrying with next mirror",
+                    "percent": 14,
+                    "plan": plan,
+                    "current_step": 2,
+                    "total_steps": plan["total_steps"],
+                })
+            continue
+    else:
+        message = "Install failed across all mirror attempts."
+        if mirror_attempt_errors:
+            message = f"{message} Last error: {mirror_attempt_errors[-1]['message']}"
+        raise RuntimeError(message) from last_error
+
+    tool_results = []
+    addon_results = []
+    record = self.services.registry.get(request.name)
+    if (request.tools or request.addons) and (record is None or not bool(record.get("installed"))):
+        raise RuntimeError("tools and addons can only be applied after finalize completes")
+    if (request.tools or request.addons) and progress is not None:
+        progress({
+            "phase": "catalog",
+            "message": "Applying selected tools and addons",
+            "percent": 94,
+            "plan": plan,
+            "current_step": plan["total_steps"],
+            "total_steps": plan["total_steps"],
+        })
+    if request.tools:
+        tool_results = self.services.catalog("tool", name=request.name).apply(list(request.tools), progress=progress)
+    if request.addons:
+        addon_results = self.services.catalog("addon", name=request.name).apply(list(request.addons), progress=progress)
+    next_steps = tuple(_install_next_steps(request.name, username=request.username))
+    if progress is not None:
+        progress({
+            "phase": "complete",
+            "message": "Install completed",
+            "percent": 100,
+            "plan": plan,
+            "current_step": plan["total_steps"],
+            "total_steps": plan["total_steps"],
+            "mirror_errors": mirror_attempt_errors,
+        })
+    return InstallRunResult(
+        chroot_name=request.name,
+        distro=request.distro,
+        phases=tuple(phase_results),
+        tool_results=tuple(tool_results),
+        addon_results=tuple(addon_results),
+        next_steps=next_steps,
+    )
 
     def upgrade(
         self,

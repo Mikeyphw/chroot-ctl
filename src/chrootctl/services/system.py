@@ -7,6 +7,7 @@ import socket
 
 from ..models import CheckRow, DashboardSummary, LogEntry, LogLink, LogSnapshot
 from ..runtime.common import read_logs
+from ..system import qemu_user_binary_names
 from .chroots import record_from_registry
 from .context import ServiceContainer
 
@@ -160,8 +161,9 @@ class SystemService:
         runner = self.services.runtime_for().runner
         host = host_arch or runner.host_arch()
         native = target_arch == host
-        qemu_name = f"qemu-{target_arch}-static"
-        qemu_ready = runner.command_exists(qemu_name)
+        qemu_candidates = qemu_user_binary_names(target_arch)
+        qemu_name = qemu_candidates[0]
+        qemu_ready = any(runner.command_exists(candidate) for candidate in qemu_candidates)
         binfmt_ready = native or runner.can_execute_foreign_arch(target_arch)
         return [
             CheckRow(
@@ -184,7 +186,7 @@ class SystemService:
         targets = []
         for arch in ("arm64", "amd64"):
             native = arch == host_arch
-            qemu_ready = runner.command_exists(f"qemu-{arch}-static")
+            qemu_ready = any(runner.command_exists(candidate) for candidate in qemu_user_binary_names(arch))
             binfmt_ready = native or runner.can_execute_foreign_arch(arch)
             targets.append(
                 {
