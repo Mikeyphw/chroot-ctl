@@ -1,0 +1,57 @@
+# chroot-ctl repository configuration for Devtool.
+# Keep the Python package as the primary validation target. The flashable
+# Magisk/KernelSU module remains available through `devtool package`.
+
+[project]
+kind = "python"
+python = "python3"
+run_command = "chrootctl --help"
+package_command = "bash build.sh"
+
+[execution]
+# Native Termux is selected automatically when appropriate; desktop clones
+# remain usable without editing this file. `--chroot androidos` still overrides it.
+environment = "auto"
+chroot_name = "androidos"
+
+[toolchain]
+# chroot-ctl does not currently declare a mise toolchain.
+manager = "none"
+
+[build]
+# Conservative enough for Android/Termux while still allowing parallel helpers.
+max_workers = 2
+
+[python]
+manager = "venv"
+test_framework = "pytest"
+extras = ["dev"]
+locked = false
+offline = false
+install_project = true
+lint = ["ruff", "mypy"]
+validator_dependencies = ["build>=1.2"]
+pre_commit = "auto"
+source_import_isolation = false
+cli_contract = false
+isolation = true
+disable_network = false
+matrix = []
+matrix_mode = "active"
+fresh_dist = true
+clean_categories = ["artifacts", "caches"]
+
+[python.package]
+verify_all_wheels = true
+rebuild_sdist = true
+import_smoke = true
+verify_cli = true
+install_dependencies = true
+reproducible = false
+import_modules = ["chrootctl"]
+console_scripts = ["chrootctl", "chrootctl-web"]
+
+[python.security]
+enabled = false
+tools = ["pip_audit", "bandit"]
+sbom = false

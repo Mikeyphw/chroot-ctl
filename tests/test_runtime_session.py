@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from chrootctl.runtime import session
 
 
@@ -141,16 +143,16 @@ def test_handle_logs_follows_new_lines(monkeypatch, tmp_path: Path) -> None:
     assert printed[1] == "2026-01-01 ERROR chrootctl: boom"
 
 
-def test_handle_start_skips_spinner_for_interactive_session(monkeypatch, tmp_path: Path) -> None:
+def test_handle_start_execs_interactive_session_without_spinner(monkeypatch, tmp_path: Path) -> None:
     context = build_context(tmp_path, details=False, record=None)
     context.args = argparse.Namespace(login=True, root_login=False, command="start", json=False)
     calls: list[tuple[str, bool]] = []
 
     class StartController(Controller):
-        def start(self, *, login: bool, root_login: bool, x11: bool = False):
+        def start_interactive(self, *, login: bool, root_login: bool, x11: bool = False):
             assert login is True
             assert root_login is False
-            return 0
+            raise SystemExit(0)
 
     context.controller = StartController()
 
@@ -160,12 +162,11 @@ def test_handle_start_skips_spinner_for_interactive_session(monkeypatch, tmp_pat
 
     monkeypatch.setattr(session, "progress_call", fake_progress_call)
 
-    try:
+    with pytest.raises(SystemExit) as exc:
         session.handle_start(context)
-    except SystemExit as exc:
-        assert exc.code == 0
 
-    assert calls == [("Starting chroot session", True)]
+    assert exc.value.code == 0
+    assert calls == []
 
 
 def test_handle_exec_skips_spinner_for_terminal_owned_exec(monkeypatch, tmp_path: Path) -> None:
@@ -188,12 +189,11 @@ def test_handle_exec_skips_spinner_for_terminal_owned_exec(monkeypatch, tmp_path
 
     monkeypatch.setattr(session, "progress_call", fake_progress_call)
 
-    try:
+    with pytest.raises(SystemExit) as exc:
         session.handle_exec(context)
-    except SystemExit as exc:
-        assert exc.code == 0
 
-    assert calls == [("Executing command in chroot", True)]
+    assert exc.value.code == 0
+    assert calls == []
 
 
 class _RegistryWithWrites:
@@ -236,9 +236,9 @@ def test_handle_start_auto_records_existing_clipboard_wrappers(monkeypatch, tmp_
     controller_calls = []
 
     class _Controller(Controller):
-        def start(self, *, login: bool, root_login: bool, x11: bool = False):
+        def start_interactive(self, *, login: bool, root_login: bool, x11: bool = False):
             controller_calls.append((login, root_login, x11))
-            return 0
+            raise SystemExit(0)
 
     context = SimpleNamespace(
         args=argparse.Namespace(login=False, root_login=False, x11=False, json=False),
@@ -251,10 +251,10 @@ def test_handle_start_auto_records_existing_clipboard_wrappers(monkeypatch, tmp_
 
     monkeypatch.setattr(session, "progress_call", lambda description, fn, **kwargs: fn())
 
-    try:
+    with pytest.raises(SystemExit) as exc:
         session.handle_start(context)
-    except SystemExit as exc:
-        assert exc.code == 0
+
+    assert exc.value.code == 0
 
     assert controller_calls == [(False, False, False)]
     assert registry.upserts
@@ -279,8 +279,8 @@ def test_handle_start_auto_applies_clipboard_tool_when_missing(monkeypatch, tmp_
     applied: list[list[str]] = []
 
     class _Controller(Controller):
-        def start(self, *, login: bool, root_login: bool, x11: bool = False):
-            return 0
+        def start_interactive(self, *, login: bool, root_login: bool, x11: bool = False):
+            raise SystemExit(0)
 
     context = SimpleNamespace(
         args=argparse.Namespace(login=False, root_login=False, x11=False, json=False),
@@ -294,9 +294,9 @@ def test_handle_start_auto_applies_clipboard_tool_when_missing(monkeypatch, tmp_
     monkeypatch.setattr(session, "progress_call", lambda description, fn, **kwargs: fn())
     monkeypatch.setattr(session, "apply_catalog_entries", lambda **kwargs: applied.append(kwargs["names"]) or [])
 
-    try:
+    with pytest.raises(SystemExit) as exc:
         session.handle_start(context)
-    except SystemExit as exc:
-        assert exc.code == 0
+
+    assert exc.value.code == 0
 
     assert applied == [["setup-clipboard"]]

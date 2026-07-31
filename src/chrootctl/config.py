@@ -213,6 +213,9 @@ class ChrootConfig:
     tool_script_dirs: tuple[Path, ...] = ()
     addon_manifest_dirs: tuple[Path, ...] = ()
     addon_script_dirs: tuple[Path, ...] = ()
+    service_dirs: tuple[Path, ...] = field(default_factory=lambda: (_default_state_root() / "services",))
+    service_state_dir: Path = field(default_factory=lambda: _default_state_root() / "run" / "services")
+    service_log_dir: Path = field(default_factory=lambda: _default_state_root() / "logs" / "services")
     chroot_overrides: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -227,6 +230,9 @@ class ChrootConfig:
         object.__setattr__(self, "tool_script_dirs", tuple(Path(item).expanduser() for item in self.tool_script_dirs))
         object.__setattr__(self, "addon_manifest_dirs", tuple(Path(item).expanduser() for item in self.addon_manifest_dirs))
         object.__setattr__(self, "addon_script_dirs", tuple(Path(item).expanduser() for item in self.addon_script_dirs))
+        object.__setattr__(self, "service_dirs", tuple(Path(item).expanduser() for item in self.service_dirs))
+        object.__setattr__(self, "service_state_dir", Path(self.service_state_dir).expanduser())
+        object.__setattr__(self, "service_log_dir", Path(self.service_log_dir).expanduser())
 
     @property
     def chroot_base(self) -> Path:
@@ -277,6 +283,9 @@ class ChrootConfig:
             "tool_script_dirs": _normalize_paths(payload.get("tool_script_dirs", repositories.get("tool_scripts", list(current.tool_script_dirs)))),
             "addon_manifest_dirs": _normalize_paths(payload.get("addon_manifest_dirs", repositories.get("addon_manifests", list(current.addon_manifest_dirs)))),
             "addon_script_dirs": _normalize_paths(payload.get("addon_script_dirs", repositories.get("addon_scripts", list(current.addon_script_dirs)))),
+            "service_dirs": _normalize_paths(payload.get("service_dirs", list(current.service_dirs))),
+            "service_state_dir": Path(payload.get("service_state_dir", str(current.service_state_dir))).expanduser(),
+            "service_log_dir": Path(payload.get("service_log_dir", str(current.service_log_dir))).expanduser(),
         }
 
     @classmethod

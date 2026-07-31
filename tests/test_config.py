@@ -163,3 +163,26 @@ def test_android_load_migrates_termux_home_registry_and_snapshots(
     with sqlite3.connect(stable_root / "chroots.sqlite3") as conn:
         names = [row[0] for row in conn.execute("SELECT name FROM chroots")]
     assert names == ["androidos"]
+
+
+def test_service_paths_are_configurable(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    services = tmp_path / "services"
+    run = tmp_path / "run" / "services"
+    logs = tmp_path / "logs" / "services"
+    config_path.write_text(
+        json.dumps(
+            {
+                "service_dirs": [str(services)],
+                "service_state_dir": str(run),
+                "service_log_dir": str(logs),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = ChrootConfig.load(config_path)
+
+    assert cfg.service_dirs == (services,)
+    assert cfg.service_state_dir == run
+    assert cfg.service_log_dir == logs

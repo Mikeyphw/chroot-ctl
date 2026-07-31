@@ -13,6 +13,7 @@ Proper installable `src/` pip package for managing Termux chroots.
 - UID/GID sync to match the Termux host user
 - ownership repair after UID/GID sync
 - runtime mount/start/restart/exec/unmount/fix-tty/status
+- systemd-inspired chroot service units with `chrootctl run` and boot-time `boot.target` support
 - lifecycle commands for showing, renaming, and removing chroots
 - recovery helpers for install resume/repair and post-install upgrades
 - config-driven bind mounts, extra packages, locale, DNS, and per-chroot overrides
@@ -63,12 +64,90 @@ chrootctl restart --name work --login
 chrootctl upgrade --name work
 chrootctl doctor --name work
 chrootctl logs --tail 50
+chrootctl run code serve-web
+chrootctl --name code run serve-web --status
+chrootctl run --list
 chrootctl tools list --distro ubuntu
 chrootctl tools apply remove-snapd --name ubuntu
 chrootctl addons list --distro ubuntu
 chrootctl addons apply nala --name ubuntu
 source <(chrootctl completion zsh)
 ```
+
+
+## Service units
+
+`chrootctl run` loads systemd-inspired `*.service` files from `service_dirs`. On Android the default directory is `/data/adb/chrootctl/services`, so you can add or change services without editing the module or Python source. The Magisk/KSU `service.sh` also calls `chrootctl run --boot`, which starts enabled units wanted by `boot.target`.
+
+Each service is intentionally bound to one chroot with `[Service] Chroot=<name>`. Passing a different chroot on the CLI is treated as a safety error instead of silently starting the service elsewhere.
+
+Example `/data/adb/chrootctl/services/serve-web.service`:
+
+```ini
+[Unit]
+Description=VS Code web server
+After=network-online.service
+Requires=network-online.service
+
+[Service]
+Chroot=code
+User=mike
+WorkingDirectory=/home/mike/project
+Environment=PORT=8080
+ExecStart=code serve-web --host 0.0.0.0 --port 8080
+ExecStop=pkill -f "code serve-web"
+
+[Install]
+WantedBy=boot.target
+Enabled=true
+```
+
+For your `androidos` VS Code Web service, use:
+
+```ini
+[Unit]
+Description=VS Code Web Server
+After=network-online.service
+Requires=network-online.service
+
+[Service]
+Chroot=androidos
+User=mike
+WorkingDirectory=/home/mike
+Environment=HOME=/home/mike
+Environment=USER=mike
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+ExecStart=code serve-web --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=boot.target
+```
+
+Useful commands:
+
+```bash
+chrootctl run code serve-web              # start CHROOT SERVICE
+chrootctl --name code run serve-web       # same, with --name validated against Chroot=
+chrootctl run code serve-web --status
+chrootctl journal code serve-web --tail 100
+chrootctl run code serve-web --logs --follow
+chrootctl run code serve-web --restart
+chrootctl run code serve-web --stop
+chrootctl enable code serve-web           # enable for boot.target
+chrootctl disable code serve-web
+chrootctl run --boot                      # dependency-aware boot.target startup
+chrootctl run --boot --no-parallel        # sequential boot startup for debugging
+chrootctl run --list
+```
+
+Boot startup builds a small dependency graph from `[Unit] Requires=` and `[Unit] After=`. Required units are included automatically, ordering dependencies are honored, and independent units in the same layer are started in parallel unless `--no-parallel` is passed.
+
+Service output is captured as journal-style files under `service_log_dir`, with lifecycle entries plus stdout/stderr from the spawned process. Services run through a generated in-chroot login-session script so `User=` sees the same shell startup, `HOME`, `PATH`, and groups as an interactive login. The journal includes a preflight block with `id`, `groups`, `HOME`, `pwd`, and the first entries under the selected home directory; this is useful when a service can see different files than an interactive shell. PID files and enable/disable markers are stored under `service_state_dir`. These paths can be overridden in `config.json` with `service_dirs`, `service_state_dir`, and `service_log_dir`.
+
+The Web UI also exposes a Services module at `/services` for listing units, starting/stopping/restarting, enabling/disabling, and reading each service journal.
 
 By default, chroots are created under `/data/local/tmp/<name>`. Set `chroot_root` in the config file if you need a different base directory.
 

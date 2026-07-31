@@ -13,6 +13,7 @@ from chrootctl.system import RunResult
 class FakeRunner:
     def __init__(self) -> None:
         self.calls: list[tuple[list[str], dict]] = []
+        self.exec_calls: list[tuple[list[str], dict]] = []
         self.mount_returncodes: dict[str, int] = {}
         self.dry_run = True
 
@@ -27,6 +28,12 @@ class FakeRunner:
 
     def host_termux_uid_gid(self, termux_home: Path) -> tuple[int, int]:
         return (10123, 10123)
+
+
+    def exec(self, args, **kwargs):
+        argv = list(args)
+        self.exec_calls.append((argv, kwargs))
+        raise SystemExit(0)
 
     def run(self, args, **kwargs) -> RunResult:
         argv = list(args)
@@ -205,3 +212,53 @@ def test_exec_user_x11_wraps_command_with_login_shell_and_display_env(tmp_path: 
     assert "export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713;" in argv[-1]
     assert "exec /usr/bin/zsh -ilc glxinfo" in argv[-1]
     assert kwargs["env"]["DISPLAY"] == ":0"
+
+
+def test_start_interactive_execs_user_session_and_never_returns(tmp_path: Path) -> None:
+    controller, runner = build_controller(tmp_path)
+
+    with pytest.raises(SystemExit) as exc:
+        controller.start_interactive(login=True, root_login=False)
+
+    assert exc.value.code == 0
+    argv, kwargs = runner.exec_calls[-1]
+    assert argv[-3:] == ["/bin/su", "-", "mike"]
+    assert "-c" not in argv
+    assert kwargs["env"]["USER"] == "mike"
+    assert kwargs["chroot_env"] is True
+
+
+def test_start_interactive_root_login_execs_shell(tmp_path: Path) -> None:
+    controller, runner = build_controller(tmp_path)
+
+    with pytest.raises(SystemExit) as exc:
+        controller.start_interactive(login=False, root_login=True)
+
+    assert exc.value.code == 0
+    argv, kwargs = runner.exec_calls[-1]
+    assert argv[:2] == ["chroot", str(controller.config.chroot_base)]
+    assert argv[-2:] == ["/usr/bin/zsh", "-l"]
+    assert kwargs["env"]["HOME"] == "/root"
+
+
+def test_exec_invocation_honors_explicit_username(tmp_path: Path) -> None:
+    controller, _ = build_controller(tmp_path)
+
+    argv, env = controller.exec_invocation(root=False, command="pwd", username="alice")
+
+    assert argv[:4] == ["chroot", str(controller.config.chroot_base), "/bin/su", "-"]
+    assert argv[-3:] == ["alice", "-c", "pwd"]
+    assert env["USER"] == "alice"
+    assert env["HOME"] == "/home/alice"
+
+
+def test_service_invocation_uses_login_shell_for_user_services(tmp_path: Path) -> None:
+    controller, _ = build_controller(tmp_path)
+
+    argv, env = controller.service_invocation(root=False, command="/tmp/chrootctl-services/vscode-web.sh", username="mike")
+
+    assert argv[:4] == ["chroot", str(controller.config.chroot_base), "/bin/su", "-"]
+    assert argv[4:6] == ["mike", "-c"]
+    assert "exec /usr/bin/zsh -ilc /tmp/chrootctl-services/vscode-web.sh" in argv[-1]
+    assert env["USER"] == "mike"
+    assert env["HOME"] == "/home/mike"

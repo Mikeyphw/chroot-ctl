@@ -187,39 +187,31 @@ def _ensure_existing_chroot_clipboard_tools(context) -> None:
 
 def handle_start(context: RuntimeContext) -> None:
     _ensure_existing_chroot_clipboard_tools(context)
-    code = progress_call(
-        "Starting chroot session",
-        lambda: context.controller.start(
-            login=context.args.login,
-            root_login=context.args.root_login,
-            x11=getattr(context.args, "x11", False),
-        ),
-        interactive=True,
+    context.controller.start_interactive(
+        login=context.args.login,
+        root_login=context.args.root_login,
+        x11=getattr(context.args, "x11", False),
     )
-    raise SystemExit(code)
 
 
 def handle_restart(context: RuntimeContext) -> None:
     _ensure_existing_chroot_clipboard_tools(context)
-    code = progress_call(
-        "Restarting chroot session",
-        lambda: context.controller.restart(
-            login=context.args.login,
-            root_login=context.args.root_login,
-            x11=getattr(context.args, "x11", False),
-        ),
-        interactive=True,
+    context.controller.unmount()
+    context.controller.start_interactive(
+        login=context.args.login,
+        root_login=context.args.root_login,
+        x11=getattr(context.args, "x11", False),
     )
-    raise SystemExit(code)
 
 
 def handle_exec(context: RuntimeContext) -> None:
     _ensure_existing_chroot_clipboard_tools(context)
     argv = context.args.argv[1:] if context.args.argv and context.args.argv[0] == "--" else context.args.argv
-    code = progress_call(
-        "Executing command in chroot",
-        lambda: context.controller.exec(root=context.args.root, argv=argv or None, command=context.args.exec_text, x11=getattr(context.args, "x11", False)),
-        interactive=True,
+    code = context.controller.exec(
+        root=context.args.root,
+        argv=argv or None,
+        command=context.args.exec_text,
+        x11=getattr(context.args, "x11", False),
     )
     raise SystemExit(code)
 

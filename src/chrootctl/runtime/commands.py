@@ -23,6 +23,7 @@ from .session import (
     handle_unmount,
 )
 from .transfer import handle_transfer
+from .units import handle_disable, handle_enable, handle_journal, handle_run
 from .users import handle_users
 from .common import emit_panel, emit_table, progress_call
 
@@ -72,6 +73,10 @@ COMMAND_SPECS: dict[str, CommandSpec] = {
     "start": CommandSpec("start", handle_start, RootPolicy.always_required()),
     "restart": CommandSpec("restart", handle_restart, RootPolicy.always_required()),
     "exec": CommandSpec("exec", handle_exec, RootPolicy.always_required()),
+    "run": CommandSpec("run", handle_run, RootPolicy.always_required()),
+    "enable": CommandSpec("enable", handle_enable, RootPolicy.always_required()),
+    "disable": CommandSpec("disable", handle_disable, RootPolicy.always_required()),
+    "journal": CommandSpec("journal", handle_journal),
     "chroots": CommandSpec("chroots", handle_chroots, RootPolicy.for_subcommands("chroots_command", "remove", "export", "import")),
     "transfer": CommandSpec("transfer", handle_transfer, RootPolicy.for_subcommands("transfer_command", "export", "import")),
     "users": CommandSpec("users", handle_users, RootPolicy.always_required()),

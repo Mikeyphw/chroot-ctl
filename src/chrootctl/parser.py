@@ -39,6 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     subs = parser.add_subparsers(dest="command", required=True, metavar="command")
 
     _add_runtime_commands(subs)
+    _add_run_commands(subs)
+    _add_service_state_commands(subs)
     _add_install_commands(subs)
     _add_completion_commands(subs)
     _add_chroot_commands(subs)
@@ -288,6 +290,81 @@ def _add_runtime_commands(subs: argparse._SubParsersAction[argparse.ArgumentPars
     exec_parser.add_argument("--command", dest="exec_text", default=None, help="Shell command text to execute inside the chroot.")
     exec_parser.add_argument("--x11", action="store_true", help="Prepare Termux:X11 on the host and export DISPLAY/PULSE_SERVER for the command.")
     exec_parser.add_argument("argv", nargs=argparse.REMAINDER, help="Command arguments after '--'.")
+
+
+
+def _add_run_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    run = _add_parser(
+        subs,
+        "run",
+        help="Run persistent chroot service units.",
+        description="Start, stop, inspect, and boot systemd-inspired chroot service units from service_dirs.",
+        examples="""
+        examples:
+          chrootctl run code serve-web
+          chrootctl --name code run serve-web
+          chrootctl run --list
+          chrootctl run --boot
+          chrootctl run code serve-web --logs --tail 100
+          chrootctl journal code serve-web --follow
+          chrootctl enable code serve-web
+        """,
+    )
+    run.add_argument(
+        "run_targets",
+        nargs="*",
+        metavar="target",
+        help="SERVICE, or CHROOT SERVICE. Omit when using --list or --boot.",
+    )
+    action = run.add_mutually_exclusive_group()
+    action.add_argument("--list", dest="run_list", action="store_true", help="List available service units and their status.")
+    action.add_argument("--boot", action="store_true", help="Start enabled units wanted by boot.target.")
+    action.add_argument("--status", dest="run_status", action="store_true", help="Show one unit's current status.")
+    action.add_argument("--stop", action="store_true", help="Stop one running unit.")
+    action.add_argument("--restart", action="store_true", help="Restart one unit.")
+    action.add_argument("--logs", action="store_true", help="Print one unit's journal-style log output.")
+    run.add_argument("--foreground", action="store_true", help="Run the unit in the foreground instead of spawning it.")
+    run.add_argument("--tail", type=int, default=None, help="When used with --logs, show only the last N lines.")
+    run.add_argument("--follow", action="store_true", help="When used with --logs, stream appended journal lines.")
+    run.add_argument("--target", default="boot.target", help="Target to use with --boot. Defaults to boot.target.")
+    run.add_argument("--no-parallel", action="store_true", help="Start boot units sequentially instead of parallelizing independent layers.")
+
+
+def _add_service_state_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    for command, help_text in (
+        ("enable", "Enable a service for a target such as boot.target."),
+        ("disable", "Disable a service for a target such as boot.target."),
+    ):
+        parser = _add_parser(
+            subs,
+            command,
+            help=help_text,
+            description=help_text,
+            examples=f"""
+            examples:
+              chrootctl {command} serve-web
+              chrootctl {command} code serve-web
+              chrootctl {command} code serve-web --target boot.target
+            """,
+        )
+        parser.add_argument("service_targets", nargs="+", metavar="target", help="SERVICE, or CHROOT SERVICE.")
+        parser.add_argument("--target", default="boot.target", help="Target to change. Defaults to boot.target.")
+
+    journal = _add_parser(
+        subs,
+        "journal",
+        help="Read a service journal, like journalctl -u for chroot services.",
+        description="Read captured stdout/stderr and lifecycle entries for a bound chroot service.",
+        examples="""
+        examples:
+          chrootctl journal serve-web
+          chrootctl journal code serve-web --tail 100
+          chrootctl journal code serve-web --follow
+        """,
+    )
+    journal.add_argument("service_targets", nargs="+", metavar="target", help="SERVICE, or CHROOT SERVICE.")
+    journal.add_argument("--tail", type=int, default=100, help="Show the last N lines. Use --tail 0 for all lines.")
+    journal.add_argument("--follow", action="store_true", help="Keep streaming appended journal lines until interrupted.")
 
 
 def _add_install_commands(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -806,6 +883,23 @@ def _validate_parsed_args(parser: argparse.ArgumentParser, args: argparse.Namesp
         _validate_install_args(parser, args)
     if args.command == "exec":
         _validate_exec_args(parser, args)
+    if args.command == "run":
+        _validate_run_args(parser, args)
+
+
+
+def _validate_run_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    targets = list(getattr(args, "run_targets", []) or [])
+    if len(targets) > 2:
+        parser.error("run accepts SERVICE or CHROOT SERVICE")
+    if (args.run_list or args.boot) and targets:
+        parser.error("run --list/--boot do not accept SERVICE targets")
+    if args.foreground and (args.run_list or args.boot or args.run_status or args.stop or args.logs):
+        parser.error("--foreground can only be used when starting a service")
+    if args.tail is not None and not args.logs:
+        parser.error("--tail can only be used with --logs")
+    if not (args.run_list or args.boot) and not targets:
+        parser.error("run requires SERVICE, or CHROOT SERVICE")
 
 
 def _validate_install_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
