@@ -49,9 +49,51 @@ verify_cli = true
 install_dependencies = true
 reproducible = false
 import_modules = ["chrootctl"]
-console_scripts = ["chrootctl", "chrootctl-web"]
+console_scripts = ["chrootctl", "chrootctl-app", "chrootctl-web"]
 
 [python.security]
 enabled = false
 tools = ["pip_audit", "bandit"]
 sbom = false
+
+[targets.chrootctl_android]
+type = "android"
+root = "android"
+execution_environment = "chroot"
+chroot_name = "androidos"
+
+[targets.chrootctl_android.android]
+variant = "debug"
+aapt2_provider = "auto"
+prefer_native_termux = false
+
+[targets.chrootctl_android.gradle]
+max_workers = 1
+parallel = false
+no_daemon = true
+build_cache = true
+structured_events = true
+
+[targets.chrootctl_android.tasks]
+build = ["assembleDebug"]
+test = ["testDebugUnitTest"]
+lint = ["lintDebug"]
+clean = ["clean"]
+
+[targets.chrootctl_android.artifacts]
+required = true
+external_verification = "auto"
+
+[targets.chrootctl_android.validation]
+android_safe = true
+split_gradle = true
+max_workers = 1
+cpu_limit = 2
+parallel = false
+no_daemon = true
+low_priority = true
+memory_guard_mb = 0
+gradle_heap_mb = 768
+gradle_metaspace_mb = 512
+gradle_packaging_metaspace_mb = 640
+gradle_lint_metaspace_mb = 512

@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ChrootCTL</string>
+    <string name="root_service_ready">Root bridge ready</string>
+    <string name="root_service_blocked">Root bridge unavailable</string>
+</resources>

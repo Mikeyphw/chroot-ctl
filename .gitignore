@@ -123,3 +123,13 @@ service-account.json
 *.exe
 *.out
 
+# ===================
+# Android / Gradle
+# ===================
+.gradle/
+**/.gradle/
+**/local.properties
+**/build/
+*.apk
+*.aab
+android/app/schemas/

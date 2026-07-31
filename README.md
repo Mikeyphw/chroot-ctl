@@ -158,3 +158,21 @@ Tool and add-on manifests live in YAML. `distro` may be a single distro, a list 
 When a command is missing a finite selectable argument, such as a chroot name, chroot username, tool, or add-on, `chrootctl` uses `fzf` when available. Without `fzf`, it falls back to a numbered prompt in an interactive TTY and returns a clear error in non-interactive scripts.
 
 If `fzf` is installed, the generated zsh completion uses it for interactive chroot selection. If `bat` or `lsd` are available, they are used automatically for previews. The script falls back to normal zsh completion and standard preview tools when those commands are missing, so regeneration is not required after installing them later.
+
+
+## Native Android replacement foundation
+
+The repository now contains the Phase 0-4 foundation for replacing the WebUI under `android/`.
+The Android app uses a fixed libsu root service and the versioned `chrootctl app` bridge; it does not start a localhost server or expose arbitrary shell execution.
+
+Bridge examples:
+
+```bash
+chrootctl app capabilities
+printf '%s' '{"protocolVersion":1,"requestId":"list-1","operation":"chroots.list","payload":{}}' \
+  | chrootctl app query --request-file -
+printf '%s' '{"protocolVersion":1,"requestId":"refresh-1","operation":"system.refresh","payload":{}}' \
+  | chrootctl app run --request-file - --events ndjson
+```
+
+See `docs/android/WEBUI_PARITY_MATRIX.md` for the native replacement gate and `docs/android/ANDROID_APP_ARCHITECTURE.md` for the process and security boundaries.

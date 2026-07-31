@@ -48,7 +48,7 @@ def create_app(
     template_dir = Path(files("chrootctl").joinpath("web/templates"))
     static_dir = Path(files("chrootctl").joinpath("web/static"))
     app.state.services = create_service_container(config_path, dry_run=dry_run, verbose=verbose)
-    app.state.jobs = WebJobManager()
+    app.state.jobs = WebJobManager(state_root=app.state.services.base_config.database_path.parent / "operations")
     app.state.web_security = WebSecurityConfig(bind_host=bind_host, bind_port=bind_port, access_token=access_token)
     app.state.templates = Jinja2Templates(directory=str(template_dir))
     app.state.templates.env.globals["csrf_token_input"] = csrf_token_input

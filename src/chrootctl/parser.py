@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_catalog_commands(subs, name="addons", item_label="addon")
     _add_hidden_completion_command(subs)
     _add_magisk_commands(subs)
+    _add_app_bridge_help(subs)
 
     return parser
 
@@ -946,6 +947,16 @@ def _validate_exec_args(parser: argparse.ArgumentParser, args: argparse.Namespac
     if has_command_text == has_argv:
         parser.error("exec requires exactly one of --command or command arguments after '--'")
 
+
+
+def _add_app_bridge_help(subs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    app = _add_parser(
+        subs,
+        "app",
+        help="Use the versioned local bridge for the native Android app.",
+        description="Machine-only JSON/NDJSON bridge. Run `chrootctl app --help` for bridge commands.",
+    )
+    app.add_argument("bridge_args", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
 
 def _add_parser(
     subs: argparse._SubParsersAction[argparse.ArgumentParser],

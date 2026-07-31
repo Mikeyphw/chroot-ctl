@@ -123,9 +123,9 @@ class UbuntuInstaller(BaseInstaller):
         self._chroot_shell(
             "for file in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do "
             "[ -f \"$file\" ] || continue; "
-            f"sed -i 's#https\?://archive\.ubuntu\.com/ubuntu#{normalized}#g; "
-            f"s#https\?://ports\.ubuntu\.com/ubuntu-ports#{normalized}#g; "
-            f"s#https\?://ports\.ubuntu\.com#{normalized}#g' \"$file\"; "
+            rf"sed -i 's#https\?://archive\.ubuntu\.com/ubuntu#{normalized}#g; "
+            rf"s#https\?://ports\.ubuntu\.com/ubuntu-ports#{normalized}#g; "
+            rf"s#https\?://ports\.ubuntu\.com#{normalized}#g' \"$file\"; "
             "done"
         )
 
