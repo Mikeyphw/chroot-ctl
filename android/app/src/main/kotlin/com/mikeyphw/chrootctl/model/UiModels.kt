@@ -149,3 +149,39 @@ data class SnapshotPane(
     val errorMessage: String? = null,
     val preview: PreviewSummary? = null,
 )
+
+data class UserSummary(
+    val username: String,
+    val uid: String,
+    val gid: String,
+    val home: String,
+    val shell: String,
+    val sudo: Boolean,
+)
+
+data class UsersPane(
+    val targetName: String? = null,
+    val users: List<UserSummary> = emptyList(),
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+    val preview: PreviewSummary? = null,
+)
+
+data class ServiceUnitSummary(
+    val service: String,
+    val chrootName: String,
+    val status: String,
+    val enabled: Boolean,
+    val boot: Boolean,
+    val description: String,
+    val journalText: String = "",
+)
+
+data class ServicesPane(
+    val targetName: String? = null,
+    val services: List<ServiceUnitSummary> = emptyList(),
+    val selectedService: ServiceUnitSummary? = null,
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+    val preview: PreviewSummary? = null,
+)

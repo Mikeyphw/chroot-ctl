@@ -28,9 +28,14 @@ import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.PreviewSummary
 import com.mikeyphw.chrootctl.model.SnapshotPane
 import com.mikeyphw.chrootctl.model.SnapshotSummary
+import com.mikeyphw.chrootctl.model.ServiceUnitSummary
+import com.mikeyphw.chrootctl.model.ServicesPane
+import com.mikeyphw.chrootctl.model.UserSummary
+import com.mikeyphw.chrootctl.model.UsersPane
 import com.mikeyphw.chrootctl.ui.components.EmptyState
 import com.mikeyphw.chrootctl.ui.components.PathText
 import com.mikeyphw.chrootctl.ui.components.StatusCard
+import org.json.JSONObject
 
 @Composable
 fun ChrootsScreen(
@@ -39,6 +44,8 @@ fun ChrootsScreen(
     detail: ChrootDetail,
     lifecyclePreview: PreviewSummary?,
     snapshotPane: SnapshotPane,
+    usersPane: UsersPane,
+    servicesPane: ServicesPane,
     onSelect: (String) -> Unit,
     onRefreshDetail: () -> Unit,
     onPreviewLifecycle: (String, String) -> Unit,
@@ -50,6 +57,13 @@ fun ChrootsScreen(
     onPreviewSnapshotAction: (String, String, String) -> Unit,
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
+    onRefreshUsers: (String) -> Unit,
+    onPreviewUserPayload: (String) -> Unit,
+    onStartUserOperation: (String, String) -> Unit,
+    onRefreshServices: (String) -> Unit,
+    onRefreshServiceDetail: (String, String) -> Unit,
+    onPreviewServicePayload: (String) -> Unit,
+    onStartServiceOperation: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -74,6 +88,8 @@ fun ChrootsScreen(
                     errorMessage = detail.errorMessage,
                     lifecyclePreview = lifecyclePreview,
                     snapshotPane = snapshotPane,
+                    usersPane = usersPane,
+                    servicesPane = servicesPane,
                     onRefreshDetail = onRefreshDetail,
                     onPreviewLifecycle = onPreviewLifecycle,
                     onStartLifecycle = onStartLifecycle,
@@ -84,6 +100,13 @@ fun ChrootsScreen(
                     onPreviewSnapshotAction = onPreviewSnapshotAction,
                     onStartSnapshotRestore = onStartSnapshotRestore,
                     onStartSnapshotExport = onStartSnapshotExport,
+                    onRefreshUsers = onRefreshUsers,
+                    onPreviewUserPayload = onPreviewUserPayload,
+                    onStartUserOperation = onStartUserOperation,
+                    onRefreshServices = onRefreshServices,
+                    onRefreshServiceDetail = onRefreshServiceDetail,
+                    onPreviewServicePayload = onPreviewServicePayload,
+                    onStartServiceOperation = onStartServiceOperation,
                 )
             }
         }
@@ -132,6 +155,8 @@ private fun ChrootDetailCard(
     errorMessage: String?,
     lifecyclePreview: PreviewSummary?,
     snapshotPane: SnapshotPane,
+    usersPane: UsersPane,
+    servicesPane: ServicesPane,
     onRefreshDetail: () -> Unit,
     onPreviewLifecycle: (String, String) -> Unit,
     onStartLifecycle: (String, String) -> Unit,
@@ -142,6 +167,13 @@ private fun ChrootDetailCard(
     onPreviewSnapshotAction: (String, String, String) -> Unit,
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
+    onRefreshUsers: (String) -> Unit,
+    onPreviewUserPayload: (String) -> Unit,
+    onStartUserOperation: (String, String) -> Unit,
+    onRefreshServices: (String) -> Unit,
+    onRefreshServiceDetail: (String, String) -> Unit,
+    onPreviewServicePayload: (String) -> Unit,
+    onStartServiceOperation: (String, String) -> Unit,
 ) {
     StatusCard(
         title = stringResource(R.string.chroot_detail_title, chroot.name),
@@ -167,6 +199,13 @@ private fun ChrootDetailCard(
                     onPreviewSnapshotAction = onPreviewSnapshotAction,
                     onStartSnapshotRestore = onStartSnapshotRestore,
                     onStartSnapshotExport = onStartSnapshotExport,
+                    onRefreshUsers = onRefreshUsers,
+                    onPreviewUserPayload = onPreviewUserPayload,
+                    onStartUserOperation = onStartUserOperation,
+                    onRefreshServices = onRefreshServices,
+                    onRefreshServiceDetail = onRefreshServiceDetail,
+                    onPreviewServicePayload = onPreviewServicePayload,
+                    onStartServiceOperation = onStartServiceOperation,
                 )
                 errorMessage?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
                 DetailRow(stringResource(R.string.chroot_detail_status), chroot.status)
@@ -232,6 +271,13 @@ private fun SnapshotPanel(
     onPreviewSnapshotAction: (String, String, String) -> Unit,
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
+    onRefreshUsers: (String) -> Unit,
+    onPreviewUserPayload: (String) -> Unit,
+    onStartUserOperation: (String, String) -> Unit,
+    onRefreshServices: (String) -> Unit,
+    onRefreshServiceDetail: (String, String) -> Unit,
+    onPreviewServicePayload: (String) -> Unit,
+    onStartServiceOperation: (String, String) -> Unit,
 ) {
     var restoreConfirmation by remember(chroot.name) { mutableStateOf("") }
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -287,6 +333,13 @@ private fun SnapshotRow(
     onPreviewSnapshotAction: (String, String, String) -> Unit,
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
+    onRefreshUsers: (String) -> Unit,
+    onPreviewUserPayload: (String) -> Unit,
+    onStartUserOperation: (String, String) -> Unit,
+    onRefreshServices: (String) -> Unit,
+    onRefreshServiceDetail: (String, String) -> Unit,
+    onPreviewServicePayload: (String) -> Unit,
+    onStartServiceOperation: (String, String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(snapshot.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
@@ -308,6 +361,194 @@ private fun SnapshotRow(
 }
 
 @Composable
+private fun UsersPanel(
+    chroot: ChrootSummary,
+    pane: UsersPane,
+    onRefreshUsers: (String) -> Unit,
+    onPreviewUserPayload: (String) -> Unit,
+    onStartUserOperation: (String, String) -> Unit,
+) {
+    var username by remember(chroot.name) { mutableStateOf("") }
+    var shell by remember(chroot.name) { mutableStateOf("/bin/bash") }
+    var sudo by remember(chroot.name) { mutableStateOf(false) }
+    var confirmation by remember(chroot.name) { mutableStateOf("") }
+    var password by remember(chroot.name) { mutableStateOf("") }
+    var confirmPassword by remember(chroot.name) { mutableStateOf("") }
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.users_actions_title), fontWeight = FontWeight.SemiBold)
+            Button(onClick = { onRefreshUsers(chroot.name) }, enabled = !pane.refreshing) {
+                Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_users))
+            }
+            OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text(stringResource(R.string.user_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = shell, onValueChange = { shell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { sudo = !sudo }) { Text(if (sudo) stringResource(R.string.action_disable_sudo_choice) else stringResource(R.string.action_enable_sudo_choice)) }
+            val addPayload = userPayload(chroot.name, username, "add").put("shell", shell).put("sudo", sudo).toString()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onPreviewUserPayload(addPayload) }, enabled = username.isNotBlank()) { Text(stringResource(R.string.action_preview_add_user)) }
+                Button(onClick = { onStartUserOperation("users.add", addPayload) }, enabled = username.isNotBlank()) { Text(stringResource(R.string.action_add_user)) }
+            }
+            OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.user_password_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = confirmPassword, onValueChange = { confirmPassword = it }, label = { Text(stringResource(R.string.user_confirm_password_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            pane.errorMessage?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
+            pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
+            if (pane.targetName == chroot.name && pane.users.isNotEmpty()) {
+                pane.users.forEach { user ->
+                    UserRow(
+                        chroot = chroot.name,
+                        user = user,
+                        shell = shell,
+                        confirmation = confirmation,
+                        password = password,
+                        confirmPassword = confirmPassword,
+                        onPreviewUserPayload = onPreviewUserPayload,
+                        onStartUserOperation = onStartUserOperation,
+                    )
+                }
+            } else {
+                Text(stringResource(R.string.users_list_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserRow(
+    chroot: String,
+    user: UserSummary,
+    shell: String,
+    confirmation: String,
+    password: String,
+    confirmPassword: String,
+    onPreviewUserPayload: (String) -> Unit,
+    onStartUserOperation: (String, String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(user.username, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+        Text(listOf("uid=${user.uid}", "gid=${user.gid}", user.shell, if (user.sudo) "sudo" else "no sudo").joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val syncPayload = userPayload(chroot, user.username, "sync_uid_gid").put("fixOwnership", true).toString()
+            Button(onClick = { onPreviewUserPayload(syncPayload) }) { Text(stringResource(R.string.action_preview_sync_user)) }
+            Button(onClick = { onStartUserOperation("users.sync_uid_gid", syncPayload) }) { Text(stringResource(R.string.action_sync_user)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val shellPayload = userPayload(chroot, user.username, "set_shell").put("shell", shell).toString()
+            Button(onClick = { onPreviewUserPayload(shellPayload) }) { Text(stringResource(R.string.action_preview_set_shell)) }
+            Button(onClick = { onStartUserOperation("users.set_shell", shellPayload) }) { Text(stringResource(R.string.action_set_shell)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val sudoPayload = userPayload(chroot, user.username, "set_sudo").put("enabled", !user.sudo).toString()
+            Button(onClick = { onPreviewUserPayload(sudoPayload) }) { Text(stringResource(R.string.action_preview_sudo)) }
+            Button(onClick = { onStartUserOperation("users.set_sudo", sudoPayload) }) { Text(if (user.sudo) stringResource(R.string.action_disable_sudo) else stringResource(R.string.action_enable_sudo)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val passwordPayload = userPayload(chroot, user.username, "set_password").put("password", password).put("confirmPassword", confirmPassword).put("confirmation", confirmation).toString()
+            Button(onClick = { onPreviewUserPayload(passwordPayload) }) { Text(stringResource(R.string.action_preview_password)) }
+            Button(onClick = { onStartUserOperation("users.set_password", passwordPayload) }, enabled = confirmation == user.username && password.isNotBlank() && password == confirmPassword) { Text(stringResource(R.string.action_set_password)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val removePayload = userPayload(chroot, user.username, "remove").put("confirmation", confirmation).put("deleteHome", false).toString()
+            Button(onClick = { onPreviewUserPayload(removePayload) }) { Text(stringResource(R.string.action_preview_remove_user)) }
+            Button(onClick = { onStartUserOperation("users.remove", removePayload) }, enabled = confirmation == user.username) { Text(stringResource(R.string.action_remove_user)) }
+        }
+    }
+}
+
+@Composable
+private fun ServicesPanel(
+    chroot: ChrootSummary,
+    pane: ServicesPane,
+    onRefreshServices: (String) -> Unit,
+    onRefreshServiceDetail: (String, String) -> Unit,
+    onPreviewServicePayload: (String) -> Unit,
+    onStartServiceOperation: (String, String) -> Unit,
+) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.services_actions_title), fontWeight = FontWeight.SemiBold)
+            Button(onClick = { onRefreshServices(chroot.name) }, enabled = !pane.refreshing) {
+                Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_services))
+            }
+            pane.errorMessage?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
+            pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
+            pane.selectedService?.takeIf { it.journalText.isNotBlank() }?.let { service ->
+                Text(stringResource(R.string.service_journal_title, service.service), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                Text(service.journalText.take(MAX_JOURNAL_CHARS), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            if (pane.targetName == chroot.name && pane.services.isNotEmpty()) {
+                pane.services.forEach { service ->
+                    ServiceRow(
+                        service = service,
+                        onRefreshServiceDetail = onRefreshServiceDetail,
+                        onPreviewServicePayload = onPreviewServicePayload,
+                        onStartServiceOperation = onStartServiceOperation,
+                    )
+                }
+            } else {
+                Text(stringResource(R.string.services_list_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServiceRow(
+    service: ServiceUnitSummary,
+    onRefreshServiceDetail: (String, String) -> Unit,
+    onPreviewServicePayload: (String) -> Unit,
+    onStartServiceOperation: (String, String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(service.service, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+        Text(listOf(service.chrootName, service.status, if (service.enabled) "enabled" else "disabled", service.description).filter { it.isNotBlank() }.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        Button(onClick = { onRefreshServiceDetail(service.chrootName, service.service) }) { Text(stringResource(R.string.action_service_journal)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ServiceActionButton(service, "start", R.string.action_service_start, onPreviewServicePayload, onStartServiceOperation)
+            ServiceActionButton(service, "stop", R.string.action_service_stop, onPreviewServicePayload, onStartServiceOperation)
+            ServiceActionButton(service, "restart", R.string.action_service_restart, onPreviewServicePayload, onStartServiceOperation)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ServiceActionButton(service, "enable", R.string.action_service_enable, onPreviewServicePayload, onStartServiceOperation)
+            ServiceActionButton(service, "disable", R.string.action_service_disable, onPreviewServicePayload, onStartServiceOperation)
+        }
+    }
+}
+
+@Composable
+private fun ServiceActionButton(
+    service: ServiceUnitSummary,
+    action: String,
+    labelRes: Int,
+    onPreviewServicePayload: (String) -> Unit,
+    onStartServiceOperation: (String, String) -> Unit,
+) {
+    val payload = servicePayload(service.chrootName, service.service, action).toString()
+    val operation = when (action) {
+        "start" -> "services.start"
+        "stop" -> "services.stop"
+        "restart" -> "services.restart"
+        "enable" -> "services.enable"
+        "disable" -> "services.disable"
+        else -> "services.start"
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Button(onClick = { onPreviewServicePayload(payload) }) { Text(stringResource(R.string.action_preview_short)) }
+        Button(onClick = { onStartServiceOperation(operation, payload) }) { Text(stringResource(labelRes)) }
+    }
+}
+
+private fun userPayload(chroot: String, username: String, action: String): JSONObject = JSONObject()
+    .put("name", chroot)
+    .put("username", username)
+    .put("action", action)
+
+private fun servicePayload(chroot: String, service: String, action: String): JSONObject = JSONObject()
+    .put("name", chroot)
+    .put("service", service)
+    .put("action", action)
+
+@Composable
 private fun DetailRow(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
@@ -324,3 +565,4 @@ private fun CheckRow(check: CheckSummary) {
 }
 
 private const val MAX_VISIBLE_SNAPSHOTS = 8
+private const val MAX_JOURNAL_CHARS = 1_600

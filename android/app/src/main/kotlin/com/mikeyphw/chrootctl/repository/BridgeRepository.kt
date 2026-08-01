@@ -14,6 +14,8 @@ import com.mikeyphw.chrootctl.model.InstallDraft
 import com.mikeyphw.chrootctl.model.InstallFormSummary
 import com.mikeyphw.chrootctl.model.PreviewSummary
 import com.mikeyphw.chrootctl.model.SnapshotSummary
+import com.mikeyphw.chrootctl.model.ServiceUnitSummary
+import com.mikeyphw.chrootctl.model.UserSummary
 import com.mikeyphw.chrootctl.model.Loadable
 import com.mikeyphw.chrootctl.model.OperationEventSummary
 import com.mikeyphw.chrootctl.model.OperationSummary
@@ -211,6 +213,41 @@ class BridgeRepository(
             ),
         ).requireData()
         data.toPreviewSummary("Snapshot ${action.replaceFirstChar { it.uppercase() }} preview")
+    }
+
+    suspend fun refreshUsers(name: String): Result<List<UserSummary>> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("users.list", JSONObject().put("name", name)).toJson()),
+        ).requireArray()
+        data.toJsonObjects().map { item -> item.toUserSummary() }
+    }
+
+    suspend fun previewUserAction(payload: JSONObject): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.preview(BridgeRequest("users.preview", payload).toJson()),
+        ).requireData()
+        data.toPreviewSummary("User preview")
+    }
+
+    suspend fun refreshServices(name: String): Result<List<ServiceUnitSummary>> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("services.list", JSONObject().put("name", name)).toJson()),
+        ).requireArray()
+        data.toJsonObjects().map { item -> item.toServiceUnitSummary() }
+    }
+
+    suspend fun refreshServiceDetail(name: String, service: String): Result<ServiceUnitSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("services.journal", JSONObject().put("name", name).put("service", service)).toJson()),
+        ).requireData()
+        data.toServiceUnitDetailSummary()
+    }
+
+    suspend fun previewServiceAction(payload: JSONObject): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.preview(BridgeRequest("services.preview", payload).toJson()),
+        ).requireData()
+        data.toPreviewSummary("Service preview")
     }
 
     suspend fun startBridgeOperation(
@@ -567,6 +604,38 @@ private fun JSONObject.toSnapshotSummary(): SnapshotSummary = SnapshotSummary(
     note = firstString("note"),
     sizeBytes = optLong("sizeBytes", optLong("size_bytes", 0L)),
 )
+
+private fun JSONObject.toUserSummary(): UserSummary = UserSummary(
+    username = firstString("username", "name"),
+    uid = firstString("uid"),
+    gid = firstString("gid"),
+    home = firstString("home"),
+    shell = firstString("shell"),
+    sudo = optBoolean("sudo", false),
+)
+
+private fun JSONObject.toServiceUnitSummary(): ServiceUnitSummary = ServiceUnitSummary(
+    service = firstString("service", "name"),
+    chrootName = firstString("chroot", "chrootName", "name"),
+    status = firstString("status").ifBlank { "unknown" },
+    enabled = firstString("enabled").lowercase() in setOf("yes", "true", "enabled", "1"),
+    boot = firstString("boot").lowercase() in setOf("yes", "true", "enabled", "1"),
+    description = firstString("description"),
+)
+
+private fun JSONObject.toServiceUnitDetailSummary(): ServiceUnitSummary {
+    val status = optJSONObject("status") ?: JSONObject()
+    val journal = optJSONObject("journal") ?: JSONObject()
+    return ServiceUnitSummary(
+        service = status.firstString("service", "name"),
+        chrootName = status.firstString("chroot", "chrootName"),
+        status = status.firstString("status").ifBlank { "unknown" },
+        enabled = status.optBoolean("enabled", false),
+        boot = status.optJSONArray("wanted_by").toStringListLocal().contains("boot.target"),
+        description = status.firstString("description"),
+        journalText = journal.firstString("text"),
+    )
+}
 
 private fun JSONArray?.labelsFromObjects(): List<String> {
     if (this == null) return emptyList()

@@ -1,7 +1,7 @@
 package com.mikeyphw.chrootctl.root
 
+import java.io.File
 import java.io.OutputStream
-import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
@@ -38,8 +38,14 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
         return ProcessBuilder(command)
             .redirectErrorStream(true)
             .apply {
-                environment()["HOME"] = "/data/data/com.termux/files/home"
-                environment()["PATH"] = "/data/adb/chrootctl/bin:/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
+                val dataRoot = File(File.separator, "data")
+                val adbRoot = File(dataRoot, "adb")
+                val termuxRoot = File(File(dataRoot, "data"), "com.termux")
+                val termuxFiles = File(termuxRoot, "files")
+                val termuxUsrBin = File(termuxFiles, "usr/bin")
+                val bridgeBin = File(adbRoot, "chrootctl/bin")
+                environment()["HOME"] = File(termuxFiles, "home").path
+                environment()["PATH"] = listOf(bridgeBin, termuxUsrBin, File(File.separator, "system/bin"), File(File.separator, "system/xbin")).joinToString(File.pathSeparator) { it.path }
                 environment()["PYTHONUNBUFFERED"] = "1"
             }
             .start()

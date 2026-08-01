@@ -14,6 +14,8 @@ import com.mikeyphw.chrootctl.model.Loadable
 import com.mikeyphw.chrootctl.model.OperationDetail
 import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.ToolCapabilityGroup
+import com.mikeyphw.chrootctl.model.UsersPane
+import com.mikeyphw.chrootctl.model.ServicesPane
 import com.mikeyphw.chrootctl.repository.BridgeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,6 +47,8 @@ data class MainUiState(
     val installPreview: PreviewSummary? = null,
     val lifecyclePreview: PreviewSummary? = null,
     val snapshotPane: SnapshotPane = SnapshotPane(),
+    val usersPane: UsersPane = UsersPane(),
+    val servicesPane: ServicesPane = ServicesPane(),
     val refreshState: RefreshState = RefreshState.Idle,
 )
 
@@ -72,6 +76,11 @@ private data class SecondaryUiSlice(
     val refreshState: RefreshState,
 )
 
+private data class ChrootManagementSlice(
+    val usersPane: UsersPane,
+    val servicesPane: ServicesPane,
+)
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
@@ -85,6 +94,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val installPreview = MutableStateFlow<PreviewSummary?>(null)
     private val lifecyclePreview = MutableStateFlow<PreviewSummary?>(null)
     private val snapshotPane = MutableStateFlow(SnapshotPane())
+    private val usersPane = MutableStateFlow(UsersPane())
+    private val servicesPane = MutableStateFlow(ServicesPane())
 
     private val selectedChrootDetail = combine(
         repository.chroots,
@@ -161,11 +172,19 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         )
     }
 
+    private val chrootManagementSlice = combine(
+        usersPane.asStateFlow(),
+        servicesPane.asStateFlow(),
+    ) { users, services ->
+        ChrootManagementSlice(usersPane = users, servicesPane = services)
+    }
+
     val uiState: StateFlow<MainUiState> = combine(
         primaryUiSlice,
         secondaryUiSlice,
         tertiaryUiSlice,
-    ) { primary, secondary, tertiary ->
+        chrootManagementSlice,
+    ) { primary, secondary, tertiary, management ->
         MainUiState(
             home = primary.home,
             chroots = primary.chroots,
@@ -180,6 +199,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             installPreview = tertiary.installPreview,
             lifecyclePreview = tertiary.lifecyclePreview,
             snapshotPane = tertiary.snapshotPane,
+            usersPane = management.usersPane,
+            servicesPane = management.servicesPane,
             refreshState = secondary.refreshState,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MainUiState())
@@ -206,10 +227,16 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     fun selectChroot(name: String) {
         selectedChrootName.value = name
         refreshChrootDetail(name)
+        refreshUsers(name)
+        refreshServices(name)
     }
 
     fun refreshSelectedChroot() {
-        selectedChrootName.value?.let(::refreshChrootDetail)
+        selectedChrootName.value?.let { name ->
+            refreshChrootDetail(name)
+            refreshUsers(name)
+            refreshServices(name)
+        }
     }
 
     fun selectOperation(operationId: String) {
@@ -332,6 +359,130 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     fun snapshotExportPayloadJson(name: String, snapshot: String): String = JSONObject()
         .put("name", name)
         .put("snapshot", snapshot)
+        .toString()
+
+    fun refreshUsers(name: String) {
+        viewModelScope.launch {
+            usersPane.value = usersPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
+            repository.refreshUsers(name)
+                .onSuccess { rows -> usersPane.value = UsersPane(targetName = name, users = rows) }
+                .onFailure { error ->
+                    usersPane.value = usersPane.value.copy(
+                        targetName = name,
+                        refreshing = false,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun previewUserAction(payloadJson: String) {
+        viewModelScope.launch {
+            val payload = JSONObject(payloadJson)
+            repository.previewUserAction(payload)
+                .onSuccess { preview -> usersPane.value = usersPane.value.copy(targetName = payload.optString("name"), preview = preview) }
+                .onFailure { error -> usersPane.value = usersPane.value.copy(preview = errorPreview("User preview", error)) }
+        }
+    }
+
+    fun userAddPayloadJson(name: String, username: String, shell: String, sudo: Boolean): String = JSONObject()
+        .put("name", name)
+        .put("username", username)
+        .put("action", "add")
+        .put("shell", shell)
+        .put("sudo", sudo)
+        .toString()
+
+    fun userRemovePayloadJson(name: String, username: String, confirmation: String, deleteHome: Boolean): String = JSONObject()
+        .put("name", name)
+        .put("username", username)
+        .put("action", "remove")
+        .put("confirmation", confirmation)
+        .put("deleteHome", deleteHome)
+        .toString()
+
+    fun userSyncPayloadJson(name: String, username: String): String = JSONObject()
+        .put("name", name)
+        .put("username", username)
+        .put("action", "sync_uid_gid")
+        .put("fixOwnership", true)
+        .toString()
+
+    fun userShellPayloadJson(name: String, username: String, shell: String): String = JSONObject()
+        .put("name", name)
+        .put("username", username)
+        .put("action", "set_shell")
+        .put("shell", shell)
+        .toString()
+
+    fun userSudoPayloadJson(name: String, username: String, enabled: Boolean): String = JSONObject()
+        .put("name", name)
+        .put("username", username)
+        .put("action", "set_sudo")
+        .put("enabled", enabled)
+        .toString()
+
+    fun userPasswordPayloadJson(name: String, username: String, password: String, confirmPassword: String, confirmation: String): String = JSONObject()
+        .put("name", name)
+        .put("username", username)
+        .put("action", "set_password")
+        .put("password", password)
+        .put("confirmPassword", confirmPassword)
+        .put("confirmation", confirmation)
+        .toString()
+
+    fun refreshServices(name: String) {
+        viewModelScope.launch {
+            servicesPane.value = servicesPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
+            repository.refreshServices(name)
+                .onSuccess { rows -> servicesPane.value = ServicesPane(targetName = name, services = rows) }
+                .onFailure { error ->
+                    servicesPane.value = servicesPane.value.copy(
+                        targetName = name,
+                        refreshing = false,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun refreshServiceDetail(name: String, service: String) {
+        viewModelScope.launch {
+            servicesPane.value = servicesPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
+            repository.refreshServiceDetail(name, service)
+                .onSuccess { row ->
+                    val merged = servicesPane.value.services.map { existing -> if (existing.service == row.service) row else existing }
+                    servicesPane.value = servicesPane.value.copy(
+                        targetName = name,
+                        services = if (merged.any { it.service == row.service }) merged else servicesPane.value.services + row,
+                        selectedService = row,
+                        refreshing = false,
+                        errorMessage = null,
+                    )
+                }
+                .onFailure { error ->
+                    servicesPane.value = servicesPane.value.copy(
+                        targetName = name,
+                        refreshing = false,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun previewServiceAction(payloadJson: String) {
+        viewModelScope.launch {
+            val payload = JSONObject(payloadJson)
+            repository.previewServiceAction(payload)
+                .onSuccess { preview -> servicesPane.value = servicesPane.value.copy(targetName = payload.optString("name"), preview = preview) }
+                .onFailure { error -> servicesPane.value = servicesPane.value.copy(preview = errorPreview("Service preview", error)) }
+        }
+    }
+
+    fun servicePayloadJson(name: String, service: String, action: String): String = JSONObject()
+        .put("name", name)
+        .put("service", service)
+        .put("action", action)
         .toString()
 
     override fun onCleared() {

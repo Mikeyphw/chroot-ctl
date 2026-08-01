@@ -62,8 +62,8 @@ def main() -> int:
     build = BUILD.read_text(encoding="utf-8")
     if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
         errors.append("Android SDK must remain pinned to 36")
-    if "versionName = \"0.1.0-phase13\"" not in build:
-        errors.append("Android app versionName must advance to phase13")
+    if "versionName = \"0.1.0-phase13\"" not in build and "versionName = \"0.1.0-phase15\"" not in build:
+        errors.append("Android app versionName must be at least phase13")
     strings = STRINGS.read_text(encoding="utf-8")
     for name in (
         "nav_install",

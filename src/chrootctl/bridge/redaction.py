@@ -33,4 +33,10 @@ def redact_value(value: Any) -> Any:
 
 def _is_secret_key(key: str) -> bool:
     normalized = key.strip().lower().replace("-", "_")
-    return normalized in _SECRET_KEYS or normalized.endswith("_password") or normalized.endswith("_token")
+    return (
+        normalized in _SECRET_KEYS
+        or normalized.endswith("_password")
+        or normalized.endswith("password")
+        or normalized.endswith("_token")
+        or normalized.endswith("token")
+    )

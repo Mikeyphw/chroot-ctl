@@ -79,6 +79,13 @@ fun ChrootCtlApp(
                         previewSnapshotAction = viewModel::previewSnapshotAction,
                         startSnapshotRestore = { name, snapshot, confirmation -> onStartBridgeOperation("snapshots.restore", viewModel.snapshotRestorePayloadJson(name, snapshot, confirmation)) },
                         startSnapshotExport = { name, snapshot -> onStartBridgeOperation("snapshots.export", viewModel.snapshotExportPayloadJson(name, snapshot)) },
+                        refreshUsers = viewModel::refreshUsers,
+                        previewUserPayload = viewModel::previewUserAction,
+                        startUserOperation = onStartBridgeOperation,
+                        refreshServices = viewModel::refreshServices,
+                        refreshServiceDetail = viewModel::refreshServiceDetail,
+                        previewServicePayload = viewModel::previewServiceAction,
+                        startServiceOperation = onStartBridgeOperation,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -121,6 +128,13 @@ fun ChrootCtlApp(
                         previewSnapshotAction = viewModel::previewSnapshotAction,
                         startSnapshotRestore = { name, snapshot, confirmation -> onStartBridgeOperation("snapshots.restore", viewModel.snapshotRestorePayloadJson(name, snapshot, confirmation)) },
                         startSnapshotExport = { name, snapshot -> onStartBridgeOperation("snapshots.export", viewModel.snapshotExportPayloadJson(name, snapshot)) },
+                        refreshUsers = viewModel::refreshUsers,
+                        previewUserPayload = viewModel::previewUserAction,
+                        startUserOperation = onStartBridgeOperation,
+                        refreshServices = viewModel::refreshServices,
+                        refreshServiceDetail = viewModel::refreshServiceDetail,
+                        previewServicePayload = viewModel::previewServiceAction,
+                        startServiceOperation = onStartBridgeOperation,
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -154,6 +168,13 @@ private fun AppContent(
     previewSnapshotAction: (String, String, String) -> Unit,
     startSnapshotRestore: (String, String, String) -> Unit,
     startSnapshotExport: (String, String) -> Unit,
+    refreshUsers: (String) -> Unit,
+    previewUserPayload: (String) -> Unit,
+    startUserOperation: (String, String) -> Unit,
+    refreshServices: (String) -> Unit,
+    refreshServiceDetail: (String, String) -> Unit,
+    previewServicePayload: (String) -> Unit,
+    startServiceOperation: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -175,6 +196,8 @@ private fun AppContent(
                 detail = state.chrootDetail,
                 lifecyclePreview = state.lifecyclePreview,
                 snapshotPane = state.snapshotPane,
+                usersPane = state.usersPane,
+                servicesPane = state.servicesPane,
                 onSelect = selectChroot,
                 onRefreshDetail = refreshSelectedChroot,
                 onPreviewLifecycle = previewLifecycle,
@@ -186,6 +209,13 @@ private fun AppContent(
                 onPreviewSnapshotAction = previewSnapshotAction,
                 onStartSnapshotRestore = startSnapshotRestore,
                 onStartSnapshotExport = startSnapshotExport,
+                onRefreshUsers = refreshUsers,
+                onPreviewUserPayload = previewUserPayload,
+                onStartUserOperation = startUserOperation,
+                onRefreshServices = refreshServices,
+                onRefreshServiceDetail = refreshServiceDetail,
+                onPreviewServicePayload = previewServicePayload,
+                onStartServiceOperation = startServiceOperation,
             )
             AppDestination.Install -> InstallScreen(
                 draft = state.installDraft,
