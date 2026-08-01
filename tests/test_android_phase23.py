@@ -33,5 +33,5 @@ def test_phase23_sdk_and_validator_forward_compatibility() -> None:
     build = read("android/app/build.gradle.kts")
     assert "compileSdk = 36" in build
     assert "targetSdk = 36" in build
-    assert 'versionName = "0.1.0-phase23"' in build or 'versionName = "0.1.0-phase24"' in build
-    assert "range(22, 25)" in read("scripts/validate-android-phase22.py")
+    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (23, 24, 25, 26))
+    assert "range(22, 27)" in read("scripts/validate-android-phase22.py")

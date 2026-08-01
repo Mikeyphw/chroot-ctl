@@ -17,6 +17,7 @@ data class HomeSnapshot(
     val warningCount: Int,
     val readinessRows: List<ReadinessRow>,
     val recommendedAction: RecommendedAction,
+    val releaseReadiness: ReleaseReadinessSummary,
     val refreshedAt: Long,
     val stale: Boolean,
 )
@@ -33,6 +34,12 @@ data class RecommendedAction(
     val title: String,
     val body: String,
     val actionLabel: String,
+)
+
+data class ReleaseReadinessSummary(
+    val title: String,
+    val body: String,
+    val rows: List<ReadinessRow>,
 )
 
 data class ChrootSummary(
@@ -290,6 +297,8 @@ data class DebugPane(
     val selectedGroup: String = "all",
     val probes: List<DebugProbeSummary> = emptyList(),
     val timeline: List<DebugTimelineSummary> = emptyList(),
+    val smokePlan: PreviewSummary? = null,
+    val smokeReport: PreviewSummary? = null,
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
 )

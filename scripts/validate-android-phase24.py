@@ -25,7 +25,7 @@ def main() -> int:
 
     error_if(errors, 'compileSdk = 36' not in build, "compileSdk must remain pinned to 36")
     error_if(errors, 'targetSdk = 36' not in build, "targetSdk must remain pinned to 36")
-    error_if(errors, 'versionName = "0.1.0-phase24"' not in build, "versionName must advance to phase24")
+    error_if(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (24, 25, 26)), "versionName must advance to phase24")
 
     for token in (
         "FORBIDDEN_MODULE_PATH_TOKENS",
@@ -40,7 +40,7 @@ def main() -> int:
         error_if(errors, token not in magisk, f"Magisk module regression seal missing token: {token}")
 
     error_if(errors, "token in magisk or token in build_sh" in phase22, "phase22 validator must allow phase24 deny-list mentions")
-    error_if(errors, "versionName = \"0.1.0-phase24\"" not in phase23, "phase23 validator must accept phase24 version")
+    error_if(errors, "23, 24, 25" not in phase23 and "23, 24, 25, 26" not in phase23, "phase23 validator must accept later versionNames")
 
     for rel in ("out", "tmpout"):
         path = ROOT / rel

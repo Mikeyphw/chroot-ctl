@@ -121,6 +121,9 @@ fun ChrootCtlApp(
                         startTempCleanup = { onStartBridgeOperation("cleanup.temp", viewModel.cleanupTempPayloadJson()) },
                         refreshDebugWorkbench = viewModel::refreshDebugWorkbench,
                         startDebugExport = { onStartBridgeOperation("debug.export", viewModel.debugExportPayloadJson()) },
+                        previewSmokePlan = viewModel::previewSmokePlan,
+                        startSmokeRun = { onStartBridgeOperation("smoke.run", viewModel.smokeRunPayloadJson()) },
+                        refreshSmokeReport = viewModel::refreshSmokeReport,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -203,6 +206,9 @@ fun ChrootCtlApp(
                         startTempCleanup = { onStartBridgeOperation("cleanup.temp", viewModel.cleanupTempPayloadJson()) },
                         refreshDebugWorkbench = viewModel::refreshDebugWorkbench,
                         startDebugExport = { onStartBridgeOperation("debug.export", viewModel.debugExportPayloadJson()) },
+                        previewSmokePlan = viewModel::previewSmokePlan,
+                        startSmokeRun = { onStartBridgeOperation("smoke.run", viewModel.smokeRunPayloadJson()) },
+                        refreshSmokeReport = viewModel::refreshSmokeReport,
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -276,6 +282,9 @@ private fun AppContent(
     startTempCleanup: () -> Unit,
     refreshDebugWorkbench: (String) -> Unit,
     startDebugExport: () -> Unit,
+    previewSmokePlan: () -> Unit,
+    startSmokeRun: () -> Unit,
+    refreshSmokeReport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -376,6 +385,9 @@ private fun AppContent(
                 onStartTempCleanup = startTempCleanup,
                 onRefreshDebugWorkbench = refreshDebugWorkbench,
                 onStartDebugExport = startDebugExport,
+                onPreviewSmokePlan = previewSmokePlan,
+                onStartSmokeRun = startSmokeRun,
+                onRefreshSmokeReport = refreshSmokeReport,
             )
         }
     }

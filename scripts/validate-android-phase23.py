@@ -25,7 +25,7 @@ def main() -> int:
 
     error_if(errors, 'compileSdk = 36' not in build, "compileSdk must remain pinned to 36")
     error_if(errors, 'targetSdk = 36' not in build, "targetSdk must remain pinned to 36")
-    error_if(errors, 'versionName = "0.1.0-phase23"' not in build and 'versionName = "0.1.0-phase24"' not in build, "versionName must be phase23 or later")
+    error_if(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (23, 24, 25, 26)), "versionName must be phase23 or later")
 
     for rel in ("out", "tmpout"):
         path = ROOT / rel
@@ -58,7 +58,7 @@ def main() -> int:
     for token in ("fastapi", "Jinja2", "uvicorn", "python-multipart", "chrootctl-web"):
         error_if(errors, token in pyproject, f"retired WebUI dependency/script returned: {token}")
 
-    error_if(errors, "range(22, 25)" not in phase22_validator, "phase22 validator must accept phase23/24 release-hardening versions")
+    error_if(errors, "range(22, 27)" not in phase22_validator, "phase22 validator must accept phase23/24 release-hardening versions")
     for token in ("Phase 23", "out/", "tmpout/", "WebUI retirement", "SDK remains pinned to 36"):
         error_if(errors, token not in docs, f"phase23 docs missing token: {token}")
 

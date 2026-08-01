@@ -22,6 +22,7 @@ import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.ReadinessRow
 import com.mikeyphw.chrootctl.model.ReadinessState
 import com.mikeyphw.chrootctl.model.RecommendedAction
+import com.mikeyphw.chrootctl.model.ReleaseReadinessSummary
 import com.mikeyphw.chrootctl.model.ToolCapabilityGroup
 import com.mikeyphw.chrootctl.model.SystemRowSummary
 import com.mikeyphw.chrootctl.model.DebugTimelineSummary
@@ -84,6 +85,7 @@ class BridgeRepository(
         val capabilities = BridgeCapabilities.fromEnvelope(rootClient.capabilities())
         check(!capabilities.arbitraryShell) { "Unsafe arbitrary-shell capability was reported" }
         val state = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("system.dashboard").toJson())).requireData()
+        val releaseReadiness = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("release.readiness").toJson())).requireData()
         val chrootArray = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("chroots.list").toJson())).requireArray()
         val operationArray = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("operations.list").toJson())).requireArray()
         val now = System.currentTimeMillis()
@@ -94,7 +96,7 @@ class BridgeRepository(
             id = HOME_SNAPSHOT_ID,
             bridgeInfoJson = bridgeInfo.toJson(),
             capabilitiesJson = capabilities.toJson(),
-            dashboardJson = state.toString(),
+            dashboardJson = state.put("releaseReadiness", releaseReadiness).toString(),
             chrootCount = chrootEntities.size,
             operationCount = operationEntities.size,
             warningCount = warningCount,
@@ -357,6 +359,17 @@ class BridgeRepository(
         probes.optJSONArray("probes").toJsonObjects().map { it.toDebugProbeSummary() } to timeline.optJSONArray("events").toJsonObjects().map { it.toDebugTimelineSummary() }
     }
 
+
+    suspend fun previewSmokePlan(): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("smoke.plan").toJson())).requireData()
+        data.toPreviewSummary("Real-device smoke plan")
+    }
+
+    suspend fun refreshSmokeReport(): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("smoke.report").toJson())).requireData()
+        data.toPreviewSummary("Real-device smoke report")
+    }
+
     suspend fun startBridgeOperation(
         operation: String,
         payload: JSONObject,
@@ -444,6 +457,7 @@ private fun HomeSnapshotEntity.toHomeSnapshot(
         warningCount = warningCount,
         readinessRows = rows,
         recommendedAction = action,
+        releaseReadiness = dashboard.optJSONObject("releaseReadiness").toReleaseReadinessSummary(),
         refreshedAt = lastRefreshAt,
         stale = stale,
     )
@@ -609,6 +623,33 @@ private fun JSONObject.toSyntheticCheck(name: String, now: Long): CheckResultEnt
     rawJson = toString(),
     lastRefreshAt = now,
 )
+
+private fun JSONObject?.toReleaseReadinessSummary(): ReleaseReadinessSummary {
+    if (this == null) {
+        return ReleaseReadinessSummary(
+            title = "Release readiness",
+            body = "Release readiness has not been loaded yet.",
+            rows = emptyList(),
+        )
+    }
+    val rows = optJSONArray("checks").toJsonObjects().map { item ->
+        val state = when (item.firstString("status").lowercase()) {
+            "pass", "ready" -> ReadinessState.Ready
+            "fail", "failed", "blocked" -> ReadinessState.Blocked
+            else -> ReadinessState.Warning
+        }
+        ReadinessRow(
+            label = item.firstString("label", "id"),
+            detail = item.firstString("detail", "message"),
+            state = state,
+        )
+    }
+    return ReleaseReadinessSummary(
+        title = "Release readiness",
+        body = firstString("summary").ifBlank { "Native release readiness checks are available." },
+        rows = rows,
+    )
+}
 
 private fun countWarnings(
     dashboard: JSONObject,

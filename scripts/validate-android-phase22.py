@@ -72,7 +72,7 @@ def main() -> int:
     error_if(errors, "targetSdk = 36" not in build, "targetSdk must remain pinned to 36")
     error_if(
         errors,
-        not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(22, 25)),
+        not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(22, 27)),
         "Android versionName must be phase22 or later release-hardening phase",
     )
     error_if(errors, "warningsAsErrors = true" not in build, "lint warnings must remain errors")

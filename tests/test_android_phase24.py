@@ -33,9 +33,9 @@ def test_phase24_keeps_generated_outputs_uncommitted() -> None:
 
 
 def test_phase24_updates_version_and_validator_compatibility() -> None:
-    assert 'versionName = "0.1.0-phase24"' in read("android/app/build.gradle.kts")
+    assert any(f'versionName = "0.1.0-phase{phase}"' in read("android/app/build.gradle.kts") for phase in (24, 25, 26))
     assert "token in magisk or token in build_sh" not in read("scripts/validate-android-phase22.py")
-    assert 'versionName = "0.1.0-phase24"' in read("scripts/validate-android-phase23.py")
+    assert "23, 24, 25" in read("scripts/validate-android-phase23.py") or "23, 24, 25, 26" in read("scripts/validate-android-phase23.py")
 
 
 def test_phase24_documentation_names_the_seal() -> None:

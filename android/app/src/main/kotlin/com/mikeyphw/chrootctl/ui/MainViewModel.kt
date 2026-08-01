@@ -751,6 +751,29 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
     fun debugExportPayloadJson(): String = JSONObject().put("group", debugPane.value.selectedGroup).toString()
 
+    fun previewSmokePlan() {
+        viewModelScope.launch {
+            debugPane.value = debugPane.value.copy(refreshing = true, errorMessage = null)
+            repository.previewSmokePlan()
+                .onSuccess { preview -> debugPane.value = debugPane.value.copy(smokePlan = preview, refreshing = false, errorMessage = null) }
+                .onFailure { error -> debugPane.value = debugPane.value.copy(smokePlan = errorPreview("Smoke plan", error), refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun smokeRunPayloadJson(): String = JSONObject()
+        .put("scope", "real-device")
+        .put("includeOptional", true)
+        .toString()
+
+    fun refreshSmokeReport() {
+        viewModelScope.launch {
+            debugPane.value = debugPane.value.copy(refreshing = true, errorMessage = null)
+            repository.refreshSmokeReport()
+                .onSuccess { preview -> debugPane.value = debugPane.value.copy(smokeReport = preview, refreshing = false, errorMessage = null) }
+                .onFailure { error -> debugPane.value = debugPane.value.copy(smokeReport = errorPreview("Smoke report", error), refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
     override fun onCleared() {
         repository.close()
         super.onCleared()

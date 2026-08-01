@@ -82,6 +82,9 @@ fun ToolsScreen(
     onStartTempCleanup: () -> Unit,
     onRefreshDebugWorkbench: (String) -> Unit,
     onStartDebugExport: () -> Unit,
+    onPreviewSmokePlan: () -> Unit,
+    onStartSmokeRun: () -> Unit,
+    onRefreshSmokeReport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -136,6 +139,9 @@ fun ToolsScreen(
             pane = debugPane,
             onRefresh = onRefreshDebugWorkbench,
             onExport = onStartDebugExport,
+            onPreviewSmokePlan = onPreviewSmokePlan,
+            onStartSmokeRun = onStartSmokeRun,
+            onRefreshSmokeReport = onRefreshSmokeReport,
         )
         if (groups.isEmpty()) {
             EmptyState(
@@ -374,6 +380,9 @@ private fun DebugWorkbenchCard(
     pane: DebugPane,
     onRefresh: (String) -> Unit,
     onExport: () -> Unit,
+    onPreviewSmokePlan: () -> Unit,
+    onStartSmokeRun: () -> Unit,
+    onRefreshSmokeReport: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -388,6 +397,15 @@ private fun DebugWorkbenchCard(
                 Button(onClick = { onRefresh(pane.selectedGroup) }) { Text(stringResource(R.string.debug_run_probes_action)) }
                 Button(onClick = onExport) { Text(stringResource(R.string.debug_export_action)) }
             }
+            Text(stringResource(R.string.smoke_suite_title), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.smoke_suite_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPreviewSmokePlan) { Text(stringResource(R.string.smoke_preview_action)) }
+                Button(onClick = onStartSmokeRun) { Text(stringResource(R.string.smoke_run_action)) }
+                Button(onClick = onRefreshSmokeReport) { Text(stringResource(R.string.smoke_report_action)) }
+            }
+            pane.smokePlan?.let { PreviewBlock(it) }
+            pane.smokeReport?.let { PreviewBlock(it) }
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(stringResource(R.string.debug_probes_title), fontWeight = FontWeight.SemiBold)
             if (pane.probes.isEmpty()) {

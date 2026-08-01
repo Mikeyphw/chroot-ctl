@@ -64,12 +64,18 @@ def main() -> int:
         errors.append("Android SDK must remain pinned to 36")
     if not any(token in build for token in (
         'versionName = "0.1.0-phase13"',
+        'versionName = "0.1.0-phase14"',
         'versionName = "0.1.0-phase15"',
+        'versionName = "0.1.0-phase16"',
         'versionName = "0.1.0-phase17"',
+        'versionName = "0.1.0-phase18"',
         'versionName = "0.1.0-phase19"',
+        'versionName = "0.1.0-phase20"',
         'versionName = "0.1.0-phase21"',
         'versionName = "0.1.0-phase22"',
         'versionName = "0.1.0-phase24"',
+        'versionName = "0.1.0-phase25"',
+        'versionName = "0.1.0-phase26"',
         'versionName = "0.1.0-phase23"',
     )):
         errors.append("Android app versionName must be at least phase13")

@@ -206,4 +206,12 @@
     <string name="debug_probe_row">%1$s/%2$s · %3$s · %4$s</string>
     <string name="debug_probe_next">Next: %1$s</string>
     <string name="debug_timeline_row">%1$s · %2$s · %3$s · %4$s</string>
+    <string name="smoke_suite_title">Real-device smoke suite</string>
+    <string name="smoke_suite_body">Run a read-only bridge smoke against dashboard, chroots, operation history, debug probes, support previews and transfer artifacts.</string>
+    <string name="smoke_preview_action">Preview smoke</string>
+    <string name="smoke_run_action">Run smoke</string>
+    <string name="smoke_report_action">Smoke report</string>
+
+    <string name="release_readiness_title">Release readiness</string>
+    <string name="release_readiness_body">Native Android release readiness, safety gates and post-WebUI polish.</string>
 </resources>

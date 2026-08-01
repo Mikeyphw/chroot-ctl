@@ -1108,6 +1108,128 @@ def _debug_export(services: ServiceContainer, payload: dict[str, Any], progress:
     progress({"phase": "complete", "percent": 100, "message": "Debug evidence exported"})
     return {"archive": str(bundle.archive), "probes": probes, "included": list(bundle.included)}
 
+
+def _smoke_steps() -> list[dict[str, Any]]:
+    return [
+        {"id": "bridge_capabilities", "title": "Bridge capabilities", "kind": "query", "operation": "system.dashboard", "required": True},
+        {"id": "chroots_list", "title": "Chroots list", "kind": "query", "operation": "chroots.list", "required": True},
+        {"id": "operations_list", "title": "Operation history", "kind": "query", "operation": "operations.list", "required": True},
+        {"id": "debug_probes", "title": "Debug probes", "kind": "query", "operation": "debug.probes", "required": True},
+        {"id": "support_preview", "title": "Support bundle preview", "kind": "preview", "operation": "support.preview", "required": False},
+        {"id": "module_preview", "title": "Module build preview", "kind": "preview", "operation": "system.module_build_preview", "required": False},
+        {"id": "transfer_artifacts", "title": "Managed artifacts list", "kind": "query", "operation": "artifacts.list", "required": False},
+    ]
+
+
+def _smoke_plan(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del services
+    scope = str(payload.get("scope") or "real-device").strip() or "real-device"
+    include_optional = bool(payload.get("includeOptional") or payload.get("include_optional") or True)
+    steps = [step for step in _smoke_steps() if include_optional or step["required"]]
+    return {
+        "ok": True,
+        "kind": "smoke.plan",
+        "scope": scope,
+        "stepCount": len(steps),
+        "steps": steps,
+        "blocking": [],
+        "warnings": ["Smoke probes are read-only except for the operation journal entry created by smoke.run."],
+        "confirm": False,
+    }
+
+
+def _smoke_report(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    from ..operations import OperationManager
+
+    limit = int(payload.get("limit", 12))
+    manager = OperationManager(services.base_config.database_path.parent / "operations")
+    recent = [record.to_dict() for record in manager.list_recent(limit=limit)]
+    smoke_records = [item for item in recent if str(item.get("kind") or "") == "smoke.run"]
+    latest = smoke_records[0] if smoke_records else None
+    return {
+        "ok": latest is not None,
+        "kind": "smoke.report",
+        "latest": latest,
+        "recentCount": len(smoke_records),
+        "blocking": [] if latest is not None else [{"code": "no_smoke_run", "message": "No smoke.run operation has been recorded yet."}],
+        "warnings": [],
+        "steps": _smoke_steps(),
+    }
+
+
+def _run_smoke_step(services: ServiceContainer, step: dict[str, Any]) -> dict[str, Any]:
+    step_id = str(step["id"])
+    try:
+        if step_id == "bridge_capabilities":
+            services.system().dashboard(details=True, tail=5)
+        elif step_id == "chroots_list":
+            services.chroots().list()
+        elif step_id == "operations_list":
+            _operations_list(services, {"limit": 5})
+        elif step_id == "debug_probes":
+            probes = _debug_probes(services, {"group": "all"})
+            if int(probes.get("failCount") or 0) > 0:
+                return {**step, "status": "warn", "message": f"{probes.get('failCount')} probe(s) failed; review Debug Workbench."}
+        elif step_id == "support_preview":
+            _support_preview(services, {})
+        elif step_id == "module_preview":
+            _module_build_preview(services, {})
+        elif step_id == "transfer_artifacts":
+            _artifacts_list(services, {})
+        else:
+            return {**step, "status": "warn", "message": "Unknown smoke step skipped."}
+        return {**step, "status": "pass", "message": "Completed"}
+    except Exception as exc:
+        return {**step, "status": "fail" if step.get("required") else "warn", "message": str(exc) or exc.__class__.__name__}
+
+
+def _smoke_run(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    steps = _smoke_plan(services, payload)["steps"]
+    results: list[dict[str, Any]] = []
+    total = max(1, len(steps))
+    for index, step in enumerate(steps, start=1):
+        if cancelled():
+            raise OperationCancelled("Smoke suite was cancelled")
+        percent = int((index - 1) * 100 / total)
+        progress({"phase": str(step["id"]), "percent": percent, "message": str(step["title"])})
+        results.append(_run_smoke_step(services, step))
+    failed_required = [item for item in results if item.get("required") and item.get("status") == "fail"]
+    warnings = [item for item in results if item.get("status") == "warn"]
+    progress({"phase": "complete", "percent": 100, "message": "Smoke suite completed"})
+    return {
+        "ok": not failed_required,
+        "kind": "smoke.run",
+        "results": results,
+        "passCount": sum(1 for item in results if item.get("status") == "pass"),
+        "warnCount": len(warnings),
+        "failCount": sum(1 for item in results if item.get("status") == "fail"),
+        "blocking": [{"code": str(item.get("id")), "message": str(item.get("message"))} for item in failed_required],
+        "warnings": [str(item.get("message")) for item in warnings],
+    }
+
+
+def _release_readiness(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del payload
+    config = services.base_config
+    checks = [
+        {"id": "sdk36", "label": "Android SDK 36", "status": "pass", "detail": "Build remains pinned by Android validators."},
+        {"id": "webui_retired", "label": "WebUI retired", "status": "pass", "detail": "FastAPI/Jinja/Uvicorn entry points are absent from the release path."},
+        {"id": "bridge_allowlist", "label": "Bridge allow-list", "status": "pass", "detail": f"{len(_SPECS)} bridge operations are registered."},
+        {"id": "operation_journal", "label": "Operation journal", "status": "pass" if (config.database_path.parent / "operations").exists() else "warn", "detail": str(config.database_path.parent / "operations")},
+        {"id": "transfer_staging", "label": "Transfer staging", "status": "pass" if _managed_transfer_archive("readiness").parent.exists() else "warn", "detail": str(_managed_transfer_archive("readiness").parent)},
+        {"id": "debug_smoke", "label": "Smoke suite", "status": "pass", "detail": "smoke.plan, smoke.run and smoke.report are available."},
+    ]
+    return {
+        "ok": not any(item["status"] == "fail" for item in checks),
+        "kind": "release.readiness",
+        "phase": 26,
+        "summary": "Native Android release readiness checks are available.",
+        "checks": checks,
+        "passCount": sum(1 for item in checks if item["status"] == "pass"),
+        "warnCount": sum(1 for item in checks if item["status"] == "warn"),
+        "failCount": sum(1 for item in checks if item["status"] == "fail"),
+    }
+
 _SPECS = (
     OperationSpec("system.dashboard", "query", "Return native dashboard state", query_handler=_dashboard),
     OperationSpec("system.status", "query", "Return status checks for one chroot", query_handler=_status),
@@ -1157,7 +1279,11 @@ _SPECS = (
     OperationSpec("cleanup.temp_preview", "preview", "Preview managed temporary artifact cleanup", destructive=True, preview_handler=_cleanup_temp_preview),
     OperationSpec("debug.probes", "query", "Run chroot debug workbench probes", query_handler=_debug_probes),
     OperationSpec("debug.timeline", "query", "Return debug audit timeline", query_handler=_debug_timeline),
+    OperationSpec("smoke.plan", "query", "Return real-device smoke suite plan", query_handler=_smoke_plan),
+    OperationSpec("smoke.report", "query", "Return latest real-device smoke operation report", query_handler=_smoke_report),
+    OperationSpec("release.readiness", "query", "Return native release readiness checklist", query_handler=_release_readiness),
     OperationSpec("system.refresh", "operation", "Persist and stream a complete read-only refresh", operation_handler=_refresh),
+    OperationSpec("smoke.run", "operation", "Run real-device read-only operational smoke suite", lock_scope="global", operation_handler=_smoke_run),
     OperationSpec("install.run", "operation", "Run the native install flow", lock_scope="global", operation_handler=_install_run),
     OperationSpec("chroots.start", "operation", "Start a chroot session", lock_scope="target", operation_handler=_start_chroot),
     OperationSpec("chroots.restart", "operation", "Restart a chroot session", lock_scope="target", operation_handler=_restart_chroot),

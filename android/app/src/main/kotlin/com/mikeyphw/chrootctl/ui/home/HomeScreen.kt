@@ -106,8 +106,26 @@ private fun HomeReady(
             }
         }
     }
+    ReleaseReadinessCard(snapshot)
     if (refreshState is RefreshState.Failed) {
         StatusCard(title = stringResource(R.string.refresh_failed_title), body = refreshState.message)
+    }
+}
+
+@Composable
+private fun ReleaseReadinessCard(snapshot: HomeSnapshot) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                stringResource(R.string.release_readiness_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(snapshot.releaseReadiness.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            snapshot.releaseReadiness.rows.forEach { row ->
+                ReadinessRow(label = row.label, detail = row.detail, state = row.state)
+            }
+        }
     }
 }
 
