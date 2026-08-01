@@ -299,6 +299,7 @@ data class DebugPane(
     val timeline: List<DebugTimelineSummary> = emptyList(),
     val smokePlan: PreviewSummary? = null,
     val smokeReport: PreviewSummary? = null,
+    val smokeLastResult: PreviewSummary? = null,
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
 )

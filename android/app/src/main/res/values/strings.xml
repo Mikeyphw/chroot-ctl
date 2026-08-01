@@ -214,4 +214,10 @@
 
     <string name="release_readiness_title">Release readiness</string>
     <string name="release_readiness_body">Native Android release readiness, safety gates and post-WebUI polish.</string>
+    <string name="smoke_handoff_title">Smoke result handoff</string>
+    <string name="smoke_handoff_body">Keep the last smoke result durable, export its evidence, or build a support bundle when the smoke fails.</string>
+    <string name="smoke_last_result_action">Last result</string>
+    <string name="smoke_persist_action">Persist result</string>
+    <string name="smoke_export_action">Export evidence</string>
+    <string name="smoke_failure_bundle_action">Failure bundle</string>
 </resources>

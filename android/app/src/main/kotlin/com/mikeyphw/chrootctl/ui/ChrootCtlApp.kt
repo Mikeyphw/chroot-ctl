@@ -124,6 +124,10 @@ fun ChrootCtlApp(
                         previewSmokePlan = viewModel::previewSmokePlan,
                         startSmokeRun = { onStartBridgeOperation("smoke.run", viewModel.smokeRunPayloadJson()) },
                         refreshSmokeReport = viewModel::refreshSmokeReport,
+                        refreshSmokeLastResult = viewModel::refreshSmokeLastResult,
+                        persistSmokeResult = { onStartBridgeOperation("smoke.result.persist", viewModel.smokeResultPersistPayloadJson()) },
+                        exportSmokeEvidence = { onStartBridgeOperation("smoke.result.export", viewModel.smokeResultExportPayloadJson()) },
+                        createSmokeFailureBundle = { onStartBridgeOperation("smoke.failure.bundle", viewModel.smokeFailureBundlePayloadJson()) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -209,6 +213,10 @@ fun ChrootCtlApp(
                         previewSmokePlan = viewModel::previewSmokePlan,
                         startSmokeRun = { onStartBridgeOperation("smoke.run", viewModel.smokeRunPayloadJson()) },
                         refreshSmokeReport = viewModel::refreshSmokeReport,
+                        refreshSmokeLastResult = viewModel::refreshSmokeLastResult,
+                        persistSmokeResult = { onStartBridgeOperation("smoke.result.persist", viewModel.smokeResultPersistPayloadJson()) },
+                        exportSmokeEvidence = { onStartBridgeOperation("smoke.result.export", viewModel.smokeResultExportPayloadJson()) },
+                        createSmokeFailureBundle = { onStartBridgeOperation("smoke.failure.bundle", viewModel.smokeFailureBundlePayloadJson()) },
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -285,6 +293,10 @@ private fun AppContent(
     previewSmokePlan: () -> Unit,
     startSmokeRun: () -> Unit,
     refreshSmokeReport: () -> Unit,
+    refreshSmokeLastResult: () -> Unit,
+    persistSmokeResult: () -> Unit,
+    exportSmokeEvidence: () -> Unit,
+    createSmokeFailureBundle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -388,6 +400,10 @@ private fun AppContent(
                 onPreviewSmokePlan = previewSmokePlan,
                 onStartSmokeRun = startSmokeRun,
                 onRefreshSmokeReport = refreshSmokeReport,
+                onRefreshSmokeLastResult = refreshSmokeLastResult,
+                onPersistSmokeResult = persistSmokeResult,
+                onExportSmokeEvidence = exportSmokeEvidence,
+                onCreateSmokeFailureBundle = createSmokeFailureBundle,
             )
         }
     }

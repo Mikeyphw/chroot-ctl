@@ -774,6 +774,21 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
+    fun refreshSmokeLastResult() {
+        viewModelScope.launch {
+            debugPane.value = debugPane.value.copy(refreshing = true, errorMessage = null)
+            repository.refreshSmokeLastResult()
+                .onSuccess { preview -> debugPane.value = debugPane.value.copy(smokeLastResult = preview, refreshing = false, errorMessage = null) }
+                .onFailure { error -> debugPane.value = debugPane.value.copy(smokeLastResult = errorPreview("Last smoke result", error), refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun smokeResultPersistPayloadJson(): String = JSONObject().put("format", "json").toString()
+
+    fun smokeResultExportPayloadJson(): String = JSONObject().put("format", "json").toString()
+
+    fun smokeFailureBundlePayloadJson(): String = JSONObject().put("includeSmokeEvidence", true).toString()
+
     override fun onCleared() {
         repository.close()
         super.onCleared()

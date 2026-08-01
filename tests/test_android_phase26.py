@@ -27,5 +27,5 @@ def test_phase26_sdk_and_smoke_continuity() -> None:
     registry = read("src/chrootctl/bridge/registry.py")
     assert 'compileSdk = 36' in build
     assert 'targetSdk = 36' in build
-    assert 'versionName = "0.1.0-phase26"' in build
+    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(26, 28))
     assert "smoke.run" in registry

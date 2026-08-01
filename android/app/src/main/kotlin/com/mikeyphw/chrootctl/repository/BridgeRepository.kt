@@ -370,6 +370,11 @@ class BridgeRepository(
         data.toPreviewSummary("Real-device smoke report")
     }
 
+    suspend fun refreshSmokeLastResult(): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("smoke.last_result").toJson())).requireData()
+        data.toPreviewSummary("Last smoke result")
+    }
+
     suspend fun startBridgeOperation(
         operation: String,
         payload: JSONObject,

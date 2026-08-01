@@ -85,6 +85,10 @@ fun ToolsScreen(
     onPreviewSmokePlan: () -> Unit,
     onStartSmokeRun: () -> Unit,
     onRefreshSmokeReport: () -> Unit,
+    onRefreshSmokeLastResult: () -> Unit,
+    onPersistSmokeResult: () -> Unit,
+    onExportSmokeEvidence: () -> Unit,
+    onCreateSmokeFailureBundle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -142,6 +146,10 @@ fun ToolsScreen(
             onPreviewSmokePlan = onPreviewSmokePlan,
             onStartSmokeRun = onStartSmokeRun,
             onRefreshSmokeReport = onRefreshSmokeReport,
+            onRefreshSmokeLastResult = onRefreshSmokeLastResult,
+            onPersistSmokeResult = onPersistSmokeResult,
+            onExportSmokeEvidence = onExportSmokeEvidence,
+            onCreateSmokeFailureBundle = onCreateSmokeFailureBundle,
         )
         if (groups.isEmpty()) {
             EmptyState(
@@ -383,6 +391,10 @@ private fun DebugWorkbenchCard(
     onPreviewSmokePlan: () -> Unit,
     onStartSmokeRun: () -> Unit,
     onRefreshSmokeReport: () -> Unit,
+    onRefreshSmokeLastResult: () -> Unit,
+    onPersistSmokeResult: () -> Unit,
+    onExportSmokeEvidence: () -> Unit,
+    onCreateSmokeFailureBundle: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -404,8 +416,17 @@ private fun DebugWorkbenchCard(
                 Button(onClick = onStartSmokeRun) { Text(stringResource(R.string.smoke_run_action)) }
                 Button(onClick = onRefreshSmokeReport) { Text(stringResource(R.string.smoke_report_action)) }
             }
+            Text(stringResource(R.string.smoke_handoff_title), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.smoke_handoff_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onRefreshSmokeLastResult) { Text(stringResource(R.string.smoke_last_result_action)) }
+                Button(onClick = onPersistSmokeResult) { Text(stringResource(R.string.smoke_persist_action)) }
+                Button(onClick = onExportSmokeEvidence) { Text(stringResource(R.string.smoke_export_action)) }
+                Button(onClick = onCreateSmokeFailureBundle) { Text(stringResource(R.string.smoke_failure_bundle_action)) }
+            }
             pane.smokePlan?.let { PreviewBlock(it) }
             pane.smokeReport?.let { PreviewBlock(it) }
+            pane.smokeLastResult?.let { PreviewBlock(it) }
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(stringResource(R.string.debug_probes_title), fontWeight = FontWeight.SemiBold)
             if (pane.probes.isEmpty()) {

@@ -53,7 +53,7 @@ def test_android_release_hardening_guardrails() -> None:
     kotlin = kotlin_sources()
     assert "compileSdk = 36" in build
     assert "targetSdk = 36" in build
-    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(22, 27))
+    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(22, 28))
     assert "warningsAsErrors = true" in build
     assert "android.permission.FOREGROUND_SERVICE_DATA_SYNC" in manifest
     assert 'android:foregroundServiceType="dataSync"' in manifest

@@ -1208,6 +1208,81 @@ def _smoke_run(services: ServiceContainer, payload: dict[str, Any], progress: Ca
     }
 
 
+
+def _latest_smoke_record(services: ServiceContainer, limit: int = 25) -> dict[str, Any] | None:
+    from ..operations import OperationManager
+
+    manager = OperationManager(services.base_config.database_path.parent / "operations")
+    recent = [record.to_dict() for record in manager.list_recent(limit=limit)]
+    for record in recent:
+        if str(record.get("kind") or "") == "smoke.run":
+            return record
+    return None
+
+
+def _smoke_result_payload(services: ServiceContainer, payload: dict[str, Any]) -> dict[str, Any]:
+    latest = _latest_smoke_record(services, limit=int(payload.get("limit", 25)))
+    failed = latest is not None and str(latest.get("state") or "").lower() in {"failed", "interrupted", "blocked"}
+    return {
+        "ok": latest is not None,
+        "kind": "smoke.last_result",
+        "latest": latest,
+        "failed": failed,
+        "exportRecommended": latest is not None,
+        "supportBundleRecommended": failed,
+        "blocking": [] if latest is not None else [{"code": "no_smoke_run", "message": "No smoke.run operation has been recorded yet."}],
+        "warnings": ["Create a smoke failure support bundle before changing the device state."] if failed else [],
+    }
+
+
+def _smoke_last_result(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    return _smoke_result_payload(services, payload)
+
+
+def _write_smoke_result_artifact(services: ServiceContainer, payload: dict[str, Any], suffix: str) -> Path:
+    import json
+
+    target = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive(f"chrootctl-smoke-{suffix}", "json")))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = _smoke_result_payload(services, payload)
+    if data.get("latest") is None:
+        raise BridgeProtocolError("NO_SMOKE_RESULT", "No smoke.run operation has been recorded yet")
+    target.write_text(json.dumps(serialize_value(data), indent=2, sort_keys=True), encoding="utf-8")
+    return target
+
+
+def _smoke_result_persist(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    progress({"phase": "collect", "percent": 15, "message": "Collecting latest smoke result"})
+    if cancelled():
+        raise OperationCancelled("Smoke result persistence was cancelled")
+    artifact = _write_smoke_result_artifact(services, payload, "result")
+    progress({"phase": "complete", "percent": 100, "message": "Smoke result artifact persisted"})
+    return {"ok": True, "kind": "smoke.result.persist", "artifact": str(artifact), "latest": _smoke_result_payload(services, payload).get("latest")}
+
+
+def _smoke_result_export(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    progress({"phase": "collect", "percent": 15, "message": "Collecting latest smoke result for export"})
+    if cancelled():
+        raise OperationCancelled("Smoke evidence export was cancelled")
+    artifact = _write_smoke_result_artifact(services, payload, "evidence")
+    progress({"phase": "complete", "percent": 100, "message": "Smoke evidence export ready"})
+    return {"ok": True, "kind": "smoke.result.export", "artifact": str(artifact), "latest": _smoke_result_payload(services, payload).get("latest")}
+
+
+def _smoke_failure_bundle(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    latest = _smoke_result_payload(services, payload)
+    if latest.get("latest") is None:
+        raise BridgeProtocolError("NO_SMOKE_RESULT", "No smoke.run operation has been recorded yet")
+    progress({"phase": "smoke-evidence", "percent": 10, "message": "Persisting smoke evidence"})
+    evidence = _write_smoke_result_artifact(services, payload, "failure-evidence")
+    if cancelled():
+        raise OperationCancelled("Smoke failure bundle was cancelled")
+    bundle_payload = dict(payload)
+    bundle_payload.setdefault("archive", str(_managed_transfer_archive("chrootctl-smoke-failure-bundle", "tar.gz")))
+    bundle = _support_bundle(services, bundle_payload, progress, cancelled)
+    progress({"phase": "complete", "percent": 100, "message": "Smoke failure support bundle ready"})
+    return {"ok": True, "kind": "smoke.failure.bundle", "evidence": str(evidence), "supportBundle": serialize_value(bundle), "latest": latest.get("latest")}
+
 def _release_readiness(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     del payload
     config = services.base_config
@@ -1218,6 +1293,7 @@ def _release_readiness(services: ServiceContainer, payload: dict[str, Any]) -> A
         {"id": "operation_journal", "label": "Operation journal", "status": "pass" if (config.database_path.parent / "operations").exists() else "warn", "detail": str(config.database_path.parent / "operations")},
         {"id": "transfer_staging", "label": "Transfer staging", "status": "pass" if _managed_transfer_archive("readiness").parent.exists() else "warn", "detail": str(_managed_transfer_archive("readiness").parent)},
         {"id": "debug_smoke", "label": "Smoke suite", "status": "pass", "detail": "smoke.plan, smoke.run and smoke.report are available."},
+        {"id": "smoke_handoff", "label": "Smoke handoff", "status": "pass", "detail": "smoke.last_result, smoke.result.export and smoke.failure.bundle are registered."},
     ]
     return {
         "ok": not any(item["status"] == "fail" for item in checks),
@@ -1281,9 +1357,13 @@ _SPECS = (
     OperationSpec("debug.timeline", "query", "Return debug audit timeline", query_handler=_debug_timeline),
     OperationSpec("smoke.plan", "query", "Return real-device smoke suite plan", query_handler=_smoke_plan),
     OperationSpec("smoke.report", "query", "Return latest real-device smoke operation report", query_handler=_smoke_report),
+    OperationSpec("smoke.last_result", "query", "Return latest smoke result and support handoff guidance", query_handler=_smoke_last_result),
     OperationSpec("release.readiness", "query", "Return native release readiness checklist", query_handler=_release_readiness),
     OperationSpec("system.refresh", "operation", "Persist and stream a complete read-only refresh", operation_handler=_refresh),
     OperationSpec("smoke.run", "operation", "Run real-device read-only operational smoke suite", lock_scope="global", operation_handler=_smoke_run),
+    OperationSpec("smoke.result.persist", "operation", "Persist latest smoke result into a managed JSON artifact", lock_scope="global", operation_handler=_smoke_result_persist),
+    OperationSpec("smoke.result.export", "operation", "Export latest smoke result evidence into a managed JSON artifact", lock_scope="global", operation_handler=_smoke_result_export),
+    OperationSpec("smoke.failure.bundle", "operation", "Create support bundle linked to the latest smoke failure", lock_scope="global", operation_handler=_smoke_failure_bundle),
     OperationSpec("install.run", "operation", "Run the native install flow", lock_scope="global", operation_handler=_install_run),
     OperationSpec("chroots.start", "operation", "Start a chroot session", lock_scope="target", operation_handler=_start_chroot),
     OperationSpec("chroots.restart", "operation", "Restart a chroot session", lock_scope="target", operation_handler=_restart_chroot),
