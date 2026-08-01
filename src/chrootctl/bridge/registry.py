@@ -73,6 +73,27 @@ def _export_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     return services.chroots().export_preview(_required_name(payload), archive=Path(str(archive)) if archive else None)
 
 
+
+
+def _operations_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    from ..operations import OperationManager
+
+    target = str(payload.get("name") or "").strip() or None
+    limit = int(payload.get("limit", 50))
+    manager = OperationManager(services.base_config.database_path.parent / "operations")
+    return [record.to_dict() for record in manager.list_recent(limit=limit, target_name=target)]
+
+
+def _operations_get(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    from ..operations import OperationManager
+
+    operation_id = str(payload.get("operationId") or payload.get("operation_id") or payload.get("id") or "").strip()
+    if not operation_id:
+        raise BridgeProtocolError("MISSING_OPERATION_ID", "payload.operationId is required")
+    manager = OperationManager(services.base_config.database_path.parent / "operations")
+    return manager.get(operation_id).to_dict()
+
+
 def _refresh(
     services: ServiceContainer,
     payload: dict[str, Any],
@@ -98,6 +119,8 @@ _SPECS = (
     OperationSpec("system.doctor", "query", "Return doctor checks for one chroot", query_handler=_doctor),
     OperationSpec("chroots.list", "query", "List registered chroots", query_handler=_chroots_list),
     OperationSpec("chroots.get", "query", "Return one registered chroot", query_handler=_chroots_get),
+    OperationSpec("operations.list", "query", "List persistent operation records", query_handler=_operations_list),
+    OperationSpec("operations.get", "query", "Return one persistent operation with events", query_handler=_operations_get),
     OperationSpec(
         "chroots.remove",
         "preview",

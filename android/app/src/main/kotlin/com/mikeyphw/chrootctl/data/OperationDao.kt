@@ -17,6 +17,12 @@ interface OperationDao {
     @Query("SELECT * FROM operations ORDER BY createdAt DESC LIMIT :limit")
     fun observeRecent(limit: Int = 50): Flow<List<OperationEntity>>
 
+    @Query("SELECT * FROM operations WHERE operationId = :operationId LIMIT 1")
+    fun observeById(operationId: String): Flow<OperationEntity?>
+
+    @Query("SELECT * FROM operations WHERE operationId = :operationId LIMIT 1")
+    suspend fun findById(operationId: String): OperationEntity?
+
     @Query("SELECT * FROM operation_events WHERE operationId = :operationId ORDER BY timestamp ASC, id ASC")
     fun observeEvents(operationId: String): Flow<List<OperationEventEntity>>
 }

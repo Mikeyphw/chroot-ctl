@@ -1,17 +1,14 @@
 package com.mikeyphw.chrootctl.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -24,23 +21,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-
-private enum class Destination(val label: String, val glyph: String) {
-    Home("Home", "⌂"),
-    Chroots("Chroots", "▣"),
-    Activity("Activity", "↻"),
-    Tools("Tools", "⌘"),
-}
+import com.mikeyphw.chrootctl.ui.activity.ActivityScreen
+import com.mikeyphw.chrootctl.ui.chroots.ChrootsScreen
+import com.mikeyphw.chrootctl.ui.home.HomeScreen
+import com.mikeyphw.chrootctl.ui.tools.ToolsScreen
 
 @Composable
-fun ChrootCtlApp(viewModel: MainViewModel) {
-    val bridgeState by viewModel.bridgeState.collectAsStateWithLifecycle()
-    var destination by remember { mutableStateOf(Destination.Home) }
+fun ChrootCtlApp(viewModel: MainViewModel, onStartRefreshOperation: () -> Unit) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var destination by remember { mutableStateOf(AppDestination.Home) }
 
     ChrootCtlTheme {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -48,33 +41,55 @@ fun ChrootCtlApp(viewModel: MainViewModel) {
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
                     NavigationRail {
-                        Destination.entries.forEach { item ->
+                        AppDestination.entries.forEach { item ->
                             NavigationRailItem(
                                 selected = item == destination,
                                 onClick = { destination = item },
-                                icon = { Text(item.glyph) },
-                                label = { Text(item.label) },
+                                icon = { Text(stringResource(item.glyphRes)) },
+                                label = { Text(stringResource(item.labelRes)) },
                             )
                         }
                     }
-                    AppContent(destination, bridgeState, viewModel::refresh, Modifier.weight(1f))
+                    AppContent(
+                        destination = destination,
+                        state = uiState,
+                        refresh = viewModel::refresh,
+                        startRefreshOperation = onStartRefreshOperation,
+                        openActivity = { destination = AppDestination.Activity },
+                        selectChroot = viewModel::selectChroot,
+                        refreshSelectedChroot = viewModel::refreshSelectedChroot,
+                        selectOperation = viewModel::selectOperation,
+                        refreshSelectedOperation = viewModel::refreshSelectedOperation,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             } else {
                 Scaffold(
                     bottomBar = {
                         NavigationBar {
-                            Destination.entries.forEach { item ->
+                            AppDestination.entries.forEach { item ->
                                 NavigationBarItem(
                                     selected = item == destination,
                                     onClick = { destination = item },
-                                    icon = { Text(item.glyph) },
-                                    label = { Text(item.label) },
+                                    icon = { Text(stringResource(item.glyphRes)) },
+                                    label = { Text(stringResource(item.labelRes)) },
                                 )
                             }
                         }
                     },
                 ) { padding ->
-                    AppContent(destination, bridgeState, viewModel::refresh, Modifier.padding(padding))
+                    AppContent(
+                        destination = destination,
+                        state = uiState,
+                        refresh = viewModel::refresh,
+                        startRefreshOperation = onStartRefreshOperation,
+                        openActivity = { destination = AppDestination.Activity },
+                        selectChroot = viewModel::selectChroot,
+                        refreshSelectedChroot = viewModel::refreshSelectedChroot,
+                        selectOperation = viewModel::selectOperation,
+                        refreshSelectedOperation = viewModel::refreshSelectedOperation,
+                        modifier = Modifier.padding(padding),
+                    )
                 }
             }
         }
@@ -83,68 +98,45 @@ fun ChrootCtlApp(viewModel: MainViewModel) {
 
 @Composable
 private fun AppContent(
-    destination: Destination,
-    bridgeState: BridgeUiState,
+    destination: AppDestination,
+    state: MainUiState,
     refresh: () -> Unit,
+    startRefreshOperation: () -> Unit,
+    openActivity: () -> Unit,
+    selectChroot: (String) -> Unit,
+    refreshSelectedChroot: () -> Unit,
+    selectOperation: (String) -> Unit,
+    refreshSelectedOperation: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
     ) {
-        Text(destination.label, style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(destination.labelRes), style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(16.dp))
         when (destination) {
-            Destination.Home -> HomeScreen(bridgeState, refresh)
-            Destination.Chroots -> FoundationScreen("Registered chroots will appear here after the read-only repository phase.")
-            Destination.Activity -> FoundationScreen("Persistent operation records and NDJSON timelines are ready for the Activity UI.")
-            Destination.Tools -> FoundationScreen("Diagnostics, recovery, transfer and module tools will be added through the same fixed bridge.")
-        }
-    }
-}
-
-@Composable
-private fun HomeScreen(state: BridgeUiState, refresh: () -> Unit) {
-    when (state) {
-        BridgeUiState.Loading -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(12.dp))
-            Text("Checking root and chrootctl runtime")
-        }
-        is BridgeUiState.Blocked -> StatusCard(
-            title = "Backend unavailable",
-            body = state.message,
-            footer = { Button(onClick = refresh) { Text("Retry") } },
-        )
-        is BridgeUiState.Ready -> {
-            StatusCard(
-                title = "Root bridge ready",
-                body = "UID ${state.info.uid} · ${state.info.backend} · protocol ${state.capabilities.protocolVersion}",
+            AppDestination.Home -> HomeScreen(
+                state = state.home,
+                refreshState = state.refreshState,
+                onRefresh = refresh,
+                onStartRefreshOperation = startRefreshOperation,
+                onOpenActivity = openActivity,
             )
-            StatusCard(
-                title = "Backend ${state.capabilities.backendVersion}",
-                body = "${state.capabilities.operations.size} allowlisted capabilities. Arbitrary shell: disabled.",
-                footer = { Button(onClick = refresh) { Text("Refresh") } },
+            AppDestination.Chroots -> ChrootsScreen(
+                chroots = state.chroots,
+                selectedName = state.selectedChrootName,
+                detail = state.chrootDetail,
+                onSelect = selectChroot,
+                onRefreshDetail = refreshSelectedChroot,
             )
-        }
-    }
-}
-
-@Composable
-private fun FoundationScreen(message: String) {
-    StatusCard(title = "Foundation phase", body = message)
-}
-
-@Composable
-private fun StatusCard(
-    title: String,
-    body: String,
-    footer: (@Composable () -> Unit)? = null,
-) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
-            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            footer?.invoke()
+            AppDestination.Activity -> ActivityScreen(
+                operations = state.operations,
+                selectedOperationId = state.selectedOperationId,
+                detail = state.operationDetail,
+                onSelect = selectOperation,
+                onRefreshDetail = refreshSelectedOperation,
+            )
+            AppDestination.Tools -> ToolsScreen(state.toolGroups)
         }
     }
 }
