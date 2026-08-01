@@ -16,6 +16,9 @@ import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.ToolCapabilityGroup
 import com.mikeyphw.chrootctl.model.UsersPane
 import com.mikeyphw.chrootctl.model.ServicesPane
+import com.mikeyphw.chrootctl.model.TransferPane
+import com.mikeyphw.chrootctl.model.PackagePane
+import com.mikeyphw.chrootctl.model.CatalogPane
 import com.mikeyphw.chrootctl.repository.BridgeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,6 +52,9 @@ data class MainUiState(
     val snapshotPane: SnapshotPane = SnapshotPane(),
     val usersPane: UsersPane = UsersPane(),
     val servicesPane: ServicesPane = ServicesPane(),
+    val catalogPane: CatalogPane = CatalogPane(),
+    val packagePane: PackagePane = PackagePane(),
+    val transferPane: TransferPane = TransferPane(),
     val refreshState: RefreshState = RefreshState.Idle,
 )
 
@@ -81,6 +87,12 @@ private data class ChrootManagementSlice(
     val servicesPane: ServicesPane,
 )
 
+private data class ToolsUiSlice(
+    val catalogPane: CatalogPane,
+    val packagePane: PackagePane,
+    val transferPane: TransferPane,
+)
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
@@ -96,6 +108,9 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val snapshotPane = MutableStateFlow(SnapshotPane())
     private val usersPane = MutableStateFlow(UsersPane())
     private val servicesPane = MutableStateFlow(ServicesPane())
+    private val catalogPane = MutableStateFlow(CatalogPane())
+    private val packagePane = MutableStateFlow(PackagePane())
+    private val transferPane = MutableStateFlow(TransferPane())
 
     private val selectedChrootDetail = combine(
         repository.chroots,
@@ -179,12 +194,21 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         ChrootManagementSlice(usersPane = users, servicesPane = services)
     }
 
+    private val toolsUiSlice = combine(
+        catalogPane.asStateFlow(),
+        packagePane.asStateFlow(),
+        transferPane.asStateFlow(),
+    ) { catalog, packages, transfer ->
+        ToolsUiSlice(catalogPane = catalog, packagePane = packages, transferPane = transfer)
+    }
+
     val uiState: StateFlow<MainUiState> = combine(
         primaryUiSlice,
         secondaryUiSlice,
         tertiaryUiSlice,
         chrootManagementSlice,
-    ) { primary, secondary, tertiary, management ->
+        toolsUiSlice,
+    ) { primary, secondary, tertiary, management, tools ->
         MainUiState(
             home = primary.home,
             chroots = primary.chroots,
@@ -201,6 +225,9 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             snapshotPane = tertiary.snapshotPane,
             usersPane = management.usersPane,
             servicesPane = management.servicesPane,
+            catalogPane = tools.catalogPane,
+            packagePane = tools.packagePane,
+            transferPane = tools.transferPane,
             refreshState = secondary.refreshState,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MainUiState())
@@ -208,6 +235,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     init {
         refresh()
         refreshInstallForm()
+        refreshCatalog("tool")
+        refreshTransferArtifacts()
     }
 
     fun refresh() {
@@ -483,6 +512,152 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("name", name)
         .put("service", service)
         .put("action", action)
+        .toString()
+
+
+
+    fun refreshCatalog(kind: String = catalogPane.value.kind) {
+        viewModelScope.launch {
+            val current = catalogPane.value.copy(kind = kind, refreshing = true, errorMessage = null)
+            catalogPane.value = current
+            repository.refreshCatalog(kind, current.targetName, current.query, current.category)
+                .onSuccess { (entries, categories) ->
+                    val selected = current.entries.filter { it.selected }.map { it.name }.toSet()
+                    catalogPane.value = current.copy(
+                        entries = entries.map { entry -> entry.copy(selected = entry.name in selected) },
+                        categories = categories,
+                        refreshing = false,
+                        errorMessage = null,
+                    )
+                }
+                .onFailure { error -> catalogPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun setCatalogTarget(name: String) {
+        catalogPane.value = catalogPane.value.copy(targetName = name)
+        refreshCatalog()
+    }
+
+    fun setCatalogQuery(query: String) {
+        catalogPane.value = catalogPane.value.copy(query = query)
+    }
+
+    fun setCatalogCategory(category: String) {
+        catalogPane.value = catalogPane.value.copy(category = category)
+        refreshCatalog()
+    }
+
+    fun toggleCatalogEntry(entryName: String) {
+        catalogPane.value = catalogPane.value.copy(
+            entries = catalogPane.value.entries.map { entry -> if (entry.name == entryName) entry.copy(selected = !entry.selected) else entry },
+            preview = null,
+        )
+    }
+
+    fun previewCatalogApply() {
+        viewModelScope.launch {
+            val current = catalogPane.value
+            val target = current.targetName.orEmpty()
+            val names = current.entries.filter { it.selected }.map { it.name }
+            repository.previewCatalog(current.kind, target, names)
+                .onSuccess { preview -> catalogPane.value = current.copy(preview = preview) }
+                .onFailure { error -> catalogPane.value = current.copy(preview = errorPreview("Catalog preview", error)) }
+        }
+    }
+
+    fun catalogApplyPayloadJson(): String {
+        val current = catalogPane.value
+        return JSONObject()
+            .put("kind", current.kind)
+            .put("name", current.targetName.orEmpty())
+            .put("names", org.json.JSONArray(current.entries.filter { it.selected }.map { it.name }))
+            .toString()
+    }
+
+    fun refreshPackageInventory(name: String) {
+        viewModelScope.launch {
+            packagePane.value = packagePane.value.copy(leftName = name, refreshing = true, errorMessage = null)
+            repository.refreshPackageInventory(name)
+                .onSuccess { inventory -> packagePane.value = packagePane.value.copy(leftName = name, inventory = inventory, refreshing = false, errorMessage = null) }
+                .onFailure { error -> packagePane.value = packagePane.value.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun updatePackageCompare(left: String, right: String) {
+        packagePane.value = packagePane.value.copy(leftName = left, rightName = right)
+    }
+
+    fun comparePackages() {
+        viewModelScope.launch {
+            val current = packagePane.value.copy(refreshing = true, errorMessage = null)
+            packagePane.value = current
+            repository.comparePackages(current.leftName, current.rightName)
+                .onSuccess { comparison -> packagePane.value = current.copy(comparison = comparison, refreshing = false, errorMessage = null) }
+                .onFailure { error -> packagePane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun updateTransferImportArchive(path: String) {
+        transferPane.value = transferPane.value.copy(importArchive = path, errorMessage = null)
+    }
+
+    fun updateTransferImportTarget(name: String) {
+        transferPane.value = transferPane.value.copy(importTargetName = name)
+    }
+
+    fun updateTransferExportTarget(name: String) {
+        transferPane.value = transferPane.value.copy(exportTargetName = name)
+    }
+
+    fun updateTransferExportArchive(path: String) {
+        transferPane.value = transferPane.value.copy(exportArchive = path)
+    }
+
+    fun inspectTransferImport() {
+        viewModelScope.launch {
+            val current = transferPane.value.copy(refreshing = true, errorMessage = null)
+            transferPane.value = current
+            repository.inspectTransferImport(current.importArchive)
+                .onSuccess { preview -> transferPane.value = current.copy(importInspection = preview, refreshing = false, errorMessage = null) }
+                .onFailure { error -> transferPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun previewTransferExport() {
+        viewModelScope.launch {
+            val current = transferPane.value.copy(refreshing = true, errorMessage = null)
+            transferPane.value = current
+            repository.previewTransferExport(current.exportTargetName, current.exportArchive)
+                .onSuccess { preview -> transferPane.value = current.copy(exportPreview = preview, refreshing = false, errorMessage = null) }
+                .onFailure { error -> transferPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun refreshTransferArtifacts() {
+        viewModelScope.launch {
+            val current = transferPane.value.copy(refreshing = true, errorMessage = null)
+            transferPane.value = current
+            repository.refreshTransferArtifacts()
+                .onSuccess { artifacts -> transferPane.value = current.copy(artifacts = artifacts, refreshing = false, errorMessage = null) }
+                .onFailure { error -> transferPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun transferImportPayloadJson(): String = JSONObject()
+        .put("archive", transferPane.value.importArchive)
+        .put("name", transferPane.value.importTargetName.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+        .put("conflict", transferPane.value.conflict)
+        .toString()
+
+    fun transferExportPayloadJson(): String = JSONObject()
+        .put("name", transferPane.value.exportTargetName)
+        .put("archive", transferPane.value.exportArchive.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+        .toString()
+
+    fun artifactCleanupPayloadJson(path: String? = null, deleteAll: Boolean = false): String = JSONObject()
+        .put("path", path ?: JSONObject.NULL)
+        .put("deleteAll", deleteAll)
         .toString()
 
     override fun onCleared() {

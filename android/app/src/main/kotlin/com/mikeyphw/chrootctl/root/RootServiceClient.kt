@@ -31,6 +31,8 @@ class RootServiceClient(private val context: Context) {
     suspend fun preview(requestJson: String): String = call { it.preview(requestJson) }
     suspend fun operationState(operationId: String): String = call { it.operationState(operationId) }
     suspend fun cancelOperation(operationId: String): String = call { it.cancelOperation(operationId) }
+    suspend fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String = call(TRANSFER_TIMEOUT_MS) { it.transferFromDescriptor(requestJson, input) }
+    suspend fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String = call(TRANSFER_TIMEOUT_MS) { it.transferToDescriptor(requestJson, output) }
 
     suspend fun streamOperation(requestJson: String, onEvent: suspend (String) -> Unit): String {
         val pipe = ParcelFileDescriptor.createPipe()
@@ -118,5 +120,6 @@ class RootServiceClient(private val context: Context) {
         const val BIND_TIMEOUT_MS = 15_000L
         const val CALL_TIMEOUT_MS = 30_000L
         const val START_TIMEOUT_MS = 10_000L
+        const val TRANSFER_TIMEOUT_MS = 120_000L
     }
 }

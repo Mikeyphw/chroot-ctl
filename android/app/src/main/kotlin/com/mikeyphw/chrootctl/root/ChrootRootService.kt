@@ -7,6 +7,9 @@ import android.os.Process
 import android.system.Os
 import com.topjohnwu.superuser.ipc.RootService
 import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
@@ -91,6 +94,31 @@ class ChrootRootService : RootService() {
         override fun operationState(operationId: String): String = invokeBridge(listOf("operation", operationId))
 
         override fun cancelOperation(operationId: String): String = invokeBridge(listOf("cancel", operationId))
+
+        override fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String = runCatching {
+            val request = JSONObject(requestJson)
+            val payload = request.optJSONObject("payload") ?: JSONObject()
+            val filename = safeFileName(payload.optString("filename", "import.tar.zst"))
+            val target = transferDirectory().resolve(filename)
+            ParcelFileDescriptor.AutoCloseInputStream(input).use { source ->
+                FileOutputStream(target).use { destination -> source.copyTo(destination) }
+            }
+            envelope(request.optString("requestId", "unknown"), JSONObject().put("path", target.path).put("archive", target.path).put("filename", target.name))
+        }.getOrElse { error -> failure("TRANSFER_STAGE_FAILED", error.message ?: error.javaClass.simpleName) }
+
+        override fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String = runCatching {
+            val request = JSONObject(requestJson)
+            val payload = request.optJSONObject("payload") ?: JSONObject()
+            val path = payload.optString("path", payload.optString("archive", ""))
+            val source = File(path)
+            val root = transferDirectory().canonicalFile
+            val resolved = source.canonicalFile
+            check(resolved.path.startsWith(root.path)) { "Only managed transfer artifacts can be copied to a document" }
+            FileInputStream(resolved).use { input ->
+                ParcelFileDescriptor.AutoCloseOutputStream(output).use { destination -> input.copyTo(destination) }
+            }
+            envelope(request.optString("requestId", "unknown"), JSONObject().put("path", resolved.path).put("bytes", resolved.length()))
+        }.getOrElse { error -> failure("TRANSFER_COPY_FAILED", error.message ?: error.javaClass.simpleName) }
     }
 
     override fun onBind(intent: Intent): IBinder = binder
@@ -107,6 +135,28 @@ class ChrootRootService : RootService() {
             else failure("EMPTY_BRIDGE_RESPONSE", "Bridge exited with code ${result.exitCode} without output")
         } }.getOrElse { error -> failure("BRIDGE_PROCESS_FAILED", error.message ?: error.javaClass.simpleName) }
     }
+
+    private fun transferDirectory(): File {
+        val root = File(File(File.separator, "data"), "local/tmp")
+        return File(root, "chrootctl-transfer").also { it.mkdirs() }
+    }
+
+    private fun safeFileName(raw: String): String = raw
+        .ifBlank { "archive.tar.zst" }
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        .ifBlank { "archive.tar.zst" }
+
+    private fun envelope(requestId: String, data: JSONObject): String = JSONObject()
+        .put("protocolVersion", 1)
+        .put("requestId", requestId)
+        .put("ok", true)
+        .put("data", data)
+        .put("error", JSONObject.NULL)
+        .put("warnings", org.json.JSONArray())
+        .put("nextSteps", org.json.JSONArray())
+        .toString()
 
     private fun failure(code: String, message: String): String = JSONObject()
         .put("protocolVersion", 1)

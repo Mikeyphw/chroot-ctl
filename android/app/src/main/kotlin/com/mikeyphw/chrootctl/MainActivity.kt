@@ -1,19 +1,33 @@
 package com.mikeyphw.chrootctl
 
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import com.mikeyphw.chrootctl.operations.ChrootOperationService
 import com.mikeyphw.chrootctl.ui.ChrootCtlApp
 import com.mikeyphw.chrootctl.ui.MainViewModel
 import com.mikeyphw.chrootctl.ui.MainViewModelFactory
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels {
         val app = application as ChrootCtlApplication
         MainViewModelFactory(app.container.bridgeRepository)
+    }
+
+    private val pickImportArchive = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(::stageImportArchive)
+    }
+
+    private val createExportDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        uri?.let(::copyManagedArtifactToDocument)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,7 +40,81 @@ class MainActivity : ComponentActivity() {
                 onStartBridgeOperation = { operation, payloadJson ->
                     ChrootOperationService.startBridgeOperation(this, operation, payloadJson)
                 },
+                onPickImportArchive = {
+                    pickImportArchive.launch(
+                        arrayOf(
+                            "application/octet-stream",
+                            "application/gzip",
+                            "application/x-tar",
+                            "application/zstd",
+                        ),
+                    )
+                },
+                onCreateExportDocument = {
+                    createExportDocument.launch(defaultExportFileName())
+                },
             )
+        }
+    }
+
+    private fun stageImportArchive(uri: Uri) {
+        val filename = displayName(uri)
+        lifecycleScope.launch {
+            val repository = (application as ChrootCtlApplication).container.bridgeRepository
+            val descriptor = contentResolver.openFileDescriptor(uri, "r")
+            if (descriptor == null) {
+                Toast.makeText(this@MainActivity, getString(R.string.transfer_document_open_failed), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            descriptor.use { owned ->
+                repository.stageImportArchive(filename, owned)
+                    .onSuccess { path ->
+                        viewModel.updateTransferImportArchive(path)
+                        viewModel.inspectTransferImport()
+                    }
+                    .onFailure { error -> Toast.makeText(this@MainActivity, error.message ?: getString(R.string.transfer_document_open_failed), Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    private fun copyManagedArtifactToDocument(uri: Uri) {
+        val path = viewModel.uiState.value.transferPane.exportArchive
+            .takeIf(String::isNotBlank)
+            ?: viewModel.uiState.value.transferPane.artifacts.firstOrNull()?.path.orEmpty()
+        if (path.isBlank()) {
+            Toast.makeText(this, getString(R.string.transfer_no_export_artifact), Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            val repository = (application as ChrootCtlApplication).container.bridgeRepository
+            val descriptor = contentResolver.openFileDescriptor(uri, "w")
+            if (descriptor == null) {
+                Toast.makeText(this@MainActivity, getString(R.string.transfer_document_open_failed), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            descriptor.use { owned ->
+                repository.copyManagedArtifactToDocument(path, owned)
+                    .onSuccess { Toast.makeText(this@MainActivity, getString(R.string.transfer_document_saved), Toast.LENGTH_SHORT).show() }
+                    .onFailure { error -> Toast.makeText(this@MainActivity, error.message ?: getString(R.string.transfer_document_open_failed), Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    private fun displayName(uri: Uri): String {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) return cursor.getString(index)
+            }
+        }
+        return uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: getString(R.string.transfer_default_archive_name)
+    }
+
+    private fun defaultExportFileName(): String {
+        val pane = viewModel.uiState.value.transferPane
+        return pane.exportArchive.substringAfterLast('/').ifBlank {
+            val target = pane.exportTargetName.ifBlank { getString(R.string.transfer_default_chroot_name) }
+            "$target.tar.zst"
         }
     }
 }

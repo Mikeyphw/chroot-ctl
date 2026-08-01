@@ -185,3 +185,70 @@ data class ServicesPane(
     val errorMessage: String? = null,
     val preview: PreviewSummary? = null,
 )
+
+data class CatalogEntrySummary(
+    val kind: String,
+    val name: String,
+    val description: String,
+    val distros: List<String>,
+    val categories: List<String>,
+    val selected: Boolean = false,
+)
+
+data class CatalogPane(
+    val targetName: String? = null,
+    val kind: String = "tool",
+    val query: String = "",
+    val category: String = "",
+    val entries: List<CatalogEntrySummary> = emptyList(),
+    val categories: List<String> = emptyList(),
+    val preview: PreviewSummary? = null,
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+)
+
+data class PackageInventorySummary(
+    val name: String,
+    val count: Int,
+    val packages: List<String>,
+    val truncated: Boolean,
+)
+
+data class PackageCompareSummary(
+    val left: String,
+    val right: String,
+    val leftCount: Int,
+    val rightCount: Int,
+    val commonCount: Int,
+    val onlyLeft: List<String>,
+    val onlyRight: List<String>,
+)
+
+data class PackagePane(
+    val leftName: String = "",
+    val rightName: String = "",
+    val inventory: PackageInventorySummary? = null,
+    val comparison: PackageCompareSummary? = null,
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+)
+
+data class TransferArtifactSummary(
+    val name: String,
+    val path: String,
+    val sizeBytes: Long,
+    val modifiedAt: String,
+)
+
+data class TransferPane(
+    val importArchive: String = "",
+    val importTargetName: String = "",
+    val exportTargetName: String = "",
+    val exportArchive: String = "",
+    val conflict: String = "rename",
+    val artifacts: List<TransferArtifactSummary> = emptyList(),
+    val importInspection: PreviewSummary? = null,
+    val exportPreview: PreviewSummary? = null,
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+)

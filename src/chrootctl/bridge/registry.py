@@ -589,6 +589,256 @@ def _service_action(services: ServiceContainer, payload: dict[str, Any], progres
     return result
 
 
+
+def _required_catalog_kind(payload: dict[str, Any]) -> str:
+    kind = str(payload.get("kind") or "tool").strip().lower() or "tool"
+    if kind in {"tools", "tool"}:
+        return "tool"
+    if kind in {"addons", "addon"}:
+        return "addon"
+    raise BridgeProtocolError("INVALID_CATALOG_KIND", f"Unsupported catalog kind: {kind}")
+
+
+def _payload_names(payload: dict[str, Any]) -> list[str]:
+    raw: Any = []
+    for key in ("names", "entries", "entry"):
+        if key in payload:
+            raw = payload.get(key)
+            break
+    if isinstance(raw, str):
+        values = [item.strip() for item in raw.split(",")]
+    elif isinstance(raw, (list, tuple)):
+        values = [str(item).strip() for item in raw]
+    else:
+        values = []
+    return [item for item in values if item]
+
+
+def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
+    return {
+        "kind": getattr(entry, "kind", "tool"),
+        "name": getattr(entry, "name", ""),
+        "description": getattr(entry, "description", ""),
+        "distros": list(getattr(entry, "distros", ())),
+        "categories": list(getattr(entry, "categories", ())),
+        "script": getattr(entry, "script", ""),
+    }
+
+
+def _catalog_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    kind = _required_catalog_kind(payload)
+    target = _optional_text(payload, "name") or _optional_text(payload, "targetName")
+    distro = _optional_text(payload, "distro")
+    category = _optional_text(payload, "category")
+    query = (_optional_text(payload, "query") or _optional_text(payload, "q") or "").lower()
+    catalog = services.catalog(kind, name=target)
+    entries = catalog.list_entries(distro=distro, category=category)
+    if query:
+        entries = [
+            entry for entry in entries
+            if query in entry.name.lower()
+            or query in entry.description.lower()
+            or any(query in category_name.lower() for category_name in entry.categories)
+            or any(query in distro_name.lower() for distro_name in entry.distros)
+        ]
+    return {
+        "kind": kind,
+        "targetName": target,
+        "entries": [_catalog_entry_payload(entry) for entry in entries],
+        "categories": catalog.categories(distro=distro),
+        "distros": services.install().distros(),
+        "query": query,
+        "category": category,
+        "distro": distro,
+    }
+
+
+def _catalog_tools(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    return _catalog_list(services, {**payload, "kind": "tool"})
+
+
+def _catalog_addons(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    return _catalog_list(services, {**payload, "kind": "addon"})
+
+
+def _catalog_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    kind = _required_catalog_kind(payload)
+    target = _required_name(payload)
+    names = _payload_names(payload)
+    if not names:
+        return {
+            "ok": False,
+            "kind": "catalog.apply",
+            "name": target,
+            "catalogKind": kind,
+            "blocking": [{"code": "missing_entries", "message": "Choose at least one catalog entry."}],
+            "warnings": [],
+            "entries": [],
+        }
+    detail = services.chroots().get(target)
+    target_distro = detail.distro
+    catalog = services.catalog(kind, name=target)
+    blocking: list[dict[str, str]] = []
+    warnings: list[str] = []
+    entries: list[dict[str, Any]] = []
+    for entry_name in names:
+        try:
+            entry = catalog.get_entry(entry_name)
+        except KeyError:
+            blocking.append({"code": "unknown_entry", "message": f"Unknown {kind}: {entry_name}"})
+            continue
+        entries.append(_catalog_entry_payload(entry))
+        if target_distro and not entry.matches_distro(target_distro):
+            blocking.append({"code": "unsupported_distro", "message": f"{entry.name} does not support {target_distro}."})
+    if not bool(detail.installed):
+        blocking.append({"code": "chroot_not_installed", "message": f"{target} is not marked installed."})
+    if kind == "addon":
+        warnings.append("Add-ons can install desktop packages and may take a long time.")
+    return {
+        "ok": not blocking,
+        "kind": "catalog.apply",
+        "name": target,
+        "catalogKind": kind,
+        "entries": entries,
+        "blocking": blocking,
+        "warnings": warnings,
+        "confirm": bool(blocking) is False and len(names) > 1,
+    }
+
+
+def _catalog_apply(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    kind = _required_catalog_kind(payload)
+    target = _required_name(payload)
+    names = _payload_names(payload)
+    if not names:
+        raise BridgeProtocolError("MISSING_CATALOG_ENTRIES", "payload.names must include at least one catalog entry")
+    preview = _catalog_preview(services, {**payload, "kind": kind, "name": target, "names": names})
+    if not bool(preview.get("ok", False)):
+        raise BridgeProtocolError("CATALOG_PREVIEW_BLOCKED", "Catalog preview reported blocking issues")
+    progress({"phase": "catalog", "percent": 5, "message": f"Applying {len(names)} {kind} entries"})
+    if cancelled():
+        raise OperationCancelled("Catalog apply was cancelled")
+
+    def _progress(message: str) -> None:
+        progress({"phase": "catalog", "percent": 50, "message": message})
+        if cancelled():
+            raise OperationCancelled("Catalog apply was cancelled")
+
+    result = services.catalog(kind, name=target).apply(names, progress=_progress)
+    progress({"phase": "complete", "percent": 100, "message": "Catalog apply complete"})
+    return result
+
+
+def _packages_inventory(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    from ..services.chroot_archives import _package_inventory
+
+    name = _required_name(payload)
+    packages = sorted(_package_inventory(services.config_for(name).chroot_base))
+    limit = int(payload.get("limit", 500))
+    return {
+        "name": name,
+        "count": len(packages),
+        "packages": packages[:limit],
+        "truncated": len(packages) > limit,
+    }
+
+
+def _packages_compare(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    left = str(payload.get("left") or payload.get("leftName") or "").strip()
+    right = str(payload.get("right") or payload.get("rightName") or "").strip()
+    if not left or not right:
+        raise BridgeProtocolError("MISSING_PACKAGE_COMPARE_TARGETS", "payload.left and payload.right are required")
+    return services.chroots().package_diff(left, right)
+
+
+def _managed_transfer_archive(name: str, suffix: str = "tar.zst") -> Path:
+    import tempfile
+
+    root = Path(tempfile.gettempdir()) / "chrootctl-transfer"
+    root.mkdir(parents=True, exist_ok=True)
+    safe = "".join(ch if ch.isalnum() or ch in {".", "_", "-"} else "_" for ch in name).strip("._-") or "chroot"
+    return root / f"{safe}.{suffix}"
+
+
+def _transfer_inspect_import(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    archive = _optional_text(payload, "archive") or _optional_text(payload, "path")
+    if not archive:
+        raise BridgeProtocolError("MISSING_ARCHIVE", "payload.archive is required")
+    return services.transfer().inspect(archive)
+
+
+def _transfer_import_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    archive = _optional_text(payload, "archive") or _optional_text(payload, "path")
+    if not archive:
+        raise BridgeProtocolError("MISSING_ARCHIVE", "payload.archive is required")
+    return services.transfer().preview_import(
+        archive=archive,
+        name=_optional_text(payload, "name"),
+        conflict=_optional_text(payload, "conflict") or "rename",
+    )
+
+
+def _transfer_preview_export(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    name = _required_name(payload)
+    archive = _optional_text(payload, "archive")
+    return services.transfer().preview_export(name=name, archive=archive or str(_managed_transfer_archive(name)))
+
+
+def _artifacts_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del payload
+    return services.transfer().temp_state()
+
+
+def _transfer_import(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    archive = _optional_text(payload, "archive") or _optional_text(payload, "path")
+    if not archive:
+        raise BridgeProtocolError("MISSING_ARCHIVE", "payload.archive is required")
+    progress({"phase": "preview", "percent": 5, "message": "Inspecting import archive"})
+    preview = services.transfer().preview_import(
+        archive=archive,
+        name=_optional_text(payload, "name"),
+        conflict=_optional_text(payload, "conflict") or "rename",
+    )
+    if not bool(preview.get("ok", False)):
+        raise BridgeProtocolError("TRANSFER_IMPORT_BLOCKED", "Transfer import preview reported blocking issues")
+    if cancelled():
+        raise OperationCancelled("Import was cancelled")
+    progress({"phase": "import", "percent": 40, "message": f"Importing {Path(archive).name}"})
+    result = services.transfer().import_archive(
+        archive=Path(archive),
+        name=_optional_text(payload, "name"),
+        conflict=_optional_text(payload, "conflict") or "rename",
+        password=_optional_text(payload, "password"),
+        post_import=_optional_text(payload, "postImport") or _optional_text(payload, "post_import") or "register",
+    )
+    progress({"phase": "complete", "percent": 100, "message": "Import complete"})
+    return result
+
+
+def _transfer_export(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    name = _required_name(payload)
+    archive = _optional_text(payload, "archive")
+    target_archive = Path(archive) if archive else _managed_transfer_archive(name)
+    progress({"phase": "preview", "percent": 5, "message": f"Previewing export for {name}"})
+    preview = services.transfer().preview_export(name=name, archive=str(target_archive))
+    if not bool(preview.get("ok", False)):
+        raise BridgeProtocolError("TRANSFER_EXPORT_BLOCKED", "Transfer export preview reported blocking issues")
+    if cancelled():
+        raise OperationCancelled("Export was cancelled")
+    progress({"phase": "export", "percent": 40, "message": f"Exporting {name}"})
+    result = services.transfer().export(name=name, archive=target_archive, password=_optional_text(payload, "password"))
+    progress({"phase": "complete", "percent": 100, "message": f"Exported {name}"})
+    return result
+
+
+def _artifacts_cleanup(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    progress({"phase": "cleanup", "percent": 10, "message": "Cleaning transfer artifacts"})
+    if cancelled():
+        raise OperationCancelled("Artifact cleanup was cancelled")
+    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=bool(payload.get("deleteAll") or payload.get("delete_all") or False))
+    progress({"phase": "complete", "percent": 100, "message": "Transfer artifact cleanup complete"})
+    return result
+
 _SPECS = (
     OperationSpec("system.dashboard", "query", "Return native dashboard state", query_handler=_dashboard),
     OperationSpec("system.status", "query", "Return status checks for one chroot", query_handler=_status),
@@ -618,6 +868,17 @@ _SPECS = (
     OperationSpec("snapshots.preview", "preview", "Preview snapshot create/restore/export", destructive=True, preview_handler=_snapshot_preview),
     OperationSpec("users.preview", "preview", "Preview chroot user mutation", destructive=True, lock_scope="target", preview_handler=_user_preview),
     OperationSpec("services.preview", "preview", "Preview service mutation", lock_scope="target", preview_handler=_service_preview),
+
+    OperationSpec("catalog.tools", "query", "List native tool catalog entries", query_handler=_catalog_tools),
+    OperationSpec("catalog.addons", "query", "List native add-on catalog entries", query_handler=_catalog_addons),
+    OperationSpec("catalog.search", "query", "Search native catalog entries", query_handler=_catalog_list),
+    OperationSpec("packages.inventory", "query", "Return package inventory for one chroot", query_handler=_packages_inventory),
+    OperationSpec("packages.compare", "query", "Compare package inventories between chroots", query_handler=_packages_compare),
+    OperationSpec("transfer.inspect_import", "query", "Inspect a staged import archive", query_handler=_transfer_inspect_import),
+    OperationSpec("artifacts.list", "query", "List managed transfer artifacts", query_handler=_artifacts_list),
+    OperationSpec("catalog.preview", "preview", "Preview applying tools or add-ons", preview_handler=_catalog_preview),
+    OperationSpec("transfer.import_preview", "preview", "Preview importing a staged archive", preview_handler=_transfer_import_preview),
+    OperationSpec("transfer.preview_export", "preview", "Preview exporting a chroot archive", preview_handler=_transfer_preview_export),
     OperationSpec("system.refresh", "operation", "Persist and stream a complete read-only refresh", operation_handler=_refresh),
     OperationSpec("install.run", "operation", "Run the native install flow", lock_scope="global", operation_handler=_install_run),
     OperationSpec("chroots.start", "operation", "Start a chroot session", lock_scope="target", operation_handler=_start_chroot),
@@ -637,6 +898,11 @@ _SPECS = (
     OperationSpec("services.restart", "operation", "Restart a chroot service", lock_scope="target", operation_handler=_service_action),
     OperationSpec("services.enable", "operation", "Enable a chroot service", lock_scope="target", operation_handler=_service_action),
     OperationSpec("services.disable", "operation", "Disable a chroot service", lock_scope="target", operation_handler=_service_action),
+
+    OperationSpec("catalog.apply", "operation", "Apply native tool or add-on catalog entries", lock_scope="target", operation_handler=_catalog_apply),
+    OperationSpec("transfer.import", "operation", "Import a staged chroot archive", lock_scope="global", operation_handler=_transfer_import),
+    OperationSpec("transfer.export", "operation", "Export a chroot archive to managed artifacts", lock_scope="target", operation_handler=_transfer_export),
+    OperationSpec("artifacts.cleanup", "operation", "Clean managed transfer artifacts", destructive=True, lock_scope="global", operation_handler=_artifacts_cleanup),
 )
 SPECS = {spec.name: spec for spec in _SPECS}
 

@@ -28,6 +28,7 @@ import com.mikeyphw.chrootctl.protocol.BridgeEnvelope
 import com.mikeyphw.chrootctl.protocol.BridgeRequest
 import com.mikeyphw.chrootctl.protocol.RootBridgeInfo
 import com.mikeyphw.chrootctl.root.RootServiceClient
+import android.os.ParcelFileDescriptor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
@@ -250,6 +251,75 @@ class BridgeRepository(
         data.toPreviewSummary("Service preview")
     }
 
+
+
+    suspend fun refreshCatalog(kind: String, targetName: String?, query: String, category: String): Result<Pair<List<CatalogEntrySummary>, List<String>>> = runCatching {
+        val payload = JSONObject()
+            .put("kind", kind)
+            .put("query", query)
+            .put("category", category.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+        if (!targetName.isNullOrBlank()) payload.put("name", targetName)
+        val operation = if (kind == "addon") "catalog.addons" else "catalog.tools"
+        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest(operation, payload).toJson())).requireData()
+        val entries = data.optJSONArray("entries").toJsonObjects().map { item -> item.toCatalogEntrySummary() }
+        val categories = data.optJSONArray("categories").toStringListLocal()
+        entries to categories
+    }
+
+    suspend fun previewCatalog(kind: String, targetName: String, names: List<String>): Result<PreviewSummary> = runCatching {
+        val payload = JSONObject()
+            .put("kind", kind)
+            .put("name", targetName)
+            .put("names", JSONArray(names))
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("catalog.preview", payload).toJson())).requireData()
+        data.toPreviewSummary("Catalog preview")
+    }
+
+    suspend fun refreshPackageInventory(name: String): Result<PackageInventorySummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("packages.inventory", JSONObject().put("name", name)).toJson()),
+        ).requireData()
+        data.toPackageInventorySummary()
+    }
+
+    suspend fun comparePackages(left: String, right: String): Result<PackageCompareSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("packages.compare", JSONObject().put("left", left).put("right", right)).toJson()),
+        ).requireData()
+        data.toPackageCompareSummary()
+    }
+
+    suspend fun inspectTransferImport(archive: String): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("transfer.inspect_import", JSONObject().put("archive", archive)).toJson()),
+        ).requireData()
+        data.toTransferInspectionSummary()
+    }
+
+    suspend fun previewTransferExport(name: String, archive: String): Result<PreviewSummary> = runCatching {
+        val payload = JSONObject().put("name", name)
+        if (archive.isNotBlank()) payload.put("archive", archive)
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("transfer.preview_export", payload).toJson())).requireData()
+        data.toPreviewSummary("Export preview")
+    }
+
+    suspend fun refreshTransferArtifacts(): Result<List<TransferArtifactSummary>> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("artifacts.list").toJson())).requireData()
+        data.optJSONArray("items").toJsonObjects().map { item -> item.toTransferArtifactSummary() }
+    }
+
+
+    suspend fun stageImportArchive(filename: String, input: ParcelFileDescriptor): Result<String> = runCatching {
+        val request = BridgeRequest("transfer.stage_import", JSONObject().put("filename", filename)).toJson()
+        val data = BridgeEnvelope.fromJson(rootClient.transferFromDescriptor(request, input)).requireData()
+        data.firstString("archive", "path")
+    }
+
+    suspend fun copyManagedArtifactToDocument(path: String, output: ParcelFileDescriptor): Result<Long> = runCatching {
+        val request = BridgeRequest("transfer.copy_to_document", JSONObject().put("path", path)).toJson()
+        val data = BridgeEnvelope.fromJson(rootClient.transferToDescriptor(request, output)).requireData()
+        data.optLong("bytes", 0L)
+    }
     suspend fun startBridgeOperation(
         operation: String,
         payload: JSONObject,
@@ -636,6 +706,57 @@ private fun JSONObject.toServiceUnitDetailSummary(): ServiceUnitSummary {
         journalText = journal.firstString("text"),
     )
 }
+
+
+private fun JSONObject.toCatalogEntrySummary(): CatalogEntrySummary = CatalogEntrySummary(
+    kind = firstString("kind").ifBlank { "tool" },
+    name = firstString("name"),
+    description = firstString("description"),
+    distros = optJSONArray("distros").toStringListLocal(),
+    categories = optJSONArray("categories").toStringListLocal(),
+)
+
+private fun JSONObject.toPackageInventorySummary(): PackageInventorySummary = PackageInventorySummary(
+    name = firstString("name"),
+    count = optInt("count", 0),
+    packages = optJSONArray("packages").toStringListLocal(),
+    truncated = optBoolean("truncated", false),
+)
+
+private fun JSONObject.toPackageCompareSummary(): PackageCompareSummary = PackageCompareSummary(
+    left = firstString("left"),
+    right = firstString("right"),
+    leftCount = optInt("left_count", optInt("leftCount", 0)),
+    rightCount = optInt("right_count", optInt("rightCount", 0)),
+    commonCount = optInt("common_count", optInt("commonCount", 0)),
+    onlyLeft = optJSONArray("only_left").toStringListLocal().ifEmpty { optJSONArray("onlyLeft").toStringListLocal() },
+    onlyRight = optJSONArray("only_right").toStringListLocal().ifEmpty { optJSONArray("onlyRight").toStringListLocal() },
+)
+
+private fun JSONObject.toTransferInspectionSummary(): PreviewSummary {
+    val archive = firstString("archive")
+    val sourceName = firstString("source_name", "sourceName", "suggested_name", "suggestedName")
+    val body = listOfNotNull(
+        archive.takeIf(String::isNotBlank),
+        sourceName.takeIf(String::isNotBlank),
+        firstString("arch").takeIf(String::isNotBlank),
+    ).joinToString(" · ").ifBlank { "Archive inspection is ready." }
+    return PreviewSummary(
+        title = "Import inspection",
+        ok = true,
+        body = body,
+        blocking = emptyList(),
+        warnings = if (optBoolean("target_exists", optBoolean("targetExists", false))) listOf("Target already exists; choose a conflict strategy.") else emptyList(),
+        rawJson = toString(),
+    )
+}
+
+private fun JSONObject.toTransferArtifactSummary(): TransferArtifactSummary = TransferArtifactSummary(
+    name = firstString("name"),
+    path = firstString("path"),
+    sizeBytes = optLong("size_bytes", optLong("sizeBytes", 0L)),
+    modifiedAt = firstString("modified_at", "modifiedAt"),
+)
 
 private fun JSONArray?.labelsFromObjects(): List<String> {
     if (this == null) return emptyList()
