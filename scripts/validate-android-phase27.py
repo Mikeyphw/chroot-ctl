@@ -19,7 +19,7 @@ def main() -> int:
     docs = read("docs/android/PHASE_27_SMOKE_RESULT_HANDOFF.md")
     err(errors, 'compileSdk = 36' not in build, "compileSdk must remain 36")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
-    err(errors, 'versionName = "0.1.0-phase27"' not in build, "versionName must advance to phase27")
+    err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(27, 29)), "versionName must advance to phase27")
     for token in ("smoke.last_result", "smoke.result.persist", "smoke.result.export", "smoke.failure.bundle", "_smoke_last_result", "_smoke_failure_bundle"):
         err(errors, token not in registry, f"registry missing smoke handoff token: {token}")
     for token in ("refreshSmokeLastResult", "smokeResultPersistPayloadJson", "smokeResultExportPayloadJson", "smokeFailureBundlePayloadJson"):

@@ -24,7 +24,7 @@ def main() -> int:
 
     err(errors, 'compileSdk = 36' not in build, "compileSdk must remain 36")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
-    err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(25, 28)), "versionName must advance to phase25")
+    err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(25, 29)), "versionName must advance to phase25")
     for token in ("smoke.plan", "smoke.run", "smoke.report", "_smoke_plan", "_smoke_run", "_smoke_report"):
         err(errors, token not in registry, f"registry missing smoke token: {token}")
     for token in ("previewSmokePlan", "refreshSmokeReport"):

@@ -76,6 +76,7 @@ def main() -> int:
         'versionName = "0.1.0-phase24"',
         'versionName = "0.1.0-phase25"',
         'versionName = "0.1.0-phase26"',
+        'versionName = "0.1.0-phase28"',
         'versionName = "0.1.0-phase27"',
         'versionName = "0.1.0-phase23"',
     )):

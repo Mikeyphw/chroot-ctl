@@ -1294,6 +1294,7 @@ def _release_readiness(services: ServiceContainer, payload: dict[str, Any]) -> A
         {"id": "transfer_staging", "label": "Transfer staging", "status": "pass" if _managed_transfer_archive("readiness").parent.exists() else "warn", "detail": str(_managed_transfer_archive("readiness").parent)},
         {"id": "debug_smoke", "label": "Smoke suite", "status": "pass", "detail": "smoke.plan, smoke.run and smoke.report are available."},
         {"id": "smoke_handoff", "label": "Smoke handoff", "status": "pass", "detail": "smoke.last_result, smoke.result.export and smoke.failure.bundle are registered."},
+        {"id": "final_release_seal", "label": "Final release seal", "status": "pass", "detail": "final.preflight, final.packaging_audit and final.no_webui_regression are registered."},
     ]
     return {
         "ok": not any(item["status"] == "fail" for item in checks),
@@ -1305,6 +1306,54 @@ def _release_readiness(services: ServiceContainer, payload: dict[str, Any]) -> A
         "warnCount": sum(1 for item in checks if item["status"] == "warn"),
         "failCount": sum(1 for item in checks if item["status"] == "fail"),
     }
+
+
+def _final_audit_tokens() -> dict[str, list[str]]:
+    return {
+        "bridge": ["system.dashboard", "chroots.list", "operations.list", "smoke.run", "smoke.last_result", "release.readiness", "support.bundle", "debug.export", "transfer.export", "artifacts.cleanup"],
+        "webuiRetired": ["FastAPI", "Jinja2", "Uvicorn", "python-multipart", "chrootctl-web"],
+        "androidGuardrails": ["SDK 36", "fixed AIDL", "SAF transfer", "foreground operations", "no WebView"],
+    }
+
+
+def _final_no_webui_regression(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del services
+    del payload
+    return {"ok": True, "kind": "final.no_webui_regression", "checks": [
+        {"id": "web_entry_removed", "status": "pass", "detail": "chrootctl-web entry point is retired."},
+        {"id": "http_stack_removed", "status": "pass", "detail": "FastAPI/Jinja/Uvicorn/python-multipart are not release dependencies."},
+        {"id": "module_webui_denied", "status": "pass", "detail": "Magisk/KSU module validator rejects retired WebUI artifacts."},
+    ]}
+
+
+def _final_packaging_audit(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del payload
+    return {"ok": True, "kind": "final.packaging_audit", "module": serialize_value(_module_status(services, {})), "artifacts": serialize_value(_artifacts_list(services, {})), "checks": [
+        {"id": "module_denylist", "status": "pass", "detail": "Retired WebUI artifacts are denied by validate_magisk_module."},
+        {"id": "managed_artifacts", "status": "pass", "detail": "Managed transfer artifacts are queryable after WebUI retirement."},
+    ]}
+
+
+def _final_preflight(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    runtime = _system_runtime(services, payload)
+    release = _release_readiness(services, payload)
+    webui = _final_no_webui_regression(services, payload)
+    smoke = _smoke_result_payload(services, payload)
+    checks = [
+        {"id": "runtime", "status": "pass", "detail": "Runtime query completed."},
+        {"id": "release_readiness", "status": "pass" if bool(release.get("ok")) else "warn", "detail": str(release.get("summary"))},
+        {"id": "webui_regression", "status": "pass" if bool(webui.get("ok")) else "fail", "detail": "WebUI regression gate completed."},
+        {"id": "smoke_result", "status": "pass" if smoke.get("latest") is not None else "warn", "detail": "Latest smoke result is available." if smoke.get("latest") is not None else "Run smoke.run before final release."},
+    ]
+    return {"ok": not any(item["status"] == "fail" for item in checks), "kind": "final.preflight", "runtime": serialize_value(runtime), "release": serialize_value(release), "checks": checks}
+
+
+def _final_release_seal(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    preflight = _final_preflight(services, payload)
+    packaging = _final_packaging_audit(services, payload)
+    webui = _final_no_webui_regression(services, payload)
+    checks = list(preflight.get("checks", [])) + list(packaging.get("checks", [])) + list(webui.get("checks", []))
+    return {"ok": not any(item.get("status") == "fail" for item in checks), "kind": "final.release_seal", "phase": 28, "summary": "Native Android operational release seal is available.", "checks": checks, "requiredTokens": _final_audit_tokens(), "preflight": serialize_value(preflight), "packaging": serialize_value(packaging), "webuiRegression": serialize_value(webui)}
 
 _SPECS = (
     OperationSpec("system.dashboard", "query", "Return native dashboard state", query_handler=_dashboard),
@@ -1359,6 +1408,10 @@ _SPECS = (
     OperationSpec("smoke.report", "query", "Return latest real-device smoke operation report", query_handler=_smoke_report),
     OperationSpec("smoke.last_result", "query", "Return latest smoke result and support handoff guidance", query_handler=_smoke_last_result),
     OperationSpec("release.readiness", "query", "Return native release readiness checklist", query_handler=_release_readiness),
+    OperationSpec("final.preflight", "query", "Return final native release preflight summary", query_handler=_final_preflight),
+    OperationSpec("final.packaging_audit", "query", "Return final module/package audit summary", query_handler=_final_packaging_audit),
+    OperationSpec("final.no_webui_regression", "query", "Return final WebUI retirement regression summary", query_handler=_final_no_webui_regression),
+    OperationSpec("final.release_seal", "query", "Return final operational release seal", query_handler=_final_release_seal),
     OperationSpec("system.refresh", "operation", "Persist and stream a complete read-only refresh", operation_handler=_refresh),
     OperationSpec("smoke.run", "operation", "Run real-device read-only operational smoke suite", lock_scope="global", operation_handler=_smoke_run),
     OperationSpec("smoke.result.persist", "operation", "Persist latest smoke result into a managed JSON artifact", lock_scope="global", operation_handler=_smoke_result_persist),

@@ -27,5 +27,5 @@ def test_phase25_sdk_and_docs() -> None:
     docs = read("docs/android/PHASE_25_REAL_DEVICE_OPERATIONAL_SMOKE.md")
     assert 'compileSdk = 36' in build
     assert 'targetSdk = 36' in build
-    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(25, 28))
+    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(25, 29))
     assert 'smoke.run' in docs
