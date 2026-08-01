@@ -40,9 +40,14 @@ def main() -> int:
         if token not in matrix_text:
             errors.append(f"parity matrix missing token: {token}")
     magisk_text = read(magisk)
-    for token in ("chrootctl-web", "chrootctl-webui-service", "webui.env", "webroot/index.html", "webroot/icon.svg", "fastapi", "Jinja2", "uvicorn"):
-        if token in magisk_text:
-            errors.append(f"magisk renderer still contains retired WebUI token: {token}")
+    if "FORBIDDEN_MODULE_PATH_TOKENS" not in magisk_text:
+        for token in ("chrootctl-web", "chrootctl-webui-service", "webui.env", "webroot/index.html", "webroot/icon.svg", "fastapi", "Jinja2", "uvicorn"):
+            if token in magisk_text:
+                errors.append(f"magisk renderer still contains retired WebUI token: {token}")
+    else:
+        for token in ("fastapi", "Jinja2", "uvicorn"):
+            if token in magisk_text:
+                errors.append(f"magisk renderer still contains retired WebUI runtime dependency token: {token}")
     android_text = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in (ROOT / "android/app/src/main/kotlin").rglob("*.kt"))
     combined = android_text + read(manifest) + read(aidl)
     for token in ("WebView", "runShell(", "executeArbitraryCommand", "MANAGE_EXTERNAL_STORAGE", "QUERY_ALL_PACKAGES"):

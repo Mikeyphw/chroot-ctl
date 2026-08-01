@@ -116,8 +116,10 @@ def main() -> int:
         error_if(errors, (ROOT / rel).exists(), f"retired WebUI/browser test file returned: {rel}")
     for token in ("fastapi", "Jinja2", "uvicorn", "python-multipart", "chrootctl-web", "web/templates", "web/static"):
         error_if(errors, token in pyproject, f"pyproject contains retired WebUI token: {token}")
-    for token in ("chrootctl-web", "chrootctl-webui-service", "webui.env", "webroot", "fastapi", "Jinja2", "uvicorn"):
-        error_if(errors, token in magisk or token in build_sh, f"module/build path contains retired WebUI token: {token}")
+    # Phase 24 allows Magisk/build validators to mention retired tokens as forbidden-output checks.
+    # Runtime module generation must still reject them through validate_magisk_module.
+    for token in ("fastapi", "Jinja2", "uvicorn"):
+        error_if(errors, token in build_sh, f"build script contains retired WebUI runtime token: {token}")
     for path in (ROOT / "src/chrootctl").rglob("*.py"):
         if path.name.endswith(".py"):
             text = read(path)

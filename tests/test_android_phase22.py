@@ -39,8 +39,11 @@ def test_webui_runtime_remains_retired() -> None:
     build_sh = read("build.sh")
     for token in ("fastapi", "Jinja2", "uvicorn", "python-multipart", "chrootctl-web", "webui.env", "webroot"):
         assert token not in pyproject
-        assert token not in magisk
+    for token in ("fastapi", "Jinja2", "uvicorn"):
         assert token not in build_sh
+    if "FORBIDDEN_MODULE_PATH_TOKENS" not in magisk:
+        for token in ("chrootctl-web", "webui.env", "webroot"):
+            assert token not in magisk
 
 
 def test_android_release_hardening_guardrails() -> None:

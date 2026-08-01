@@ -23,6 +23,15 @@ DEFAULT_PYTHON_DEPENDENCIES = (
     "pydantic>=2.7.0",
 )
 
+FORBIDDEN_MODULE_PATH_TOKENS = (
+    "chrootctl-web",
+    "chrootctl-webui-service",
+    "webui.env",
+    "webroot",
+    "playwright.config.ts",
+    "payload/src/chrootctl/web",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class MagiskRenderResult:
@@ -786,6 +795,15 @@ def validate_magisk_module(output_dir: Path) -> tuple[Path, ...]:
     if missing:
         formatted = ", ".join(str(path) for path in missing)
         raise FileNotFoundError(f"invalid Magisk module output; missing: {formatted}")
+    forbidden = tuple(
+        path.relative_to(output_dir).as_posix()
+        for path in output_dir.rglob("*")
+        if path.is_file()
+        and any(token in path.relative_to(output_dir).as_posix() for token in FORBIDDEN_MODULE_PATH_TOKENS)
+    )
+    if forbidden:
+        formatted = ", ".join(sorted(forbidden))
+        raise FileNotFoundError(f"invalid Magisk module output; retired WebUI artifact returned: {formatted}")
     return tuple(output_dir / path for path in required_paths)
 
 
