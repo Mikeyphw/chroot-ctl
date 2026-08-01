@@ -10,6 +10,10 @@ import com.mikeyphw.chrootctl.data.OperationEventEntity
 import com.mikeyphw.chrootctl.model.CheckSummary
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.HomeSnapshot
+import com.mikeyphw.chrootctl.model.InstallDraft
+import com.mikeyphw.chrootctl.model.InstallFormSummary
+import com.mikeyphw.chrootctl.model.PreviewSummary
+import com.mikeyphw.chrootctl.model.SnapshotSummary
 import com.mikeyphw.chrootctl.model.Loadable
 import com.mikeyphw.chrootctl.model.OperationEventSummary
 import com.mikeyphw.chrootctl.model.OperationSummary
@@ -148,6 +152,84 @@ class BridgeRepository(
         database.operationDao().append(event.toOperationEventEntity(operationId))
         val existing = database.operationDao().findById(operationId)
         database.operationDao().upsert(event.toOperationEntity(existing))
+    }
+
+
+    suspend fun refreshInstallForm(draft: InstallDraft): Result<InstallFormSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("install.form", draft.toJsonPayload()).toJson()),
+        ).requireData()
+        data.toInstallFormSummary()
+    }
+
+    suspend fun previewInstall(draft: InstallDraft): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.preview(BridgeRequest("install.preview", draft.toJsonPayload()).toJson()),
+        ).requireData()
+        data.toPreviewSummary("Install preview")
+    }
+
+    suspend fun previewLifecycle(name: String, action: String): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.preview(
+                BridgeRequest(
+                    "chroots.lifecycle.preview",
+                    JSONObject().put("name", name).put("action", action),
+                ).toJson(),
+            ),
+        ).requireData()
+        data.toPreviewSummary("${action.replaceFirstChar { it.uppercase() }} preview")
+    }
+
+    suspend fun refreshSnapshots(name: String): Result<List<SnapshotSummary>> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("snapshots.list", JSONObject().put("name", name)).toJson()),
+        ).requireArray()
+        data.toJsonObjects().map { item -> item.toSnapshotSummary() }
+    }
+
+    suspend fun previewSnapshotCreate(name: String): Result<PreviewSummary> = runCatching {
+        val snapshot = "snapshot-${System.currentTimeMillis() / 1000}"
+        val data = BridgeEnvelope.fromJson(
+            rootClient.preview(
+                BridgeRequest(
+                    "snapshots.preview",
+                    JSONObject().put("name", name).put("action", "create").put("snapshot", snapshot),
+                ).toJson(),
+            ),
+        ).requireData()
+        data.toPreviewSummary("Snapshot preview")
+    }
+
+    suspend fun previewSnapshotAction(name: String, snapshot: String, action: String): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.preview(
+                BridgeRequest(
+                    "snapshots.preview",
+                    JSONObject().put("name", name).put("action", action).put("snapshot", snapshot),
+                ).toJson(),
+            ),
+        ).requireData()
+        data.toPreviewSummary("Snapshot ${action.replaceFirstChar { it.uppercase() }} preview")
+    }
+
+    suspend fun startBridgeOperation(
+        operation: String,
+        payload: JSONObject,
+        onEvent: suspend (JSONObject) -> Unit,
+    ): Result<String?> = runCatching {
+        var operationId: String? = null
+        val request = BridgeRequest(operation, payload).toJson()
+        val started = rootClient.streamOperation(request) { line ->
+            val event = JSONObject(line)
+            recordOperationEvent(event)
+            operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: operationId
+            onEvent(event)
+        }
+        val startEnvelope = JSONObject(started)
+        check(startEnvelope.optBoolean("ok")) { startEnvelope.optJSONObject("error")?.optString("message") ?: "Operation did not start" }
+        refreshHome()
+        operationId
     }
 
     fun capabilityGroups(capabilities: BridgeCapabilities): List<ToolCapabilityGroup> {
@@ -433,6 +515,92 @@ private fun JSONObject.optEpochMillis(vararg keys: String): Long? {
         return if (parsed < 10_000_000_000L) (parsed * 1000).toLong() else parsed.toLong()
     }
     return null
+}
+
+
+private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
+    .put("distro", distro)
+    .put("name", name)
+    .put("username", username)
+    .put("preset", preset)
+    .put("profile", profile)
+    .put("desktop", desktop)
+    .put("release", release.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+    .put("version", version.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+    .put("mirror", mirror)
+
+private fun JSONObject.toInstallFormSummary(): InstallFormSummary {
+    val defaults = optJSONObject("defaults") ?: JSONObject()
+    return InstallFormSummary(
+        distros = optJSONArray("distros").labelsFromObjects(),
+        presets = optJSONArray("presets").labelsFromObjects(),
+        profiles = optJSONArray("profiles").labelsFromObjects(),
+        desktops = optJSONArray("desktops").labelsFromObjects(),
+        mirrors = optJSONArray("mirrors").labelsFromObjects(),
+        defaultName = defaults.optString("name", "ubuntu"),
+        defaultUsername = defaults.optString("username", "mike"),
+    )
+}
+
+private fun JSONObject.toPreviewSummary(title: String): PreviewSummary {
+    val blocking = optJSONArray("blocking").messagesFromObjects()
+    val warnings = optJSONArray("warnings").toStringListLocal()
+    val body = firstString("message", "summary", "kind").ifBlank {
+        if (optBoolean("ok", false)) "Preview is ready." else "Preview has blocking issues."
+    }
+    return PreviewSummary(
+        title = title,
+        ok = optBoolean("ok", false),
+        body = body,
+        blocking = blocking,
+        warnings = warnings,
+        rawJson = toString(),
+    )
+}
+
+private fun JSONObject.toSnapshotSummary(): SnapshotSummary = SnapshotSummary(
+    name = firstString("name", "snapshot", "snapshotName"),
+    chrootName = firstString("chrootName", "chroot_name", "targetName"),
+    kind = firstString("kind").ifBlank { "copy" },
+    path = firstString("path"),
+    createdAt = firstString("createdAt", "created_at"),
+    note = firstString("note"),
+    sizeBytes = optLong("sizeBytes", optLong("size_bytes", 0L)),
+)
+
+private fun JSONArray?.labelsFromObjects(): List<String> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) {
+            val value = opt(index)
+            if (value is JSONObject) {
+                add(value.firstString("label", "id", "name").ifBlank { value.toString() })
+            } else if (value != null) {
+                add(value.toString())
+            }
+        }
+    }
+}
+
+private fun JSONArray?.messagesFromObjects(): List<String> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) {
+            val value = opt(index)
+            if (value is JSONObject) {
+                add(value.firstString("message", "code", "title").ifBlank { value.toString() })
+            } else if (value != null) {
+                add(value.toString())
+            }
+        }
+    }
+}
+
+private fun JSONArray?.toStringListLocal(): List<String> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) add(optString(index))
+    }
 }
 
 private fun chrootScope(name: String): String = "chroot:$name"

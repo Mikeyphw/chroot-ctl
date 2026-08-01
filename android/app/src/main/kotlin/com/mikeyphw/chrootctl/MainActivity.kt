@@ -19,6 +19,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { ChrootCtlApp(viewModel, onStartRefreshOperation = { ChrootOperationService.startRefresh(this) }) }
+        setContent {
+            ChrootCtlApp(
+                viewModel = viewModel,
+                onStartRefreshOperation = { ChrootOperationService.startRefresh(this) },
+                onStartBridgeOperation = { operation, payloadJson ->
+                    ChrootOperationService.startBridgeOperation(this, operation, payloadJson)
+                },
+            )
+        }
     }
 }

@@ -28,10 +28,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mikeyphw.chrootctl.ui.activity.ActivityScreen
 import com.mikeyphw.chrootctl.ui.chroots.ChrootsScreen
 import com.mikeyphw.chrootctl.ui.home.HomeScreen
+import com.mikeyphw.chrootctl.ui.install.InstallScreen
 import com.mikeyphw.chrootctl.ui.tools.ToolsScreen
 
 @Composable
-fun ChrootCtlApp(viewModel: MainViewModel, onStartRefreshOperation: () -> Unit) {
+fun ChrootCtlApp(
+    viewModel: MainViewModel,
+    onStartRefreshOperation: () -> Unit,
+    onStartBridgeOperation: (String, String) -> Unit,
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var destination by remember { mutableStateOf(AppDestination.Home) }
 
@@ -55,11 +60,25 @@ fun ChrootCtlApp(viewModel: MainViewModel, onStartRefreshOperation: () -> Unit) 
                         state = uiState,
                         refresh = viewModel::refresh,
                         startRefreshOperation = onStartRefreshOperation,
+                        openInstall = { destination = AppDestination.Install },
                         openActivity = { destination = AppDestination.Activity },
                         selectChroot = viewModel::selectChroot,
                         refreshSelectedChroot = viewModel::refreshSelectedChroot,
                         selectOperation = viewModel::selectOperation,
                         refreshSelectedOperation = viewModel::refreshSelectedOperation,
+                        updateInstallDraft = viewModel::updateInstallDraft,
+                        refreshInstallForm = viewModel::refreshInstallForm,
+                        previewInstall = viewModel::previewInstall,
+                        startInstall = { onStartBridgeOperation("install.run", viewModel.installPayloadJson()) },
+                        previewLifecycle = viewModel::previewLifecycle,
+                        startLifecycle = { name, operation -> onStartBridgeOperation(operation, viewModel.lifecyclePayloadJson(name, operation.substringAfterLast('.'))) },
+                        executeRemove = { name, confirmation -> onStartBridgeOperation("chroots.remove.execute", viewModel.removePayloadJson(name, confirmation)) },
+                        refreshSnapshots = viewModel::refreshSnapshots,
+                        previewSnapshotCreate = viewModel::previewSnapshotCreate,
+                        startSnapshotCreate = { name -> onStartBridgeOperation("snapshots.create", viewModel.snapshotCreatePayloadJson(name)) },
+                        previewSnapshotAction = viewModel::previewSnapshotAction,
+                        startSnapshotRestore = { name, snapshot, confirmation -> onStartBridgeOperation("snapshots.restore", viewModel.snapshotRestorePayloadJson(name, snapshot, confirmation)) },
+                        startSnapshotExport = { name, snapshot -> onStartBridgeOperation("snapshots.export", viewModel.snapshotExportPayloadJson(name, snapshot)) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -83,11 +102,25 @@ fun ChrootCtlApp(viewModel: MainViewModel, onStartRefreshOperation: () -> Unit) 
                         state = uiState,
                         refresh = viewModel::refresh,
                         startRefreshOperation = onStartRefreshOperation,
+                        openInstall = { destination = AppDestination.Install },
                         openActivity = { destination = AppDestination.Activity },
                         selectChroot = viewModel::selectChroot,
                         refreshSelectedChroot = viewModel::refreshSelectedChroot,
                         selectOperation = viewModel::selectOperation,
                         refreshSelectedOperation = viewModel::refreshSelectedOperation,
+                        updateInstallDraft = viewModel::updateInstallDraft,
+                        refreshInstallForm = viewModel::refreshInstallForm,
+                        previewInstall = viewModel::previewInstall,
+                        startInstall = { onStartBridgeOperation("install.run", viewModel.installPayloadJson()) },
+                        previewLifecycle = viewModel::previewLifecycle,
+                        startLifecycle = { name, operation -> onStartBridgeOperation(operation, viewModel.lifecyclePayloadJson(name, operation.substringAfterLast('.'))) },
+                        executeRemove = { name, confirmation -> onStartBridgeOperation("chroots.remove.execute", viewModel.removePayloadJson(name, confirmation)) },
+                        refreshSnapshots = viewModel::refreshSnapshots,
+                        previewSnapshotCreate = viewModel::previewSnapshotCreate,
+                        startSnapshotCreate = { name -> onStartBridgeOperation("snapshots.create", viewModel.snapshotCreatePayloadJson(name)) },
+                        previewSnapshotAction = viewModel::previewSnapshotAction,
+                        startSnapshotRestore = { name, snapshot, confirmation -> onStartBridgeOperation("snapshots.restore", viewModel.snapshotRestorePayloadJson(name, snapshot, confirmation)) },
+                        startSnapshotExport = { name, snapshot -> onStartBridgeOperation("snapshots.export", viewModel.snapshotExportPayloadJson(name, snapshot)) },
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -102,11 +135,25 @@ private fun AppContent(
     state: MainUiState,
     refresh: () -> Unit,
     startRefreshOperation: () -> Unit,
+    openInstall: () -> Unit,
     openActivity: () -> Unit,
     selectChroot: (String) -> Unit,
     refreshSelectedChroot: () -> Unit,
     selectOperation: (String) -> Unit,
     refreshSelectedOperation: () -> Unit,
+    updateInstallDraft: (com.mikeyphw.chrootctl.model.InstallDraft) -> Unit,
+    refreshInstallForm: () -> Unit,
+    previewInstall: () -> Unit,
+    startInstall: () -> Unit,
+    previewLifecycle: (String, String) -> Unit,
+    startLifecycle: (String, String) -> Unit,
+    executeRemove: (String, String) -> Unit,
+    refreshSnapshots: (String) -> Unit,
+    previewSnapshotCreate: (String) -> Unit,
+    startSnapshotCreate: (String) -> Unit,
+    previewSnapshotAction: (String, String, String) -> Unit,
+    startSnapshotRestore: (String, String, String) -> Unit,
+    startSnapshotExport: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -126,8 +173,28 @@ private fun AppContent(
                 chroots = state.chroots,
                 selectedName = state.selectedChrootName,
                 detail = state.chrootDetail,
+                lifecyclePreview = state.lifecyclePreview,
+                snapshotPane = state.snapshotPane,
                 onSelect = selectChroot,
                 onRefreshDetail = refreshSelectedChroot,
+                onPreviewLifecycle = previewLifecycle,
+                onStartLifecycle = startLifecycle,
+                onExecuteRemove = executeRemove,
+                onRefreshSnapshots = refreshSnapshots,
+                onPreviewSnapshotCreate = previewSnapshotCreate,
+                onStartSnapshotCreate = startSnapshotCreate,
+                onPreviewSnapshotAction = previewSnapshotAction,
+                onStartSnapshotRestore = startSnapshotRestore,
+                onStartSnapshotExport = startSnapshotExport,
+            )
+            AppDestination.Install -> InstallScreen(
+                draft = state.installDraft,
+                form = state.installForm,
+                preview = state.installPreview,
+                onDraftChange = updateInstallDraft,
+                onRefreshForm = refreshInstallForm,
+                onPreview = previewInstall,
+                onStartInstall = startInstall,
             )
             AppDestination.Activity -> ActivityScreen(
                 operations = state.operations,
@@ -136,7 +203,7 @@ private fun AppContent(
                 onSelect = selectOperation,
                 onRefreshDetail = refreshSelectedOperation,
             )
-            AppDestination.Tools -> ToolsScreen(state.toolGroups)
+            AppDestination.Tools -> ToolsScreen(state.toolGroups, onOpenInstall = openInstall)
         }
     }
 }

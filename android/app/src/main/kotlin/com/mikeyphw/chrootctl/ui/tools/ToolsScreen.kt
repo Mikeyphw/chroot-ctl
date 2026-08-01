@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,8 +19,9 @@ import com.mikeyphw.chrootctl.ui.components.ChipRow
 import com.mikeyphw.chrootctl.ui.components.EmptyState
 
 @Composable
-fun ToolsScreen(groups: List<ToolCapabilityGroup>, modifier: Modifier = Modifier) {
+fun ToolsScreen(groups: List<ToolCapabilityGroup>, onOpenInstall: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(onClick = onOpenInstall) { Text(stringResource(R.string.install_open_action)) }
         if (groups.isEmpty()) {
             EmptyState(
                 title = stringResource(R.string.tools_empty_title),

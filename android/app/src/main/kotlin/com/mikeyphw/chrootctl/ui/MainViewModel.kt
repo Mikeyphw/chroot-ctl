@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.mikeyphw.chrootctl.model.ChrootDetail
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.HomeSnapshot
+import com.mikeyphw.chrootctl.model.SnapshotPane
+import com.mikeyphw.chrootctl.model.PreviewSummary
+import com.mikeyphw.chrootctl.model.InstallFormSummary
+import com.mikeyphw.chrootctl.model.InstallDraft
 import com.mikeyphw.chrootctl.model.Loadable
 import com.mikeyphw.chrootctl.model.OperationDetail
 import com.mikeyphw.chrootctl.model.OperationSummary
@@ -17,9 +21,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 sealed interface RefreshState {
     data object Idle : RefreshState
@@ -36,6 +40,11 @@ data class MainUiState(
     val selectedOperationId: String? = null,
     val operationDetail: OperationDetail = OperationDetail(null, emptyList(), refreshing = false, errorMessage = null),
     val toolGroups: List<ToolCapabilityGroup> = emptyList(),
+    val installDraft: InstallDraft = InstallDraft(),
+    val installForm: InstallFormSummary = InstallFormSummary(),
+    val installPreview: PreviewSummary? = null,
+    val lifecyclePreview: PreviewSummary? = null,
+    val snapshotPane: SnapshotPane = SnapshotPane(),
     val refreshState: RefreshState = RefreshState.Idle,
 )
 
@@ -45,6 +54,15 @@ private data class PrimaryUiSlice(
     val operations: List<OperationSummary>,
     val selectedChrootName: String?,
     val chrootDetail: ChrootDetail,
+)
+
+
+private data class TertiaryUiSlice(
+    val installDraft: InstallDraft,
+    val installForm: InstallFormSummary,
+    val installPreview: PreviewSummary?,
+    val lifecyclePreview: PreviewSummary?,
+    val snapshotPane: SnapshotPane,
 )
 
 private data class SecondaryUiSlice(
@@ -62,6 +80,11 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val selectedOperationId = MutableStateFlow<String?>(null)
     private val chrootDetailRefresh = MutableStateFlow<RefreshState>(RefreshState.Idle)
     private val operationDetailRefresh = MutableStateFlow<RefreshState>(RefreshState.Idle)
+    private val installDraft = MutableStateFlow(InstallDraft())
+    private val installForm = MutableStateFlow(InstallFormSummary())
+    private val installPreview = MutableStateFlow<PreviewSummary?>(null)
+    private val lifecyclePreview = MutableStateFlow<PreviewSummary?>(null)
+    private val snapshotPane = MutableStateFlow(SnapshotPane())
 
     private val selectedChrootDetail = combine(
         repository.chroots,
@@ -121,10 +144,28 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         )
     }
 
+
+    private val tertiaryUiSlice = combine(
+        installDraft.asStateFlow(),
+        installForm.asStateFlow(),
+        installPreview.asStateFlow(),
+        lifecyclePreview.asStateFlow(),
+        snapshotPane.asStateFlow(),
+    ) { draft, form, preview, lifecycle, snapshots ->
+        TertiaryUiSlice(
+            installDraft = draft,
+            installForm = form,
+            installPreview = preview,
+            lifecyclePreview = lifecycle,
+            snapshotPane = snapshots,
+        )
+    }
+
     val uiState: StateFlow<MainUiState> = combine(
         primaryUiSlice,
         secondaryUiSlice,
-    ) { primary, secondary ->
+        tertiaryUiSlice,
+    ) { primary, secondary, tertiary ->
         MainUiState(
             home = primary.home,
             chroots = primary.chroots,
@@ -134,12 +175,18 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             selectedOperationId = secondary.selectedOperationId,
             operationDetail = secondary.operationDetail,
             toolGroups = secondary.toolGroups,
+            installDraft = tertiary.installDraft,
+            installForm = tertiary.installForm,
+            installPreview = tertiary.installPreview,
+            lifecyclePreview = tertiary.lifecyclePreview,
+            snapshotPane = tertiary.snapshotPane,
             refreshState = secondary.refreshState,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MainUiState())
 
     init {
         refresh()
+        refreshInstallForm()
     }
 
     fun refresh() {
@@ -192,6 +239,101 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
+
+    fun updateInstallDraft(draft: InstallDraft) {
+        installDraft.value = draft
+        installPreview.value = null
+    }
+
+    fun refreshInstallForm() {
+        viewModelScope.launch {
+            installForm.value = installForm.value.copy(refreshing = true, errorMessage = null)
+            repository.refreshInstallForm(installDraft.value)
+                .onSuccess { form -> installForm.value = form.copy(refreshing = false, errorMessage = null) }
+                .onFailure { error ->
+                    installForm.value = installForm.value.copy(
+                        refreshing = false,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun previewInstall() {
+        viewModelScope.launch {
+            repository.previewInstall(installDraft.value)
+                .onSuccess { preview -> installPreview.value = preview }
+                .onFailure { error -> installPreview.value = errorPreview("Install preview", error) }
+        }
+    }
+
+    fun installPayloadJson(): String = installDraft.value.toJsonPayload().toString()
+
+    fun lifecyclePayloadJson(name: String, action: String): String = JSONObject()
+        .put("name", name)
+        .put("action", action)
+        .toString()
+
+    fun removePayloadJson(name: String, confirmation: String): String = JSONObject()
+        .put("name", name)
+        .put("confirmation", confirmation)
+        .toString()
+
+    fun previewLifecycle(name: String, action: String) {
+        viewModelScope.launch {
+            repository.previewLifecycle(name, action)
+                .onSuccess { preview -> lifecyclePreview.value = preview }
+                .onFailure { error -> lifecyclePreview.value = errorPreview("Lifecycle preview", error) }
+        }
+    }
+
+    fun refreshSnapshots(name: String) {
+        viewModelScope.launch {
+            snapshotPane.value = snapshotPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
+            repository.refreshSnapshots(name)
+                .onSuccess { rows -> snapshotPane.value = SnapshotPane(targetName = name, snapshots = rows) }
+                .onFailure { error ->
+                    snapshotPane.value = snapshotPane.value.copy(
+                        targetName = name,
+                        refreshing = false,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun previewSnapshotCreate(name: String) {
+        viewModelScope.launch {
+            repository.previewSnapshotCreate(name)
+                .onSuccess { preview -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = preview) }
+                .onFailure { error -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = errorPreview("Snapshot preview", error)) }
+        }
+    }
+
+    fun previewSnapshotAction(name: String, snapshot: String, action: String) {
+        viewModelScope.launch {
+            repository.previewSnapshotAction(name, snapshot, action)
+                .onSuccess { preview -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = preview) }
+                .onFailure { error -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = errorPreview("Snapshot preview", error)) }
+        }
+    }
+
+    fun snapshotCreatePayloadJson(name: String): String = JSONObject()
+        .put("name", name)
+        .put("snapshot", "snapshot-${System.currentTimeMillis() / 1000}")
+        .toString()
+
+    fun snapshotRestorePayloadJson(name: String, snapshot: String, confirmation: String): String = JSONObject()
+        .put("name", name)
+        .put("snapshot", snapshot)
+        .put("confirmation", confirmation)
+        .toString()
+
+    fun snapshotExportPayloadJson(name: String, snapshot: String): String = JSONObject()
+        .put("name", name)
+        .put("snapshot", snapshot)
+        .toString()
+
     override fun onCleared() {
         repository.close()
         super.onCleared()
@@ -201,6 +343,27 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         const val STOP_TIMEOUT_MS = 5_000L
     }
 }
+
+
+private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
+    .put("distro", distro)
+    .put("name", name)
+    .put("username", username)
+    .put("preset", preset)
+    .put("profile", profile)
+    .put("desktop", desktop)
+    .put("release", release.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+    .put("version", version.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+    .put("mirror", mirror)
+
+private fun errorPreview(title: String, error: Throwable): PreviewSummary = PreviewSummary(
+    title = title,
+    ok = false,
+    body = error.message ?: error.javaClass.simpleName,
+    blocking = listOf(error.message ?: error.javaClass.simpleName),
+    warnings = emptyList(),
+    rawJson = "{}",
+)
 
 class MainViewModelFactory(private val repository: BridgeRepository) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")

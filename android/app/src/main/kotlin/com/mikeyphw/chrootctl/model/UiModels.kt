@@ -98,3 +98,54 @@ data class ToolCapabilityGroup(
     val title: String,
     val operations: List<String>,
 )
+
+data class InstallDraft(
+    val distro: String = "ubuntu",
+    val name: String = "ubuntu",
+    val username: String = "mike",
+    val preset: String = "minimal-server",
+    val profile: String = "minimal",
+    val desktop: String = "none",
+    val release: String = "",
+    val version: String = "",
+    val mirror: String = "auto",
+)
+
+data class InstallFormSummary(
+    val distros: List<String> = emptyList(),
+    val presets: List<String> = emptyList(),
+    val profiles: List<String> = emptyList(),
+    val desktops: List<String> = emptyList(),
+    val mirrors: List<String> = emptyList(),
+    val defaultName: String = "ubuntu",
+    val defaultUsername: String = "mike",
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+)
+
+data class PreviewSummary(
+    val title: String,
+    val ok: Boolean,
+    val body: String,
+    val blocking: List<String>,
+    val warnings: List<String>,
+    val rawJson: String,
+)
+
+data class SnapshotSummary(
+    val name: String,
+    val chrootName: String,
+    val kind: String,
+    val path: String,
+    val createdAt: String,
+    val note: String,
+    val sizeBytes: Long,
+)
+
+data class SnapshotPane(
+    val targetName: String? = null,
+    val snapshots: List<SnapshotSummary> = emptyList(),
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+    val preview: PreviewSummary? = null,
+)
