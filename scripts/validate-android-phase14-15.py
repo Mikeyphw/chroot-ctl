@@ -92,7 +92,7 @@ def main() -> int:
     build = read(BUILD)
     if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
         errors.append("Android SDK must remain pinned to 36")
-    if "versionName = \"0.1.0-phase15\"" not in build and "versionName = \"0.1.0-phase17\"" not in build and "versionName = \"0.1.0-phase19\"" not in build and "versionName = \"0.1.0-phase21\"" not in build:
+    if "versionName = \"0.1.0-phase15\"" not in build and "versionName = \"0.1.0-phase17\"" not in build and "versionName = \"0.1.0-phase19\"" not in build and "versionName = \"0.1.0-phase21\"" not in build and "versionName = \"0.1.0-phase22\"" not in build and "versionName = \"0.1.0-phase22\"" not in build and "versionName = \"0.1.0-phase22\"" not in build:
         errors.append("Android app versionName must be at least phase15")
 
     strings = read(STRINGS)

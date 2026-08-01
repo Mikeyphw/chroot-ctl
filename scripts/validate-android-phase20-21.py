@@ -57,8 +57,8 @@ def main() -> int:
     build_text = read(build)
     if "compileSdk = 36" not in build_text or "targetSdk = 36" not in build_text:
         errors.append("Android SDK must remain pinned to 36")
-    if 'versionName = "0.1.0-phase21"' not in build_text:
-        errors.append("Android app versionName must advance to phase21")
+    if 'versionName = "0.1.0-phase21"' not in build_text and 'versionName = "0.1.0-phase22"' not in build_text:
+        errors.append("Android app versionName must be at least phase21")
     backup_rules = ROOT / "android/app/src/main/res/xml/backup_rules.xml"
     if '@xml/backup_rules' in read(manifest) and not backup_rules.exists():
         errors.append("manifest references @xml/backup_rules but backup_rules.xml is missing")

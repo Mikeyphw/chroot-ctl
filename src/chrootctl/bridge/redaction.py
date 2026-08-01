@@ -9,6 +9,8 @@ _SECRET_KEYS = frozenset({
     "cookie",
     "csrf",
     "password",
+    "confirmPassword",
+    "confirm_password",
     "passphrase",
     "secret",
     "token",
