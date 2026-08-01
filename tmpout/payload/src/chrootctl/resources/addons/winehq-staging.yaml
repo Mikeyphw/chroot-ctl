@@ -1,7 +1,0 @@
-description: Install Wine staging packages
-distro: all
-categories:
-- compatibility
-- desktop
-script: install-winehq-staging.sh
-name: winehq-staging

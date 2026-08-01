@@ -1,7 +1,0 @@
-description: Install the XFCE desktop environment
-distro: all
-categories:
-- desktop-environment
-- desktop
-script: install-xfce4.sh
-name: xfce4

@@ -1,7 +1,0 @@
-description: Install XRDP for Remote Desktop access
-distro: all
-categories:
-- remote-access
-- desktop
-script: setup-rdp-server.sh
-name: setup-rdp-server

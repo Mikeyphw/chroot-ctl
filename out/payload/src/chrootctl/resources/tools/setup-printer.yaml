@@ -1,7 +1,0 @@
-description: Install a basic printing stack
-distro: all
-categories:
-- printing
-- desktop
-script: setup-printer.sh
-name: setup-printer

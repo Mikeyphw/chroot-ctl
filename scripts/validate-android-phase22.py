@@ -70,7 +70,11 @@ def main() -> int:
     # SDK and Android build contract.
     error_if(errors, "compileSdk = 36" not in build, "compileSdk must remain pinned to 36")
     error_if(errors, "targetSdk = 36" not in build, "targetSdk must remain pinned to 36")
-    error_if(errors, 'versionName = "0.1.0-phase22"' not in build, "Android versionName must advance to phase22")
+    error_if(
+        errors,
+        not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(22, 25)),
+        "Android versionName must be phase22 or later release-hardening phase",
+    )
     error_if(errors, "warningsAsErrors = true" not in build, "lint warnings must remain errors")
     error_if(errors, "abortOnError = true" not in build, "lint must abort on errors")
 

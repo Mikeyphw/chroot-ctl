@@ -133,3 +133,10 @@ service-account.json
 *.apk
 *.aab
 android/app/schemas/
+# ===================
+# Generated chrootctl module outputs
+# ===================
+out/
+tmpout/
+chrootctl-magisk.zip
+tmpmod.zip
