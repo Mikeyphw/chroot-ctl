@@ -8,7 +8,7 @@ version = "0.11.0"
 description = "Manage Termux chroot installs and runtime"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["rich>=13.7.0", "PyYAML>=6.0", "fastapi>=0.115.0", "Jinja2>=3.1.0", "uvicorn>=0.30.0", "python-multipart>=0.0.20"]
+dependencies = ["rich>=13.7.0", "PyYAML>=6.0", "pydantic>=2.7.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5.0", "mypy>=1.10.0"]
@@ -16,7 +16,6 @@ dev = ["pytest>=8.0", "ruff>=0.5.0", "mypy>=1.10.0"]
 [project.scripts]
 chrootctl = "chrootctl.cli:main"
 chrootctl-app = "chrootctl.bridge.cli:main"
-chrootctl-web = "chrootctl.web.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -28,7 +27,7 @@ where = ["src"]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
-chrootctl = ["resources/tools/*.yaml", "resources/addons/*.yaml", "resources/tool-scripts/*.sh", "resources/tool-scripts/*.py", "resources/addon-scripts/*.sh", "resources/addon-scripts/*.py", "web/templates/*.html", "web/static/*"]
+chrootctl = ["resources/tools/*.yaml", "resources/addons/*.yaml", "resources/tool-scripts/*.sh", "resources/tool-scripts/*.py", "resources/addon-scripts/*.sh", "resources/addon-scripts/*.py"]
 
 
 [tool.ruff]

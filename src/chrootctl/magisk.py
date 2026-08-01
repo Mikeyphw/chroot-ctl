@@ -12,17 +12,14 @@ if TYPE_CHECKING:
 
 DEFAULT_MODULE_ID = "chrootctl-magisk"
 DEFAULT_MODULE_NAME = "chrootctl Magisk Module"
-DEFAULT_MODULE_VERSION = "1.2.6"
-DEFAULT_MODULE_VERSION_CODE = 14
+DEFAULT_MODULE_VERSION = "1.3.0"
+DEFAULT_MODULE_VERSION_CODE = 15
 ANDROID_PYDANTIC_CORE_INDEX_URL = "https://eutalix.github.io/android-pydantic-core/"
 SUPPORTED_ANDROID_PYDANTIC_CORE_PYTHONS = ("3.9", "3.10", "3.11", "3.12", "3.13")
 
 DEFAULT_PYTHON_DEPENDENCIES = (
     "rich>=13.7.0",
     "PyYAML>=6.0",
-    "fastapi>=0.115.0",
-    "Jinja2>=3.1.0",
-    "uvicorn>=0.30.0",
     "pydantic>=2.7.0",
 )
 
@@ -80,17 +77,11 @@ def render_magisk_module(
         Path("service.sh"): _service_sh(config),
         Path(config.helper_path()): _helper_sh(config),
         Path("bin/chrootctl-python-bootstrap"): _python_bootstrap_sh(),
-        Path("bin/chrootctl-webui-service"): _webui_supervisor_sh(),
         Path("system/bin/chrootctl"): _python_entrypoint("chrootctl.cli"),
-        Path("system/bin/chrootctl-web"): _python_entrypoint("chrootctl.web.app"),
         Path("system/bin/chrootctl-magisk-helper"): _system_bin_proxy("bin/chrootctl-magisk-helper"),
         Path("system/bin/chrootctl-python-bootstrap"): _system_bin_proxy("bin/chrootctl-python-bootstrap"),
-        Path("system/bin/chrootctl-webui-service"): _system_bin_proxy("bin/chrootctl-webui-service"),
         Path("payload/requirements.txt"): _requirements_txt(config.python_dependencies),
         Path("config/chrootctl/dependency-mode.env"): _dependency_mode_env(),
-        Path("config/chrootctl/webui.env"): _webui_env(),
-        Path("webroot/index.html"): _ksu_webroot_index_html(config),
-        Path("webroot/icon.svg"): _ksu_webroot_icon_svg(),
         Path(config.state_path()): _boot_targets_json(startup_targets),
         Path("wheelhouse/.keep"): "",
     }
@@ -124,7 +115,7 @@ def resolve_startup_targets(
 
 
 def _is_executable(path: Path, config: MagiskModuleConfig) -> bool:
-    return path.suffix == ".sh" or path.name in {config.helper_name, "chrootctl", "chrootctl-web", "chrootctl-webui-service", "chrootctl-python-bootstrap"}
+    return path.suffix == ".sh" or path.name in {config.helper_name, "chrootctl", "chrootctl-python-bootstrap"}
 
 
 def _copy_python_payload(output_dir: Path, package_root: Path) -> list[Path]:
@@ -172,8 +163,7 @@ def _module_prop(config: MagiskModuleConfig) -> str:
             f"version={config.version}",
             f"versionCode={config.version_code}",
             "author=chrootctl",
-            "description=Self-contained Magisk/KSU module for boot startup, helper commands, and the chrootctl Web UI.",
-            "webuiIcon=webroot/icon.svg",
+            "description=Self-contained Magisk/KSU module for boot startup, helper commands, and the chrootctl Android bridge.",
             "",
         )
     )
@@ -317,9 +307,6 @@ out = Path(sys.argv[1])
 modules = (
     "rich",
     "yaml",
-    "fastapi",
-    "jinja2",
-    "uvicorn",
     "pydantic",
     "pydantic_core",
 )
@@ -370,13 +357,10 @@ mkdir -p "$PIP_TMP_DIR" 2>/dev/null || true
 ui_print "- Applying module permissions"
 set_perm_recursive "$MODPATH" 0 0 0755 0644 || ui_print "! Warning: set_perm_recursive failed"
 set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl"
-set_perm "$MODPATH/system/bin/chrootctl-web" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl-web"
 set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl-magisk-helper"
 set_perm "$MODPATH/system/bin/chrootctl-python-bootstrap" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl-python-bootstrap"
-set_perm "$MODPATH/system/bin/chrootctl-webui-service" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl-webui-service"
 set_perm "$MODPATH/bin/chrootctl-magisk-helper" 0 0 0755 || ui_print "! Warning: set_perm failed: chrootctl-magisk-helper"
 set_perm "$MODPATH/bin/chrootctl-python-bootstrap" 0 0 0755 || ui_print "! Warning: set_perm failed: chrootctl-python-bootstrap"
-set_perm "$MODPATH/bin/chrootctl-webui-service" 0 0 0755 || ui_print "! Warning: set_perm failed: chrootctl-webui-service"
 
 ui_print "- chrootctl module install configuration complete"
 exit 0
@@ -399,7 +383,6 @@ def _service_sh(config: MagiskModuleConfig) -> str:
 MODDIR=${{0%/*}}
 HELPER="$MODDIR/{helper}"
 STATE_FILE="$MODDIR/{state_path}"
-WEBUI_SERVICE="$MODDIR/bin/chrootctl-webui-service"
 export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
 [ -f "$MODDIR/config/chrootctl/python.env" ] && . "$MODDIR/config/chrootctl/python.env"
 
@@ -407,8 +390,6 @@ export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
 "$MODDIR/system/bin/chrootctl" clipboard daemon start >/dev/null 2>&1 || true
 "$MODDIR/system/bin/chrootctl" run --boot >/dev/null 2>&1 || true
 
-[ -x "$WEBUI_SERVICE" ] && "$WEBUI_SERVICE" start "$MODDIR" >/dev/null 2>&1 || true
-[ -x "$WEBUI_SERVICE" ] && "$WEBUI_SERVICE" watch "$MODDIR" >/dev/null 2>&1 &
 
 exit 0
 """
@@ -470,158 +451,6 @@ case "$COMMAND" in
     ;;
 esac
 """
-
-def _webui_supervisor_sh() -> str:
-    return """#!/system/bin/sh
-set -e
-set +u
-
-COMMAND=${1:-start}
-MODDIR=${2:-${0%/*}/..}
-WEBUI="$MODDIR/system/bin/chrootctl-web"
-BOOTSTRAP="$MODDIR/bin/chrootctl-python-bootstrap"
-ENV_FILE="$MODDIR/config/chrootctl/webui.env"
-MODULE_RUNTIME_DIR="$MODDIR/var/run"
-MODULE_LOG_DIR="$MODDIR/var/log"
-CONTROL_DIR="/data/adb/chrootctl"
-CONTROL_FILE="$CONTROL_DIR/control.state"
-ENABLED_FILE="$CONTROL_DIR/webui.enabled"
-WEB_PID_FILE="$CONTROL_DIR/webui.pid"
-SUPERVISOR_PID_FILE="$CONTROL_DIR/webui-supervisor.pid"
-LOG_FILE="$MODULE_LOG_DIR/chrootctl-webui.log"
-export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
-[ -f "$MODDIR/config/chrootctl/python.env" ] && . "$MODDIR/config/chrootctl/python.env"
-
-mkdir -p "$MODULE_RUNTIME_DIR" "$MODULE_LOG_DIR" "$CONTROL_DIR"
-
-HOST="127.0.0.1"
-PORT="8420"
-if [ -f "$ENV_FILE" ]; then
-  . "$ENV_FILE"
-fi
-
-pid_is_running() {
-  [ -f "$1" ] || return 1
-  PID=$(cat "$1" 2>/dev/null || true)
-  [ -n "$PID" ] || return 1
-  kill -0 "$PID" >/dev/null 2>&1
-}
-
-runtime_ready() {
-  [ -x "$BOOTSTRAP" ] || {
-    echo "missing dependency bootstrap at $BOOTSTRAP" >>"$LOG_FILE"
-    return 1
-  }
-  "$BOOTSTRAP" "$MODDIR" >>"$LOG_FILE" 2>&1
-}
-
-start_once() {
-  if pid_is_running "$WEB_PID_FILE"; then
-    return 0
-  fi
-  if ! runtime_ready; then
-    echo "WebUI dependencies are not ready; refusing to start" >>"$LOG_FILE"
-    return 1
-  fi
-  "$WEBUI" --host "$HOST" --port "$PORT" >>"$LOG_FILE" 2>&1 &
-  echo $! >"$WEB_PID_FILE"
-}
-
-stop_once() {
-  if pid_is_running "$WEB_PID_FILE"; then
-    kill "$(cat "$WEB_PID_FILE")" >/dev/null 2>&1 || true
-  fi
-  rm -f "$WEB_PID_FILE"
-}
-
-supervise() {
-  echo $$ >"$SUPERVISOR_PID_FILE"
-  touch "$ENABLED_FILE"
-  while [ -f "$ENABLED_FILE" ]; do
-    start_once || true
-    sleep 5
-    if pid_is_running "$WEB_PID_FILE"; then
-      continue
-    fi
-    rm -f "$WEB_PID_FILE"
-  done
-  rm -f "$SUPERVISOR_PID_FILE"
-}
-
-ensure_supervisor() {
-  touch "$ENABLED_FILE"
-  if pid_is_running "$SUPERVISOR_PID_FILE"; then
-    return 0
-  fi
-  "$0" supervise "$MODDIR" >/dev/null 2>&1 &
-}
-
-stop_supervisor() {
-  rm -f "$ENABLED_FILE"
-  if pid_is_running "$SUPERVISOR_PID_FILE"; then
-    kill "$(cat "$SUPERVISOR_PID_FILE")" >/dev/null 2>&1 || true
-  fi
-  rm -f "$SUPERVISOR_PID_FILE"
-  stop_once
-}
-
-watch_control() {
-  while true; do
-    if [ -f "$CONTROL_FILE" ]; then
-      ACTION=$(cat "$CONTROL_FILE" 2>/dev/null || true)
-      rm -f "$CONTROL_FILE"
-      case "$ACTION" in
-        start)
-          ensure_supervisor
-          ;;
-        stop)
-          stop_supervisor
-          ;;
-        restart)
-          stop_supervisor
-          sleep 1
-          ensure_supervisor
-          ;;
-      esac
-    fi
-    sleep 2
-  done
-}
-
-case "$COMMAND" in
-  start)
-    ensure_supervisor
-    ;;
-  stop)
-    stop_supervisor
-    ;;
-  restart)
-    stop_supervisor
-    sleep 1
-    ensure_supervisor
-    ;;
-  status)
-    if pid_is_running "$WEB_PID_FILE"; then
-      PID_VALUE="$(cat "$WEB_PID_FILE" 2>/dev/null || true)"
-      echo "running pid=$PID_VALUE url=http://$HOST:$PORT log=$LOG_FILE"
-    else
-      echo "stopped url=http://$HOST:$PORT log=$LOG_FILE"
-      exit 1
-    fi
-    ;;
-  supervise)
-    supervise
-    ;;
-  watch)
-    watch_control
-    ;;
-  *)
-    echo "unsupported webui command: $COMMAND" >&2
-    exit 2
-    ;;
-esac
-"""
-
 
 def _module_dir_resolver_sh(module_id: str = DEFAULT_MODULE_ID) -> str:
     return f"""resolve_moddir() {{
@@ -851,9 +680,6 @@ out = Path(sys.argv[1])
 required = (
     ("rich", "rich"),
     ("yaml", "PyYAML"),
-    ("fastapi", "fastapi"),
-    ("jinja2", "Jinja2"),
-    ("uvicorn", "uvicorn"),
     ("pydantic", "pydantic"),
     ("pydantic_core", "pydantic-core"),
 )
@@ -879,10 +705,6 @@ try:
     from pydantic import TypeAdapter  # noqa: F401
 except Exception as exc:
     problems.append(f"pydantic:incompatible:{exc}")
-try:
-    from fastapi import FastAPI  # noqa: F401
-except Exception as exc:
-    problems.append(f"fastapi:incompatible:{exc}")
 
 if problems:
     lines.append("dependency_status=broken")
@@ -912,7 +734,7 @@ log "static Python environment is missing required modules"
   echo "payload=$PAYLOAD_SRC"
   echo "site_packages=$SITE_PACKAGES"
   echo "hint=Fix the static Python module environment; chrootctl no longer installs or repairs Python packages."
-  echo "required=rich PyYAML fastapi Jinja2 uvicorn pydantic pydantic-core"
+  echo "required=rich PyYAML pydantic pydantic-core"
   grep '^problem=' "$DETECTION_FILE" 2>/dev/null || true
 } >"$BOOTSTRAP_LOG"
 exit 1
@@ -931,219 +753,11 @@ def _dependency_mode_env() -> str:
     )
 
 
-def _webui_env() -> str:
-    return "\n".join(
-        (
-            'HOST="127.0.0.1"',
-            'PORT="8420"',
-            "",
-        )
-    )
 
 
 def _requirements_txt(requirements: tuple[str, ...]) -> str:
     return "\n".join((*requirements, ""))
 
-
-def _ksu_webroot_icon_svg() -> str:
-    return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#101827"/>
-  <path d="M35 36h58v14H35zM35 57h58v14H35zM35 78h39v14H35z" fill="#38bdf8"/>
-  <circle cx="93" cy="85" r="13" fill="#22c55e"/>
-</svg>
-"""
-
-
-def _ksu_webroot_index_html(config: MagiskModuleConfig) -> str:
-    module_id = config.module_id
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>chrootctl WebUI</title>
-  <style>
-    :root {{
-      color-scheme: dark;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
-    }}
-    body {{
-      margin: 0;
-      padding: 20px;
-      background: linear-gradient(160deg, #0f172a, #111827);
-    }}
-    main {{
-      max-width: 720px;
-      margin: 0 auto;
-    }}
-    .card {{
-      background: rgba(15, 23, 42, .92);
-      border: 1px solid rgba(148, 163, 184, .24);
-      border-radius: 20px;
-      padding: 20px;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, .32);
-    }}
-    h1 {{
-      margin: 0 0 8px;
-      font-size: 1.6rem;
-    }}
-    .muted {{
-      color: #94a3b8;
-      margin: 0 0 18px;
-    }}
-    .status {{
-      display: grid;
-      gap: 10px;
-      margin: 18px 0;
-      padding: 16px;
-      border-radius: 14px;
-      background: rgba(30, 41, 59, .72);
-    }}
-    .row {{
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: center;
-    }}
-    .label {{
-      color: #94a3b8;
-    }}
-    .value {{
-      font-weight: 700;
-      text-align: right;
-      word-break: break-word;
-    }}
-    .running {{
-      color: #4ade80;
-    }}
-    .stopped {{
-      color: #f87171;
-    }}
-    .actions {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-    }}
-    button {{
-      border: 0;
-      border-radius: 12px;
-      padding: 13px 14px;
-      font-weight: 700;
-      color: #0f172a;
-      background: #38bdf8;
-    }}
-    button.secondary {{
-      background: #cbd5e1;
-    }}
-    button.danger {{
-      background: #fb7185;
-    }}
-    button.full {{
-      grid-column: 1 / -1;
-      background: #4ade80;
-    }}
-    pre {{
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      background: rgba(2, 6, 23, .82);
-      border-radius: 12px;
-      padding: 12px;
-      min-height: 90px;
-      color: #cbd5e1;
-    }}
-  </style>
-</head>
-<body>
-<main>
-  <section class="card">
-    <h1>chrootctl</h1>
-    <p class="muted">KernelSU WebUI control panel for the main local Web server.</p>
-
-    <div class="status">
-      <div class="row"><span class="label">Module</span><span class="value">{module_id}</span></div>
-      <div class="row"><span class="label">Server</span><span id="state" class="value">checking…</span></div>
-      <div class="row"><span class="label">URL</span><span class="value">http://127.0.0.1:8420</span></div>
-    </div>
-
-    <div class="actions">
-      <button onclick="control('start')">Start</button>
-      <button class="danger" onclick="control('stop')">Stop</button>
-      <button class="secondary" onclick="control('restart')">Restart</button>
-      <button class="secondary" onclick="refreshStatus()">Refresh</button>
-      <button class="full" onclick="openBrowser()">Open in browser</button>
-    </div>
-
-    <h2>Output</h2>
-    <pre id="log">Ready.</pre>
-  </section>
-</main>
-
-<script>
-const MODDIR = "/data/adb/modules/{module_id}";
-const SERVICE = MODDIR + "/system/bin/chrootctl-webui-service";
-const WEB_URL = "http://127.0.0.1:8420";
-
-function writeLog(text) {{
-  document.getElementById("log").textContent = text || "";
-}}
-
-function setState(text) {{
-  const state = document.getElementById("state");
-  state.textContent = text;
-  state.className = "value " + (text.includes("running") ? "running" : "stopped");
-}}
-
-function execShell(command) {{
-  return new Promise((resolve) => {{
-    if (typeof ksu === "undefined" || typeof ksu.exec !== "function") {{
-      resolve({{ errno: 127, stdout: "", stderr: "KernelSU JavaScript API is unavailable." }});
-      return;
-    }}
-    const callback = "chrootctl_exec_" + Date.now() + "_" + Math.random().toString(16).slice(2);
-    window[callback] = function(errno, stdout, stderr) {{
-      delete window[callback];
-      resolve({{ errno, stdout: stdout || "", stderr: stderr || "" }});
-    }};
-    try {{
-      ksu.exec(command, "{{}}", callback);
-    }} catch (error) {{
-      delete window[callback];
-      resolve({{ errno: 1, stdout: "", stderr: String(error) }});
-    }}
-  }});
-}}
-
-async function refreshStatus() {{
-  const result = await execShell("sh -c '" + SERVICE + " status " + MODDIR + " 2>&1'");
-  const output = (result.stdout + result.stderr).trim();
-  if (result.errno === 0 && output.includes("running")) {{
-    setState("running");
-  }} else {{
-    setState("stopped");
-  }}
-  writeLog(output || ("exit=" + result.errno));
-}}
-
-async function control(action) {{
-  writeLog("Running " + action + "…");
-  const result = await execShell("sh -c '" + SERVICE + " " + action + " " + MODDIR + " 2>&1'");
-  writeLog((result.stdout + result.stderr).trim() || ("exit=" + result.errno));
-  setTimeout(refreshStatus, 700);
-}}
-
-async function openBrowser() {{
-  const result = await execShell("am start -a android.intent.action.VIEW -d " + WEB_URL + " 2>&1");
-  writeLog((result.stdout + result.stderr).trim() || "Open browser requested.");
-}}
-
-refreshStatus();
-setInterval(refreshStatus, 5000);
-</script>
-</body>
-</html>
-"""
 
 
 def _boot_targets_json(startup_targets: tuple[str, ...]) -> str:
@@ -1162,15 +776,10 @@ def validate_magisk_module(output_dir: Path) -> tuple[Path, ...]:
         Path("service.sh"),
         Path("bin/chrootctl-magisk-helper"),
         Path("bin/chrootctl-python-bootstrap"),
-        Path("bin/chrootctl-webui-service"),
         Path("system/bin/chrootctl"),
-        Path("system/bin/chrootctl-web"),
         Path("payload/src/chrootctl"),
-        Path("payload/src/chrootctl/web/routes/ksu.py"),
-        Path("payload/src/chrootctl/web/templates/ksu.html"),
         Path("config/chrootctl/boot_targets.json"),
         Path("config/chrootctl/dependency-mode.env"),
-        Path("config/chrootctl/webui.env"),
         Path("wheelhouse/.keep"),
     )
     missing = tuple(path for path in required_paths if not (output_dir / path).exists())
@@ -1191,52 +800,3 @@ def zip_magisk_module(output_dir: Path, zip_path: Path) -> Path:
                 archive.write(path, path.relative_to(output_dir).as_posix())
     return zip_path
 
-
-CONTROL_STATE = "/data/adb/chrootctl/control.state"
-PID_FILE = "/data/adb/chrootctl/webui.pid"
-
-def _service_sh_with_watcher() -> str:
-    return """#!/system/bin/sh
-MODDIR=${0%/*}
-
-CONTROL="/data/adb/chrootctl/control.state"
-PID="/data/adb/chrootctl/webui.pid"
-
-mkdir -p /data/adb/chrootctl
-
-start_web() {
-    echo "starting webui"
-    nohup python3 -m chrootctl.web.app --host 127.0.0.1 --port 8420 >/dev/null 2>&1 &
-    echo $! > "$PID"
-}
-
-stop_web() {
-    if [ -f "$PID" ]; then
-        kill "$(cat "$PID")" 2>/dev/null
-    fi
-    rm -f "$PID"
-}
-
-start_web
-
-while true; do
-    if [ -f "$CONTROL" ]; then
-        ACT=$(cat "$CONTROL")
-        rm -f "$CONTROL"
-        case "$ACT" in
-            start)
-                start_web
-                ;;
-            stop)
-                stop_web
-                ;;
-            restart)
-                stop_web
-                sleep 1
-                start_web
-                ;;
-        esac
-    fi
-    sleep 2
-done
-"""

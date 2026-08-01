@@ -67,6 +67,7 @@ def main() -> int:
         'versionName = "0.1.0-phase15"',
         'versionName = "0.1.0-phase17"',
         'versionName = "0.1.0-phase19"',
+        'versionName = "0.1.0-phase21"',
     )):
         errors.append("Android app versionName must be at least phase13")
     strings = STRINGS.read_text(encoding="utf-8")

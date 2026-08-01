@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import AppError
-from ..web.serialize import serialize_value
+from ..bridge.protocol import serialize_value
 from .context import ServiceContainer
 
 TUS_VERSION = "1.0.0"

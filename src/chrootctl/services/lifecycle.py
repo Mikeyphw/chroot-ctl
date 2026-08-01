@@ -22,12 +22,8 @@ class LifecyclePaths:
         return self.control_dir / "control.state"
 
     @property
-    def webui_pid_file(self) -> Path:
-        return self.control_dir / "webui.pid"
-
-    @property
-    def enabled_file(self) -> Path:
-        return self.control_dir / "webui.enabled"
+    def app_control_file(self) -> Path:
+        return self.control_dir / "android-app.enabled"
 
     @property
     def module_dir(self) -> Path:
@@ -38,8 +34,8 @@ class LifecyclePaths:
         return Path("/data/adb/modules_update") / self.module_id
 
     @property
-    def webui_log_file(self) -> Path:
-        return self.module_dir / "var/log/chrootctl-webui.log"
+    def module_log_file(self) -> Path:
+        return self.module_dir / "var/log/chrootctl.log"
 
     @property
     def install_log_file(self) -> Path:
@@ -51,28 +47,23 @@ class LifecyclePaths:
 
 
 class LifecycleService:
-    """Single lifecycle/control surface used by Web UI, KSU UI, and future CLI hooks."""
+    """Single lifecycle/control surface used by the native Android app and CLI hooks."""
 
     def __init__(self, paths: LifecyclePaths | None = None) -> None:
         self.paths = paths or LifecyclePaths()
 
-    def status(self, *, host: str = "127.0.0.1", port: int = 8420) -> dict[str, Any]:
-        pid = self._read_pid(self.paths.webui_pid_file)
-        running = self._pid_is_running(pid)
+    def status(self) -> dict[str, Any]:
         mode = self.runtime_mode()
         return {
-            "running": running,
-            "state": "running" if running else "stopped",
-            "pid": pid if running else None,
-            "url": f"http://{host}:{port}",
+            "running": self.paths.module_dir.exists() or self.paths.module_update_dir.exists(),
+            "state": "android_app_primary",
             "control_file": str(self.paths.control_file),
-            "pid_file": str(self.paths.webui_pid_file),
-            "enabled": self.paths.enabled_file.exists(),
+            "enabled": self.paths.app_control_file.exists(),
             "mode": mode,
             "module": self.module_status(),
             "python": self.python_status(),
             "logs": {
-                "webui": str(self.paths.webui_log_file),
+                "module": str(self.paths.module_log_file),
                 "install": str(self.paths.install_log_file),
                 "dependencies": str(self.paths.dependency_log_file),
             },

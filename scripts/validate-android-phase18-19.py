@@ -88,8 +88,8 @@ def main() -> int:
     build = read(BUILD)
     if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
         errors.append("Android SDK must remain pinned to 36")
-    if 'versionName = "0.1.0-phase19"' not in build:
-        errors.append("Android app versionName must advance to phase19")
+    if 'versionName = "0.1.0-phase19"' not in build and 'versionName = "0.1.0-phase21"' not in build:
+        errors.append("Android app versionName must be at least phase19")
     strings = read(STRINGS)
     for name in (
         "system_support_title",

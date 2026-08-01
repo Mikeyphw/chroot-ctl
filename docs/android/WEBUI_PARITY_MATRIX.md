@@ -1,60 +1,34 @@
 # WebUI to Android parity matrix
 
-This matrix is the migration gate for replacing the FastAPI/Jinja WebUI with the native Android application. WebUI code remains available only while a row is not yet marked **Native complete**.
+This matrix is the Phase 20 seal for replacing the FastAPI/Jinja WebUI with the native Android application.
+Every human-facing WebUI surface is now either **Native complete** or deliberately **Retired** as browser-only plumbing.
 
-| Existing surface | Current implementation | Native destination | Operation class | Migration state |
-|---|---|---|---|---|
-| Dashboard | `web/routes/dashboard.py` | Home | Read-only | Bridge ready |
-| Quick Start | `web/routes/quickstart.py` | Home onboarding | Read-only | Contract mapped |
-| Chroot list | `web/routes/chroots.py` | Chroots | Read-only | Bridge ready |
-| Chroot detail | `web/routes/chroots.py` | Chroot detail | Read-only | Bridge ready |
-| Chroot status | `web/routes/system.py` | Overview / Diagnostics | Read-only | Bridge ready |
-| Chroot doctor | `web/routes/system.py` | Overview / Diagnostics | Read-only | Bridge ready |
-| Install wizard | `web/routes/install.py` | Native install flow | Mutating, streaming | Planned |
-| Install preview | `web/routes/install.py` | Native install review | Preview | Planned |
-| Install retry | `web/routes/install.py` | Activity operation recovery | Mutating, streaming | Planned |
-| Jobs list | `web/routes/jobs.py` | Activity | Read-only | Persistent engine ready |
-| Job detail | `web/routes/jobs.py` | Operation detail | Read-only | Persistent engine ready |
-| Job event stream | `web/routes/jobs.py` | Foreground operation stream | Streaming | NDJSON foundation ready |
-| Chroot start | `web/routes/chroots.py` | Chroot detail | Mutating | Planned |
-| Chroot restart | `web/routes/chroots.py` | Chroot detail | Mutating | Planned |
-| Chroot rename | `web/routes/chroots.py` | Guarded overflow action | Destructive | Planned |
-| Chroot removal | `web/routes/chroots.py` | Guarded overflow action | Destructive | Preview bridge ready |
-| Package difference | `web/routes/chroots.py` | Packages | Read-only | Planned |
-| Snapshot list | `web/routes/chroots.py` | Snapshots | Read-only | Planned |
-| Snapshot create | `web/routes/chroots.py` | Snapshots | Mutating | Planned |
-| Snapshot restore | `web/routes/chroots.py` | Recovery | Destructive | Planned |
-| Snapshot export | `web/routes/chroots.py` | Android document picker | Streaming | Planned |
-| Transfer inspect | `web/routes/transfer.py` | Import review | Read-only | Planned |
-| Transfer import | `web/routes/transfer.py` | Android document picker | Mutating, streaming | Planned |
-| Transfer export | `web/routes/transfer.py` | Android document picker | Streaming | Preview bridge ready |
-| Chunked HTTP upload | `web/routes/transfer.py` | File descriptor streaming | Browser-only replacement | Remove after parity |
-| Users list/detail | `web/routes/users.py` | Users | Read-only | Planned |
-| User add/update/remove | `web/routes/users.py` | Users | Mutating / destructive | Planned |
-| User password | `web/routes/users.py` | Ephemeral pipe input | Sensitive mutation | Planned |
-| Services list/detail | `web/routes/services.py` | Services | Read-only | Planned |
-| Service start/stop/restart | `web/routes/services.py` | Services | Mutating | Planned |
-| Service enable/disable | `web/routes/services.py` | Services | Mutating | Planned |
-| Service journal | `web/routes/services.py` | Service detail | Read-only | Planned |
-| Tools catalog | `web/routes/catalog.py` | Tools / Catalog | Read-only | Planned |
-| Add-ons catalog | `web/routes/catalog.py` | Tools / Catalog | Read-only | Planned |
-| Catalog apply | `web/routes/catalog.py` | Catalog operation | Mutating, streaming | Planned |
-| Registry repair | `web/routes/system.py` | Recovery | Destructive | Planned |
-| Logs | `web/routes/system.py` | Activity / Diagnostics | Read-only | Planned |
-| Checks | `web/routes/system.py` | Diagnostics | Read-only | Planned |
-| Audit events | `web/routes/support.py` | Activity / Diagnostics | Read-only | Planned |
-| Support bundle | `web/routes/support.py` | Support | Streaming artifact | Planned |
-| KernelSU controls | `web/routes/ksu.py` | Tools / System | Mutating | Planned |
-| Module build | `web/routes/build.py` | Tools / Module | Streaming artifact | Planned |
-| API reference | `web/routes/docs.py` | Protocol documentation | Documentation | Contract started |
-| FAQ | `web/routes/faq.py` | Native Help | Documentation | Planned |
-| CSRF/access token | `web/security.py` | Not needed for Binder bridge | Browser-only removal | Retire with WebUI |
-| FastAPI HTTP server | `web/app.py` | libsu RootService | Browser-only removal | Root bridge scaffold ready |
+| Former WebUI surface | Native destination | Migration state | Native proof |
+|---|---|---|---|
+| Dashboard | Home | Native complete | Home/runtime readiness from `system.runtime`, `system.status`, `system.doctor` |
+| Quick Start | Home onboarding | Native complete | Home recommendations and install entry point |
+| Chroot list | Chroots | Native complete | `chroots.list` and native list/detail UI |
+| Chroot detail | Chroot detail | Native complete | Overview, runtime, users, services, snapshots and packages panels |
+| Install wizard | Install | Native complete | `install.form`, `install.preview`, `install.run` |
+| Jobs list/detail/event stream | Activity | Native complete | Persistent operations and NDJSON foreground operation stream |
+| Chroot start/restart/removal | Chroot detail lifecycle panel | Native complete | preview-first lifecycle actions and typed removal confirmation |
+| Snapshot list/create/restore/export | Chroot detail snapshots panel | Native complete | snapshot preview, create, restore and export operations |
+| Transfer inspect/import/export | Tools transfer panel | Native complete | SAF document picker plus descriptor transfer bridge |
+| Users list/detail/add/remove/password/sudo/shell | Chroot detail users panel | Native complete | users bridge contracts and typed confirmations |
+| Services list/detail/start/stop/restart/enable/disable/journal | Chroot detail services panel | Native complete | services bridge contracts and journal loading |
+| Tools and add-ons catalog | Tools catalog panel | Native complete | catalog search, preview and apply operations |
+| Package inventory and compare | Tools packages panel | Native complete | `packages.inventory`, `packages.compare` |
+| Registry repair | Tools support/system panel | Native complete | `repair.preview`, `repair.apply` |
+| Logs/checks/audit/support bundle | Activity, Diagnostics and Support | Native complete | debug timeline, support bundle and diagnostics exports |
+| KernelSU/module/system status | Tools system panel | Native complete | `system.runtime`, `system.module_status` |
+| Module build | Tools system panel | Native complete | `system.module_build_preview`, `system.module_build` |
+| Debug workbench | Tools debug workbench | Native complete | `debug.probes`, `debug.timeline`, `debug.export` |
+| FAQ/docs/API reference | Native help/docs + bridge protocol docs | Native complete | Android docs and protocol validators |
+| CSRF/access token | None | Retired | Browser-only security removed with WebUI |
+| Chunked HTTP upload/download URLs | SAF descriptors | Retired | `transferFromDescriptor`, `transferToDescriptor` |
+| FastAPI HTTP server / localhost port 8420 | libsu RootService Binder bridge | Retired | `chrootctl-app` bridge and Android RootService |
 
-## Retirement rule
+## Phase 21 retirement
 
-The WebUI may be deleted only when every feature row is **Native complete**, Android destructive-action policies pass, and the repository contains no remaining operational dependency on FastAPI, Jinja, Uvicorn, browser tokens, upload endpoints, or localhost port 8420.
-
-## Route inventory
-
-Mapped route modules: api.py, build.py, catalog.py, chroots.py, dashboard.py, docs.py, faq.py, install.py, jobs.py, ksu.py, quickstart.py, services.py, support.py, system.py, transfer.py, users.py.
+The WebUI source package, console script, FastAPI/Jinja/Uvicorn dependencies, Playwright/browser tests, browser upload tests, WebUI module service and WebUI module artifacts are removed.
+The supported human-facing UI is now the Android app; the supported machine-facing local API is the versioned `chrootctl-app` bridge.

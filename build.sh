@@ -39,11 +39,7 @@ required_paths=(
   "service.sh"
   "bin/chrootctl-magisk-helper"
   "bin/chrootctl-python-bootstrap"
-  "bin/chrootctl-webui-service"
   "system/bin/chrootctl"
-  "system/bin/chrootctl-web"
-  "payload/src/chrootctl/web/routes/ksu.py"
-  "payload/src/chrootctl/web/templates/ksu.html"
 )
 
 for path in "${required_paths[@]}"; do
@@ -66,9 +62,7 @@ required = {
     "service.sh",
     "bin/chrootctl-magisk-helper",
     "bin/chrootctl-python-bootstrap",
-    "bin/chrootctl-webui-service",
     "system/bin/chrootctl",
-    "system/bin/chrootctl-web",
 }
 with zipfile.ZipFile(zip_path) as archive:
     names = set(archive.namelist())

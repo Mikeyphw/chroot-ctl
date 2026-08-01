@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..web.serialize import serialize_value
+from ..bridge.protocol import serialize_value
 from .context import ServiceContainer
 
 

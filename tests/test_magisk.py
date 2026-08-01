@@ -32,17 +32,6 @@ def _build_package_source(tmp_path: Path) -> Path:
     chrootctl_dir.mkdir(parents=True)
     (chrootctl_dir / "__init__.py").write_text("", encoding="utf-8")
     (chrootctl_dir / "cli.py").write_text("def main():\n    return None\n", encoding="utf-8")
-    web_dir = chrootctl_dir / "web"
-    web_dir.mkdir()
-    (web_dir / "__init__.py").write_text("", encoding="utf-8")
-    (web_dir / "app.py").write_text("def main():\n    return None\n", encoding="utf-8")
-    routes_dir = web_dir / "routes"
-    routes_dir.mkdir()
-    (routes_dir / "__init__.py").write_text("", encoding="utf-8")
-    (routes_dir / "ksu.py").write_text("router = None\n", encoding="utf-8")
-    templates_dir = web_dir / "templates"
-    templates_dir.mkdir()
-    (templates_dir / "ksu.html").write_text("<h1>KSU</h1>\n", encoding="utf-8")
     (package_root.parent / "pyproject.toml").write_text(
         "\n".join(
             (
@@ -92,17 +81,17 @@ def test_render_magisk_module_writes_full_module_files(tmp_path: Path) -> None:
     assert (output_dir / "post-fs-data.sh").exists()
     assert (output_dir / "customize.sh").exists()
     assert (output_dir / "system" / "bin" / "chrootctl").exists()
-    assert (output_dir / "system" / "bin" / "chrootctl-web").exists()
+    assert not (output_dir / "system" / "bin" / "chrootctl-web").exists()
     assert (output_dir / "system" / "bin" / "chrootctl-magisk-helper").exists()
     assert (output_dir / "system" / "bin" / "chrootctl-python-bootstrap").exists()
-    assert (output_dir / "system" / "bin" / "chrootctl-webui-service").exists()
+    assert not (output_dir / "system" / "bin" / "chrootctl-webui-service").exists()
     assert (output_dir / "bin" / "chrootctl-magisk-helper").exists()
     assert (output_dir / "bin" / "chrootctl-python-bootstrap").exists()
-    assert (output_dir / "bin" / "chrootctl-webui-service").exists()
+    assert not (output_dir / "bin" / "chrootctl-webui-service").exists()
     assert (output_dir / "payload" / "requirements.txt").exists()
     assert (output_dir / "payload" / "src" / "chrootctl" / "cli.py").exists()
-    assert (output_dir / "webroot" / "index.html").exists()
-    assert (output_dir / "webroot" / "icon.svg").exists()
+    assert not (output_dir / "webroot" / "index.html").exists()
+    assert not (output_dir / "webroot" / "icon.svg").exists()
     assert (output_dir / "config" / "chrootctl" / "boot_targets.json").exists()
     assert (output_dir / "config" / "chrootctl" / "dependency-mode.env").exists()
     assert (output_dir / "wheelhouse" / ".keep").exists()
@@ -112,15 +101,10 @@ def test_render_magisk_module_writes_full_module_files(tmp_path: Path) -> None:
     helper_text = (output_dir / "bin" / "chrootctl-magisk-helper").read_text(encoding="utf-8")
     payload = json.loads((output_dir / "config" / "chrootctl" / "boot_targets.json").read_text(encoding="utf-8"))
     launcher_text = (output_dir / "system" / "bin" / "chrootctl").read_text(encoding="utf-8")
-    service_proxy_text = (output_dir / "system" / "bin" / "chrootctl-webui-service").read_text(encoding="utf-8")
-    supervisor_text = (output_dir / "bin" / "chrootctl-webui-service").read_text(encoding="utf-8")
     module_prop_text = (output_dir / "module.prop").read_text(encoding="utf-8")
-    ksu_webroot_text = (output_dir / "webroot" / "index.html").read_text(encoding="utf-8")
 
     assert "metamodule=1" not in module_prop_text
-    assert "webuiIcon=webroot/icon.svg" in module_prop_text
-    assert 'const SERVICE = MODDIR + "/system/bin/chrootctl-webui-service";' in ksu_webroot_text
-    assert 'Open in browser' in ksu_webroot_text
+    assert "webuiIcon=webroot/icon.svg" not in module_prop_text
     assert payload["startup_targets"] == ["work", "dev"]
     bootstrap_text = (output_dir / "bin" / "chrootctl-python-bootstrap").read_text(encoding="utf-8")
 
@@ -129,6 +113,8 @@ def test_render_magisk_module_writes_full_module_files(tmp_path: Path) -> None:
     assert 'No Python dependencies are installed during Magisk/KSU install' in customize_text
     assert "pip install" not in customize_text
     assert "pydantic_core" in customize_text
+    assert "fastapi" not in customize_text
+    assert "uvicorn" not in customize_text
     dependency_mode_text = (output_dir / "config" / "chrootctl" / "dependency-mode.env").read_text(encoding="utf-8")
     assert 'static-python-env' in dependency_mode_text
     assert 'DEPENDENCY_INSTALL_PHASE="none"' in dependency_mode_text
@@ -140,16 +126,11 @@ def test_render_magisk_module_writes_full_module_files(tmp_path: Path) -> None:
     assert 'Fix the static Python module environment' in bootstrap_text
     assert 'TypeAdapter' in bootstrap_text
     assert '"$MODDIR/system/bin/chrootctl" clipboard daemon start' in service_text
-    assert '[ -x "$WEBUI_SERVICE" ] && "$WEBUI_SERVICE" start "$MODDIR"' in service_text
+    assert "WEBUI_SERVICE" not in service_text
     assert '"$CLI" --name "$name" mount' in helper_text
     assert 'MODDIR="$(resolve_moddir)"' in launcher_text
     assert 'PAYLOAD_SRC="$MODDIR/payload/src"' in launcher_text
     assert 'exec "$PYTHON_BIN" -m chrootctl.cli "$@"' in launcher_text
-    assert 'MODDIR="$(resolve_moddir)"' in service_proxy_text
-    assert 'TARGET="$MODDIR/bin/chrootctl-webui-service"' in service_proxy_text
-    assert 'runtime_ready' in supervisor_text
-    assert '"$BOOTSTRAP" "$MODDIR"' in supervisor_text
-    assert '"$WEBUI" --host "$HOST" --port "$PORT"' in supervisor_text
 
 
 
@@ -173,14 +154,15 @@ def test_zip_magisk_module_writes_flashable_root_entries(tmp_path: Path) -> None
 
     assert "module.prop" in names
     assert "service.sh" in names
-    assert "webroot/index.html" in names
-    assert "webroot/icon.svg" in names
+    assert "webroot/index.html" not in names
+    assert "webroot/icon.svg" not in names
     assert "bin/chrootctl-python-bootstrap" in names
     assert "system/bin/chrootctl" in names
     assert "system/bin/chrootctl-magisk-helper" in names
     assert "system/bin/chrootctl-python-bootstrap" in names
-    assert "system/bin/chrootctl-webui-service" in names
-    assert "payload/src/chrootctl/web/routes/ksu.py" in names
+    assert "system/bin/chrootctl-web" not in names
+    assert "system/bin/chrootctl-webui-service" not in names
+    assert "payload/src/chrootctl/web/routes/ksu.py" not in names
     assert not any(name.startswith("magisk-module/") for name in names)
 
 

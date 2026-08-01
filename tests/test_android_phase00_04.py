@@ -119,11 +119,10 @@ def test_android_root_contract_contains_no_arbitrary_shell_surface() -> None:
     assert "String startOperation(String requestJson, in ParcelFileDescriptor output);" in aidl
 
 
-def test_every_web_route_is_named_in_parity_matrix() -> None:
+def test_webui_parity_matrix_declares_retirement_gate() -> None:
     repo = Path(__file__).resolve().parents[1]
     matrix = (repo / "docs/android/WEBUI_PARITY_MATRIX.md").read_text(encoding="utf-8")
-    route_files = sorted((repo / "src/chrootctl/web/routes").glob("*.py"))
-    for route in route_files:
-        if route.name == "__init__.py":
-            continue
-        assert route.name in matrix, f"Missing parity mapping for {route.name}"
+    assert "Phase 21 retirement" in matrix
+    assert "Native complete" in matrix
+    assert "FastAPI HTTP server" in matrix
+    assert "Retired" in matrix

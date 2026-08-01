@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 
 from ..models import SupportBundleResult
-from ..web.jobs import JobSnapshot
 from .context import ServiceContainer
 
 

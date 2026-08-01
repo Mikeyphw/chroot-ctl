@@ -49,7 +49,7 @@ verify_cli = true
 install_dependencies = true
 reproducible = false
 import_modules = ["chrootctl"]
-console_scripts = ["chrootctl", "chrootctl-app", "chrootctl-web"]
+console_scripts = ["chrootctl", "chrootctl-app"]
 
 [python.security]
 enabled = false
