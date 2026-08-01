@@ -181,4 +181,29 @@
     <string name="transfer_no_export_artifact">Export an artifact before saving it</string>
     <string name="transfer_default_archive_name">import.tar.zst</string>
     <string name="transfer_default_chroot_name">chroot</string>
+
+    <string name="system_support_title">System, support and module</string>
+    <string name="system_support_body">Runtime paths, module state, repair previews, temporary cleanup and exportable support evidence.</string>
+    <string name="system_refresh_action">Refresh system</string>
+    <string name="system_runtime_title">Runtime</string>
+    <string name="system_module_title">Module</string>
+    <string name="system_row">%1$s: %2$s · %3$s</string>
+    <string name="support_preview_action">Preview support</string>
+    <string name="support_bundle_action">Export support bundle</string>
+    <string name="module_preview_action">Preview module</string>
+    <string name="module_build_action">Build module</string>
+    <string name="repair_preview_action">Preview repair</string>
+    <string name="repair_apply_action">Apply repair</string>
+    <string name="cleanup_preview_action">Preview cleanup</string>
+    <string name="cleanup_temp_action">Clean temp</string>
+    <string name="debug_workbench_title">Debug Workbench</string>
+    <string name="debug_workbench_body">Run grouped root, backend, storage, runtime, recovery and operation probes, then export evidence.</string>
+    <string name="debug_run_probes_action">Run probes</string>
+    <string name="debug_export_action">Export debug evidence</string>
+    <string name="debug_probes_title">Probes</string>
+    <string name="debug_timeline_title">Timeline</string>
+    <string name="debug_no_probes">No probes loaded yet.</string>
+    <string name="debug_probe_row">%1$s/%2$s · %3$s · %4$s</string>
+    <string name="debug_probe_next">Next: %1$s</string>
+    <string name="debug_timeline_row">%1$s · %2$s · %3$s · %4$s</string>
 </resources>

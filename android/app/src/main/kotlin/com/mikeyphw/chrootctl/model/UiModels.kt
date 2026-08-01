@@ -252,3 +252,44 @@ data class TransferPane(
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
 )
+
+
+data class SystemRowSummary(
+    val label: String,
+    val value: String,
+    val state: String,
+)
+
+data class SystemSupportPane(
+    val runtimeRows: List<SystemRowSummary> = emptyList(),
+    val moduleRows: List<SystemRowSummary> = emptyList(),
+    val supportPreview: PreviewSummary? = null,
+    val moduleBuildPreview: PreviewSummary? = null,
+    val repairPreview: PreviewSummary? = null,
+    val cleanupPreview: PreviewSummary? = null,
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+)
+
+data class DebugProbeSummary(
+    val group: String,
+    val code: String,
+    val status: String,
+    val detail: String,
+    val next: String,
+)
+
+data class DebugTimelineSummary(
+    val eventType: String,
+    val target: String,
+    val result: String,
+    val message: String,
+)
+
+data class DebugPane(
+    val selectedGroup: String = "all",
+    val probes: List<DebugProbeSummary> = emptyList(),
+    val timeline: List<DebugTimelineSummary> = emptyList(),
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+)

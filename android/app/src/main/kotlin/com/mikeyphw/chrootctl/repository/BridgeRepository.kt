@@ -23,6 +23,9 @@ import com.mikeyphw.chrootctl.model.ReadinessRow
 import com.mikeyphw.chrootctl.model.ReadinessState
 import com.mikeyphw.chrootctl.model.RecommendedAction
 import com.mikeyphw.chrootctl.model.ToolCapabilityGroup
+import com.mikeyphw.chrootctl.model.SystemRowSummary
+import com.mikeyphw.chrootctl.model.DebugTimelineSummary
+import com.mikeyphw.chrootctl.model.DebugProbeSummary
 import com.mikeyphw.chrootctl.protocol.BridgeCapabilities
 import com.mikeyphw.chrootctl.protocol.BridgeEnvelope
 import com.mikeyphw.chrootctl.protocol.BridgeRequest
@@ -320,6 +323,40 @@ class BridgeRepository(
         val data = BridgeEnvelope.fromJson(rootClient.transferToDescriptor(request, output)).requireData()
         data.optLong("bytes", 0L)
     }
+
+
+    suspend fun refreshSystemRuntime(): Result<Pair<List<SystemRowSummary>, List<SystemRowSummary>>> = runCatching {
+        val runtime = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("system.runtime").toJson())).requireData()
+        val module = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("system.module_status").toJson())).requireData()
+        runtime.toRuntimeRows() to module.toModuleRows()
+    }
+
+    suspend fun previewSupportBundle(): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("support.preview").toJson())).requireData()
+        data.toPreviewSummary("Support bundle preview")
+    }
+
+    suspend fun previewModuleBuild(): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("system.module_build_preview").toJson())).requireData()
+        data.toPreviewSummary("Module build preview")
+    }
+
+    suspend fun previewRepair(): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("repair.preview").toJson())).requireData()
+        data.toRepairPreviewSummary()
+    }
+
+    suspend fun previewTempCleanup(): Result<PreviewSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("cleanup.temp_preview").toJson())).requireData()
+        data.toPreviewSummary("Temporary cleanup preview")
+    }
+
+    suspend fun refreshDebugWorkbench(group: String): Result<Pair<List<DebugProbeSummary>, List<DebugTimelineSummary>>> = runCatching {
+        val probes = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("debug.probes", JSONObject().put("group", group)).toJson())).requireData()
+        val timeline = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("debug.timeline", JSONObject().put("limit", 50)).toJson())).requireData()
+        probes.optJSONArray("probes").toJsonObjects().map { it.toDebugProbeSummary() } to timeline.optJSONArray("events").toJsonObjects().map { it.toDebugTimelineSummary() }
+    }
+
     suspend fun startBridgeOperation(
         operation: String,
         payload: JSONObject,

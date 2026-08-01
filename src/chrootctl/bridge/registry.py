@@ -839,6 +839,275 @@ def _artifacts_cleanup(services: ServiceContainer, payload: dict[str, Any], prog
     progress({"phase": "complete", "percent": 100, "message": "Transfer artifact cleanup complete"})
     return result
 
+
+
+def _path_state(path: Path) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "exists": path.exists(),
+        "isDir": path.is_dir(),
+        "writable": path.exists() and path.is_dir() and __import__("os").access(path, __import__("os").W_OK),
+    }
+
+
+def _system_runtime(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del payload
+    config = services.base_config
+    host_rows = services.system().host_doctor()
+    return {
+        "runtime": {
+            "configPath": str(config.default_config_path()),
+            "databasePath": str(config.database_path),
+            "logFile": str(config.log_file),
+            "chrootRoot": str(config.chroot_root),
+            "termuxHome": str(config.termux_home),
+            "termuxPrefix": str(config.termux_prefix),
+            "username": config.username,
+            "targetArch": config.target_arch,
+        },
+        "paths": {
+            "chrootRoot": _path_state(config.chroot_root),
+            "databaseDir": _path_state(config.database_path.parent),
+            "logDir": _path_state(config.log_file.parent),
+            "operationsDir": _path_state(config.database_path.parent / "operations"),
+            "transferDir": _path_state(_managed_transfer_archive("probe").parent),
+        },
+        "hostDoctor": serialize_value(host_rows),
+        "crossArch": serialize_value(services.system().cross_arch_state()),
+        "foreignArchAdvisories": serialize_value(services.system().foreign_arch_advisories()),
+    }
+
+
+def _module_candidates() -> list[Path]:
+    return [
+        Path("/data/adb/modules/chrootctl"),
+        Path("/data/adb/modules_update/chrootctl"),
+        Path("/data/adb/ksu/modules/chrootctl"),
+        Path("/data/adb/ksu/modules_update/chrootctl"),
+    ]
+
+
+def _module_status(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del services
+    del payload
+    candidates: list[dict[str, Any]] = []
+    active: dict[str, Any] | None = None
+    for root in _module_candidates():
+        prop = root / "module.prop"
+        disabled = root / "disable"
+        remove = root / "remove"
+        meta = {
+            "path": str(root),
+            "exists": root.exists(),
+            "moduleProp": str(prop),
+            "hasModuleProp": prop.exists(),
+            "disabled": disabled.exists(),
+            "pendingRemoval": remove.exists(),
+            "manager": "KernelSU" if "/ksu/" in str(root) else "Magisk/APatch",
+            "version": "",
+            "id": "",
+            "name": "",
+        }
+        if prop.exists():
+            for line in prop.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                if key in {"id", "name", "version"}:
+                    meta[key] = value
+            if active is None:
+                active = meta
+        candidates.append(meta)
+    return {
+        "active": active,
+        "installed": active is not None,
+        "candidates": candidates,
+        "warnings": [] if active is not None else ["No installed chrootctl Magisk/KernelSU module was detected."],
+    }
+
+
+def _module_build_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    from ..magisk import resolve_startup_targets
+
+    selected = tuple(str(item).strip() for item in payload.get("startupTargets", ()) if str(item).strip()) if isinstance(payload.get("startupTargets", ()), (list, tuple)) else ()
+    all_installed = bool(payload.get("allInstalled") or payload.get("all_installed") or False)
+    targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
+    archive = _managed_transfer_archive("chrootctl-magisk", "zip")
+    return {
+        "ok": True,
+        "kind": "system.module_build",
+        "archive": str(archive),
+        "startupTargets": list(targets),
+        "blocking": [],
+        "warnings": [] if targets else ["No installed startup target was selected; the module will not auto-start chroots."],
+        "confirm": False,
+    }
+
+
+def _support_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del services
+    archive = _optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-support-bundle", "tar.gz"))
+    return {
+        "ok": True,
+        "kind": "support.bundle",
+        "archive": archive,
+        "blocking": [],
+        "warnings": ["The bundle is sanitized, but review it before sharing."],
+        "included": ["manifest.json", "events.json", "doctor-host.json", "chroots.json", "config-sanitized.json", "logs/chrootctl.log"],
+        "confirm": False,
+    }
+
+
+def _repair_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    raw_decisions = payload.get("decisions")
+    if isinstance(raw_decisions, list):
+        decisions = [dict(item) for item in raw_decisions if isinstance(item, dict)]
+        plan = services.repair().preview_plan(decisions)
+    else:
+        items = services.repair().preview_items()
+        decisions = [{"item_id": str(item.get("item_id", "")), "action": str(item.get("action", "skip"))} for item in items]
+        plan = services.repair().preview_plan(decisions)
+        plan["items"] = items
+    plan["kind"] = "repair.registry"
+    plan["confirm"] = bool(plan.get("ok"))
+    return plan
+
+
+def _cleanup_temp_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del payload
+    listing = services.transfer().temp_state()
+    items = listing.get("items", []) if isinstance(listing, dict) else []
+    total = sum(int(item.get("size_bytes", item.get("sizeBytes", 0)) or 0) for item in items if isinstance(item, dict))
+    return {
+        "ok": bool(items),
+        "kind": "cleanup.temp",
+        "itemCount": len(items),
+        "bytes": total,
+        "blocking": [] if items else [{"code": "no_temp_artifacts", "message": "No temporary transfer artifacts were found."}],
+        "warnings": ["Cleanup removes managed transfer staging files."],
+        "confirm": bool(items),
+    }
+
+
+def _debug_probe_rows(services: ServiceContainer, group: str = "all") -> list[dict[str, Any]]:
+    config = services.base_config
+    rows: list[dict[str, Any]] = []
+
+    def add(group_name: str, code: str, status: str, detail: str, next_step: str = "") -> None:
+        if group in {"all", group_name}:
+            rows.append({"group": group_name, "code": code, "status": status, "detail": detail, "next": next_step})
+
+    add("root", "python_runtime", "pass", "Python bridge runtime responded to the probe.")
+    add("backend", "database_path", "pass" if config.database_path.parent.exists() else "warn", str(config.database_path), "Create or repair the database directory." if not config.database_path.parent.exists() else "")
+    add("storage", "chroot_root", "pass" if config.chroot_root.exists() else "warn", str(config.chroot_root), "Create the chroot root or run repair." if not config.chroot_root.exists() else "")
+    add("storage", "transfer_dir", "pass" if _managed_transfer_archive("probe").parent.exists() else "warn", str(_managed_transfer_archive("probe").parent), "Create the transfer staging directory." if not _managed_transfer_archive("probe").parent.exists() else "")
+    try:
+        host_rows = services.system().host_doctor()
+        for row in host_rows[:8]:
+            status = "pass" if getattr(row, "result", "") == "PASS" else ("fail" if getattr(row, "result", "") == "FAIL" else "warn")
+            add("runtime", str(getattr(row, "check", "host")), status, str(getattr(row, "detail", "")), str(getattr(row, "next", "")))
+    except Exception as exc:
+        add("runtime", "host_doctor", "fail", str(exc), "Run support bundle export and review runtime logs.")
+    try:
+        repairs = services.repair().preview_items()
+        add("recovery", "registry_repair", "pass" if not repairs else "warn", f"{len(repairs)} registry repair item(s) found.", "Open repair preview." if repairs else "")
+    except Exception as exc:
+        add("recovery", "registry_repair", "fail", str(exc), "Run repair from a terminal or export diagnostics.")
+    try:
+        operations_root = config.database_path.parent / "operations"
+        stale = list(operations_root.glob("*.json")) if operations_root.exists() else []
+        add("operations", "operation_journal", "pass", f"{len(stale)} operation record file(s) visible.")
+    except Exception as exc:
+        add("operations", "operation_journal", "warn", str(exc), "Repair operation journal permissions.")
+    return rows
+
+
+def _debug_probes(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    group = str(payload.get("group") or "all").strip() or "all"
+    rows = _debug_probe_rows(services, group)
+    return {
+        "group": group,
+        "probes": rows,
+        "passCount": sum(1 for row in rows if row.get("status") == "pass"),
+        "warnCount": sum(1 for row in rows if row.get("status") == "warn"),
+        "failCount": sum(1 for row in rows if row.get("status") == "fail"),
+        "guidedFixes": [row for row in rows if row.get("next")],
+    }
+
+
+def _debug_timeline(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    limit = int(payload.get("limit", 50))
+    events = [event.to_display_dict() for event in services.audit().recent(limit=limit)]
+    return {"events": events, "limit": limit}
+
+
+def _support_bundle(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    archive = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-support-bundle", "tar.gz")))
+    progress({"phase": "support", "percent": 10, "message": "Collecting sanitized support evidence"})
+    if cancelled():
+        raise OperationCancelled("Support bundle export was cancelled")
+    result = services.support().export_bundle(archive=archive, jobs=None)
+    progress({"phase": "complete", "percent": 100, "message": "Support bundle exported"})
+    return result
+
+
+def _module_build(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    from ..magisk import MagiskModuleConfig, render_magisk_module, resolve_startup_targets, validate_magisk_module, zip_magisk_module
+    import tempfile
+
+    selected = tuple(str(item).strip() for item in payload.get("startupTargets", ()) if str(item).strip()) if isinstance(payload.get("startupTargets", ()), (list, tuple)) else ()
+    all_installed = bool(payload.get("allInstalled") or payload.get("all_installed") or False)
+    targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
+    archive = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-magisk", "zip")))
+    progress({"phase": "render", "percent": 20, "message": "Rendering module payload"})
+    if cancelled():
+        raise OperationCancelled("Module build was cancelled")
+    with tempfile.TemporaryDirectory(prefix="chrootctl-module-") as tmp:
+        module_dir = Path(tmp) / "module"
+        result = render_magisk_module(module_dir, services=services, startup_targets=targets, module_config=MagiskModuleConfig())
+        progress({"phase": "validate", "percent": 65, "message": "Validating module layout"})
+        validate_magisk_module(result.output_dir)
+        if cancelled():
+            raise OperationCancelled("Module build was cancelled")
+        progress({"phase": "zip", "percent": 85, "message": "Creating module zip"})
+        zip_path = zip_magisk_module(result.output_dir, archive)
+    progress({"phase": "complete", "percent": 100, "message": "Module zip created"})
+    return {"archive": str(zip_path), "startupTargets": list(targets), "bytes": zip_path.stat().st_size}
+
+
+def _repair_apply(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    raw_decisions = payload.get("decisions")
+    if isinstance(raw_decisions, list):
+        decisions = [dict(item) for item in raw_decisions if isinstance(item, dict)]
+    else:
+        decisions = [{"item_id": str(item.get("item_id", "")), "action": str(item.get("action", "skip"))} for item in services.repair().preview_items()]
+    progress({"phase": "repair", "percent": 15, "message": "Applying registry repair plan"})
+    if cancelled():
+        raise OperationCancelled("Registry repair was cancelled")
+    result = services.repair().apply_registry_repair_plan(decisions)
+    progress({"phase": "complete", "percent": 100, "message": "Registry repair completed"})
+    return result
+
+
+def _cleanup_temp(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    progress({"phase": "cleanup", "percent": 10, "message": "Cleaning temporary artifacts"})
+    if cancelled():
+        raise OperationCancelled("Temporary cleanup was cancelled")
+    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=bool(payload.get("deleteAll") or payload.get("delete_all") or True))
+    progress({"phase": "complete", "percent": 100, "message": "Temporary cleanup complete"})
+    return result
+
+
+def _debug_export(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    archive = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-debug-evidence", "tar.gz")))
+    progress({"phase": "probes", "percent": 10, "message": "Running debug probes"})
+    probes = _debug_probes(services, payload)
+    if cancelled():
+        raise OperationCancelled("Debug export was cancelled")
+    bundle = services.support().export_bundle(archive=archive, jobs=None)
+    progress({"phase": "complete", "percent": 100, "message": "Debug evidence exported"})
+    return {"archive": str(bundle.archive), "probes": probes, "included": list(bundle.included)}
+
 _SPECS = (
     OperationSpec("system.dashboard", "query", "Return native dashboard state", query_handler=_dashboard),
     OperationSpec("system.status", "query", "Return status checks for one chroot", query_handler=_status),
@@ -879,6 +1148,15 @@ _SPECS = (
     OperationSpec("catalog.preview", "preview", "Preview applying tools or add-ons", preview_handler=_catalog_preview),
     OperationSpec("transfer.import_preview", "preview", "Preview importing a staged archive", preview_handler=_transfer_import_preview),
     OperationSpec("transfer.preview_export", "preview", "Preview exporting a chroot archive", preview_handler=_transfer_preview_export),
+
+    OperationSpec("system.runtime", "query", "Return native system runtime and host readiness", query_handler=_system_runtime),
+    OperationSpec("system.module_status", "query", "Return Magisk/KernelSU module status", query_handler=_module_status),
+    OperationSpec("support.preview", "preview", "Preview sanitized support bundle export", preview_handler=_support_preview),
+    OperationSpec("system.module_build_preview", "preview", "Preview Magisk/KernelSU module build", preview_handler=_module_build_preview),
+    OperationSpec("repair.preview", "preview", "Preview registry repair plan", destructive=True, preview_handler=_repair_preview),
+    OperationSpec("cleanup.temp_preview", "preview", "Preview managed temporary artifact cleanup", destructive=True, preview_handler=_cleanup_temp_preview),
+    OperationSpec("debug.probes", "query", "Run chroot debug workbench probes", query_handler=_debug_probes),
+    OperationSpec("debug.timeline", "query", "Return debug audit timeline", query_handler=_debug_timeline),
     OperationSpec("system.refresh", "operation", "Persist and stream a complete read-only refresh", operation_handler=_refresh),
     OperationSpec("install.run", "operation", "Run the native install flow", lock_scope="global", operation_handler=_install_run),
     OperationSpec("chroots.start", "operation", "Start a chroot session", lock_scope="target", operation_handler=_start_chroot),
@@ -903,6 +1181,11 @@ _SPECS = (
     OperationSpec("transfer.import", "operation", "Import a staged chroot archive", lock_scope="global", operation_handler=_transfer_import),
     OperationSpec("transfer.export", "operation", "Export a chroot archive to managed artifacts", lock_scope="target", operation_handler=_transfer_export),
     OperationSpec("artifacts.cleanup", "operation", "Clean managed transfer artifacts", destructive=True, lock_scope="global", operation_handler=_artifacts_cleanup),
+    OperationSpec("support.bundle", "operation", "Export sanitized support bundle", lock_scope="global", operation_handler=_support_bundle),
+    OperationSpec("system.module_build", "operation", "Build Magisk/KernelSU module artifact", lock_scope="global", operation_handler=_module_build),
+    OperationSpec("repair.apply", "operation", "Apply selected registry repair plan", destructive=True, lock_scope="global", operation_handler=_repair_apply),
+    OperationSpec("cleanup.temp", "operation", "Clean managed temporary artifacts", destructive=True, lock_scope="global", operation_handler=_cleanup_temp),
+    OperationSpec("debug.export", "operation", "Export debug workbench evidence bundle", lock_scope="global", operation_handler=_debug_export),
 )
 SPECS = {spec.name: spec for spec in _SPECS}
 

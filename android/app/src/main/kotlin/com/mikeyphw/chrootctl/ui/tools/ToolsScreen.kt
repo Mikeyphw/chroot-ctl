@@ -31,6 +31,11 @@ import com.mikeyphw.chrootctl.model.PackagePane
 import com.mikeyphw.chrootctl.model.PreviewSummary
 import com.mikeyphw.chrootctl.model.ToolCapabilityGroup
 import com.mikeyphw.chrootctl.model.TransferPane
+import com.mikeyphw.chrootctl.model.DebugTimelineSummary
+import com.mikeyphw.chrootctl.model.DebugProbeSummary
+import com.mikeyphw.chrootctl.model.SystemRowSummary
+import com.mikeyphw.chrootctl.model.DebugPane
+import com.mikeyphw.chrootctl.model.SystemSupportPane
 import com.mikeyphw.chrootctl.ui.components.ChipRow
 import com.mikeyphw.chrootctl.ui.components.EmptyState
 
@@ -41,6 +46,8 @@ fun ToolsScreen(
     catalogPane: CatalogPane,
     packagePane: PackagePane,
     transferPane: TransferPane,
+    systemSupportPane: SystemSupportPane,
+    debugPane: DebugPane,
     onOpenInstall: () -> Unit,
     onRefreshCatalog: (String) -> Unit,
     onSetCatalogTarget: (String) -> Unit,
@@ -64,6 +71,17 @@ fun ToolsScreen(
     onCleanupAllArtifacts: () -> Unit,
     onPickImportArchive: () -> Unit,
     onCreateExportDocument: () -> Unit,
+    onRefreshSystemSupport: () -> Unit,
+    onPreviewSupportBundle: () -> Unit,
+    onStartSupportBundle: () -> Unit,
+    onPreviewModuleBuild: () -> Unit,
+    onStartModuleBuild: () -> Unit,
+    onPreviewRepair: () -> Unit,
+    onStartRepair: () -> Unit,
+    onPreviewTempCleanup: () -> Unit,
+    onStartTempCleanup: () -> Unit,
+    onRefreshDebugWorkbench: (String) -> Unit,
+    onStartDebugExport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -101,6 +119,23 @@ fun ToolsScreen(
             onCleanupAllArtifacts = onCleanupAllArtifacts,
             onPickImportArchive = onPickImportArchive,
             onCreateExportDocument = onCreateExportDocument,
+        )
+        SystemSupportCard(
+            pane = systemSupportPane,
+            onRefresh = onRefreshSystemSupport,
+            onPreviewSupportBundle = onPreviewSupportBundle,
+            onStartSupportBundle = onStartSupportBundle,
+            onPreviewModuleBuild = onPreviewModuleBuild,
+            onStartModuleBuild = onStartModuleBuild,
+            onPreviewRepair = onPreviewRepair,
+            onStartRepair = onStartRepair,
+            onPreviewTempCleanup = onPreviewTempCleanup,
+            onStartTempCleanup = onStartTempCleanup,
+        )
+        DebugWorkbenchCard(
+            pane = debugPane,
+            onRefresh = onRefreshDebugWorkbench,
+            onExport = onStartDebugExport,
         )
         if (groups.isEmpty()) {
             EmptyState(
@@ -279,6 +314,101 @@ private fun PreviewBlock(preview: PreviewSummary) {
             preview.warnings.forEach { Text(it, color = MaterialTheme.colorScheme.tertiary) }
         }
     }
+}
+
+
+@Composable
+private fun SystemSupportCard(
+    pane: SystemSupportPane,
+    onRefresh: () -> Unit,
+    onPreviewSupportBundle: () -> Unit,
+    onStartSupportBundle: () -> Unit,
+    onPreviewModuleBuild: () -> Unit,
+    onStartModuleBuild: () -> Unit,
+    onPreviewRepair: () -> Unit,
+    onStartRepair: () -> Unit,
+    onPreviewTempCleanup: () -> Unit,
+    onStartTempCleanup: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.system_support_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.system_support_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = onRefresh) { Text(stringResource(R.string.system_refresh_action)) }
+            Text(stringResource(R.string.system_runtime_title), fontWeight = FontWeight.SemiBold)
+            pane.runtimeRows.forEach { row -> SystemRow(row) }
+            Text(stringResource(R.string.system_module_title), fontWeight = FontWeight.SemiBold)
+            pane.moduleRows.forEach { row -> SystemRow(row) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPreviewSupportBundle) { Text(stringResource(R.string.support_preview_action)) }
+                Button(onClick = onStartSupportBundle) { Text(stringResource(R.string.support_bundle_action)) }
+            }
+            pane.supportPreview?.let { PreviewBlock(it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPreviewModuleBuild) { Text(stringResource(R.string.module_preview_action)) }
+                Button(onClick = onStartModuleBuild) { Text(stringResource(R.string.module_build_action)) }
+            }
+            pane.moduleBuildPreview?.let { PreviewBlock(it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPreviewRepair) { Text(stringResource(R.string.repair_preview_action)) }
+                Button(onClick = onStartRepair, enabled = pane.repairPreview?.ok == true) { Text(stringResource(R.string.repair_apply_action)) }
+            }
+            pane.repairPreview?.let { PreviewBlock(it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPreviewTempCleanup) { Text(stringResource(R.string.cleanup_preview_action)) }
+                Button(onClick = onStartTempCleanup, enabled = pane.cleanupPreview?.ok == true) { Text(stringResource(R.string.cleanup_temp_action)) }
+            }
+            pane.cleanupPreview?.let { PreviewBlock(it) }
+            pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+@Composable
+private fun SystemRow(row: SystemRowSummary) {
+    Text(stringResource(R.string.system_row, row.label, row.value, row.state), color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun DebugWorkbenchCard(
+    pane: DebugPane,
+    onRefresh: (String) -> Unit,
+    onExport: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.debug_workbench_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.debug_workbench_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("all", "root", "backend", "storage", "runtime", "recovery", "operations").forEach { group ->
+                    FilterChip(selected = pane.selectedGroup == group, onClick = { onRefresh(group) }, label = { Text(group) })
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onRefresh(pane.selectedGroup) }) { Text(stringResource(R.string.debug_run_probes_action)) }
+                Button(onClick = onExport) { Text(stringResource(R.string.debug_export_action)) }
+            }
+            pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Text(stringResource(R.string.debug_probes_title), fontWeight = FontWeight.SemiBold)
+            if (pane.probes.isEmpty()) {
+                Text(stringResource(R.string.debug_no_probes), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            pane.probes.take(12).forEach { probe -> DebugProbeRow(probe) }
+            Text(stringResource(R.string.debug_timeline_title), fontWeight = FontWeight.SemiBold)
+            pane.timeline.take(8).forEach { event -> DebugTimelineRow(event) }
+        }
+    }
+}
+
+@Composable
+private fun DebugProbeRow(probe: DebugProbeSummary) {
+    Text(stringResource(R.string.debug_probe_row, probe.group, probe.code, probe.status, probe.detail), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (probe.next.isNotBlank()) Text(stringResource(R.string.debug_probe_next, probe.next), color = MaterialTheme.colorScheme.tertiary)
+}
+
+@Composable
+private fun DebugTimelineRow(event: DebugTimelineSummary) {
+    Text(stringResource(R.string.debug_timeline_row, event.eventType, event.target, event.result, event.message), color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

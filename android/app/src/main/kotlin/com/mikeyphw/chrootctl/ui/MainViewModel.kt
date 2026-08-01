@@ -19,6 +19,8 @@ import com.mikeyphw.chrootctl.model.ServicesPane
 import com.mikeyphw.chrootctl.model.TransferPane
 import com.mikeyphw.chrootctl.model.PackagePane
 import com.mikeyphw.chrootctl.model.CatalogPane
+import com.mikeyphw.chrootctl.model.DebugPane
+import com.mikeyphw.chrootctl.model.SystemSupportPane
 import com.mikeyphw.chrootctl.repository.BridgeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -55,6 +57,8 @@ data class MainUiState(
     val catalogPane: CatalogPane = CatalogPane(),
     val packagePane: PackagePane = PackagePane(),
     val transferPane: TransferPane = TransferPane(),
+    val systemSupportPane: SystemSupportPane = SystemSupportPane(),
+    val debugPane: DebugPane = DebugPane(),
     val refreshState: RefreshState = RefreshState.Idle,
 )
 
@@ -91,6 +95,8 @@ private data class ToolsUiSlice(
     val catalogPane: CatalogPane,
     val packagePane: PackagePane,
     val transferPane: TransferPane,
+    val systemSupportPane: SystemSupportPane,
+    val debugPane: DebugPane,
 )
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -111,6 +117,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val catalogPane = MutableStateFlow(CatalogPane())
     private val packagePane = MutableStateFlow(PackagePane())
     private val transferPane = MutableStateFlow(TransferPane())
+    private val systemSupportPane = MutableStateFlow(SystemSupportPane())
+    private val debugPane = MutableStateFlow(DebugPane())
 
     private val selectedChrootDetail = combine(
         repository.chroots,
@@ -198,8 +206,16 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         catalogPane.asStateFlow(),
         packagePane.asStateFlow(),
         transferPane.asStateFlow(),
-    ) { catalog, packages, transfer ->
-        ToolsUiSlice(catalogPane = catalog, packagePane = packages, transferPane = transfer)
+        systemSupportPane.asStateFlow(),
+        debugPane.asStateFlow(),
+    ) { catalog, packages, transfer, systemSupport, debug ->
+        ToolsUiSlice(
+            catalogPane = catalog,
+            packagePane = packages,
+            transferPane = transfer,
+            systemSupportPane = systemSupport,
+            debugPane = debug,
+        )
     }
 
     val uiState: StateFlow<MainUiState> = combine(
@@ -228,6 +244,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             catalogPane = tools.catalogPane,
             packagePane = tools.packagePane,
             transferPane = tools.transferPane,
+            systemSupportPane = tools.systemSupportPane,
+            debugPane = tools.debugPane,
             refreshState = secondary.refreshState,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MainUiState())
@@ -237,6 +255,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         refreshInstallForm()
         refreshCatalog("tool")
         refreshTransferArtifacts()
+        refreshSystemSupport()
+        refreshDebugWorkbench()
     }
 
     fun refresh() {
@@ -659,6 +679,77 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("path", path ?: JSONObject.NULL)
         .put("deleteAll", deleteAll)
         .toString()
+
+
+
+    fun refreshSystemSupport() {
+        viewModelScope.launch {
+            val current = systemSupportPane.value.copy(refreshing = true, errorMessage = null)
+            systemSupportPane.value = current
+            repository.refreshSystemRuntime()
+                .onSuccess { (runtimeRows, moduleRows) ->
+                    systemSupportPane.value = current.copy(
+                        runtimeRows = runtimeRows,
+                        moduleRows = moduleRows,
+                        refreshing = false,
+                        errorMessage = null,
+                    )
+                }
+                .onFailure { error -> systemSupportPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun previewSupportBundle() {
+        viewModelScope.launch {
+            repository.previewSupportBundle()
+                .onSuccess { preview -> systemSupportPane.value = systemSupportPane.value.copy(supportPreview = preview) }
+                .onFailure { error -> systemSupportPane.value = systemSupportPane.value.copy(supportPreview = errorPreview("Support bundle preview", error)) }
+        }
+    }
+
+    fun previewModuleBuild() {
+        viewModelScope.launch {
+            repository.previewModuleBuild()
+                .onSuccess { preview -> systemSupportPane.value = systemSupportPane.value.copy(moduleBuildPreview = preview) }
+                .onFailure { error -> systemSupportPane.value = systemSupportPane.value.copy(moduleBuildPreview = errorPreview("Module build preview", error)) }
+        }
+    }
+
+    fun previewRepair() {
+        viewModelScope.launch {
+            repository.previewRepair()
+                .onSuccess { preview -> systemSupportPane.value = systemSupportPane.value.copy(repairPreview = preview) }
+                .onFailure { error -> systemSupportPane.value = systemSupportPane.value.copy(repairPreview = errorPreview("Registry repair preview", error)) }
+        }
+    }
+
+    fun previewTempCleanup() {
+        viewModelScope.launch {
+            repository.previewTempCleanup()
+                .onSuccess { preview -> systemSupportPane.value = systemSupportPane.value.copy(cleanupPreview = preview) }
+                .onFailure { error -> systemSupportPane.value = systemSupportPane.value.copy(cleanupPreview = errorPreview("Temporary cleanup preview", error)) }
+        }
+    }
+
+    fun refreshDebugWorkbench(group: String = debugPane.value.selectedGroup) {
+        viewModelScope.launch {
+            val current = debugPane.value.copy(selectedGroup = group, refreshing = true, errorMessage = null)
+            debugPane.value = current
+            repository.refreshDebugWorkbench(group)
+                .onSuccess { (probes, timeline) -> debugPane.value = current.copy(probes = probes, timeline = timeline, refreshing = false, errorMessage = null) }
+                .onFailure { error -> debugPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun supportBundlePayloadJson(): String = JSONObject().toString()
+
+    fun moduleBuildPayloadJson(): String = JSONObject().toString()
+
+    fun repairApplyPayloadJson(): String = JSONObject().put("applyAll", true).toString()
+
+    fun cleanupTempPayloadJson(): String = JSONObject().put("deleteAll", true).toString()
+
+    fun debugExportPayloadJson(): String = JSONObject().put("group", debugPane.value.selectedGroup).toString()
 
     override fun onCleared() {
         repository.close()
