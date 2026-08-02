@@ -24,6 +24,10 @@ import com.mikeyphw.chrootctl.model.ReadinessState
 import com.mikeyphw.chrootctl.model.RecommendedAction
 import com.mikeyphw.chrootctl.model.ReleaseReadinessSummary
 import com.mikeyphw.chrootctl.model.ToolCapabilityGroup
+import com.mikeyphw.chrootctl.model.CatalogEntrySummary
+import com.mikeyphw.chrootctl.model.PackageInventorySummary
+import com.mikeyphw.chrootctl.model.PackageCompareSummary
+import com.mikeyphw.chrootctl.model.TransferArtifactSummary
 import com.mikeyphw.chrootctl.model.SystemRowSummary
 import com.mikeyphw.chrootctl.model.DebugTimelineSummary
 import com.mikeyphw.chrootctl.model.DebugProbeSummary
@@ -462,7 +466,7 @@ private fun HomeSnapshotEntity.toHomeSnapshot(
         warningCount = warningCount,
         readinessRows = rows,
         recommendedAction = action,
-        releaseReadiness = dashboard.optJSONObject("releaseReadiness").toReleaseReadinessSummary(),
+        releaseReadiness = JSONObject(dashboardJson).optJSONObject("releaseReadiness").toReleaseReadinessSummary(),
         refreshedAt = lastRefreshAt,
         stale = stale,
     )
@@ -839,6 +843,82 @@ private fun JSONObject.toTransferArtifactSummary(): TransferArtifactSummary = Tr
     path = firstString("path"),
     sizeBytes = optLong("size_bytes", optLong("sizeBytes", 0L)),
     modifiedAt = firstString("modified_at", "modifiedAt"),
+)
+
+private fun JSONObject.toRuntimeRows(): List<SystemRowSummary> = rowsFromJson(
+    preferredArrayKeys = listOf("runtime", "rows", "checks"),
+    fallbackPrefix = "runtime",
+)
+
+private fun JSONObject.toModuleRows(): List<SystemRowSummary> = rowsFromJson(
+    preferredArrayKeys = listOf("module", "rows", "checks"),
+    fallbackPrefix = "module",
+)
+
+private fun JSONObject.rowsFromJson(
+    preferredArrayKeys: List<String>,
+    fallbackPrefix: String,
+): List<SystemRowSummary> {
+    preferredArrayKeys.forEach { key ->
+        val rows = optJSONArray(key).toSystemRows()
+        if (rows.isNotEmpty()) return rows
+    }
+    val nestedRows = buildList {
+        keys().forEach { key ->
+            val value = opt(key)
+            when (value) {
+                is JSONObject -> add(
+                    SystemRowSummary(
+                        label = value.firstString("label", "id", "name").ifBlank { key },
+                        value = value.firstString("value", "detail", "message", "status", "state").ifBlank { value.toString() },
+                        state = value.firstString("state", "status", "severity").ifBlank { "info" },
+                    ),
+                )
+                is JSONArray -> Unit
+                null, JSONObject.NULL -> Unit
+                else -> add(SystemRowSummary(label = key, value = value.toString(), state = "info"))
+            }
+        }
+    }
+    if (nestedRows.isNotEmpty()) return nestedRows
+    return listOf(SystemRowSummary(label = fallbackPrefix, value = toString(), state = "info"))
+}
+
+private fun JSONArray?.toSystemRows(): List<SystemRowSummary> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) {
+            val value = opt(index)
+            if (value is JSONObject) {
+                add(
+                    SystemRowSummary(
+                        label = value.firstString("label", "id", "name", "check").ifBlank { "row ${index + 1}" },
+                        value = value.firstString("value", "detail", "message", "status", "state").ifBlank { value.toString() },
+                        state = value.firstString("state", "status", "severity").ifBlank { "info" },
+                    ),
+                )
+            } else if (value != null && value != JSONObject.NULL) {
+                add(SystemRowSummary(label = "row ${index + 1}", value = value.toString(), state = "info"))
+            }
+        }
+    }
+}
+
+private fun JSONObject.toRepairPreviewSummary(): PreviewSummary = toPreviewSummary("Registry repair preview")
+
+private fun JSONObject.toDebugProbeSummary(): DebugProbeSummary = DebugProbeSummary(
+    group = firstString("group").ifBlank { "general" },
+    code = firstString("code", "id", "name"),
+    status = firstString("status", "state").ifBlank { "unknown" },
+    detail = firstString("detail", "message", "summary"),
+    next = firstString("next", "nextStep", "next_step"),
+)
+
+private fun JSONObject.toDebugTimelineSummary(): DebugTimelineSummary = DebugTimelineSummary(
+    eventType = firstString("eventType", "event_type", "type").ifBlank { "event" },
+    target = firstString("target", "name", "scope"),
+    result = firstString("result", "status", "state").ifBlank { "info" },
+    message = firstString("message", "detail", "summary").ifBlank { toString() },
 )
 
 private fun JSONArray?.labelsFromObjects(): List<String> {

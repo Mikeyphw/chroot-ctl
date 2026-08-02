@@ -199,9 +199,17 @@ private fun ChrootDetailCard(
                     onPreviewSnapshotAction = onPreviewSnapshotAction,
                     onStartSnapshotRestore = onStartSnapshotRestore,
                     onStartSnapshotExport = onStartSnapshotExport,
+                )
+                UsersPanel(
+                    chroot = chroot,
+                    pane = usersPane,
                     onRefreshUsers = onRefreshUsers,
                     onPreviewUserPayload = onPreviewUserPayload,
                     onStartUserOperation = onStartUserOperation,
+                )
+                ServicesPanel(
+                    chroot = chroot,
+                    pane = servicesPane,
                     onRefreshServices = onRefreshServices,
                     onRefreshServiceDetail = onRefreshServiceDetail,
                     onPreviewServicePayload = onPreviewServicePayload,
@@ -271,13 +279,6 @@ private fun SnapshotPanel(
     onPreviewSnapshotAction: (String, String, String) -> Unit,
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
-    onRefreshUsers: (String) -> Unit,
-    onPreviewUserPayload: (String) -> Unit,
-    onStartUserOperation: (String, String) -> Unit,
-    onRefreshServices: (String) -> Unit,
-    onRefreshServiceDetail: (String, String) -> Unit,
-    onPreviewServicePayload: (String) -> Unit,
-    onStartServiceOperation: (String, String) -> Unit,
 ) {
     var restoreConfirmation by remember(chroot.name) { mutableStateOf("") }
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -333,13 +334,6 @@ private fun SnapshotRow(
     onPreviewSnapshotAction: (String, String, String) -> Unit,
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
-    onRefreshUsers: (String) -> Unit,
-    onPreviewUserPayload: (String) -> Unit,
-    onStartUserOperation: (String, String) -> Unit,
-    onRefreshServices: (String) -> Unit,
-    onRefreshServiceDetail: (String, String) -> Unit,
-    onPreviewServicePayload: (String) -> Unit,
-    onStartServiceOperation: (String, String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(snapshot.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
