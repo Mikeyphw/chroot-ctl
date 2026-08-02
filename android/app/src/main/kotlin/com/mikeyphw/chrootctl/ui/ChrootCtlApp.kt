@@ -38,6 +38,7 @@ fun ChrootCtlApp(
     onStartBridgeOperation: (String, String) -> Unit,
     onPickImportArchive: () -> Unit,
     onCreateExportDocument: () -> Unit,
+    onRequestNotificationPermission: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var destination by remember { mutableStateOf(AppDestination.Home) }
@@ -64,6 +65,7 @@ fun ChrootCtlApp(
                         startRefreshOperation = onStartRefreshOperation,
                         openInstall = { destination = AppDestination.Install },
                         openActivity = { destination = AppDestination.Activity },
+                        requestNotificationPermission = onRequestNotificationPermission,
                         selectChroot = viewModel::selectChroot,
                         refreshSelectedChroot = viewModel::refreshSelectedChroot,
                         selectOperation = viewModel::selectOperation,
@@ -153,6 +155,7 @@ fun ChrootCtlApp(
                         startRefreshOperation = onStartRefreshOperation,
                         openInstall = { destination = AppDestination.Install },
                         openActivity = { destination = AppDestination.Activity },
+                        requestNotificationPermission = onRequestNotificationPermission,
                         selectChroot = viewModel::selectChroot,
                         refreshSelectedChroot = viewModel::refreshSelectedChroot,
                         selectOperation = viewModel::selectOperation,
@@ -233,6 +236,7 @@ private fun AppContent(
     startRefreshOperation: () -> Unit,
     openInstall: () -> Unit,
     openActivity: () -> Unit,
+    requestNotificationPermission: () -> Unit,
     selectChroot: (String) -> Unit,
     refreshSelectedChroot: () -> Unit,
     selectOperation: (String) -> Unit,
@@ -311,6 +315,7 @@ private fun AppContent(
                 onRefresh = refresh,
                 onStartRefreshOperation = startRefreshOperation,
                 onOpenActivity = openActivity,
+                onRequestNotificationPermission = requestNotificationPermission,
             )
             AppDestination.Chroots -> ChrootsScreen(
                 chroots = state.chroots,

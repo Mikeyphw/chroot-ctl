@@ -140,3 +140,10 @@ out/
 tmpout/
 chrootctl-magisk.zip
 tmpmod.zip
+
+# ===================
+# Devtool runtime state
+# ===================
+.devtool/state/
+.devtool/reports/
+.devtool/test-history.json

@@ -14,7 +14,7 @@ def test_phase28_webui_still_retired_and_sdk_pinned() -> None:
         assert token not in pyproject
     assert 'compileSdk = 36' in build
     assert 'targetSdk = 36' in build
-    assert 'versionName = "0.1.0-phase28"' in build
+    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (28, 29))
 def test_phase28_release_docs_present() -> None:
     assert 'final.release_seal' in read("docs/android/PHASE_28_FINAL_OPERATIONAL_RELEASE_SEAL.md")
     assert 'Run the real-device smoke suite' in read("docs/android/ANDROID_RELEASE_RUNBOOK.md")

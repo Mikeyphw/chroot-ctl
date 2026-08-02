@@ -17,7 +17,7 @@ def main() -> int:
     smoke = read("docs/android/REAL_DEVICE_SMOKE_CHECKLIST.md")
     err(errors, 'compileSdk = 36' not in build, "compileSdk must remain 36")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
-    err(errors, 'versionName = "0.1.0-phase28"' not in build, "versionName must advance to phase28")
+    err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (28, 29)), "versionName must advance to phase28")
     for token in ("final.preflight", "final.packaging_audit", "final.no_webui_regression", "final.release_seal", "_final_release_seal"):
         err(errors, token not in registry, f"registry missing final seal token: {token}")
     for token in ("smoke.last_result", "smoke.result.export", "smoke.failure.bundle"):
@@ -33,7 +33,7 @@ def main() -> int:
         err(errors, token not in runbook, f"runbook missing token: {token}")
     for token in ("Last smoke result", "Smoke evidence"):
         err(errors, token not in smoke, f"smoke checklist missing token: {token}")
-    err(errors, "range(22, 29)" not in phase22, "phase22 validator must accept phase28 release-hardening versions")
+    err(errors, "range(22, 30)" not in phase22, "phase22 validator must accept phase28 release-hardening versions")
     if errors:
         for item in errors: print(f"ERROR: {item}")
         return 1

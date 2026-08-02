@@ -2,6 +2,7 @@ package com.mikeyphw.chrootctl
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -30,6 +31,11 @@ class MainActivity : ComponentActivity() {
         uri?.let(::copyManagedArtifactToDocument)
     }
 
+    private val requestNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val message = if (granted) R.string.notifications_permission_granted else R.string.notifications_permission_denied
+        Toast.makeText(this, getString(message), Toast.LENGTH_SHORT).show()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -53,7 +59,16 @@ class MainActivity : ComponentActivity() {
                 onCreateExportDocument = {
                     createExportDocument.launch(defaultExportFileName())
                 },
+                onRequestNotificationPermission = ::requestNotificationPermission,
             )
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestNotifications.launch("android.permission.POST_NOTIFICATIONS")
+        } else {
+            Toast.makeText(this, getString(R.string.notifications_permission_not_required), Toast.LENGTH_SHORT).show()
         }
     }
 

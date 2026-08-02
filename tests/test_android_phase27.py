@@ -23,5 +23,5 @@ def test_phase27_sdk_version_and_docs() -> None:
     docs = read("docs/android/PHASE_27_SMOKE_RESULT_HANDOFF.md")
     assert 'compileSdk = 36' in build
     assert 'targetSdk = 36' in build
-    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(27, 29))
+    assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(27, 30))
     assert 'smoke.failure.bundle' in docs

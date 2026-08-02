@@ -113,7 +113,8 @@ class ChrootRootService : RootService() {
             val source = File(path)
             val root = transferDirectory().canonicalFile
             val resolved = source.canonicalFile
-            check(resolved.path.startsWith(root.path)) { "Only managed transfer artifacts can be copied to a document" }
+            val contained = resolved == root || resolved.toPath().startsWith(root.toPath())
+            check(contained) { "Only managed transfer artifacts can be copied to a document" }
             FileInputStream(resolved).use { input ->
                 ParcelFileDescriptor.AutoCloseOutputStream(output).use { destination -> input.copyTo(destination) }
             }

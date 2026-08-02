@@ -92,7 +92,7 @@ def main() -> int:
     build = read(BUILD)
     if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
         errors.append("Android SDK must remain pinned to 36")
-    if not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (15, 17, 19, 21, 22, 23, 24, 25, 26, 27, 28)):
+    if not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (15, 17, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29)):
         errors.append("Android app versionName must be at least phase15")
 
     strings = read(STRINGS)

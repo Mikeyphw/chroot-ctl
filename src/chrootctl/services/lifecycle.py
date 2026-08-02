@@ -117,22 +117,6 @@ class LifecycleService:
             "detection_file": str(self.paths.module_dir / "config/chrootctl/python-detection.txt"),
         }
 
-    def start_webui(self) -> dict[str, Any]:
-        return self._write_control("start")
-
-    def stop_webui(self) -> dict[str, Any]:
-        return self._write_control("stop")
-
-    def restart_webui(self) -> dict[str, Any]:
-        return self._write_control("restart")
-
-    def _write_control(self, action: str) -> dict[str, Any]:
-        if action not in {"start", "stop", "restart"}:
-            raise ValueError(f"unsupported lifecycle action: {action}")
-        self.paths.control_dir.mkdir(parents=True, exist_ok=True)
-        self.paths.control_file.write_text(action + "\n", encoding="utf-8")
-        return {"ok": True, "action": action, "control_file": str(self.paths.control_file)}
-
     @staticmethod
     def _read_pid(path: Path) -> int | None:
         try:

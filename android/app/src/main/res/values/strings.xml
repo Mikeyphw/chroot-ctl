@@ -220,4 +220,10 @@
     <string name="smoke_persist_action">Persist result</string>
     <string name="smoke_export_action">Export evidence</string>
     <string name="smoke_failure_bundle_action">Failure bundle</string>
+    <string name="notifications_permission_title">Operation notification visibility</string>
+    <string name="notifications_permission_body">Android 13+ can hide long-running operation progress unless notification permission is granted. Grant it so installs, transfers, smoke runs and support exports stay visible.</string>
+    <string name="notifications_permission_action">Enable operation notifications</string>
+    <string name="notifications_permission_granted">Operation notifications enabled</string>
+    <string name="notifications_permission_denied">Notification permission denied; foreground work can still run but progress may be less visible</string>
+    <string name="notifications_permission_not_required">This Android version does not require notification permission</string>
 </resources>

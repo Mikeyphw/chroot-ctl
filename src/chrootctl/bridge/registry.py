@@ -752,12 +752,14 @@ def _packages_compare(services: ServiceContainer, payload: dict[str, Any]) -> An
 
 
 def _managed_transfer_archive(name: str, suffix: str = "tar.zst") -> Path:
-    import tempfile
+    from ..services.transfer import managed_transfer_archive
 
-    root = Path(tempfile.gettempdir()) / "chrootctl-transfer"
-    root.mkdir(parents=True, exist_ok=True)
-    safe = "".join(ch if ch.isalnum() or ch in {".", "_", "-"} else "_" for ch in name).strip("._-") or "chroot"
-    return root / f"{safe}.{suffix}"
+    return managed_transfer_archive(name, suffix)
+
+
+def _transfer_artifact_root(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    del payload
+    return services.transfer().artifact_root()
 
 
 def _transfer_inspect_import(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -1124,7 +1126,7 @@ def _smoke_steps() -> list[dict[str, Any]]:
 def _smoke_plan(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     del services
     scope = str(payload.get("scope") or "real-device").strip() or "real-device"
-    include_optional = bool(payload.get("includeOptional") or payload.get("include_optional") or True)
+    include_optional = bool(payload.get("includeOptional", payload.get("include_optional", True)))
     steps = [step for step in _smoke_steps() if include_optional or step["required"]]
     return {
         "ok": True,
@@ -1220,9 +1222,30 @@ def _latest_smoke_record(services: ServiceContainer, limit: int = 25) -> dict[st
     return None
 
 
+def _smoke_result_failed(latest: dict[str, Any] | None) -> bool:
+    if latest is None:
+        return False
+    state = str(latest.get("state") or "").lower()
+    result = latest.get("resultPayload") or latest.get("result_payload") or {}
+    if not isinstance(result, dict):
+        result = {}
+    fail_count = result.get("failCount", result.get("fail_count", 0))
+    try:
+        failed_checks = int(fail_count or 0) > 0
+    except (TypeError, ValueError):
+        failed_checks = False
+    blocking = result.get("blocking")
+    return (
+        state in {"failed", "interrupted", "blocked"}
+        or result.get("ok") is False
+        or failed_checks
+        or bool(blocking)
+    )
+
+
 def _smoke_result_payload(services: ServiceContainer, payload: dict[str, Any]) -> dict[str, Any]:
     latest = _latest_smoke_record(services, limit=int(payload.get("limit", 25)))
-    failed = latest is not None and str(latest.get("state") or "").lower() in {"failed", "interrupted", "blocked"}
+    failed = _smoke_result_failed(latest)
     return {
         "ok": latest is not None,
         "kind": "smoke.last_result",
@@ -1392,6 +1415,7 @@ _SPECS = (
     OperationSpec("packages.compare", "query", "Compare package inventories between chroots", query_handler=_packages_compare),
     OperationSpec("transfer.inspect_import", "query", "Inspect a staged import archive", query_handler=_transfer_inspect_import),
     OperationSpec("artifacts.list", "query", "List managed transfer artifacts", query_handler=_artifacts_list),
+    OperationSpec("transfer.artifact_root", "query", "Return the managed transfer artifact root shared by Python and Android", query_handler=_transfer_artifact_root),
     OperationSpec("catalog.preview", "preview", "Preview applying tools or add-ons", preview_handler=_catalog_preview),
     OperationSpec("transfer.import_preview", "preview", "Preview importing a staged archive", preview_handler=_transfer_import_preview),
     OperationSpec("transfer.preview_export", "preview", "Preview exporting a chroot archive", preview_handler=_transfer_preview_export),

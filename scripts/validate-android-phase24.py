@@ -25,7 +25,7 @@ def main() -> int:
 
     error_if(errors, 'compileSdk = 36' not in build, "compileSdk must remain pinned to 36")
     error_if(errors, 'targetSdk = 36' not in build, "targetSdk must remain pinned to 36")
-    error_if(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (24, 25, 26, 27, 28)), "versionName must advance to phase24")
+    error_if(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (24, 25, 26, 27, 28, 29)), "versionName must advance to phase24")
 
     for token in (
         "FORBIDDEN_MODULE_PATH_TOKENS",

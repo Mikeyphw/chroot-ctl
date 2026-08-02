@@ -31,6 +31,7 @@ fun HomeScreen(
     onRefresh: () -> Unit,
     onStartRefreshOperation: () -> Unit,
     onOpenActivity: () -> Unit,
+    onRequestNotificationPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -47,6 +48,7 @@ fun HomeScreen(
                 onRefresh = onRefresh,
                 onStartRefreshOperation = onStartRefreshOperation,
                 onOpenActivity = onOpenActivity,
+                onRequestNotificationPermission = onRequestNotificationPermission,
             )
         }
     }
@@ -59,6 +61,7 @@ private fun HomeReady(
     onRefresh: () -> Unit,
     onStartRefreshOperation: () -> Unit,
     onOpenActivity: () -> Unit,
+    onRequestNotificationPermission: () -> Unit,
 ) {
     StatusCard(
         title = snapshot.recommendedAction.title,
@@ -107,6 +110,12 @@ private fun HomeReady(
         }
     }
     ReleaseReadinessCard(snapshot)
+
+    StatusCard(
+        title = stringResource(R.string.notifications_permission_title),
+        body = stringResource(R.string.notifications_permission_body),
+        footer = { Button(onClick = onRequestNotificationPermission) { Text(stringResource(R.string.notifications_permission_action)) } },
+    )
     if (refreshState is RefreshState.Failed) {
         StatusCard(title = stringResource(R.string.refresh_failed_title), body = refreshState.message)
     }
