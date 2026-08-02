@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.mikeyphw.chrootctl"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.mikeyphw.chrootctl"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "0.1.0-phase29"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

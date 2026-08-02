@@ -157,7 +157,10 @@
     <string name="package_right_label">Right chroot</string>
     <string name="package_inventory_action">Load inventory</string>
     <string name="package_compare_action">Compare</string>
-    <string name="package_inventory_summary">%1$s has %2$d packages</string>
+    <plurals name="package_inventory_summary">
+        <item quantity="one">%1$s has %2$d package</item>
+        <item quantity="other">%1$s has %2$d packages</item>
+    </plurals>
     <string name="package_compare_summary">Left %1$d · right %2$d · common %3$d</string>
     <string name="package_only_left">Only left: %1$s</string>
     <string name="package_only_right">Only right: %1$s</string>
@@ -174,7 +177,10 @@
     <string name="transfer_create_document_action">Create export document</string>
     <string name="artifacts_refresh_action">Refresh artifacts</string>
     <string name="artifacts_cleanup_action">Clean all artifacts</string>
-    <string name="artifact_row">%1$s · %2$d bytes</string>
+    <plurals name="artifact_row">
+        <item quantity="one">%1$s · %2$d byte</item>
+        <item quantity="other">%1$s · %2$d bytes</item>
+    </plurals>
 
     <string name="transfer_document_open_failed">Unable to open selected document</string>
     <string name="transfer_document_saved">Export document saved</string>
@@ -213,7 +219,6 @@
     <string name="smoke_report_action">Smoke report</string>
 
     <string name="release_readiness_title">Release readiness</string>
-    <string name="release_readiness_body">Native Android release readiness, safety gates and post-WebUI polish.</string>
     <string name="smoke_handoff_title">Smoke result handoff</string>
     <string name="smoke_handoff_body">Keep the last smoke result durable, export its evidence, or build a support bundle when the smoke fails.</string>
     <string name="smoke_last_result_action">Last result</string>

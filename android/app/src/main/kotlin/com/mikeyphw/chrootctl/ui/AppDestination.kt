@@ -3,7 +3,7 @@ package com.mikeyphw.chrootctl.ui
 import androidx.annotation.StringRes
 import com.mikeyphw.chrootctl.R
 
-enum class AppDestination(@StringRes val labelRes: Int, @StringRes val glyphRes: Int) {
+enum class AppDestination(@param:StringRes val labelRes: Int, @param:StringRes val glyphRes: Int) {
     Home(R.string.nav_home, R.string.glyph_home),
     Chroots(R.string.nav_chroots, R.string.glyph_chroots),
     Install(R.string.nav_install, R.string.glyph_install),

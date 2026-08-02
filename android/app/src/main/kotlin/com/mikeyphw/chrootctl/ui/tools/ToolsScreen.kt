@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -255,7 +256,7 @@ private fun PackageCard(
             }
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             pane.inventory?.let { inventory ->
-                Text(stringResource(R.string.package_inventory_summary, inventory.name, inventory.count))
+                Text(pluralStringResource(R.plurals.package_inventory_summary, inventory.count, inventory.name, inventory.count))
                 ChipRow(inventory.packages.take(16))
             }
             pane.comparison?.let { comparison ->
@@ -312,7 +313,8 @@ private fun TransferCard(
             }
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             pane.artifacts.take(8).forEach { artifact ->
-                Text(stringResource(R.string.artifact_row, artifact.name, artifact.sizeBytes), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val byteQuantity = if (artifact.sizeBytes == 1L) 1 else 2
+                Text(pluralStringResource(R.plurals.artifact_row, byteQuantity, artifact.name, artifact.sizeBytes), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

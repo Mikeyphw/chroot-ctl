@@ -11,7 +11,7 @@ class AppContainer(context: Context) {
         context,
         ChrootCtlDatabase::class.java,
         "chrootctl-android.db",
-    ).fallbackToDestructiveMigration().build()
+    ).fallbackToDestructiveMigration(dropAllTables = true).build()
 
     val rootServiceClient = RootServiceClient(context.applicationContext)
     val bridgeRepository = BridgeRepository(rootServiceClient, database)

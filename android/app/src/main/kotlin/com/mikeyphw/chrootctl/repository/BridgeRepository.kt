@@ -667,10 +667,13 @@ private fun countWarnings(
 ): Int = chroots.sumOf { it.warningCount } + operations.count { it.state in setOf("failed", "interrupted", "blocked") } +
     dashboard.extractChecks(System.currentTimeMillis(), "home").count { it.severity.lowercase() in setOf("warn", "warning", "error", "failed", "blocked") }
 
-private fun JSONArray.toJsonObjects(): List<JSONObject> = buildList {
-    for (index in 0 until length()) {
-        val value = opt(index)
-        if (value is JSONObject) add(value)
+private fun JSONArray?.toJsonObjects(): List<JSONObject> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) {
+            val value = opt(index)
+            if (value is JSONObject) add(value)
+        }
     }
 }
 
