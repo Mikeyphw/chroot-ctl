@@ -2,4 +2,6 @@
 <lint>
     <issue id="GradleDependency" severity="ignore" />
     <issue id="NewerVersionAvailable" severity="ignore" />
+    <!-- API 36 is an explicit project compatibility contract. Keep every other lint warning fatal. -->
+    <issue id="OldTargetApi" severity="ignore" />
 </lint>
