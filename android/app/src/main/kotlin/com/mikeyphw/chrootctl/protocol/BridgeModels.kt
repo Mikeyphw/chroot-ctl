@@ -77,16 +77,26 @@ data class BridgeCapabilities(
             val operationsJson = data.optJSONArray("operations") ?: JSONArray()
             val capabilities = buildList {
                 for (index in 0 until operationsJson.length()) {
-                    val item = operationsJson.getJSONObject(index)
-                    add(
-                        BridgeOperationCapability(
-                            name = item.optString("name", "unknown"),
-                            mode = item.optString("mode", "query"),
-                            description = item.optString("description", ""),
-                            destructive = item.optBoolean("destructive", false),
-                            lockScope = item.optString("lockScope", "none"),
-                        ),
-                    )
+                    when (val item = operationsJson.opt(index)) {
+                        is JSONObject -> add(
+                            BridgeOperationCapability(
+                                name = item.optString("name", "unknown"),
+                                mode = item.optString("mode", "query"),
+                                description = item.optString("description", ""),
+                                destructive = item.optBoolean("destructive", false),
+                                lockScope = item.optString("lockScope", "none"),
+                            ),
+                        )
+                        is String -> add(
+                            BridgeOperationCapability(
+                                name = item,
+                                mode = "query",
+                                description = "Legacy bridge capability",
+                                destructive = false,
+                                lockScope = "none",
+                            ),
+                        )
+                    }
                 }
             }
             return BridgeCapabilities(
@@ -106,6 +116,7 @@ data class BridgeEnvelope(
     val ok: Boolean,
     val data: JSONObject?,
     val dataArray: JSONArray?,
+    val dataType: String?,
     val errorCode: String?,
     val errorMessage: String?,
     val warnings: List<String>,
@@ -113,17 +124,22 @@ data class BridgeEnvelope(
 ) {
     fun requireData(): JSONObject {
         check(ok) { errorMessage ?: errorCode ?: "Bridge request failed" }
-        return data ?: JSONObject()
+        return data ?: error("Bridge response data was ${dataType ?: "missing"}; expected a JSON object")
     }
 
     fun requireArray(): JSONArray {
         check(ok) { errorMessage ?: errorCode ?: "Bridge request failed" }
-        return dataArray ?: JSONArray()
+        return dataArray ?: error("Bridge response data was ${dataType ?: "missing"}; expected a JSON array")
     }
 
     companion object {
         fun fromJson(raw: String): BridgeEnvelope {
-            val json = JSONObject(raw)
+            val json = runCatching { JSONObject(raw.trim()) }.getOrElse { error ->
+                throw IllegalStateException(
+                    "Bridge returned non-JSON output: ${bridgeJsonExcerpt(raw)}",
+                    error,
+                )
+            }
             val error = json.optJSONObject("error")
             val rawData = json.opt("data")
             return BridgeEnvelope(
@@ -132,6 +148,7 @@ data class BridgeEnvelope(
                 ok = json.optBoolean("ok"),
                 data = rawData as? JSONObject,
                 dataArray = rawData as? JSONArray,
+                dataType = rawData.bridgeJsonType(),
                 errorCode = error?.optString("code")?.takeIf(String::isNotBlank),
                 errorMessage = error?.optString("message")?.takeIf(String::isNotBlank),
                 warnings = json.optJSONArray("warnings").toStringList(),
@@ -140,6 +157,24 @@ data class BridgeEnvelope(
         }
     }
 }
+
+private fun Any?.bridgeJsonType(): String? = when (this) {
+    null, JSONObject.NULL -> null
+    is JSONObject -> "object"
+    is JSONArray -> "array"
+    is String -> "string"
+    is Number -> "number"
+    is Boolean -> "boolean"
+    else -> javaClass.simpleName
+}
+
+private fun bridgeJsonExcerpt(raw: String): String = raw
+    .lineSequence()
+    .map(String::trim)
+    .firstOrNull(String::isNotBlank)
+    .orEmpty()
+    .replace(Regex("\\s+"), " ")
+    .take(240)
 
 fun JSONArray?.toStringList(): List<String> {
     if (this == null) return emptyList()

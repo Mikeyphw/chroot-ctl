@@ -2,6 +2,7 @@ package com.mikeyphw.chrootctl.ui.tools
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -178,7 +179,10 @@ private fun CatalogCard(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.catalog_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 FilterChip(selected = pane.kind == "tool", onClick = { onRefreshCatalog("tool") }, label = { Text(stringResource(R.string.catalog_tools_chip)) })
                 FilterChip(selected = pane.kind == "addon", onClick = { onRefreshCatalog("addon") }, label = { Text(stringResource(R.string.catalog_addons_chip)) })
             }
@@ -194,7 +198,10 @@ private fun CatalogCard(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.catalog_search_label)) },
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = { onRefreshCatalog(pane.kind) }) { Text(stringResource(R.string.catalog_search_action)) }
                 Button(onClick = onPreview) { Text(stringResource(R.string.preview_action)) }
                 Button(onClick = onApply, enabled = pane.preview?.ok == true) { Text(stringResource(R.string.apply_action)) }
@@ -250,7 +257,10 @@ private fun PackageCard(
             if (names.isNotBlank()) Text(stringResource(R.string.catalog_available_chroots, names), color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(value = left, onValueChange = { left = it; onUpdateCompare(it, right) }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.package_left_label)) })
             OutlinedTextField(value = right, onValueChange = { right = it; onUpdateCompare(left, it) }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.package_right_label)) })
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = { onRefreshInventory(left) }) { Text(stringResource(R.string.package_inventory_action)) }
                 Button(onClick = onCompare) { Text(stringResource(R.string.package_compare_action)) }
             }
@@ -292,7 +302,10 @@ private fun TransferCard(
             Button(onClick = onPickImportArchive) { Text(stringResource(R.string.transfer_pick_import_action)) }
             OutlinedTextField(value = pane.importArchive, onValueChange = onUpdateImportArchive, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_import_archive_label)) })
             OutlinedTextField(value = pane.importTargetName, onValueChange = onUpdateImportTarget, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_import_name_label)) })
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onInspectImport) { Text(stringResource(R.string.transfer_inspect_action)) }
                 Button(onClick = onStartImport, enabled = pane.importArchive.isNotBlank()) { Text(stringResource(R.string.transfer_import_action)) }
             }
@@ -301,13 +314,19 @@ private fun TransferCard(
             if (names.isNotBlank()) Text(stringResource(R.string.catalog_available_chroots, names), color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(value = pane.exportTargetName, onValueChange = onUpdateExportTarget, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_export_name_label)) })
             OutlinedTextField(value = pane.exportArchive, onValueChange = onUpdateExportArchive, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_export_archive_label)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onPreviewExport) { Text(stringResource(R.string.preview_action)) }
                 Button(onClick = onStartExport, enabled = pane.exportTargetName.isNotBlank()) { Text(stringResource(R.string.transfer_export_action)) }
                 Button(onClick = onCreateExportDocument) { Text(stringResource(R.string.transfer_create_document_action)) }
             }
             pane.exportPreview?.let { PreviewBlock(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onRefreshArtifacts) { Text(stringResource(R.string.artifacts_refresh_action)) }
                 Button(onClick = onCleanupAllArtifacts) { Text(stringResource(R.string.artifacts_cleanup_action)) }
             }
@@ -355,22 +374,34 @@ private fun SystemSupportCard(
             pane.runtimeRows.forEach { row -> SystemRow(row) }
             Text(stringResource(R.string.system_module_title), fontWeight = FontWeight.SemiBold)
             pane.moduleRows.forEach { row -> SystemRow(row) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onPreviewSupportBundle) { Text(stringResource(R.string.support_preview_action)) }
                 Button(onClick = onStartSupportBundle) { Text(stringResource(R.string.support_bundle_action)) }
             }
             pane.supportPreview?.let { PreviewBlock(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onPreviewModuleBuild) { Text(stringResource(R.string.module_preview_action)) }
                 Button(onClick = onStartModuleBuild) { Text(stringResource(R.string.module_build_action)) }
             }
             pane.moduleBuildPreview?.let { PreviewBlock(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onPreviewRepair) { Text(stringResource(R.string.repair_preview_action)) }
                 Button(onClick = onStartRepair, enabled = pane.repairPreview?.ok == true) { Text(stringResource(R.string.repair_apply_action)) }
             }
             pane.repairPreview?.let { PreviewBlock(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onPreviewTempCleanup) { Text(stringResource(R.string.cleanup_preview_action)) }
                 Button(onClick = onStartTempCleanup, enabled = pane.cleanupPreview?.ok == true) { Text(stringResource(R.string.cleanup_temp_action)) }
             }
@@ -402,25 +433,37 @@ private fun DebugWorkbenchCard(
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.debug_workbench_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.debug_workbench_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 listOf("all", "root", "backend", "storage", "runtime", "recovery", "operations").forEach { group ->
                     FilterChip(selected = pane.selectedGroup == group, onClick = { onRefresh(group) }, label = { Text(group) })
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = { onRefresh(pane.selectedGroup) }) { Text(stringResource(R.string.debug_run_probes_action)) }
                 Button(onClick = onExport) { Text(stringResource(R.string.debug_export_action)) }
             }
             Text(stringResource(R.string.smoke_suite_title), fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.smoke_suite_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onPreviewSmokePlan) { Text(stringResource(R.string.smoke_preview_action)) }
                 Button(onClick = onStartSmokeRun) { Text(stringResource(R.string.smoke_run_action)) }
                 Button(onClick = onRefreshSmokeReport) { Text(stringResource(R.string.smoke_report_action)) }
             }
             Text(stringResource(R.string.smoke_handoff_title), fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.smoke_handoff_body), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = onRefreshSmokeLastResult) { Text(stringResource(R.string.smoke_last_result_action)) }
                 Button(onClick = onPersistSmokeResult) { Text(stringResource(R.string.smoke_persist_action)) }
                 Button(onClick = onExportSmokeEvidence) { Text(stringResource(R.string.smoke_export_action)) }

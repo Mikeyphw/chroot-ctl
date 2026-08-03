@@ -36,7 +36,14 @@ fun HomeScreen(
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         when (state) {
-            Loadable.Loading -> LoadingState(stringResource(R.string.status_checking_runtime))
+            Loadable.Loading -> when (refreshState) {
+                is RefreshState.Failed -> StatusCard(
+                    title = stringResource(R.string.status_backend_unavailable),
+                    body = refreshState.message,
+                    footer = { Button(onClick = onRefresh) { Text(stringResource(R.string.action_retry)) } },
+                )
+                else -> LoadingState(stringResource(R.string.status_checking_runtime))
+            }
             is Loadable.Blocked -> StatusCard(
                 title = stringResource(R.string.status_backend_unavailable),
                 body = state.message,
@@ -67,7 +74,10 @@ private fun HomeReady(
         title = snapshot.recommendedAction.title,
         body = snapshot.recommendedAction.body,
         footer = {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Button(onClick = onRefresh, enabled = refreshState !is RefreshState.Refreshing) {
                     Text(stringResource(R.string.action_refresh))
                 }

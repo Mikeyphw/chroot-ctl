@@ -33,7 +33,7 @@ class ChrootRootService : RootService() {
                     "message",
                     when {
                         uid != 0 -> "Root service is running as UID $uid instead of UID 0"
-                        runtime == null -> "The chrootctl bridge runtime was not found"
+                        runtime == null -> RuntimeResolver.diagnostic()
                         else -> "Root bridge is ready"
                     },
                 )
@@ -66,7 +66,7 @@ class ChrootRootService : RootService() {
             if (runtime == null) {
                 activeRequests.remove(requestId)
                 output.close()
-                return failure("RUNTIME_NOT_FOUND", "The chrootctl bridge runtime was not found")
+                return failure("RUNTIME_NOT_FOUND", RuntimeResolver.diagnostic())
             }
             val owned = runCatching { ParcelFileDescriptor.dup(output.fileDescriptor) }.getOrElse { error ->
                 activeRequests.remove(requestId)
@@ -130,11 +130,23 @@ class ChrootRootService : RootService() {
     }
 
     private fun invokeBridge(arguments: List<String>, requestJson: String? = null): String {
-        val runtime = RuntimeResolver.resolve() ?: return failure("RUNTIME_NOT_FOUND", "The chrootctl bridge runtime was not found")
-        return runCatching { BridgeProcess(runtime).invoke(arguments, requestJson).let { result ->
-            if (result.output.isNotBlank()) result.output.trim()
-            else failure("EMPTY_BRIDGE_RESPONSE", "Bridge exited with code ${result.exitCode} without output")
-        } }.getOrElse { error -> failure("BRIDGE_PROCESS_FAILED", error.message ?: error.javaClass.simpleName) }
+        val runtime = RuntimeResolver.resolve() ?: return failure("RUNTIME_NOT_FOUND", RuntimeResolver.diagnostic())
+        return runCatching { BridgeProcess(runtime).invoke(arguments, requestJson) }
+            .fold(
+                onSuccess = { result ->
+                    when (val validation = validateBridgeProcessResult(runtime, result)) {
+                        is BridgeOutputValidation.Accepted -> validation.json
+                        is BridgeOutputValidation.Rejected -> {
+                            RuntimeResolver.invalidate(runtime)
+                            failure(validation.code, validation.message)
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    RuntimeResolver.invalidate(runtime)
+                    failure("BRIDGE_PROCESS_FAILED", error.message ?: error.javaClass.simpleName)
+                },
+            )
     }
 
     private fun transferDirectory(): File {

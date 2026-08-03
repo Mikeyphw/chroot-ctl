@@ -2,6 +2,7 @@ package com.mikeyphw.chrootctl.ui.install
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -40,7 +41,10 @@ fun InstallScreen(
             body = stringResource(R.string.install_native_body),
             footer = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         OutlinedButton(onClick = onRefreshForm, enabled = !form.refreshing) {
                             Text(if (form.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.install_refresh_options))
                         }
