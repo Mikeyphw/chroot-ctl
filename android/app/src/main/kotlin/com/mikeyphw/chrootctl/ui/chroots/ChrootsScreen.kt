@@ -3,12 +3,14 @@ package com.mikeyphw.chrootctl.ui.chroots
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -16,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -32,9 +35,19 @@ import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 import com.mikeyphw.chrootctl.model.ServicesPane
 import com.mikeyphw.chrootctl.model.UserSummary
 import com.mikeyphw.chrootctl.model.UsersPane
+import com.mikeyphw.chrootctl.ui.ChrootLayout
+import com.mikeyphw.chrootctl.ui.ChrootListFilter
+import com.mikeyphw.chrootctl.ui.chrootMatchesFilter
+import com.mikeyphw.chrootctl.ui.chrootMatchesQuery
+import com.mikeyphw.chrootctl.ui.isRunningChrootStatus
+import com.mikeyphw.chrootctl.ui.selectedChrootListFilter
+import com.mikeyphw.chrootctl.ui.components.ActionFlowRow
 import com.mikeyphw.chrootctl.ui.components.EmptyState
 import com.mikeyphw.chrootctl.ui.components.PathText
+import com.mikeyphw.chrootctl.ui.components.SectionHeader
 import com.mikeyphw.chrootctl.ui.components.StatusCard
+import com.mikeyphw.chrootctl.ui.components.StatusPill
+import com.mikeyphw.chrootctl.ui.components.StatusTone
 import org.json.JSONObject
 
 @Composable
@@ -66,66 +79,125 @@ fun ChrootsScreen(
     onStartServiceOperation: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var filterName by rememberSaveable { mutableStateOf(ChrootListFilter.All.name) }
+    val filter = selectedChrootListFilter(filterName)
+    val visibleChroots = chroots.filter { chroot ->
+        chrootMatchesQuery(chroot, query) && chrootMatchesFilter(chroot, filter)
+    }
+
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        if (chroots.isEmpty()) {
-            EmptyState(
+        SectionHeader(
+            title = stringResource(R.string.chroots_phase32_title),
+            body = stringResource(R.string.chroots_phase32_body),
+        )
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text(stringResource(R.string.chroots_search_label)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ActionFlowRow {
+            ChrootFilterButton(filter = ChrootListFilter.All, selected = filter == ChrootListFilter.All, onSelect = { filterName = it.name })
+            ChrootFilterButton(filter = ChrootListFilter.Running, selected = filter == ChrootListFilter.Running, onSelect = { filterName = it.name })
+            ChrootFilterButton(filter = ChrootListFilter.Stopped, selected = filter == ChrootListFilter.Stopped, onSelect = { filterName = it.name })
+            ChrootFilterButton(filter = ChrootListFilter.Attention, selected = filter == ChrootListFilter.Attention, onSelect = { filterName = it.name })
+        }
+        when {
+            chroots.isEmpty() -> EmptyState(
                 title = stringResource(R.string.chroots_empty_title),
                 body = stringResource(R.string.chroots_empty_body),
             )
-        } else {
-            chroots.forEach { chroot ->
-                ChrootCard(
+            visibleChroots.isEmpty() -> EmptyState(
+                title = stringResource(R.string.chroots_no_matches_title),
+                body = stringResource(R.string.chroots_no_matches_body),
+            )
+            else -> visibleChroots.forEach { chroot ->
+                Phase32ChrootCard(
                     chroot = chroot,
                     selected = chroot.name == selectedName,
                     onSelect = { onSelect(chroot.name) },
-                )
-            }
-            detail.chroot?.let { chroot ->
-                ChrootDetailCard(
-                    chroot = chroot,
-                    checks = detail.checks,
-                    refreshing = detail.refreshing,
-                    errorMessage = detail.errorMessage,
-                    lifecyclePreview = lifecyclePreview,
-                    snapshotPane = snapshotPane,
-                    usersPane = usersPane,
-                    servicesPane = servicesPane,
-                    onRefreshDetail = onRefreshDetail,
                     onPreviewLifecycle = onPreviewLifecycle,
                     onStartLifecycle = onStartLifecycle,
-                    onExecuteRemove = onExecuteRemove,
-                    onRefreshSnapshots = onRefreshSnapshots,
                     onPreviewSnapshotCreate = onPreviewSnapshotCreate,
-                    onStartSnapshotCreate = onStartSnapshotCreate,
-                    onPreviewSnapshotAction = onPreviewSnapshotAction,
-                    onStartSnapshotRestore = onStartSnapshotRestore,
-                    onStartSnapshotExport = onStartSnapshotExport,
-                    onRefreshUsers = onRefreshUsers,
-                    onPreviewUserPayload = onPreviewUserPayload,
-                    onStartUserOperation = onStartUserOperation,
-                    onRefreshServices = onRefreshServices,
-                    onRefreshServiceDetail = onRefreshServiceDetail,
-                    onPreviewServicePayload = onPreviewServicePayload,
-                    onStartServiceOperation = onStartServiceOperation,
                 )
             }
+        }
+        detail.chroot?.let { chroot ->
+            ChrootDetailCard(
+                chroot = chroot,
+                checks = detail.checks,
+                refreshing = detail.refreshing,
+                errorMessage = detail.errorMessage,
+                lifecyclePreview = lifecyclePreview,
+                snapshotPane = snapshotPane,
+                usersPane = usersPane,
+                servicesPane = servicesPane,
+                onRefreshDetail = onRefreshDetail,
+                onPreviewLifecycle = onPreviewLifecycle,
+                onStartLifecycle = onStartLifecycle,
+                onExecuteRemove = onExecuteRemove,
+                onRefreshSnapshots = onRefreshSnapshots,
+                onPreviewSnapshotCreate = onPreviewSnapshotCreate,
+                onStartSnapshotCreate = onStartSnapshotCreate,
+                onPreviewSnapshotAction = onPreviewSnapshotAction,
+                onStartSnapshotRestore = onStartSnapshotRestore,
+                onStartSnapshotExport = onStartSnapshotExport,
+                onRefreshUsers = onRefreshUsers,
+                onPreviewUserPayload = onPreviewUserPayload,
+                onStartUserOperation = onStartUserOperation,
+                onRefreshServices = onRefreshServices,
+                onRefreshServiceDetail = onRefreshServiceDetail,
+                onPreviewServicePayload = onPreviewServicePayload,
+                onStartServiceOperation = onStartServiceOperation,
+            )
         }
     }
 }
 
 @Composable
-private fun ChrootCard(chroot: ChrootSummary, selected: Boolean, onSelect: () -> Unit) {
-    val container: @Composable (Modifier, @Composable () -> Unit) -> Unit = if (selected) {
+private fun ChrootFilterButton(filter: ChrootListFilter, selected: Boolean, onSelect: (ChrootListFilter) -> Unit) {
+    val label = when (filter) {
+        ChrootListFilter.All -> stringResource(R.string.chroot_filter_all)
+        ChrootListFilter.Running -> stringResource(R.string.chroot_filter_running)
+        ChrootListFilter.Stopped -> stringResource(R.string.chroot_filter_stopped)
+        ChrootListFilter.Attention -> stringResource(R.string.chroot_filter_attention)
+    }
+    if (selected) {
+        Button(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    } else {
+        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    }
+}
+
+@Composable
+private fun Phase32ChrootCard(
+    chroot: ChrootSummary,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onPreviewLifecycle: (String, String) -> Unit,
+    onStartLifecycle: (String, String) -> Unit,
+    onPreviewSnapshotCreate: (String) -> Unit,
+) {
+    val running = isRunningChrootStatus(chroot.status) || chroot.mountState?.let(::isRunningChrootStatus) == true
+    val tone = when {
+        chroot.warningCount > 0 -> StatusTone.Warning
+        running -> StatusTone.Success
+        else -> StatusTone.Neutral
+    }
+    val card: @Composable (Modifier, @Composable () -> Unit) -> Unit = if (selected) {
         { modifier, content -> OutlinedCard(modifier, content = { content() }) }
     } else {
         { modifier, content -> Card(modifier, content = { content() }) }
     }
-    container(Modifier.fillMaxWidth().clickable(onClick = onSelect)) {
+    card(Modifier.fillMaxWidth().clickable(onClick = onSelect)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(chroot.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Text(chroot.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ActionFlowRow {
+                StatusPill(chroot.status.ifBlank { stringResource(R.string.value_unknown) }, tone)
+                if (chroot.warningCount > 0) StatusPill(stringResource(R.string.chroot_warnings_count, chroot.warningCount), StatusTone.Warning)
             }
+            Text(chroot.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 listOfNotNull(chroot.distribution, chroot.release, chroot.architecture).joinToString(" · ").ifBlank {
                     stringResource(R.string.chroot_unknown_distribution)
@@ -143,6 +215,38 @@ private fun ChrootCard(chroot: ChrootSummary, selected: Boolean, onSelect: () ->
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            ActionFlowRow {
+                OutlinedButton(onClick = onSelect, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_open_details))
+                }
+                if (running) {
+                    OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                        Text(stringResource(R.string.action_preview_restart))
+                    }
+                    Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                        Text(stringResource(R.string.action_restart_chroot))
+                    }
+                } else {
+                    OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                        Text(stringResource(R.string.action_preview_start))
+                    }
+                    Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                        Text(stringResource(R.string.action_start_chroot))
+                    }
+                }
+                OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_preview_snapshot))
+                }
+                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_preview_upgrade))
+                }
+                Button(onClick = { onStartLifecycle(chroot.name, "chroots.upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_upgrade_chroot))
+                }
+                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "remove") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_preview_remove))
+                }
+            }
         }
     }
 }
@@ -180,8 +284,10 @@ private fun ChrootDetailCard(
         body = stringResource(R.string.chroot_detail_body),
         footer = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onRefreshDetail, enabled = !refreshing) {
-                    Text(if (refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_detail))
+                ActionFlowRow {
+                    Button(onClick = onRefreshDetail, enabled = !refreshing, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                        Text(if (refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_detail))
+                    }
                 }
                 LifecyclePanel(
                     chroot = chroot,
@@ -242,15 +348,18 @@ private fun LifecyclePanel(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.lifecycle_actions_title), fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onPreviewLifecycle(chroot.name, "start") }) { Text(stringResource(R.string.action_preview_start)) }
-                Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }) { Text(stringResource(R.string.action_start_chroot)) }
+            ActionFlowRow {
+                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_preview_start)) }
+                Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_start_chroot)) }
+                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_preview_restart)) }
+                Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_restart_chroot)) }
+                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_preview_upgrade)) }
+                Button(onClick = { onStartLifecycle(chroot.name, "chroots.upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_upgrade_chroot)) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onPreviewLifecycle(chroot.name, "restart") }) { Text(stringResource(R.string.action_preview_restart)) }
-                Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }) { Text(stringResource(R.string.action_restart_chroot)) }
+            Text(stringResource(R.string.lifecycle_remove_safety_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            ActionFlowRow {
+                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "remove") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_preview_remove)) }
             }
-            Button(onClick = { onPreviewLifecycle(chroot.name, "remove") }) { Text(stringResource(R.string.action_preview_remove)) }
             OutlinedTextField(
                 value = removeConfirmation,
                 onValueChange = { removeConfirmation = it },
@@ -261,6 +370,7 @@ private fun LifecyclePanel(
             Button(
                 onClick = { onExecuteRemove(chroot.name, removeConfirmation) },
                 enabled = removeConfirmation == chroot.name,
+                modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
             ) {
                 Text(stringResource(R.string.action_remove_chroot))
             }
@@ -284,7 +394,7 @@ private fun SnapshotPanel(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.snapshot_actions_title), fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionFlowRow {
                 Button(onClick = { onRefreshSnapshots(chroot.name) }, enabled = !pane.refreshing) {
                     Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_snapshots))
                 }
@@ -338,7 +448,7 @@ private fun SnapshotRow(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(snapshot.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
         Text(listOf(snapshot.kind, snapshot.createdAt, snapshot.sizeBytes.toString()).joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             Button(onClick = { onPreviewSnapshotAction(snapshot.chrootName, snapshot.name, "restore") }) { Text(stringResource(R.string.action_preview_restore_snapshot)) }
             Button(
                 onClick = { onStartSnapshotRestore(snapshot.chrootName, snapshot.name, restoreConfirmation) },
@@ -347,7 +457,7 @@ private fun SnapshotRow(
                 Text(stringResource(R.string.action_restore_snapshot))
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             Button(onClick = { onPreviewSnapshotAction(snapshot.chrootName, snapshot.name, "export") }) { Text(stringResource(R.string.action_preview_export_snapshot)) }
             Button(onClick = { onStartSnapshotExport(snapshot.chrootName, snapshot.name) }) { Text(stringResource(R.string.action_export_snapshot)) }
         }
@@ -378,7 +488,7 @@ private fun UsersPanel(
             OutlinedTextField(value = shell, onValueChange = { shell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Button(onClick = { sudo = !sudo }) { Text(if (sudo) stringResource(R.string.action_disable_sudo_choice) else stringResource(R.string.action_enable_sudo_choice)) }
             val addPayload = userPayload(chroot.name, username, "add").put("shell", shell).put("sudo", sudo).toString()
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionFlowRow {
                 Button(onClick = { onPreviewUserPayload(addPayload) }, enabled = username.isNotBlank()) { Text(stringResource(R.string.action_preview_add_user)) }
                 Button(onClick = { onStartUserOperation("users.add", addPayload) }, enabled = username.isNotBlank()) { Text(stringResource(R.string.action_add_user)) }
             }
@@ -421,27 +531,27 @@ private fun UserRow(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(user.username, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
         Text(listOf("uid=${user.uid}", "gid=${user.gid}", user.shell, if (user.sudo) "sudo" else "no sudo").joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             val syncPayload = userPayload(chroot, user.username, "sync_uid_gid").put("fixOwnership", true).toString()
             Button(onClick = { onPreviewUserPayload(syncPayload) }) { Text(stringResource(R.string.action_preview_sync_user)) }
             Button(onClick = { onStartUserOperation("users.sync_uid_gid", syncPayload) }) { Text(stringResource(R.string.action_sync_user)) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             val shellPayload = userPayload(chroot, user.username, "set_shell").put("shell", shell).toString()
             Button(onClick = { onPreviewUserPayload(shellPayload) }) { Text(stringResource(R.string.action_preview_set_shell)) }
             Button(onClick = { onStartUserOperation("users.set_shell", shellPayload) }) { Text(stringResource(R.string.action_set_shell)) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             val sudoPayload = userPayload(chroot, user.username, "set_sudo").put("enabled", !user.sudo).toString()
             Button(onClick = { onPreviewUserPayload(sudoPayload) }) { Text(stringResource(R.string.action_preview_sudo)) }
             Button(onClick = { onStartUserOperation("users.set_sudo", sudoPayload) }) { Text(if (user.sudo) stringResource(R.string.action_disable_sudo) else stringResource(R.string.action_enable_sudo)) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             val passwordPayload = userPayload(chroot, user.username, "set_password").put("password", password).put("confirmPassword", confirmPassword).put("confirmation", confirmation).toString()
             Button(onClick = { onPreviewUserPayload(passwordPayload) }) { Text(stringResource(R.string.action_preview_password)) }
             Button(onClick = { onStartUserOperation("users.set_password", passwordPayload) }, enabled = confirmation == user.username && password.isNotBlank() && password == confirmPassword) { Text(stringResource(R.string.action_set_password)) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             val removePayload = userPayload(chroot, user.username, "remove").put("confirmation", confirmation).put("deleteHome", false).toString()
             Button(onClick = { onPreviewUserPayload(removePayload) }) { Text(stringResource(R.string.action_preview_remove_user)) }
             Button(onClick = { onStartUserOperation("users.remove", removePayload) }, enabled = confirmation == user.username) { Text(stringResource(R.string.action_remove_user)) }
@@ -497,12 +607,12 @@ private fun ServiceRow(
         Text(service.service, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
         Text(listOf(service.chrootName, service.status, if (service.enabled) "enabled" else "disabled", service.description).filter { it.isNotBlank() }.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         Button(onClick = { onRefreshServiceDetail(service.chrootName, service.service) }) { Text(stringResource(R.string.action_service_journal)) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             ServiceActionButton(service, "start", R.string.action_service_start, onPreviewServicePayload, onStartServiceOperation)
             ServiceActionButton(service, "stop", R.string.action_service_stop, onPreviewServicePayload, onStartServiceOperation)
             ServiceActionButton(service, "restart", R.string.action_service_restart, onPreviewServicePayload, onStartServiceOperation)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionFlowRow {
             ServiceActionButton(service, "enable", R.string.action_service_enable, onPreviewServicePayload, onStartServiceOperation)
             ServiceActionButton(service, "disable", R.string.action_service_disable, onPreviewServicePayload, onStartServiceOperation)
         }
@@ -526,7 +636,7 @@ private fun ServiceActionButton(
         "disable" -> "services.disable"
         else -> "services.start"
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    ActionFlowRow {
         Button(onClick = { onPreviewServicePayload(payload) }) { Text(stringResource(R.string.action_preview_short)) }
         Button(onClick = { onStartServiceOperation(operation, payload) }) { Text(stringResource(labelRes)) }
     }

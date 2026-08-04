@@ -284,6 +284,7 @@ private fun AppContent(
                     onRefreshForm = refreshInstallForm,
                     onPreview = previewInstall,
                     onStartInstall = startInstall,
+                    onOpenActivity = openActivity,
                 )
                 AppDestination.Activity -> ActivityScreen(
                     operations = state.operations,

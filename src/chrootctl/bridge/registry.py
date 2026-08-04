@@ -283,6 +283,33 @@ def _restart_chroot(
     progress({"phase": "complete", "percent": 100, "message": f"Restarted {name}"})
     return result
 
+def _upgrade_chroot(
+    services: ServiceContainer,
+    payload: dict[str, Any],
+    progress: Callable[[Any], None],
+    cancelled: Callable[[], bool],
+) -> Any:
+    name = _required_name(payload)
+    username = _optional_text(payload, "username")
+    progress({"phase": "preview", "percent": 5, "message": f"Previewing upgrade for {name}"})
+    preview = services.preview().upgrade(name=name)
+    blocking = preview.get("blocking") or []
+    preview_ok = bool(preview.get("ok", len(blocking) == 0))
+    if not preview_ok:
+        raise BridgeProtocolError("UPGRADE_PREVIEW_BLOCKED", "Upgrade preview reported blocking issues")
+    if cancelled():
+        raise OperationCancelled("Upgrade was cancelled before execution")
+
+    def _progress(event: Any) -> None:
+        progress(event)
+        if cancelled():
+            raise OperationCancelled("Upgrade was cancelled")
+
+    progress({"phase": "upgrade", "percent": 20, "message": f"Upgrading {name}", "preview": preview})
+    result = services.install().upgrade(name, username=username, progress=_progress)
+    progress({"phase": "complete", "percent": 100, "message": f"Upgraded {name}"})
+    return result
+
 
 def _remove_chroot(
     services: ServiceContainer,
@@ -1444,6 +1471,7 @@ _SPECS = (
     OperationSpec("install.run", "operation", "Run the native install flow", lock_scope="global", operation_handler=_install_run),
     OperationSpec("chroots.start", "operation", "Start a chroot session", lock_scope="target", operation_handler=_start_chroot),
     OperationSpec("chroots.restart", "operation", "Restart a chroot session", lock_scope="target", operation_handler=_restart_chroot),
+    OperationSpec("chroots.upgrade", "operation", "Upgrade a chroot after preview", destructive=True, lock_scope="target", operation_handler=_upgrade_chroot),
     OperationSpec("chroots.remove.execute", "operation", "Remove a chroot after typed confirmation", destructive=True, lock_scope="target", operation_handler=_remove_chroot),
     OperationSpec("snapshots.create", "operation", "Create a chroot snapshot", lock_scope="target", operation_handler=_snapshot_create),
     OperationSpec("snapshots.restore", "operation", "Restore a chroot snapshot", destructive=True, lock_scope="target", operation_handler=_snapshot_restore),

@@ -28,15 +28,21 @@ class PreviewService:
         record = self.services.registry.get(name)
         if record is None:
             raise RuntimeError(f"unknown chroot: {name}")
+        blocking = [] if bool(record.get("path")) else [{"code": "missing_path", "message": "No chroot path is registered."}]
+        warnings = [] if bool(record.get("installed")) else ["Chroot is not marked fully installed yet."]
+        ok = len(blocking) == 0
         return {
+            "ok": ok,
+            "kind": "upgrade",
             "name": name,
             "distro": str(record.get("distro", "")),
             "phase": str(record.get("phase", "")),
             "installed": bool(record.get("installed")),
+            "message": "Upgrade preview is ready." if ok else "Upgrade preview has blocking issues.",
             "dry_run": {
                 "supported": True,
                 "command": f"chrootctl --name {name} upgrade --dry-run",
             },
-            "warnings": [] if bool(record.get("installed")) else ["Chroot is not marked fully installed yet."],
-            "blocking": [] if bool(record.get("path")) else [{"code": "missing_path", "message": "No chroot path is registered."}],
+            "warnings": warnings,
+            "blocking": blocking,
         }
