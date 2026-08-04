@@ -267,12 +267,24 @@ data class SystemRowSummary(
     val state: String,
 )
 
+data class RepairItemSummary(
+    val itemId: String,
+    val name: String,
+    val kind: String,
+    val severity: String,
+    val action: String,
+    val summary: String,
+    val impact: String,
+)
+
 data class SystemSupportPane(
     val runtimeRows: List<SystemRowSummary> = emptyList(),
     val moduleRows: List<SystemRowSummary> = emptyList(),
     val supportPreview: PreviewSummary? = null,
     val moduleBuildPreview: PreviewSummary? = null,
     val repairPreview: PreviewSummary? = null,
+    val repairItems: List<RepairItemSummary> = emptyList(),
+    val selectedRepairItemIds: Set<String> = emptySet(),
     val cleanupPreview: PreviewSummary? = null,
     val refreshing: Boolean = false,
     val errorMessage: String? = null,

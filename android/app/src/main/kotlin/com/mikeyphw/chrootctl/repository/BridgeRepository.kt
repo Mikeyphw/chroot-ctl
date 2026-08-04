@@ -13,6 +13,7 @@ import com.mikeyphw.chrootctl.model.HomeSnapshot
 import com.mikeyphw.chrootctl.model.InstallDraft
 import com.mikeyphw.chrootctl.model.InstallFormSummary
 import com.mikeyphw.chrootctl.model.PreviewSummary
+import com.mikeyphw.chrootctl.model.RepairItemSummary
 import com.mikeyphw.chrootctl.model.SnapshotSummary
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 import com.mikeyphw.chrootctl.model.UserSummary
@@ -347,9 +348,11 @@ class BridgeRepository(
         data.toPreviewSummary("Module build preview")
     }
 
-    suspend fun previewRepair(): Result<PreviewSummary> = runCatching {
-        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("repair.preview").toJson())).requireData()
-        data.toRepairPreviewSummary()
+    suspend fun previewRepair(decisions: JSONArray? = null): Result<Pair<PreviewSummary, List<RepairItemSummary>>> = runCatching {
+        val payload = JSONObject()
+        if (decisions != null) payload.put("decisions", decisions)
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("repair.preview", payload).toJson())).requireData()
+        data.toRepairPreviewSummary() to data.toRepairItemSummaries()
     }
 
     suspend fun previewTempCleanup(): Result<PreviewSummary> = runCatching {
@@ -908,6 +911,21 @@ private fun JSONArray?.toSystemRows(): List<SystemRowSummary> {
 }
 
 private fun JSONObject.toRepairPreviewSummary(): PreviewSummary = toPreviewSummary("Registry repair preview")
+
+private fun JSONObject.toRepairItemSummaries(): List<RepairItemSummary> {
+    val array = optJSONArray("items") ?: optJSONArray("selected") ?: JSONArray()
+    return array.toJsonObjects().map { item ->
+        RepairItemSummary(
+            itemId = item.firstString("item_id", "itemId", "id"),
+            name = item.firstString("name"),
+            kind = item.firstString("kind"),
+            severity = item.firstString("severity").ifBlank { "warn" },
+            action = item.firstString("action").ifBlank { "skip" },
+            summary = item.firstString("summary"),
+            impact = item.firstString("impact"),
+        )
+    }.filter { it.itemId.isNotBlank() }
+}
 
 private fun JSONObject.toDebugProbeSummary(): DebugProbeSummary = DebugProbeSummary(
     group = firstString("group").ifBlank { "general" },

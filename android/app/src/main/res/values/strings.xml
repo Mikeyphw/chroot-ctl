@@ -369,4 +369,17 @@
     <string name="install_ready_to_preview">Ready to preview</string>
     <string name="action_back">Back</string>
     <string name="action_continue">Continue</string>
+    <string name="transfer_import_target_label">Import as name</string>
+    <string name="transfer_pick_archive_action">Pick import archive</string>
+    <string name="transfer_export_target_label">Export chroot name</string>
+    <string name="transfer_preview_export_action">Preview export</string>
+    <string name="transfer_refresh_artifacts_action">Refresh artifacts</string>
+    <string name="transfer_cleanup_artifacts_action">Clean artifacts</string>
+    <string name="transfer_artifact_row">%1$s · %2$d bytes · %3$s</string>
+    <string name="phase34_release_seal_title">Adaptive UX release seal</string>
+    <string name="phase34_release_seal_body">Phone, landscape, foldable, tablet and desktop-width layouts share the same safe operation model.</string>
+    <string name="phase34_accessibility_summary">48 dp targets, pane titles, headings, TalkBack labels and 200 percent font scaling are release requirements.</string>
+    <string name="operation_retry_preview_body">The stored retry request will run only after the bridge checks that it contains no redacted secrets. Destructive work is never replayed automatically; confirming starts a new foreground operation.</string>
+    <string name="operation_retry_fixes_preview_action">Review retry with fixes</string>
+    <string name="operation_retry_fixes_preview_body">Retry with fixes is limited to install operations. It reuses the stored install request only after redaction checks, then enables resume and repair for the new foreground operation.</string>
 </resources>

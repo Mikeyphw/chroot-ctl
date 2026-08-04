@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -186,13 +187,26 @@ fun StatusPill(label: String, tone: StatusTone, modifier: Modifier = Modifier) {
     }
 }
 
+fun Modifier.releaseTouchTarget(): Modifier = this.sizeIn(
+    minWidth = ChrootLayout.MinimumTouchTarget,
+    minHeight = ChrootLayout.MinimumTouchTarget,
+)
+
 @Composable
 fun ActionFlowRow(
     modifier: Modifier = Modifier,
+    contentDescription: String? = null,
     content: @Composable FlowRowScope.() -> Unit,
 ) {
+    val semanticModifier = if (contentDescription == null) {
+        modifier
+    } else {
+        modifier.semantics { this.contentDescription = contentDescription }
+    }
     FlowRow(
-        modifier = modifier.fillMaxWidth(),
+        modifier = semanticModifier
+            .fillMaxWidth()
+            .heightIn(min = ChrootLayout.MinimumTouchTarget),
         horizontalArrangement = Arrangement.spacedBy(ChrootSpacing.xs),
         verticalArrangement = Arrangement.spacedBy(ChrootSpacing.xs),
         content = content,

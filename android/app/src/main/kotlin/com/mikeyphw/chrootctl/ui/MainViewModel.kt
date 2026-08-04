@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 
 sealed interface RefreshState {
@@ -296,6 +297,20 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     fun refreshSelectedOperation() {
         selectedOperationId.value?.let(::refreshOperationDetail)
     }
+
+    fun cancelOperation(operationId: String) {
+        viewModelScope.launch {
+            operationDetailRefresh.value = RefreshState.Refreshing
+            repository.cancelOperation(operationId)
+                .onSuccess { operationDetailRefresh.value = RefreshState.Idle }
+                .onFailure { error -> operationDetailRefresh.value = RefreshState.Failed(error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun retryOperationPayloadJson(operationId: String, repair: Boolean = false): String = JSONObject()
+        .put("operationId", operationId)
+        .put("mode", if (repair) "repair" else "retry")
+        .toString()
 
     private fun refreshChrootDetail(name: String) {
         viewModelScope.launch {
@@ -717,10 +732,26 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
     fun previewRepair() {
         viewModelScope.launch {
-            repository.previewRepair()
-                .onSuccess { preview -> systemSupportPane.value = systemSupportPane.value.copy(repairPreview = preview) }
-                .onFailure { error -> systemSupportPane.value = systemSupportPane.value.copy(repairPreview = errorPreview("Registry repair preview", error)) }
+            val current = systemSupportPane.value
+            val decisions = if (current.repairItems.isEmpty()) null else repairDecisionsJson(current)
+            repository.previewRepair(decisions)
+                .onSuccess { (preview, items) ->
+                    val validIds = items.map { it.itemId }.toSet()
+                    systemSupportPane.value = current.copy(
+                        repairPreview = preview,
+                        repairItems = items,
+                        selectedRepairItemIds = current.selectedRepairItemIds.intersect(validIds),
+                    )
+                }
+                .onFailure { error -> systemSupportPane.value = current.copy(repairPreview = errorPreview("Registry repair preview", error)) }
         }
+    }
+
+    fun toggleRepairItem(itemId: String) {
+        val current = systemSupportPane.value
+        val next = current.selectedRepairItemIds.toMutableSet()
+        if (!next.add(itemId)) next.remove(itemId)
+        systemSupportPane.value = current.copy(selectedRepairItemIds = next, repairPreview = null)
     }
 
     fun previewTempCleanup() {
@@ -745,7 +776,9 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
     fun moduleBuildPayloadJson(): String = JSONObject().toString()
 
-    fun repairApplyPayloadJson(): String = JSONObject().put("applyAll", true).toString()
+    fun repairApplyPayloadJson(): String = JSONObject()
+        .put("decisions", repairDecisionsJson(systemSupportPane.value))
+        .toString()
 
     fun cleanupTempPayloadJson(): String = JSONObject().put("deleteAll", true).toString()
 
@@ -799,6 +832,17 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     }
 }
 
+
+private fun repairDecisionsJson(pane: SystemSupportPane): JSONArray {
+    val selected = pane.selectedRepairItemIds
+    return JSONArray(
+        pane.repairItems.map { item ->
+            JSONObject()
+                .put("item_id", item.itemId)
+                .put("action", if (item.itemId in selected) item.action else "skip")
+        },
+    )
+}
 
 private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
     .put("distro", distro)

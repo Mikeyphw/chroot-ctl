@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import com.mikeyphw.chrootctl.R
@@ -60,7 +62,10 @@ fun AdaptiveNavigationShell(
                                     fontWeight = FontWeight.Black,
                                     style = MaterialTheme.typography.titleLarge,
                                     modifier = Modifier
-                                        .semantics { contentDescription = appName }
+                                        .semantics {
+                                            contentDescription = appName
+                                            heading()
+                                        }
                                         .padding(ChrootSpacing.md),
                                 )
                             }
@@ -69,11 +74,15 @@ fun AdaptiveNavigationShell(
                     },
                 ) {
                     primaryDestinations.forEach { item ->
+                        val label = stringResource(item.labelRes)
                         NavigationRailItem(
                             selected = item == destination,
                             onClick = { onDestinationSelected(item) },
+                            modifier = Modifier
+                                .heightIn(min = ChrootLayout.MinimumTouchTarget)
+                                .semantics { contentDescription = label },
                             icon = { Text(stringResource(item.glyphRes)) },
-                            label = { Text(stringResource(item.labelRes)) },
+                            label = { Text(label) },
                         )
                     }
                 }
@@ -84,11 +93,15 @@ fun AdaptiveNavigationShell(
                 bottomBar = {
                     NavigationBar {
                         primaryDestinations.forEach { item ->
+                            val label = stringResource(item.labelRes)
                             NavigationBarItem(
                                 selected = item == destination,
                                 onClick = { onDestinationSelected(item) },
+                                modifier = Modifier
+                                    .heightIn(min = ChrootLayout.MinimumTouchTarget)
+                                    .semantics { contentDescription = label },
                                 icon = { Text(stringResource(item.glyphRes)) },
-                                label = { Text(stringResource(item.labelRes)) },
+                                label = { Text(label) },
                             )
                         }
                     }

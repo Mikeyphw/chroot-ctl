@@ -16,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mikeyphw.chrootctl.R
 import com.mikeyphw.chrootctl.model.Loadable
@@ -62,6 +64,16 @@ fun ChrootCtlApp(
                 refreshSelectedChroot = viewModel::refreshSelectedChroot,
                 selectOperation = viewModel::selectOperation,
                 refreshSelectedOperation = viewModel::refreshSelectedOperation,
+                cancelOperation = viewModel::cancelOperation,
+                retryOperation = { operationId -> onStartBridgeOperation("operations.retry", viewModel.retryOperationPayloadJson(operationId)) },
+                retryOperationWithFixes = { operationId -> onStartBridgeOperation("operations.retry", viewModel.retryOperationPayloadJson(operationId, repair = true)) },
+                recoverLatestSnapshot = { operationId ->
+                    uiState.operations.firstOrNull { it.operationId == operationId }?.targetName?.let { target ->
+                        viewModel.selectChroot(target)
+                        viewModel.refreshSnapshots(target)
+                        navigate(AppDestination.Chroots)
+                    }
+                },
                 updateInstallDraft = viewModel::updateInstallDraft,
                 refreshInstallForm = viewModel::refreshInstallForm,
                 previewInstall = viewModel::previewInstall,
@@ -110,6 +122,7 @@ fun ChrootCtlApp(
                 previewModuleBuild = viewModel::previewModuleBuild,
                 startModuleBuild = { onStartBridgeOperation("system.module_build", viewModel.moduleBuildPayloadJson()) },
                 previewRepair = viewModel::previewRepair,
+                toggleRepairItem = viewModel::toggleRepairItem,
                 startRepair = { onStartBridgeOperation("repair.apply", viewModel.repairApplyPayloadJson()) },
                 previewTempCleanup = viewModel::previewTempCleanup,
                 startTempCleanup = { onStartBridgeOperation("cleanup.temp", viewModel.cleanupTempPayloadJson()) },
@@ -142,6 +155,10 @@ private fun AppContent(
     refreshSelectedChroot: () -> Unit,
     selectOperation: (String) -> Unit,
     refreshSelectedOperation: () -> Unit,
+    cancelOperation: (String) -> Unit,
+    retryOperation: (String) -> Unit,
+    retryOperationWithFixes: (String) -> Unit,
+    recoverLatestSnapshot: (String) -> Unit,
     updateInstallDraft: (com.mikeyphw.chrootctl.model.InstallDraft) -> Unit,
     refreshInstallForm: () -> Unit,
     previewInstall: () -> Unit,
@@ -190,6 +207,7 @@ private fun AppContent(
     previewModuleBuild: () -> Unit,
     startModuleBuild: () -> Unit,
     previewRepair: () -> Unit,
+    toggleRepairItem: (String) -> Unit,
     startRepair: () -> Unit,
     previewTempCleanup: () -> Unit,
     startTempCleanup: () -> Unit,
@@ -204,6 +222,7 @@ private fun AppContent(
     createSmokeFailureBundle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val currentPaneTitle = stringResource(destination.labelRes)
     Box(modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -211,6 +230,7 @@ private fun AppContent(
                 .widthIn(max = ChrootLayout.MaximumContentWidth)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .semantics { paneTitle = currentPaneTitle }
                 .padding(horizontal = ChrootSpacing.lg, vertical = ChrootSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(ChrootSpacing.md),
         ) {
@@ -231,7 +251,7 @@ private fun AppContent(
                 else -> StatusTone.Neutral
             }
             PageHeader(
-                title = stringResource(destination.labelRes),
+                title = currentPaneTitle,
                 subtitle = stringResource(destination.subtitleRes),
                 statusLabel = headerStatus,
                 statusTone = headerTone,
@@ -292,6 +312,10 @@ private fun AppContent(
                     detail = state.operationDetail,
                     onSelect = selectOperation,
                     onRefreshDetail = refreshSelectedOperation,
+                    onCancelOperation = cancelOperation,
+                    onRetryOperation = retryOperation,
+                    onRetryWithFixes = retryOperationWithFixes,
+                    onRecoverLatestSnapshot = recoverLatestSnapshot,
                 )
                 AppDestination.Tools -> ToolsScreen(
                     groups = state.toolGroups,
@@ -330,6 +354,7 @@ private fun AppContent(
                     onPreviewModuleBuild = previewModuleBuild,
                     onStartModuleBuild = startModuleBuild,
                     onPreviewRepair = previewRepair,
+                    onToggleRepairItem = toggleRepairItem,
                     onStartRepair = startRepair,
                     onPreviewTempCleanup = previewTempCleanup,
                     onStartTempCleanup = startTempCleanup,

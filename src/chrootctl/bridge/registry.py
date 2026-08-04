@@ -213,6 +213,63 @@ def _operations_get(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     return manager.get(operation_id).to_dict()
 
 
+
+
+def _contains_redacted(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_contains_redacted(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_redacted(item) for item in value)
+    if not isinstance(value, str):
+        return False
+    text = value.strip().lower()
+    return text in {"<redacted>", "[redacted]", "redacted"} or "<redacted>" in text or "[redacted]" in text
+
+
+def _retry_operation(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
+    from ..operations import OperationManager
+
+    operation_id = str(payload.get("operationId") or payload.get("operation_id") or payload.get("id") or "").strip()
+    if not operation_id:
+        raise BridgeProtocolError("MISSING_OPERATION_ID", "payload.operationId is required")
+    mode = str(payload.get("mode") or "retry").strip() or "retry"
+    if mode not in {"retry", "repair"}:
+        raise BridgeProtocolError("INVALID_RETRY_MODE", f"Unsupported retry mode: {mode}")
+    manager = OperationManager(services.base_config.database_path.parent / "operations")
+    record = manager.get(operation_id)
+    retry = record.retry or record.request
+    if not isinstance(retry, dict) or not retry:
+        raise BridgeProtocolError("RETRY_REQUEST_UNAVAILABLE", "The operation journal does not contain a retry request")
+    if _contains_redacted(retry):
+        raise BridgeProtocolError(
+            "REDACTED_RETRY_REQUEST",
+            "The stored retry request contains redacted secrets; re-enter the sensitive fields instead of replaying it.",
+        )
+    original_operation = str(retry.get("operation") or "").strip()
+    original_payload = dict(retry.get("payload") or {}) if isinstance(retry.get("payload"), dict) else {}
+    if not original_operation or original_operation == "operations.retry":
+        raise BridgeProtocolError("INVALID_RETRY_OPERATION", "The stored request cannot be replayed")
+    spec = SPECS.get(original_operation)
+    if spec is None or spec.operation_handler is None:
+        raise BridgeProtocolError("UNSUPPORTED_RETRY_OPERATION", f"Cannot retry unsupported operation: {original_operation}")
+    if mode == "repair":
+        if original_operation != "install.run":
+            raise BridgeProtocolError("RETRY_FIXES_UNSUPPORTED", "Retry with fixes is available only for install operations")
+        original_payload["repair"] = True
+        original_payload["resume"] = True
+    progress({"phase": "retry", "percent": 5, "message": f"Preparing retry for {original_operation}"})
+    if cancelled():
+        raise OperationCancelled("Retry was cancelled before execution")
+    result = spec.operation_handler(services, original_payload, progress, cancelled)
+    return {
+        "retriedOperationId": operation_id,
+        "operation": original_operation,
+        "mode": mode,
+        "result": serialize_value(result),
+        "next_steps": ["Review the new operation record in Activity."],
+    }
+
+
 def _refresh(
     services: ServiceContainer,
     payload: dict[str, Any],
@@ -1106,11 +1163,12 @@ def _module_build(services: ServiceContainer, payload: dict[str, Any], progress:
 
 def _repair_apply(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
     raw_decisions = payload.get("decisions")
-    if isinstance(raw_decisions, list):
-        decisions = [dict(item) for item in raw_decisions if isinstance(item, dict)]
-    else:
-        decisions = [{"item_id": str(item.get("item_id", "")), "action": str(item.get("action", "skip"))} for item in services.repair().preview_items()]
-    progress({"phase": "repair", "percent": 15, "message": "Applying registry repair plan"})
+    if not isinstance(raw_decisions, list):
+        raise BridgeProtocolError("REPAIR_DECISIONS_REQUIRED", "Registry repair requires explicit item decisions from the caller")
+    decisions = [dict(item) for item in raw_decisions if isinstance(item, dict)]
+    if not decisions:
+        raise BridgeProtocolError("REPAIR_DECISIONS_EMPTY", "Select at least one registry repair decision before applying")
+    progress({"phase": "repair", "percent": 15, "message": "Applying selected registry repair decisions"})
     if cancelled():
         raise OperationCancelled("Registry repair was cancelled")
     result = services.repair().apply_registry_repair_plan(decisions)
@@ -1463,6 +1521,7 @@ _SPECS = (
     OperationSpec("final.packaging_audit", "query", "Return final module/package audit summary", query_handler=_final_packaging_audit),
     OperationSpec("final.no_webui_regression", "query", "Return final WebUI retirement regression summary", query_handler=_final_no_webui_regression),
     OperationSpec("final.release_seal", "query", "Return final operational release seal", query_handler=_final_release_seal),
+    OperationSpec("operations.retry", "operation", "Retry a recorded operation after redaction checks", destructive=True, lock_scope="global", operation_handler=_retry_operation),
     OperationSpec("system.refresh", "operation", "Persist and stream a complete read-only refresh", operation_handler=_refresh),
     OperationSpec("smoke.run", "operation", "Run real-device read-only operational smoke suite", lock_scope="global", operation_handler=_smoke_run),
     OperationSpec("smoke.result.persist", "operation", "Persist latest smoke result into a managed JSON artifact", lock_scope="global", operation_handler=_smoke_result_persist),

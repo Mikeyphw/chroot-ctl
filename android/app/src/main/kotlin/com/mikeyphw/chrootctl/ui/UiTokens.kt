@@ -21,6 +21,14 @@ object ChrootLayout {
     val MaximumContentWidth: Dp = 1180.dp
     val NavigationRailWidth: Dp = 92.dp
     val MinimumTouchTarget: Dp = 48.dp
+    val CompactLandscapeHeightLimit: Dp = COMPACT_LANDSCAPE_HEIGHT_LIMIT_DP.dp
+}
+
+object ChrootReleaseA11y {
+    const val MinimumTouchTargetDp: Int = 48
+    const val SupportedFontScalePercent: Int = 200
+    const val LiveLogPollingSeconds: Int = 3
+    const val SmokeProfileCount: Int = 5
 }
 
 object ChrootStatusColors {
