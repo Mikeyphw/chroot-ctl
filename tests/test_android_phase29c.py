@@ -26,13 +26,9 @@ def test_phase29c_keeps_sdk_36_and_strict_lint() -> None:
     assert "warningsAsErrors = false" not in build
 
 
-def test_phase29c_ignores_only_the_intended_advisories() -> None:
+def test_phase29c_ignores_only_old_target_api() -> None:
     ignored = {issue_id for issue_id, severity in lint_issues().items() if severity == "ignore"}
-    assert ignored == {
-        "GradleDependency",
-        "NewerVersionAvailable",
-        "OldTargetApi",
-    }
+    assert ignored == {"OldTargetApi"}
 
 
 def test_phase29c_has_no_wildcard_or_gradle_lint_disable() -> None:

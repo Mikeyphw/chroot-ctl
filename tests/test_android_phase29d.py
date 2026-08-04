@@ -40,8 +40,10 @@ def test_phase29d_protocol_shapes_are_strict_but_legacy_capabilities_are_support
 
 def test_phase29d_initial_home_failure_is_visible_and_retryable() -> None:
     home = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/home/HomeScreen.kt")
-    assert "Loadable.Loading -> when (refreshState)" in home
-    assert "is RefreshState.Failed -> StatusCard" in home
+    assert "Loadable.Loading" in home
+    assert "RefreshState.Failed" in home
+    assert "InitialBackendFailure" in home
+    assert "RecoverableErrorState" in home
     assert "action_retry" in home
 
 
@@ -49,7 +51,7 @@ def test_phase29d_action_groups_wrap_on_phone_widths() -> None:
     home = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/home/HomeScreen.kt")
     install = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/install/InstallScreen.kt")
     tools = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/tools/ToolsScreen.kt")
-    assert "FlowRow(" in home
+    assert "ActionFlowRow" in home
     assert "FlowRow(" in install
     assert tools.count("FlowRow(") >= 10
     assert "smoke_report_action" in tools

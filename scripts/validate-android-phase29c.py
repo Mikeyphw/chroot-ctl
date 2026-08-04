@@ -39,11 +39,7 @@ def main() -> int:
         issue.attrib.get("id", ""): issue.attrib.get("severity", "")
         for issue in root.findall("issue")
     }
-    expected_ignored = {
-        "GradleDependency",
-        "NewerVersionAvailable",
-        "OldTargetApi",
-    }
+    expected_ignored = {"OldTargetApi"}
     actual_ignored = {issue_id for issue_id, severity in issues.items() if severity == "ignore"}
 
     error_if(issues.get("OldTargetApi") != "ignore", "OldTargetApi must be narrowly ignored in lint.xml")

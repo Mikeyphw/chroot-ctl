@@ -1,3 +1,4 @@
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">ChrootCTL</string>
     <string name="nav_home">Home</string>
@@ -38,7 +39,6 @@
     <string name="value_unknown">unknown</string>
     <string name="value_not_reported">not reported</string>
     <string name="value_no_phase">No phase</string>
-
     <string name="action_run_refresh_operation">Run refresh operation</string>
     <string name="action_refresh_detail">Refresh detail</string>
     <string name="action_refreshing">Refreshing</string>
@@ -65,7 +65,6 @@
     <string name="operation_notification_failed_title">ChrootCTL operation failed</string>
     <string name="operation_notification_cancelled_title">ChrootCTL operation cancelled</string>
     <string name="operation_notification_body">Waiting for bridge progress</string>
-
     <string name="nav_install">Install</string>
     <string name="glyph_install">＋</string>
     <string name="install_open_action">Open install wizard</string>
@@ -140,7 +139,6 @@
     <string name="action_service_restart">Restart</string>
     <string name="action_service_enable">Enable</string>
     <string name="action_service_disable">Disable</string>
-
     <string name="catalog_title">Tools and add-ons catalog</string>
     <string name="catalog_tools_chip">Tools</string>
     <string name="catalog_addons_chip">Add-ons</string>
@@ -181,13 +179,11 @@
         <item quantity="one">%1$s · %2$d byte</item>
         <item quantity="other">%1$s · %2$d bytes</item>
     </plurals>
-
     <string name="transfer_document_open_failed">Unable to open selected document</string>
     <string name="transfer_document_saved">Export document saved</string>
     <string name="transfer_no_export_artifact">Export an artifact before saving it</string>
     <string name="transfer_default_archive_name">import.tar.zst</string>
     <string name="transfer_default_chroot_name">chroot</string>
-
     <string name="system_support_title">System, support and module</string>
     <string name="system_support_body">Runtime paths, module state, repair previews, temporary cleanup and exportable support evidence.</string>
     <string name="system_refresh_action">Refresh system</string>
@@ -217,7 +213,6 @@
     <string name="smoke_preview_action">Preview smoke</string>
     <string name="smoke_run_action">Run smoke</string>
     <string name="smoke_report_action">Smoke report</string>
-
     <string name="release_readiness_title">Release readiness</string>
     <string name="smoke_handoff_title">Smoke result handoff</string>
     <string name="smoke_handoff_body">Keep the last smoke result durable, export its evidence, or build a support bundle when the smoke fails.</string>
@@ -231,4 +226,109 @@
     <string name="notifications_permission_granted">Operation notifications enabled</string>
     <string name="notifications_permission_denied">Notification permission denied; foreground work can still run but progress may be less visible</string>
     <string name="notifications_permission_not_required">This Android version does not require notification permission</string>
+    <string name="nav_help">Help</string>
+    <string name="glyph_help">?</string>
+    <string name="action_preview_upgrade">Preview upgrade</string>
+    <string name="action_upgrade_chroot">Upgrade chroot</string>
+    <string name="operation_cancel_action">Cancel operation</string>
+    <string name="operation_recovery_title">Recovery actions</string>
+    <string name="operation_retry_preview_action">Preview retry</string>
+    <string name="operation_retry_action">Retry now</string>
+    <string name="operation_retry_fixes_preview_action">Preview retry with fixes</string>
+    <string name="operation_retry_fixes_action">Retry with fixes</string>
+    <string name="operation_latest_snapshot_line">Latest snapshot: %1$s</string>
+    <string name="operation_restore_confirmation_label">Type %1$s to restore</string>
+    <string name="operation_restore_latest_preview_action">Preview latest restore</string>
+    <string name="operation_restore_latest_action">Restore latest snapshot</string>
+    <string name="help_open_action">Help and API reference</string>
+    <string name="help_getting_started_title">Getting started</string>
+    <string name="help_getting_started_body">Home checks root and bridge readiness. Install creates a chroot through a preview-first foreground operation. Chroots manages lifecycle, snapshots, users and services. Tools contains catalogs, transfers, logs, repair, diagnostics and support exports.</string>
+    <string name="help_operations_title">Operations and cancellation</string>
+    <string name="help_operations_body">Long-running work is journaled in Activity and remains visible through foreground notifications. Open an operation to inspect events, cancel active work, or use recovery actions after a failure.</string>
+    <string name="help_open_activity_action">Open Activity</string>
+    <string name="help_recovery_title">Failure recovery</string>
+    <string name="help_recovery_body">Failed, interrupted, blocked or cancelled work can expose Retry now, Retry with fixes, and Restore latest snapshot. Recovery is offered only when the journal contains a safe replay request and a matching snapshot exists.</string>
+    <string name="help_storage_title">Imports, exports and snapshots</string>
+    <string name="help_storage_body">Android document pickers stage archives without granting broad storage access. Managed artifacts can be copied to a document you choose. Snapshot restore requires typing the chroot name.</string>
+    <string name="help_privacy_title">Privacy and support evidence</string>
+    <string name="help_privacy_body">The bridge uses an allowlisted protocol rather than arbitrary shell input. Retry requests containing redacted secrets are blocked. Review support and debug previews before exporting evidence.</string>
+    <string name="help_api_title">Bridge API reference</string>
+    <string name="help_api_body">These are the protocol operations reported by the connected runtime. The list updates after Home refresh and acts as the native replacement for the retired WebUI API page.</string>
+    <string name="help_api_unavailable">Refresh Home to load the live operation catalog.</string>
+    <string name="logs_title">System logs</string>
+    <string name="logs_body">Read a bounded snapshot of the chrootctl log. Live tail polls the same read-only bridge query every three seconds and can be stopped at any time.</string>
+    <string name="logs_target_label">Chroot name, optional</string>
+    <string name="logs_level_all">All levels</string>
+    <string name="logs_refresh_action">Refresh logs</string>
+    <string name="logs_follow_action">Start live tail</string>
+    <string name="logs_stop_follow_action">Stop live tail</string>
+    <string name="logs_source_line">Source: %1$s</string>
+    <string name="logs_empty">No log lines returned.</string>
+    <string name="repair_selective_title">Selective registry repair</string>
+    <string name="repair_selective_body">Load the repair plan, choose each decision, preview the exact selection, then apply only the selected actions.</string>
+    <string name="repair_load_plan_action">Load repair plan</string>
+    <string name="repair_preview_selected_action">Preview selected</string>
+    <string name="repair_apply_selected_action">Apply selected</string>
+    <string name="repair_item_meta">%1$s · %2$s · %3$s</string>
+    <string name="brand_mark">C</string>
+    <string name="destination_home_subtitle">Runtime health, chroots, and recent work</string>
+    <string name="destination_chroots_subtitle">Manage environments and lifecycle actions</string>
+    <string name="destination_install_subtitle">Create a chroot from a reviewed plan</string>
+    <string name="destination_activity_subtitle">Track, cancel, retry, and recover operations</string>
+    <string name="destination_tools_subtitle">Focused maintenance and support workspaces</string>
+    <string name="destination_help_subtitle">Recovery guidance and bridge capabilities</string>
+    <string name="status_refreshing">Refreshing</string>
+    <string name="status_cached_or_offline">Cached / offline</string>
+    <string name="status_backend_ready">Backend ready</string>
+    <string name="status_checking">Checking</string>
+    <string name="status_needs_attention">Needs attention</string>
+    <string name="status_cached_data">Cached data</string>
+    <string name="status_review_recommended">Review recommended</string>
+    <string name="status_everything_operational">Everything operational</string>
+    <string name="action_reconnect">Reconnect</string>
+    <string name="action_show_technical_details">Show technical details</string>
+    <string name="action_hide_technical_details">Hide technical details</string>
+    <string name="action_see_all">See all</string>
+    <string name="action_show_more">Show more</string>
+    <string name="action_show_less">Show less</string>
+    <string name="home_loading_supporting">Cached information will appear as soon as the privileged service responds.</string>
+    <string name="home_cached_refresh_failure_body">Your last dashboard remains visible. %1$s</string>
+    <string name="home_hero_title">Your chroots, without the command-line fog.</string>
+    <string name="home_hero_body">See runtime health, launch common tasks, and recover from failures from one calm dashboard.</string>
+    <string name="home_action_new_chroot">New chroot</string>
+    <string name="home_action_open_chroots">Open chroots</string>
+    <string name="home_metrics_title">At a glance</string>
+    <string name="home_metrics_body">High-signal numbers without a scrolling warehouse of diagnostics.</string>
+    <string name="metric_running_chroots">Running chroots</string>
+    <string name="metric_running_chroots_detail">%1$d registered in total</string>
+    <string name="metric_active_operations">Active operations</string>
+    <string name="metric_active_operations_detail">%1$d recent journal records</string>
+    <string name="metric_loading_detail">Loading dashboard data</string>
+    <string name="value_loading_dash">—</string>
+    <string name="home_system_health_title">System health</string>
+    <string name="home_system_health_body">Plain-language checks with technical detail available only when needed.</string>
+    <string name="home_health_ready_count">%1$d/%2$d ready</string>
+    <string name="home_health_root_service">Root service</string>
+    <string name="home_health_root_service_detail">%1$s backend · process %2$d</string>
+    <string name="home_health_runtime">chrootctl runtime</string>
+    <string name="home_health_runtime_detail">Version %1$s · protocol %2$d</string>
+    <string name="home_health_chroots">Chroot registry</string>
+    <string name="home_health_chroots_detail">%1$d running · %2$d registered</string>
+    <string name="home_health_operations">Operation journal</string>
+    <string name="home_health_operations_detail">%1$d operation(s) currently active</string>
+    <string name="home_recent_activity_title">Recent activity</string>
+    <string name="home_recent_activity_body">The latest work that may need attention.</string>
+    <string name="home_operation_target">Target: %1$s</string>
+    <string name="backend_issue_disconnected_title">Connection interrupted</string>
+    <string name="backend_issue_disconnected_body">The privileged service stopped responding. Reconnect and try the read-only request again.</string>
+    <string name="backend_issue_timeout_title">Backend response timed out</string>
+    <string name="backend_issue_timeout_body">The operation took too long to answer. The app can reconnect without replaying destructive work.</string>
+    <string name="backend_issue_invalid_response_title">Backend response was not understood</string>
+    <string name="backend_issue_invalid_response_body">The runtime returned an unsupported or malformed response. Review technical details before retrying.</string>
+    <string name="backend_issue_permission_title">Root access is unavailable</string>
+    <string name="backend_issue_permission_body">Grant root access to ChrootCTL, then retry the connection.</string>
+    <string name="backend_issue_runtime_title">chrootctl runtime was not found</string>
+    <string name="backend_issue_runtime_body">Install or repair the compatible protocol runtime, then reconnect.</string>
+    <string name="backend_issue_unknown_title">Backend is temporarily unavailable</string>
+    <string name="backend_issue_unknown_body">Your cached data is safe. Retry the connection or open technical details for diagnosis.</string>
 </resources>

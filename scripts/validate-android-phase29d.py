@@ -62,11 +62,11 @@ def main() -> int:
     require("return data ?: JSONObject()" not in bridge_models, "wrong object shape must not become an empty object")
     require("return dataArray ?: JSONArray()" not in bridge_models, "wrong array shape must not become an empty array")
 
-    require("Loadable.Loading -> when (refreshState)" in home, "Home loading state must react to refresh failure")
-    require("is RefreshState.Failed -> StatusCard" in home, "Home initial failure card missing")
+    require("Loadable.Loading" in home and "RefreshState.Failed" in home, "Home loading state must react to refresh failure")
+    require("InitialBackendFailure" in home and "RecoverableErrorState" in home, "Home initial failure recovery state missing")
     require("action_retry" in home, "Home initial failure Retry action missing")
 
-    require("FlowRow(" in home, "Home action wrapping missing")
+    require("ActionFlowRow" in home, "Home action wrapping missing")
     require("FlowRow(" in install, "Install action wrapping missing")
     require(tools.count("FlowRow(") >= 10, "Tools action groups are not comprehensively wrapping")
     require("smoke_export_action" in tools and "smoke_report_action" in tools, "smoke actions must remain wired")
