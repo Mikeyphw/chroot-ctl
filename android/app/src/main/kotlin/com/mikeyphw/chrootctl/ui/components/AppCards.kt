@@ -216,8 +216,8 @@ fun ActionFlowRow(
 @Composable
 fun SectionHeader(
     title: String,
-    body: String? = null,
     modifier: Modifier = Modifier,
+    body: String? = null,
     action: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -242,9 +242,9 @@ fun SectionHeader(
 fun PageHeader(
     title: String,
     subtitle: String,
+    modifier: Modifier = Modifier,
     statusLabel: String? = null,
     statusTone: StatusTone = StatusTone.Neutral,
-    modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         if (maxWidth < ChrootLayout.StackedHeaderBreakpoint) {

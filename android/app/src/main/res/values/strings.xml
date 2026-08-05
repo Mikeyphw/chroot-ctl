@@ -234,7 +234,6 @@
     <string name="operation_recovery_title">Recovery actions</string>
     <string name="operation_retry_preview_action">Preview retry</string>
     <string name="operation_retry_action">Retry now</string>
-    <string name="operation_retry_fixes_preview_action">Preview retry with fixes</string>
     <string name="operation_retry_fixes_action">Retry with fixes</string>
     <string name="operation_latest_snapshot_line">Latest snapshot: %1$s</string>
     <string name="operation_restore_confirmation_label">Type %1$s to restore</string>
