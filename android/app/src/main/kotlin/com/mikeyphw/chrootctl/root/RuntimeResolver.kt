@@ -17,11 +17,18 @@ internal object RuntimeResolver {
     private val termuxUsr = File(termuxFiles, "usr")
     private val termuxHome = File(termuxFiles, "home")
 
-    private val executableCandidates = listOf(
+    private val ksuRoot = File(adbRoot, "ksu")
+    private val rootModuleExecutableCandidates = listOf(
+        File(adbRoot, "modules/chrootctl-magisk/system/bin/chrootctl"),
+        File(adbRoot, "modules_update/chrootctl-magisk/system/bin/chrootctl"),
+        File(ksuRoot, "modules/chrootctl-magisk/system/bin/chrootctl"),
+        File(ksuRoot, "modules_update/chrootctl-magisk/system/bin/chrootctl"),
+    )
+    private val executableCandidates = rootModuleExecutableCandidates + listOf(
+        File(File.separator, "system/bin/chrootctl"),
         File(adbRoot, "chrootctl/bin/chrootctl"),
         File(termuxHome, ".local/bin/chrootctl"),
         File(termuxUsr, "bin/chrootctl"),
-        File(File.separator, "system/bin/chrootctl"),
     )
     private val pythonCandidates = listOf(
         File(adbRoot, "chrootctl/python/bin/python3"),
@@ -63,7 +70,7 @@ internal object RuntimeResolver {
             val selected = selectCompatibleRuntime(candidates, ::isCompatible)
             if (selected == null) {
                 lastDiagnostic = if (candidates.isEmpty()) {
-                    "No chrootctl executable or Python runtime was found in the Magisk or Termux locations"
+                    "No chrootctl executable or Python runtime was found in the Magisk/KSU module, system, legacy adb-root, or Termux locations"
                 } else {
                     "Found chrootctl runtime candidates, but none exposed the protocol-1 Android bridge"
                 }
