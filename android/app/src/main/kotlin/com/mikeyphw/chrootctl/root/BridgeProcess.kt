@@ -2,8 +2,10 @@ package com.mikeyphw.chrootctl.root
 
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 internal data class BridgeProcessResult(
@@ -18,8 +20,9 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
         val process = start(arguments)
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
-        val stdoutReader = drain(process.inputStream, stdout, "chrootctl-bridge-stdout")
-        val stderrReader = drain(process.errorStream, stderr, "chrootctl-bridge-stderr")
+        val drainFailures = drainFailureBuffer()
+        val stdoutReader = drain(process.inputStream, stdout, "chrootctl-bridge-stdout", drainFailures)
+        val stderrReader = drain(process.errorStream, stderr, "chrootctl-bridge-stderr", drainFailures)
         process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
             if (requestJson != null) writer.write(requestJson)
         }
@@ -33,7 +36,7 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
         return BridgeProcessResult(
             exitCode = if (finished) process.exitValue() else -1,
             output = String(stdout.toByteArray(), StandardCharsets.UTF_8),
-            errorOutput = String(stderr.toByteArray(), StandardCharsets.UTF_8),
+            errorOutput = bridgeErrorOutput(stderr, drainFailures),
             timedOut = !finished,
         )
     }
@@ -41,7 +44,8 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
     fun stream(arguments: List<String>, requestJson: String, output: OutputStream): Int {
         val process = start(arguments)
         val stderr = ByteArrayOutputStream()
-        val stderrReader = drain(process.errorStream, stderr, "chrootctl-bridge-stream-stderr")
+        val drainFailures = drainFailureBuffer()
+        val stderrReader = drain(process.errorStream, stderr, "chrootctl-bridge-stream-stderr", drainFailures)
         process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer -> writer.write(requestJson) }
         process.inputStream.use { input -> output.use { target -> input.copyTo(target, DEFAULT_BUFFER_SIZE) } }
         val exitCode = process.waitFor()
@@ -73,11 +77,44 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
             .start()
     }
 
-    private fun drain(input: java.io.InputStream, output: OutputStream, name: String): Thread = Thread({
-        input.use { source -> source.copyTo(output, DEFAULT_BUFFER_SIZE) }
+    private fun drainFailureBuffer(): MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
+
+    private fun bridgeErrorOutput(stderr: ByteArrayOutputStream, drainFailures: List<String>): String {
+        val bridgeStderr = String(stderr.toByteArray(), StandardCharsets.UTF_8)
+        if (drainFailures.isEmpty()) return bridgeStderr
+        val drainDiagnostics = drainFailures.joinToString(separator = "\n") { failure ->
+            "android-stream-drain: $failure"
+        }
+        return listOf(bridgeStderr, drainDiagnostics)
+            .filter { it.isNotBlank() }
+            .joinToString(separator = "\n")
+    }
+
+    private fun drain(
+        input: java.io.InputStream,
+        output: OutputStream,
+        name: String,
+        failures: MutableList<String>,
+    ): Thread = Thread({
+        try {
+            input.use { source -> source.copyTo(output, DEFAULT_BUFFER_SIZE) }
+        } catch (error: Throwable) {
+            failures += drainFailureMessage(name, error)
+        }
     }, name).apply {
         isDaemon = true
+        uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { thread, error ->
+            failures += drainFailureMessage(thread.name, error)
+        }
         start()
+    }
+
+    private fun drainFailureMessage(name: String, error: Throwable): String {
+        val message = when (error) {
+            is IOException -> error.message ?: error.javaClass.simpleName
+            else -> error.message ?: error.javaClass.simpleName
+        }
+        return "$name closed without crashing the root service: $message"
     }
 
     private companion object {
