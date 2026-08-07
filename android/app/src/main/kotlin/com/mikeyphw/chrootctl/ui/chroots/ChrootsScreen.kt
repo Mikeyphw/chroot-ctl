@@ -38,6 +38,7 @@ import com.mikeyphw.chrootctl.model.UsersPane
 import com.mikeyphw.chrootctl.ui.ChrootLayout
 import com.mikeyphw.chrootctl.ui.ChrootListFilter
 import com.mikeyphw.chrootctl.ui.ChrootWorkspaceTab
+import com.mikeyphw.chrootctl.ui.ServiceWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.bridgeShapePrimaryMessage
 import com.mikeyphw.chrootctl.ui.chrootListIsWorkspaceLauncherOnly
 import com.mikeyphw.chrootctl.ui.chrootMatchesFilter
@@ -48,6 +49,11 @@ import com.mikeyphw.chrootctl.ui.isBridgeShapeError
 import com.mikeyphw.chrootctl.ui.isRunningChrootStatus
 import com.mikeyphw.chrootctl.ui.selectedChrootListFilter
 import com.mikeyphw.chrootctl.ui.selectedChrootWorkspaceTab
+import com.mikeyphw.chrootctl.ui.selectedServiceWorkspaceFilter
+import com.mikeyphw.chrootctl.ui.serviceIsRunning
+import com.mikeyphw.chrootctl.ui.serviceMatchesWorkspaceFilter
+import com.mikeyphw.chrootctl.ui.serviceNeedsAttention
+import com.mikeyphw.chrootctl.ui.serviceWorkspaceFilters
 import com.mikeyphw.chrootctl.ui.components.ActionFlowRow
 import com.mikeyphw.chrootctl.ui.components.EmptyState
 import com.mikeyphw.chrootctl.ui.components.MetricCardData
@@ -788,78 +794,220 @@ private fun ServicesPanel(
     onPreviewServicePayload: (String) -> Unit,
     onStartServiceOperation: (String, String) -> Unit,
 ) {
+    var filterName by rememberSaveable(chroot.name) { mutableStateOf(ServiceWorkspaceFilter.All.name) }
+    var pendingActionToken by rememberSaveable(chroot.name) { mutableStateOf("") }
+    val filter = selectedServiceWorkspaceFilter(filterName)
+    val serviceList = if (pane.targetName == chroot.name) pane.services else emptyList()
+    val visibleServices = serviceList.filter { serviceMatchesWorkspaceFilter(it, filter) }
+    val pendingAction = pendingServiceActionToken(pendingActionToken)
+    val pendingService = pendingAction?.let { action ->
+        serviceList.firstOrNull { it.chrootName == action.chrootName && it.service == action.service }
+    }
+
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(stringResource(R.string.services_actions_title), fontWeight = FontWeight.SemiBold)
-            Button(onClick = { onRefreshServices(chroot.name) }, enabled = !pane.refreshing) {
-                Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_services))
-            }
-            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshServices(chroot.name) }) }
-            pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
-            pane.selectedService?.takeIf { it.journalText.isNotBlank() }?.let { service ->
-                Text(stringResource(R.string.service_journal_title, service.service), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-                Text(service.journalText.take(MAX_JOURNAL_CHARS), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-            }
-            if (pane.targetName == chroot.name && pane.services.isNotEmpty()) {
-                pane.services.forEach { service ->
-                    ServiceRow(
-                        service = service,
-                        onRefreshServiceDetail = onRefreshServiceDetail,
-                        onPreviewServicePayload = onPreviewServicePayload,
-                        onStartServiceOperation = onStartServiceOperation,
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.services_workspace_title), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.services_workspace_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            ActionFlowRow(contentDescription = stringResource(R.string.services_workspace_filters_label)) {
+                serviceWorkspaceFilters().forEach { item ->
+                    ServiceFilterButton(
+                        filter = item,
+                        selected = item == filter,
+                        onSelect = { filterName = it.name },
                     )
                 }
-            } else {
-                Text(stringResource(R.string.services_list_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            ActionFlowRow {
+                Button(
+                    onClick = { onRefreshServices(chroot.name) },
+                    enabled = !pane.refreshing,
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_services))
+                }
+            }
+            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshServices(chroot.name) }) }
+            val reviewAction = pendingAction
+            if (pendingService != null && reviewAction != null) {
+                ServiceActionReviewSheet(
+                    service = pendingService,
+                    action = reviewAction.action,
+                    onCancel = { pendingActionToken = "" },
+                    onPreviewServicePayload = onPreviewServicePayload,
+                    onStartServiceOperation = onStartServiceOperation,
+                )
+            }
+            pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
+            pane.selectedService?.takeIf { it.journalText.isNotBlank() }?.let { service ->
+                StatusCard(
+                    title = stringResource(R.string.service_journal_title, service.service),
+                    body = service.journalText.take(MAX_JOURNAL_CHARS),
+                )
+            }
+            when {
+                serviceList.isEmpty() -> EmptyState(
+                    title = stringResource(R.string.services_workspace_empty_title),
+                    body = stringResource(R.string.services_list_empty),
+                )
+                visibleServices.isEmpty() -> EmptyState(
+                    title = stringResource(R.string.services_workspace_no_matches_title),
+                    body = stringResource(R.string.services_workspace_no_matches_body),
+                )
+                else -> visibleServices.forEach { service ->
+                    FocusedServiceRow(
+                        service = service,
+                        onRefreshServiceDetail = onRefreshServiceDetail,
+                        onSelectServiceAction = { selected, action ->
+                            pendingActionToken = serviceActionToken(selected, action)
+                        },
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ServiceRow(
+private fun ServiceFilterButton(
+    filter: ServiceWorkspaceFilter,
+    selected: Boolean,
+    onSelect: (ServiceWorkspaceFilter) -> Unit,
+) {
+    val label = when (filter) {
+        ServiceWorkspaceFilter.All -> stringResource(R.string.service_filter_all)
+        ServiceWorkspaceFilter.Running -> stringResource(R.string.service_filter_running)
+        ServiceWorkspaceFilter.Enabled -> stringResource(R.string.service_filter_enabled)
+        ServiceWorkspaceFilter.Stale -> stringResource(R.string.service_filter_stale)
+        ServiceWorkspaceFilter.Failed -> stringResource(R.string.service_filter_failed)
+    }
+    if (selected) {
+        Button(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    } else {
+        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    }
+}
+
+@Composable
+private fun FocusedServiceRow(
     service: ServiceUnitSummary,
     onRefreshServiceDetail: (String, String) -> Unit,
-    onPreviewServicePayload: (String) -> Unit,
-    onStartServiceOperation: (String, String) -> Unit,
+    onSelectServiceAction: (ServiceUnitSummary, String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(service.service, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-        Text(listOf(service.chrootName, service.status, if (service.enabled) "enabled" else "disabled", service.description).filter { it.isNotBlank() }.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Button(onClick = { onRefreshServiceDetail(service.chrootName, service.service) }) { Text(stringResource(R.string.action_service_journal)) }
-        ActionFlowRow {
-            ServiceActionButton(service, "start", R.string.action_service_start, onPreviewServicePayload, onStartServiceOperation)
-            ServiceActionButton(service, "stop", R.string.action_service_stop, onPreviewServicePayload, onStartServiceOperation)
-            ServiceActionButton(service, "restart", R.string.action_service_restart, onPreviewServicePayload, onStartServiceOperation)
-        }
-        ActionFlowRow {
-            ServiceActionButton(service, "enable", R.string.action_service_enable, onPreviewServicePayload, onStartServiceOperation)
-            ServiceActionButton(service, "disable", R.string.action_service_disable, onPreviewServicePayload, onStartServiceOperation)
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(service.service, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                listOf(service.chrootName, service.description).filter { it.isNotBlank() }.joinToString(" · "),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ActionFlowRow {
+                StatusPill(service.status.ifBlank { stringResource(R.string.value_unknown) }, serviceStatusTone(service))
+                StatusPill(if (service.enabled) stringResource(R.string.service_badge_enabled) else stringResource(R.string.service_badge_disabled), if (service.enabled) StatusTone.Success else StatusTone.Neutral)
+                if (service.boot) StatusPill(stringResource(R.string.service_badge_boot), StatusTone.Accent)
+                if (serviceNeedsAttention(service)) StatusPill(stringResource(R.string.status_needs_attention), StatusTone.Warning)
+            }
+            ActionFlowRow {
+                Button(
+                    onClick = { onRefreshServiceDetail(service.chrootName, service.service) },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.action_service_journal))
+                }
+                val primaryAction = if (serviceIsRunning(service)) "stop" else "start"
+                Button(
+                    onClick = { onSelectServiceAction(service, primaryAction) },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(serviceActionLabel(primaryAction))
+                }
+                OutlinedButton(
+                    onClick = { onSelectServiceAction(service, "restart") },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.action_service_restart))
+                }
+                OutlinedButton(
+                    onClick = { onSelectServiceAction(service, if (service.enabled) "disable" else "enable") },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(serviceActionLabel(if (service.enabled) "disable" else "enable"))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ServiceActionButton(
+private fun ServiceActionReviewSheet(
     service: ServiceUnitSummary,
     action: String,
-    labelRes: Int,
+    onCancel: () -> Unit,
     onPreviewServicePayload: (String) -> Unit,
     onStartServiceOperation: (String, String) -> Unit,
 ) {
     val payload = servicePayload(service.chrootName, service.service, action).toString()
-    val operation = when (action) {
-        "start" -> "services.start"
-        "stop" -> "services.stop"
-        "restart" -> "services.restart"
-        "enable" -> "services.enable"
-        "disable" -> "services.disable"
-        else -> "services.start"
+    val operation = serviceActionOperation(action)
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(R.string.service_action_review_title, serviceActionLabel(action), service.service),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.service_action_review_body, service.chrootName),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ActionFlowRow {
+                OutlinedButton(onClick = { onPreviewServicePayload(payload) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_preview_command))
+                }
+                Button(onClick = { onStartServiceOperation(operation, payload) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(serviceActionLabel(action))
+                }
+                TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        }
     }
-    ActionFlowRow {
-        Button(onClick = { onPreviewServicePayload(payload) }) { Text(stringResource(R.string.action_preview_short)) }
-        Button(onClick = { onStartServiceOperation(operation, payload) }) { Text(stringResource(labelRes)) }
-    }
+}
+
+@Composable
+private fun serviceActionLabel(action: String): String = when (action) {
+    "start" -> stringResource(R.string.action_service_start)
+    "stop" -> stringResource(R.string.action_service_stop)
+    "restart" -> stringResource(R.string.action_service_restart)
+    "enable" -> stringResource(R.string.action_service_enable)
+    "disable" -> stringResource(R.string.action_service_disable)
+    else -> stringResource(R.string.action_service_start)
+}
+
+private fun serviceStatusTone(service: ServiceUnitSummary): StatusTone = when {
+    serviceNeedsAttention(service) -> StatusTone.Warning
+    serviceIsRunning(service) -> StatusTone.Success
+    else -> StatusTone.Neutral
+}
+
+private fun serviceActionOperation(action: String): String = when (action) {
+    "start" -> "services.start"
+    "stop" -> "services.stop"
+    "restart" -> "services.restart"
+    "enable" -> "services.enable"
+    "disable" -> "services.disable"
+    else -> "services.start"
+}
+
+private data class PendingServiceAction(val chrootName: String, val service: String, val action: String)
+
+private fun serviceActionToken(service: ServiceUnitSummary, action: String): String =
+    listOf(service.chrootName, service.service, action).joinToString(SERVICE_ACTION_SEPARATOR)
+
+private fun pendingServiceActionToken(token: String): PendingServiceAction? {
+    val parts = token.split(SERVICE_ACTION_SEPARATOR)
+    if (parts.size != 3 || parts.any { it.isBlank() }) return null
+    return PendingServiceAction(parts[0], parts[1], parts[2])
 }
 
 private fun userPayload(chroot: String, username: String, action: String): JSONObject = JSONObject()
@@ -891,3 +1039,4 @@ private fun CheckRow(check: CheckSummary) {
 private const val MAX_VISIBLE_SNAPSHOTS = 8
 private const val MAX_JOURNAL_CHARS = 1_600
 private const val MAX_OVERVIEW_CHECKS = 4
+private const val SERVICE_ACTION_SEPARATOR = "\u001f"

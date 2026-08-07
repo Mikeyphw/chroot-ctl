@@ -2,6 +2,7 @@ package com.mikeyphw.chrootctl.ui
 
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.InstallDraft
+import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,6 +55,25 @@ class WorkflowUxPolicyTest {
         assertTrue(bridgeShapePrimaryMessage(raw).contains("backend returned a list", ignoreCase = true))
     }
 
+
+    @Test
+    fun `service workspace filters keep noisy service lists focused`() {
+        val running = sampleService(status = "running", enabled = true)
+        val failed = sampleService(status = "failed", enabled = false, description = "Unit failed")
+        val stopped = sampleService(status = "stopped", enabled = false)
+        val journalOnly = sampleService(status = "running", enabled = true, journalText = "recent healthy log output")
+        val unknown = sampleService(status = "unknown", enabled = false)
+        assertTrue(serviceMatchesWorkspaceFilter(running, ServiceWorkspaceFilter.Running))
+        assertTrue(serviceMatchesWorkspaceFilter(running, ServiceWorkspaceFilter.Enabled))
+        assertTrue(serviceMatchesWorkspaceFilter(failed, ServiceWorkspaceFilter.Stale))
+        assertTrue(serviceMatchesWorkspaceFilter(failed, ServiceWorkspaceFilter.Failed))
+        assertFalse(serviceMatchesWorkspaceFilter(stopped, ServiceWorkspaceFilter.Running))
+        assertFalse(serviceMatchesWorkspaceFilter(stopped, ServiceWorkspaceFilter.Failed))
+        assertFalse(serviceNeedsAttention(stopped))
+        assertFalse(serviceNeedsAttention(journalOnly))
+        assertFalse(serviceNeedsAttention(unknown))
+    }
+
     private fun sampleChroot(
         name: String = "ubuntu",
         distro: String = "Ubuntu",
@@ -74,4 +94,19 @@ class WorkflowUxPolicyTest {
         lastRefreshAt = 1L,
         stale = false,
     )
+    private fun sampleService(
+        status: String = "running",
+        enabled: Boolean = true,
+        description: String = "Service",
+        journalText: String = "",
+    ): ServiceUnitSummary = ServiceUnitSummary(
+        service = "vscode-web",
+        chrootName = "androidos",
+        status = status,
+        enabled = enabled,
+        boot = enabled,
+        description = description,
+        journalText = journalText,
+    )
+
 }

@@ -1,6 +1,7 @@
 package com.mikeyphw.chrootctl.ui
 
 import com.mikeyphw.chrootctl.model.ChrootSummary
+import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 
 enum class ChrootWorkspaceTab {
     Overview,
@@ -8,6 +9,45 @@ enum class ChrootWorkspaceTab {
     Users,
     Snapshots,
     Advanced,
+}
+
+
+enum class ServiceWorkspaceFilter {
+    All,
+    Running,
+    Enabled,
+    Stale,
+    Failed,
+}
+
+fun serviceWorkspaceFilters(): List<ServiceWorkspaceFilter> = ServiceWorkspaceFilter.entries
+
+fun selectedServiceWorkspaceFilter(name: String): ServiceWorkspaceFilter = ServiceWorkspaceFilter.entries
+    .firstOrNull { it.name == name }
+    ?: ServiceWorkspaceFilter.All
+
+fun serviceIsRunning(service: ServiceUnitSummary): Boolean {
+    val normalized = service.status.trim().lowercase()
+    return normalized in setOf("running", "active", "started", "ok")
+}
+
+fun serviceNeedsAttention(service: ServiceUnitSummary): Boolean {
+    val status = service.status.trim().lowercase()
+    val description = service.description.trim().lowercase()
+    val attentionTokens = listOf("failed", "failure", "error", "stale", "degraded", "warning", "unhealthy", "missing")
+    return attentionTokens.any { token -> token in status || token in description }
+}
+
+fun serviceMatchesWorkspaceFilter(service: ServiceUnitSummary, filter: ServiceWorkspaceFilter): Boolean = when (filter) {
+    ServiceWorkspaceFilter.All -> true
+    ServiceWorkspaceFilter.Running -> serviceIsRunning(service)
+    ServiceWorkspaceFilter.Enabled -> service.enabled
+    ServiceWorkspaceFilter.Stale -> serviceNeedsAttention(service)
+    ServiceWorkspaceFilter.Failed -> {
+        val status = service.status.trim().lowercase()
+        val description = service.description.trim().lowercase()
+        listOf("failed", "failure", "error").any { token -> token in status || token in description }
+    }
 }
 
 fun chrootWorkspaceTabs(): List<ChrootWorkspaceTab> = ChrootWorkspaceTab.entries
