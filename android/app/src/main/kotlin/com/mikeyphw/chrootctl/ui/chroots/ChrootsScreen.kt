@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.chrootctl.R
 import com.mikeyphw.chrootctl.model.CheckSummary
@@ -39,6 +40,8 @@ import com.mikeyphw.chrootctl.ui.ChrootLayout
 import com.mikeyphw.chrootctl.ui.ChrootListFilter
 import com.mikeyphw.chrootctl.ui.ChrootWorkspaceTab
 import com.mikeyphw.chrootctl.ui.ServiceWorkspaceFilter
+import com.mikeyphw.chrootctl.ui.UserWorkspaceAction
+import com.mikeyphw.chrootctl.ui.UserWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.bridgeShapePrimaryMessage
 import com.mikeyphw.chrootctl.ui.chrootListIsWorkspaceLauncherOnly
 import com.mikeyphw.chrootctl.ui.chrootMatchesFilter
@@ -54,6 +57,12 @@ import com.mikeyphw.chrootctl.ui.serviceIsRunning
 import com.mikeyphw.chrootctl.ui.serviceMatchesWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.serviceNeedsAttention
 import com.mikeyphw.chrootctl.ui.serviceWorkspaceFilters
+import com.mikeyphw.chrootctl.ui.selectedUserWorkspaceFilter
+import com.mikeyphw.chrootctl.ui.userHasLoginShell
+import com.mikeyphw.chrootctl.ui.userIsSystem
+import com.mikeyphw.chrootctl.ui.userMatchesWorkspaceFilter
+import com.mikeyphw.chrootctl.ui.userWorkspaceActions
+import com.mikeyphw.chrootctl.ui.userWorkspaceFilters
 import com.mikeyphw.chrootctl.ui.components.ActionFlowRow
 import com.mikeyphw.chrootctl.ui.components.EmptyState
 import com.mikeyphw.chrootctl.ui.components.MetricCardData
@@ -698,92 +707,315 @@ private fun UsersPanel(
     onPreviewUserPayload: (String) -> Unit,
     onStartUserOperation: (String, String) -> Unit,
 ) {
-    var username by remember(chroot.name) { mutableStateOf("") }
-    var shell by remember(chroot.name) { mutableStateOf("/bin/bash") }
-    var sudo by remember(chroot.name) { mutableStateOf(false) }
-    var confirmation by remember(chroot.name) { mutableStateOf("") }
-    var password by remember(chroot.name) { mutableStateOf("") }
-    var confirmPassword by remember(chroot.name) { mutableStateOf("") }
+    var filterName by rememberSaveable(chroot.name) { mutableStateOf(UserWorkspaceFilter.Managed.name) }
+    var reviewUserToken by rememberSaveable(chroot.name) { mutableStateOf("") }
+    val filter = selectedUserWorkspaceFilter(filterName)
+    val userList = if (pane.targetName == chroot.name) pane.users else emptyList()
+    val visibleUsers = userList.filter { userMatchesWorkspaceFilter(it, filter) }
+    val systemUsers = userList.filter(::userIsSystem)
+    val reviewUser = reviewUsername(reviewUserToken)
+        ?.let { username -> userList.firstOrNull { it.username == username } }
+    val reviewIsAdd = reviewUserToken == ADD_USER_REVIEW_TOKEN
+
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(stringResource(R.string.users_actions_title), fontWeight = FontWeight.SemiBold)
-            Button(onClick = { onRefreshUsers(chroot.name) }, enabled = !pane.refreshing) {
-                Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_users))
-            }
-            OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text(stringResource(R.string.user_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = shell, onValueChange = { shell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { sudo = !sudo }) { Text(if (sudo) stringResource(R.string.action_disable_sudo_choice) else stringResource(R.string.action_enable_sudo_choice)) }
-            val addPayload = userPayload(chroot.name, username, "add").put("shell", shell).put("sudo", sudo).toString()
-            ActionFlowRow {
-                Button(onClick = { onPreviewUserPayload(addPayload) }, enabled = username.isNotBlank()) { Text(stringResource(R.string.action_preview_add_user)) }
-                Button(onClick = { onStartUserOperation("users.add", addPayload) }, enabled = username.isNotBlank()) { Text(stringResource(R.string.action_add_user)) }
-            }
-            OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.user_password_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = confirmPassword, onValueChange = { confirmPassword = it }, label = { Text(stringResource(R.string.user_confirm_password_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshUsers(chroot.name) }) }
-            pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
-            if (pane.targetName == chroot.name && pane.users.isNotEmpty()) {
-                pane.users.forEach { user ->
-                    UserRow(
-                        chroot = chroot.name,
-                        user = user,
-                        shell = shell,
-                        confirmation = confirmation,
-                        password = password,
-                        confirmPassword = confirmPassword,
-                        onPreviewUserPayload = onPreviewUserPayload,
-                        onStartUserOperation = onStartUserOperation,
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.users_workspace_title), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.users_workspace_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            ActionFlowRow(contentDescription = stringResource(R.string.users_workspace_filters_label)) {
+                userWorkspaceFilters().forEach { item ->
+                    UserFilterButton(
+                        filter = item,
+                        selected = item == filter,
+                        onSelect = { filterName = it.name },
                     )
                 }
-            } else {
-                Text(stringResource(R.string.users_list_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            ActionFlowRow {
+                Button(
+                    onClick = { onRefreshUsers(chroot.name) },
+                    enabled = !pane.refreshing,
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_users))
+                }
+                OutlinedButton(
+                    onClick = { reviewUserToken = ADD_USER_REVIEW_TOKEN },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.action_review_add_user))
+                }
+            }
+            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshUsers(chroot.name) }) }
+            if (reviewIsAdd || reviewUser != null) {
+                UserActionReviewSheet(
+                    chroot = chroot.name,
+                    user = reviewUser,
+                    onCancel = { reviewUserToken = "" },
+                    onPreviewUserPayload = onPreviewUserPayload,
+                    onStartUserOperation = onStartUserOperation,
+                )
+            }
+            pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
+            when {
+                userList.isEmpty() -> EmptyState(
+                    title = stringResource(R.string.users_workspace_empty_title),
+                    body = stringResource(R.string.users_list_empty),
+                )
+                visibleUsers.isEmpty() -> EmptyState(
+                    title = stringResource(R.string.users_workspace_no_matches_title),
+                    body = stringResource(R.string.users_workspace_no_matches_body),
+                )
+                else -> visibleUsers.forEach { user ->
+                    FocusedUserRow(
+                        user = user,
+                        onReviewUserActions = { reviewUserToken = userReviewToken(user.username) },
+                    )
+                }
+            }
+            if (filter != UserWorkspaceFilter.SystemUsers && systemUsers.isNotEmpty()) {
+                TextButton(
+                    onClick = { filterName = UserWorkspaceFilter.SystemUsers.name },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.action_show_system_users, systemUsers.size))
+                }
+            } else if (filter == UserWorkspaceFilter.SystemUsers) {
+                TextButton(
+                    onClick = { filterName = UserWorkspaceFilter.Managed.name },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.action_hide_system_users))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun UserRow(
-    chroot: String,
-    user: UserSummary,
-    shell: String,
-    confirmation: String,
-    password: String,
-    confirmPassword: String,
-    onPreviewUserPayload: (String) -> Unit,
-    onStartUserOperation: (String, String) -> Unit,
+private fun UserFilterButton(
+    filter: UserWorkspaceFilter,
+    selected: Boolean,
+    onSelect: (UserWorkspaceFilter) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(user.username, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-        Text(listOf("uid=${user.uid}", "gid=${user.gid}", user.shell, if (user.sudo) "sudo" else "no sudo").joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        ActionFlowRow {
-            val syncPayload = userPayload(chroot, user.username, "sync_uid_gid").put("fixOwnership", true).toString()
-            Button(onClick = { onPreviewUserPayload(syncPayload) }) { Text(stringResource(R.string.action_preview_sync_user)) }
-            Button(onClick = { onStartUserOperation("users.sync_uid_gid", syncPayload) }) { Text(stringResource(R.string.action_sync_user)) }
-        }
-        ActionFlowRow {
-            val shellPayload = userPayload(chroot, user.username, "set_shell").put("shell", shell).toString()
-            Button(onClick = { onPreviewUserPayload(shellPayload) }) { Text(stringResource(R.string.action_preview_set_shell)) }
-            Button(onClick = { onStartUserOperation("users.set_shell", shellPayload) }) { Text(stringResource(R.string.action_set_shell)) }
-        }
-        ActionFlowRow {
-            val sudoPayload = userPayload(chroot, user.username, "set_sudo").put("enabled", !user.sudo).toString()
-            Button(onClick = { onPreviewUserPayload(sudoPayload) }) { Text(stringResource(R.string.action_preview_sudo)) }
-            Button(onClick = { onStartUserOperation("users.set_sudo", sudoPayload) }) { Text(if (user.sudo) stringResource(R.string.action_disable_sudo) else stringResource(R.string.action_enable_sudo)) }
-        }
-        ActionFlowRow {
-            val passwordPayload = userPayload(chroot, user.username, "set_password").put("password", password).put("confirmPassword", confirmPassword).put("confirmation", confirmation).toString()
-            Button(onClick = { onPreviewUserPayload(passwordPayload) }) { Text(stringResource(R.string.action_preview_password)) }
-            Button(onClick = { onStartUserOperation("users.set_password", passwordPayload) }, enabled = confirmation == user.username && password.isNotBlank() && password == confirmPassword) { Text(stringResource(R.string.action_set_password)) }
-        }
-        ActionFlowRow {
-            val removePayload = userPayload(chroot, user.username, "remove").put("confirmation", confirmation).put("deleteHome", false).toString()
-            Button(onClick = { onPreviewUserPayload(removePayload) }) { Text(stringResource(R.string.action_preview_remove_user)) }
-            Button(onClick = { onStartUserOperation("users.remove", removePayload) }, enabled = confirmation == user.username) { Text(stringResource(R.string.action_remove_user)) }
+    val label = when (filter) {
+        UserWorkspaceFilter.Managed -> stringResource(R.string.user_filter_managed)
+        UserWorkspaceFilter.LoginUsers -> stringResource(R.string.user_filter_login)
+        UserWorkspaceFilter.SystemUsers -> stringResource(R.string.user_filter_system)
+    }
+    if (selected) {
+        Button(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    } else {
+        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    }
+}
+
+@Composable
+private fun FocusedUserRow(
+    user: UserSummary,
+    onReviewUserActions: () -> Unit,
+) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(user.username, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                listOf("uid=${user.uid}", "gid=${user.gid}", user.shell.ifBlank { stringResource(R.string.value_not_reported) })
+                    .joinToString(" · "),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ActionFlowRow {
+                if (userHasLoginShell(user)) {
+                    StatusPill(stringResource(R.string.user_badge_login), StatusTone.Accent)
+                }
+                if (user.sudo) {
+                    StatusPill(stringResource(R.string.user_badge_sudo), StatusTone.Success)
+                }
+                if (user.username.equals("root", ignoreCase = true)) {
+                    StatusPill(stringResource(R.string.user_badge_root), StatusTone.Warning)
+                }
+            }
+            OutlinedButton(
+                onClick = onReviewUserActions,
+                modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+            ) {
+                Text(stringResource(R.string.action_review_user_actions))
+            }
         }
     }
 }
+
+@Composable
+private fun UserActionReviewSheet(
+    chroot: String,
+    user: UserSummary?,
+    onCancel: () -> Unit,
+    onPreviewUserPayload: (String) -> Unit,
+    onStartUserOperation: (String, String) -> Unit,
+) {
+    val existingUser = user != null
+    val actions = userWorkspaceActions(existingUser)
+    var actionName by remember(chroot, user?.username) { mutableStateOf(actions.first().name) }
+    val action = actions.firstOrNull { it.name == actionName } ?: actions.first()
+    var draftUsername by remember(chroot, user?.username) { mutableStateOf(user?.username.orEmpty()) }
+    var draftShell by remember(chroot, user?.username) { mutableStateOf(user?.shell?.takeIf { it.isNotBlank() } ?: "/bin/bash") }
+    var draftSudo by remember(chroot, user?.username) { mutableStateOf(user?.sudo ?: false) }
+    var confirmation by remember(chroot, user?.username, actionName) { mutableStateOf("") }
+    var password by remember(chroot, user?.username, actionName) { mutableStateOf("") }
+    var confirmPassword by remember(chroot, user?.username, actionName) { mutableStateOf("") }
+
+    val username = user?.username ?: draftUsername.trim()
+    val payload = when (action) {
+        UserWorkspaceAction.Add -> userPayload(chroot, username, "add").put("shell", draftShell).put("sudo", draftSudo).toString()
+        UserWorkspaceAction.SyncUidGid -> userPayload(chroot, username, "sync_uid_gid").put("fixOwnership", true).toString()
+        UserWorkspaceAction.SetShell -> userPayload(chroot, username, "set_shell").put("shell", draftShell).toString()
+        UserWorkspaceAction.ToggleSudo -> userPayload(chroot, username, "set_sudo").put("enabled", !(user?.sudo ?: false)).toString()
+        UserWorkspaceAction.SetPassword -> userPayload(chroot, username, "set_password")
+            .put("password", password)
+            .put("confirmPassword", confirmPassword)
+            .put("confirmation", confirmation)
+            .toString()
+        UserWorkspaceAction.Remove -> userPayload(chroot, username, "remove")
+            .put("confirmation", confirmation)
+            .put("deleteHome", false)
+            .toString()
+    }
+    val operation = when (action) {
+        UserWorkspaceAction.Add -> "users.add"
+        UserWorkspaceAction.SyncUidGid -> "users.sync_uid_gid"
+        UserWorkspaceAction.SetShell -> "users.set_shell"
+        UserWorkspaceAction.ToggleSudo -> "users.set_sudo"
+        UserWorkspaceAction.SetPassword -> "users.set_password"
+        UserWorkspaceAction.Remove -> "users.remove"
+    }
+    val canSubmit = when (action) {
+        UserWorkspaceAction.Add -> username.isNotBlank() && draftShell.isNotBlank()
+        UserWorkspaceAction.SyncUidGid -> existingUser
+        UserWorkspaceAction.SetShell -> existingUser && draftShell.isNotBlank()
+        UserWorkspaceAction.ToggleSudo -> existingUser
+        UserWorkspaceAction.SetPassword -> existingUser && confirmation == username && password.isNotBlank() && password == confirmPassword
+        UserWorkspaceAction.Remove -> existingUser && confirmation == username
+    }
+
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                if (existingUser) stringResource(R.string.user_action_review_title, username) else stringResource(R.string.user_add_review_title),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(stringResource(R.string.user_action_review_body, chroot), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            user?.let { currentUser ->
+                ActionFlowRow(contentDescription = stringResource(R.string.user_action_review_actions_label)) {
+                    actions.forEach { item ->
+                        UserActionSelector(
+                            action = item,
+                            selected = item == action,
+                            user = currentUser,
+                            onSelect = { actionName = it.name },
+                        )
+                    }
+                }
+            }
+            when (action) {
+                UserWorkspaceAction.Add -> {
+                    OutlinedTextField(value = draftUsername, onValueChange = { draftUsername = it }, label = { Text(stringResource(R.string.user_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = draftShell, onValueChange = { draftShell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = { draftSudo = !draftSudo }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                        Text(if (draftSudo) stringResource(R.string.user_add_sudo_enabled) else stringResource(R.string.user_add_sudo_disabled))
+                    }
+                }
+                UserWorkspaceAction.SetShell -> OutlinedTextField(value = draftShell, onValueChange = { draftShell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                UserWorkspaceAction.SetPassword -> {
+                    OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_exact_label, username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.user_password_label)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = confirmPassword, onValueChange = { confirmPassword = it }, label = { Text(stringResource(R.string.user_confirm_password_label)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                }
+                UserWorkspaceAction.Remove -> OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_exact_label, username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                UserWorkspaceAction.SyncUidGid,
+                UserWorkspaceAction.ToggleSudo -> Unit
+            }
+            Text(userActionReviewSummary(action, user, draftShell, draftSudo), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            ActionFlowRow {
+                OutlinedButton(
+                    onClick = { onPreviewUserPayload(payload) },
+                    enabled = canSubmit,
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.action_preview_command))
+                }
+                Button(
+                    onClick = { onStartUserOperation(operation, payload) },
+                    enabled = canSubmit,
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) {
+                    Text(userActionExecuteLabel(action, user))
+                }
+                TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserActionSelector(
+    action: UserWorkspaceAction,
+    selected: Boolean,
+    user: UserSummary,
+    onSelect: (UserWorkspaceAction) -> Unit,
+) {
+    val label = userActionSelectorLabel(action, user)
+    if (selected) {
+        Button(onClick = { onSelect(action) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    } else {
+        OutlinedButton(onClick = { onSelect(action) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    }
+}
+
+@Composable
+private fun userActionSelectorLabel(action: UserWorkspaceAction, user: UserSummary): String = when (action) {
+    UserWorkspaceAction.Add -> stringResource(R.string.action_add_user)
+    UserWorkspaceAction.SyncUidGid -> stringResource(R.string.action_sync_user)
+    UserWorkspaceAction.SetShell -> stringResource(R.string.action_set_shell)
+    UserWorkspaceAction.ToggleSudo -> if (user.sudo) stringResource(R.string.action_disable_sudo) else stringResource(R.string.action_enable_sudo)
+    UserWorkspaceAction.SetPassword -> stringResource(R.string.action_set_password)
+    UserWorkspaceAction.Remove -> stringResource(R.string.action_remove_user)
+}
+
+@Composable
+private fun userActionExecuteLabel(action: UserWorkspaceAction, user: UserSummary?): String = when (action) {
+    UserWorkspaceAction.Add -> stringResource(R.string.action_add_user)
+    UserWorkspaceAction.SyncUidGid -> stringResource(R.string.action_sync_user)
+    UserWorkspaceAction.SetShell -> stringResource(R.string.action_set_shell)
+    UserWorkspaceAction.ToggleSudo -> if (user?.sudo == true) stringResource(R.string.action_disable_sudo) else stringResource(R.string.action_enable_sudo)
+    UserWorkspaceAction.SetPassword -> stringResource(R.string.action_set_password)
+    UserWorkspaceAction.Remove -> stringResource(R.string.action_remove_user)
+}
+
+@Composable
+private fun userActionReviewSummary(
+    action: UserWorkspaceAction,
+    user: UserSummary?,
+    shell: String,
+    sudo: Boolean,
+): String = when (action) {
+    UserWorkspaceAction.Add -> stringResource(R.string.user_action_summary_add, shell, if (sudo) stringResource(R.string.user_add_sudo_enabled) else stringResource(R.string.user_add_sudo_disabled))
+    UserWorkspaceAction.SyncUidGid -> stringResource(R.string.user_action_summary_sync)
+    UserWorkspaceAction.SetShell -> stringResource(R.string.user_action_summary_shell, shell)
+    UserWorkspaceAction.ToggleSudo -> stringResource(if (user?.sudo == true) R.string.user_action_summary_sudo_disable else R.string.user_action_summary_sudo_enable)
+    UserWorkspaceAction.SetPassword -> stringResource(R.string.user_action_summary_password)
+    UserWorkspaceAction.Remove -> stringResource(R.string.user_action_summary_remove)
+}
+
+private const val ADD_USER_REVIEW_TOKEN = "add:"
+private const val USER_REVIEW_TOKEN_PREFIX = "user:"
+
+private fun userReviewToken(username: String): String = USER_REVIEW_TOKEN_PREFIX + username
+
+private fun reviewUsername(token: String): String? = token
+    .takeIf { it.startsWith(USER_REVIEW_TOKEN_PREFIX) }
+    ?.removePrefix(USER_REVIEW_TOKEN_PREFIX)
+    ?.takeIf { it.isNotBlank() }
 
 @Composable
 private fun ServicesPanel(

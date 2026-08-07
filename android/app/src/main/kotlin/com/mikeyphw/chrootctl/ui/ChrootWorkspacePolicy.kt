@@ -2,6 +2,7 @@ package com.mikeyphw.chrootctl.ui
 
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
+import com.mikeyphw.chrootctl.model.UserSummary
 
 enum class ChrootWorkspaceTab {
     Overview,
@@ -48,6 +49,99 @@ fun serviceMatchesWorkspaceFilter(service: ServiceUnitSummary, filter: ServiceWo
         val description = service.description.trim().lowercase()
         listOf("failed", "failure", "error").any { token -> token in status || token in description }
     }
+}
+
+
+enum class UserWorkspaceFilter {
+    Managed,
+    LoginUsers,
+    SystemUsers,
+}
+
+enum class UserWorkspaceAction {
+    Add,
+    SyncUidGid,
+    SetShell,
+    ToggleSudo,
+    SetPassword,
+    Remove,
+}
+
+private const val SYSTEM_USER_UID_THRESHOLD = 1000
+
+private val knownSystemUsernames = setOf(
+    "bin",
+    "daemon",
+    "games",
+    "gnats",
+    "irc",
+    "list",
+    "lp",
+    "mail",
+    "man",
+    "messagebus",
+    "news",
+    "nobody",
+    "polkitd",
+    "proxy",
+    "sshd",
+    "sync",
+    "sys",
+    "syslog",
+    "systemd-network",
+    "systemd-timesync",
+    "tcpdump",
+    "uucp",
+    "uuidd",
+    "www-data",
+    "_apt",
+)
+
+fun userWorkspaceFilters(): List<UserWorkspaceFilter> = UserWorkspaceFilter.entries
+
+fun selectedUserWorkspaceFilter(name: String): UserWorkspaceFilter = UserWorkspaceFilter.entries
+    .firstOrNull { it.name == name }
+    ?: UserWorkspaceFilter.Managed
+
+fun userHasLoginShell(user: UserSummary): Boolean {
+    val shell = user.shell.trim().lowercase()
+    if (shell.isBlank()) return true
+    return shell !in setOf("nologin", "false", "/usr/sbin/nologin", "/sbin/nologin", "/bin/false") &&
+        !shell.endsWith("/nologin") &&
+        !shell.endsWith("/false")
+}
+
+fun userIsKnownSystemAccount(user: UserSummary): Boolean = user.username.trim().lowercase() in knownSystemUsernames
+
+fun userIsSystem(user: UserSummary): Boolean {
+    if (user.username.equals("root", ignoreCase = true)) return false
+    if (userIsKnownSystemAccount(user)) return true
+    if (!userHasLoginShell(user)) return true
+    val uid = user.uid.toIntOrNull()
+    return uid != null && uid < SYSTEM_USER_UID_THRESHOLD
+}
+
+fun userIsManaged(user: UserSummary): Boolean {
+    if (user.username.equals("root", ignoreCase = true)) return true
+    return !userIsSystem(user)
+}
+
+fun userMatchesWorkspaceFilter(user: UserSummary, filter: UserWorkspaceFilter): Boolean = when (filter) {
+    UserWorkspaceFilter.Managed -> userIsManaged(user)
+    UserWorkspaceFilter.LoginUsers -> userHasLoginShell(user) && !userIsKnownSystemAccount(user)
+    UserWorkspaceFilter.SystemUsers -> userIsSystem(user)
+}
+
+fun userWorkspaceActions(existingUser: Boolean): List<UserWorkspaceAction> = if (existingUser) {
+    listOf(
+        UserWorkspaceAction.SetShell,
+        UserWorkspaceAction.ToggleSudo,
+        UserWorkspaceAction.SyncUidGid,
+        UserWorkspaceAction.SetPassword,
+        UserWorkspaceAction.Remove,
+    )
+} else {
+    listOf(UserWorkspaceAction.Add)
 }
 
 fun chrootWorkspaceTabs(): List<ChrootWorkspaceTab> = ChrootWorkspaceTab.entries

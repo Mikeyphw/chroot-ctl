@@ -3,6 +3,7 @@ package com.mikeyphw.chrootctl.ui
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.InstallDraft
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
+import com.mikeyphw.chrootctl.model.UserSummary
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,6 +75,35 @@ class WorkflowUxPolicyTest {
         assertFalse(serviceNeedsAttention(unknown))
     }
 
+
+    @Test
+    fun `user workspace hides system accounts by default but keeps normal login users`() {
+        val login = sampleUser(username = "mike", uid = "1000", shell = "/bin/bash", sudo = true)
+        val daemon = sampleUser(username = "daemon", uid = "1", shell = "/usr/sbin/nologin")
+        val highUidNoLogin = sampleUser(username = "worker", uid = "1001", shell = "/bin/false")
+        val root = sampleUser(username = "root", uid = "0", shell = "/bin/bash", sudo = true)
+
+        assertTrue(userMatchesWorkspaceFilter(login, UserWorkspaceFilter.Managed))
+        assertTrue(userMatchesWorkspaceFilter(login, UserWorkspaceFilter.LoginUsers))
+        assertFalse(userMatchesWorkspaceFilter(login, UserWorkspaceFilter.SystemUsers))
+        assertTrue(userIsSystem(daemon))
+        assertTrue(userIsSystem(highUidNoLogin))
+        assertFalse(userMatchesWorkspaceFilter(daemon, UserWorkspaceFilter.Managed))
+        assertTrue(userMatchesWorkspaceFilter(daemon, UserWorkspaceFilter.SystemUsers))
+        assertTrue(userMatchesWorkspaceFilter(root, UserWorkspaceFilter.Managed))
+        assertFalse(userIsSystem(root))
+    }
+
+    @Test
+    fun `user workspace actions keep mutations inside review flow`() {
+        val existing = userWorkspaceActions(existingUser = true)
+        assertTrue(existing.contains(UserWorkspaceAction.SetShell))
+        assertTrue(existing.contains(UserWorkspaceAction.SetPassword))
+        assertTrue(existing.contains(UserWorkspaceAction.Remove))
+        assertFalse(existing.contains(UserWorkspaceAction.Add))
+        assertTrue(userWorkspaceActions(existingUser = false) == listOf(UserWorkspaceAction.Add))
+    }
+
     private fun sampleChroot(
         name: String = "ubuntu",
         distro: String = "Ubuntu",
@@ -107,6 +137,21 @@ class WorkflowUxPolicyTest {
         boot = enabled,
         description = description,
         journalText = journalText,
+    )
+
+
+    private fun sampleUser(
+        username: String,
+        uid: String,
+        shell: String,
+        sudo: Boolean = false,
+    ): UserSummary = UserSummary(
+        username = username,
+        uid = uid,
+        gid = uid,
+        home = "/home/$username",
+        shell = shell,
+        sudo = sudo,
     )
 
 }
