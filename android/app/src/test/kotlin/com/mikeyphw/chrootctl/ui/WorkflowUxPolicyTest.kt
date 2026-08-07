@@ -35,6 +35,25 @@ class WorkflowUxPolicyTest {
         assertFalse(validateInstallDraft(InstallDraft(distro = "ubuntu", name = "ubuntu", username = "Mike")).valid)
     }
 
+
+
+    @Test
+    fun `chroot list launches workspace instead of rendering inline management`() {
+        val chroot = sampleChroot(name = "androidos", distro = "Ubuntu", status = "registered", health = "stale")
+        assertTrue(chrootListIsWorkspaceLauncherOnly())
+        assertTrue(chrootWorkspaceSummary(chroot).contains("Ubuntu"))
+        assertTrue(chrootWorkspaceSummary(chroot).contains("/data/local/chroots/androidos"))
+        assertTrue(chrootWorkspaceTabs().contains(ChrootWorkspaceTab.Services))
+        assertTrue(chrootWorkspaceTabs().contains(ChrootWorkspaceTab.Users))
+    }
+
+    @Test
+    fun `bridge shape errors become human readable workspace messages`() {
+        val raw = "Bridge response data was array; expected a JSON object"
+        assertTrue(isBridgeShapeError(raw))
+        assertTrue(bridgeShapePrimaryMessage(raw).contains("backend returned a list", ignoreCase = true))
+    }
+
     private fun sampleChroot(
         name: String = "ubuntu",
         distro: String = "Ubuntu",

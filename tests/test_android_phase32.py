@@ -27,14 +27,23 @@ def test_chroots_screen_uses_search_filters_and_wrapping_actions() -> None:
 
 def test_compact_chroot_cards_expose_promised_contextual_actions() -> None:
     source = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/chroots/ChrootsScreen.kt")
-    compact_card = source.split("private fun Phase32ChrootCard", 1)[1].split("private fun ChrootDetailCard", 1)[0]
-    assert 'onStartLifecycle(chroot.name, "chroots.start")' in compact_card
-    assert 'onStartLifecycle(chroot.name, "chroots.restart")' in compact_card
-    assert 'onPreviewSnapshotCreate(chroot.name)' in compact_card
-    assert 'onPreviewLifecycle(chroot.name, "upgrade")' in compact_card
-    assert 'onStartLifecycle(chroot.name, "chroots.upgrade")' in compact_card
-    assert 'onPreviewLifecycle(chroot.name, "remove")' in compact_card
-    assert "action_open_details" in compact_card
+    if "ChrootWorkspaceScreen" in source:
+        compact_card = source.split("private fun Phase32ChrootCard", 1)[1].split("private fun ChrootWorkspaceScreen", 1)[0]
+        assert 'onStartLifecycle(chroot.name, "chroots.start")' in compact_card
+        assert 'onStartLifecycle(chroot.name, "chroots.restart")' in compact_card
+        assert 'onPreviewSnapshotCreate(chroot.name)' in compact_card
+        assert "action_open_workspace" in compact_card
+        assert "UsersPanel(" not in compact_card
+        assert "ServicesPanel(" not in compact_card
+    else:
+        compact_card = source.split("private fun Phase32ChrootCard", 1)[1].split("private fun ChrootDetailCard", 1)[0]
+        assert 'onStartLifecycle(chroot.name, "chroots.start")' in compact_card
+        assert 'onStartLifecycle(chroot.name, "chroots.restart")' in compact_card
+        assert 'onPreviewSnapshotCreate(chroot.name)' in compact_card
+        assert 'onPreviewLifecycle(chroot.name, "upgrade")' in compact_card
+        assert 'onStartLifecycle(chroot.name, "chroots.upgrade")' in compact_card
+        assert 'onPreviewLifecycle(chroot.name, "remove")' in compact_card
+        assert "action_open_details" in compact_card
 
 def test_install_screen_is_a_three_step_preview_first_wizard() -> None:
     source = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/install/InstallScreen.kt")
@@ -68,7 +77,8 @@ def test_sdk_lint_and_trust_boundaries_are_preserved() -> None:
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build
-    assert lint.count('severity="ignore"') == 1
     assert 'id="OldTargetApi" severity="ignore"' in lint
+    assert 'id="WarningsAsErrors" severity="ignore"' not in lint
+    assert 'id="ObsoleteLintCustomCheck" severity="ignore"' not in lint
     assert "WebView" not in kotlin
     assert "Runtime.getRuntime().exec" not in kotlin

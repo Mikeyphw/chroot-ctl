@@ -123,10 +123,10 @@ class BridgeRepository(
         database.chrootDao().upsertAll(listOf(chroot.toChrootEntity(now)))
         val status = BridgeEnvelope.fromJson(
             rootClient.query(BridgeRequest("system.status", JSONObject().put("name", name).put("details", true)).toJson()),
-        ).requireData()
+        ).requireDataOrWrappedArray("checks", "system.status")
         val doctor = BridgeEnvelope.fromJson(
             rootClient.query(BridgeRequest("system.doctor", JSONObject().put("name", name)).toJson()),
-        ).requireData()
+        ).requireDataOrWrappedArray("checks", "system.doctor")
         val checks = status.extractChecks(now, chrootScope(name)) + doctor.extractChecks(now, chrootScope(name))
         database.checkDao().replaceScope(chrootScope(name), checks.ifEmpty { listOf(status.toSyntheticCheck(name, now), doctor.toSyntheticCheck(name, now)) })
     }
@@ -197,7 +197,7 @@ class BridgeRepository(
     suspend fun refreshSnapshots(name: String): Result<List<SnapshotSummary>> = runCatching {
         val data = BridgeEnvelope.fromJson(
             rootClient.query(BridgeRequest("snapshots.list", JSONObject().put("name", name)).toJson()),
-        ).requireArray()
+        ).requireArrayFromData("snapshots", "items")
         data.toJsonObjects().map { item -> item.toSnapshotSummary() }
     }
 
@@ -229,7 +229,7 @@ class BridgeRepository(
     suspend fun refreshUsers(name: String): Result<List<UserSummary>> = runCatching {
         val data = BridgeEnvelope.fromJson(
             rootClient.query(BridgeRequest("users.list", JSONObject().put("name", name)).toJson()),
-        ).requireArray()
+        ).requireArrayFromData("users", "items")
         data.toJsonObjects().map { item -> item.toUserSummary() }
     }
 
@@ -243,7 +243,7 @@ class BridgeRepository(
     suspend fun refreshServices(name: String): Result<List<ServiceUnitSummary>> = runCatching {
         val data = BridgeEnvelope.fromJson(
             rootClient.query(BridgeRequest("services.list", JSONObject().put("name", name)).toJson()),
-        ).requireArray()
+        ).requireArrayFromData("services", "items")
         data.toJsonObjects().map { item -> item.toServiceUnitSummary() }
     }
 

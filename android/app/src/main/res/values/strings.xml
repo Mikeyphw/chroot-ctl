@@ -381,4 +381,36 @@
     <string name="operation_retry_preview_body">The stored retry request will run only after the bridge checks that it contains no redacted secrets. Destructive work is never replayed automatically; confirming starts a new foreground operation.</string>
     <string name="operation_retry_fixes_preview_action">Review retry with fixes</string>
     <string name="operation_retry_fixes_preview_body">Retry with fixes is limited to install operations. It reuses the stored install request only after redaction checks, then enables resume and repair for the new foreground operation.</string>
+
+    <string name="chroots_workspace_launcher_title">Chroot workspaces</string>
+    <string name="chroots_workspace_launcher_body">Open a chroot as a focused workspace. Services, users, snapshots and raw diagnostics stay inside that workspace instead of flooding this list.</string>
+    <string name="chroot_workspace_app_chip">Workspace</string>
+    <string name="action_open_workspace">Open workspace</string>
+    <string name="action_back_to_chroots">Back to chroots</string>
+    <string name="chroot_workspace_launcher_health_line">Mount %1$s · health %2$s</string>
+    <string name="chroot_workspace_title">%1$s workspace</string>
+    <string name="chroot_workspace_tabs_label">Chroot workspace tabs</string>
+    <string name="chroot_workspace_tab_overview">Overview</string>
+    <string name="chroot_workspace_tab_services">Services</string>
+    <string name="chroot_workspace_tab_users">Users</string>
+    <string name="chroot_workspace_tab_snapshots">Snapshots</string>
+    <string name="chroot_workspace_tab_advanced">Advanced</string>
+    <string name="chroot_workspace_overview_title">Workspace overview</string>
+    <string name="chroot_workspace_overview_body">Health, quick actions and the newest cached counts for this selected chroot.</string>
+    <string name="chroot_workspace_metric_services">Services</string>
+    <string name="chroot_workspace_metric_services_detail">Open the Services tab for actions and journals</string>
+    <string name="chroot_workspace_metric_users">Users</string>
+    <string name="chroot_workspace_metric_users_detail">Open the Users tab for account management</string>
+    <string name="chroot_workspace_metric_snapshots">Snapshots</string>
+    <string name="chroot_workspace_metric_snapshots_detail">Open the Snapshots tab for recovery</string>
+    <string name="chroot_workspace_open_services">Open services</string>
+    <string name="chroot_workspace_open_users">Open users</string>
+    <string name="chroot_workspace_open_snapshots">Open snapshots</string>
+    <string name="chroot_workspace_checks_empty_title">No checks cached</string>
+    <string name="chroot_workspace_checks_title">Recent checks</string>
+    <string name="chroot_workspace_checks_body">Status and doctor checks for this workspace.</string>
+    <string name="chroot_workspace_checks_more">%1$d more check(s) in Advanced</string>
+    <string name="chroot_workspace_advanced_diagnostics_title">Diagnostics and danger zone</string>
+    <string name="chroot_workspace_advanced_diagnostics_body">Lifecycle removal, raw payload size, full checks and technical state for this chroot.</string>
+    <string name="bridge_shape_error_title">Backend response shape changed</string>
 </resources>

@@ -3,7 +3,6 @@ package com.mikeyphw.chrootctl.ui.chroots
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -14,6 +13,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,13 +37,22 @@ import com.mikeyphw.chrootctl.model.UserSummary
 import com.mikeyphw.chrootctl.model.UsersPane
 import com.mikeyphw.chrootctl.ui.ChrootLayout
 import com.mikeyphw.chrootctl.ui.ChrootListFilter
+import com.mikeyphw.chrootctl.ui.ChrootWorkspaceTab
+import com.mikeyphw.chrootctl.ui.bridgeShapePrimaryMessage
+import com.mikeyphw.chrootctl.ui.chrootListIsWorkspaceLauncherOnly
 import com.mikeyphw.chrootctl.ui.chrootMatchesFilter
 import com.mikeyphw.chrootctl.ui.chrootMatchesQuery
+import com.mikeyphw.chrootctl.ui.chrootWorkspaceSummary
+import com.mikeyphw.chrootctl.ui.chrootWorkspaceTabs
+import com.mikeyphw.chrootctl.ui.isBridgeShapeError
 import com.mikeyphw.chrootctl.ui.isRunningChrootStatus
 import com.mikeyphw.chrootctl.ui.selectedChrootListFilter
+import com.mikeyphw.chrootctl.ui.selectedChrootWorkspaceTab
 import com.mikeyphw.chrootctl.ui.components.ActionFlowRow
 import com.mikeyphw.chrootctl.ui.components.EmptyState
+import com.mikeyphw.chrootctl.ui.components.MetricCardData
 import com.mikeyphw.chrootctl.ui.components.PathText
+import com.mikeyphw.chrootctl.ui.components.ResponsiveMetricCards
 import com.mikeyphw.chrootctl.ui.components.SectionHeader
 import com.mikeyphw.chrootctl.ui.components.StatusCard
 import com.mikeyphw.chrootctl.ui.components.StatusPill
@@ -81,28 +90,101 @@ fun ChrootsScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var filterName by rememberSaveable { mutableStateOf(ChrootListFilter.All.name) }
+    var workspaceName by rememberSaveable { mutableStateOf(selectedName) }
+    var workspaceTabName by rememberSaveable { mutableStateOf(ChrootWorkspaceTab.Overview.name) }
     val filter = selectedChrootListFilter(filterName)
+    val workspaceTab = selectedChrootWorkspaceTab(workspaceTabName)
     val visibleChroots = chroots.filter { chroot ->
         chrootMatchesQuery(chroot, query) && chrootMatchesFilter(chroot, filter)
     }
+    val workspaceChroot = workspaceName?.let { wanted ->
+        detail.chroot?.takeIf { it.name == wanted } ?: chroots.firstOrNull { it.name == wanted }
+    }
 
+    if (workspaceName != null && workspaceChroot != null) {
+        ChrootWorkspaceScreen(
+            chroot = workspaceChroot,
+            checks = detail.checks,
+            refreshing = detail.refreshing,
+            errorMessage = detail.errorMessage,
+            selectedTab = workspaceTab,
+            lifecyclePreview = lifecyclePreview,
+            snapshotPane = snapshotPane,
+            usersPane = usersPane,
+            servicesPane = servicesPane,
+            onBack = { workspaceName = null },
+            onSelectTab = { workspaceTabName = it.name },
+            onRefreshDetail = onRefreshDetail,
+            onPreviewLifecycle = onPreviewLifecycle,
+            onStartLifecycle = onStartLifecycle,
+            onExecuteRemove = onExecuteRemove,
+            onRefreshSnapshots = onRefreshSnapshots,
+            onPreviewSnapshotCreate = onPreviewSnapshotCreate,
+            onStartSnapshotCreate = onStartSnapshotCreate,
+            onPreviewSnapshotAction = onPreviewSnapshotAction,
+            onStartSnapshotRestore = onStartSnapshotRestore,
+            onStartSnapshotExport = onStartSnapshotExport,
+            onRefreshUsers = onRefreshUsers,
+            onPreviewUserPayload = onPreviewUserPayload,
+            onStartUserOperation = onStartUserOperation,
+            onRefreshServices = onRefreshServices,
+            onRefreshServiceDetail = onRefreshServiceDetail,
+            onPreviewServicePayload = onPreviewServicePayload,
+            onStartServiceOperation = onStartServiceOperation,
+            modifier = modifier,
+        )
+    } else {
+        ChrootWorkspaceLauncher(
+            chroots = chroots,
+            visibleChroots = visibleChroots,
+            query = query,
+            filter = filter,
+            onQueryChange = { query = it },
+            onFilterChange = { filterName = it.name },
+            onOpenWorkspace = { name ->
+                workspaceName = name
+                workspaceTabName = ChrootWorkspaceTab.Overview.name
+                onSelect(name)
+            },
+            onPreviewLifecycle = onPreviewLifecycle,
+            onStartLifecycle = onStartLifecycle,
+            onPreviewSnapshotCreate = onPreviewSnapshotCreate,
+            modifier = modifier,
+        )
+    }
+}
+
+@Composable
+private fun ChrootWorkspaceLauncher(
+    chroots: List<ChrootSummary>,
+    visibleChroots: List<ChrootSummary>,
+    query: String,
+    filter: ChrootListFilter,
+    onQueryChange: (String) -> Unit,
+    onFilterChange: (ChrootListFilter) -> Unit,
+    onOpenWorkspace: (String) -> Unit,
+    onPreviewLifecycle: (String, String) -> Unit,
+    onStartLifecycle: (String, String) -> Unit,
+    onPreviewSnapshotCreate: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionHeader(
-            title = stringResource(R.string.chroots_phase32_title),
-            body = stringResource(R.string.chroots_phase32_body),
+            title = stringResource(R.string.chroots_workspace_launcher_title),
+            body = if (chrootListIsWorkspaceLauncherOnly()) stringResource(R.string.chroots_workspace_launcher_body) else stringResource(R.string.chroots_phase32_body),
         )
         OutlinedTextField(
             value = query,
-            onValueChange = { query = it },
+            onValueChange = onQueryChange,
             label = { Text(stringResource(R.string.chroots_search_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         ActionFlowRow {
-            ChrootFilterButton(filter = ChrootListFilter.All, selected = filter == ChrootListFilter.All, onSelect = { filterName = it.name })
-            ChrootFilterButton(filter = ChrootListFilter.Running, selected = filter == ChrootListFilter.Running, onSelect = { filterName = it.name })
-            ChrootFilterButton(filter = ChrootListFilter.Stopped, selected = filter == ChrootListFilter.Stopped, onSelect = { filterName = it.name })
-            ChrootFilterButton(filter = ChrootListFilter.Attention, selected = filter == ChrootListFilter.Attention, onSelect = { filterName = it.name })
+            ChrootFilterButton(filter = ChrootListFilter.All, selected = filter == ChrootListFilter.All, onSelect = onFilterChange)
+            ChrootFilterButton(filter = ChrootListFilter.Running, selected = filter == ChrootListFilter.Running, onSelect = onFilterChange)
+            ChrootFilterButton(filter = ChrootListFilter.Stopped, selected = filter == ChrootListFilter.Stopped, onSelect = onFilterChange)
+            ChrootFilterButton(filter = ChrootListFilter.Attention, selected = filter == ChrootListFilter.Attention, onSelect = onFilterChange)
         }
         when {
             chroots.isEmpty() -> EmptyState(
@@ -116,42 +198,13 @@ fun ChrootsScreen(
             else -> visibleChroots.forEach { chroot ->
                 Phase32ChrootCard(
                     chroot = chroot,
-                    selected = chroot.name == selectedName,
-                    onSelect = { onSelect(chroot.name) },
+                    selected = false,
+                    onSelect = { onOpenWorkspace(chroot.name) },
                     onPreviewLifecycle = onPreviewLifecycle,
                     onStartLifecycle = onStartLifecycle,
                     onPreviewSnapshotCreate = onPreviewSnapshotCreate,
                 )
             }
-        }
-        detail.chroot?.let { chroot ->
-            ChrootDetailCard(
-                chroot = chroot,
-                checks = detail.checks,
-                refreshing = detail.refreshing,
-                errorMessage = detail.errorMessage,
-                lifecyclePreview = lifecyclePreview,
-                snapshotPane = snapshotPane,
-                usersPane = usersPane,
-                servicesPane = servicesPane,
-                onRefreshDetail = onRefreshDetail,
-                onPreviewLifecycle = onPreviewLifecycle,
-                onStartLifecycle = onStartLifecycle,
-                onExecuteRemove = onExecuteRemove,
-                onRefreshSnapshots = onRefreshSnapshots,
-                onPreviewSnapshotCreate = onPreviewSnapshotCreate,
-                onStartSnapshotCreate = onStartSnapshotCreate,
-                onPreviewSnapshotAction = onPreviewSnapshotAction,
-                onStartSnapshotRestore = onStartSnapshotRestore,
-                onStartSnapshotExport = onStartSnapshotExport,
-                onRefreshUsers = onRefreshUsers,
-                onPreviewUserPayload = onPreviewUserPayload,
-                onStartUserOperation = onStartUserOperation,
-                onRefreshServices = onRefreshServices,
-                onRefreshServiceDetail = onRefreshServiceDetail,
-                onPreviewServicePayload = onPreviewServicePayload,
-                onStartServiceOperation = onStartServiceOperation,
-            )
         }
     }
 }
@@ -187,37 +240,31 @@ private fun Phase32ChrootCard(
         else -> StatusTone.Neutral
     }
     val card: @Composable (Modifier, @Composable () -> Unit) -> Unit = if (selected) {
-        { modifier, content -> OutlinedCard(modifier, content = { content() }) }
+        { itemModifier, content -> OutlinedCard(itemModifier, content = { content() }) }
     } else {
-        { modifier, content -> Card(modifier, content = { content() }) }
+        { itemModifier, content -> Card(itemModifier, content = { content() }) }
     }
     card(Modifier.fillMaxWidth().clickable(onClick = onSelect)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ActionFlowRow {
                 StatusPill(chroot.status.ifBlank { stringResource(R.string.value_unknown) }, tone)
                 if (chroot.warningCount > 0) StatusPill(stringResource(R.string.chroot_warnings_count, chroot.warningCount), StatusTone.Warning)
+                StatusPill(stringResource(R.string.chroot_workspace_app_chip), StatusTone.Accent)
             }
             Text(chroot.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                listOfNotNull(chroot.distribution, chroot.release, chroot.architecture).joinToString(" · ").ifBlank {
-                    stringResource(R.string.chroot_unknown_distribution)
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            chroot.path?.let { path -> PathText(path) }
+            Text(chrootWorkspaceSummary(chroot), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
                 stringResource(
-                    R.string.chroot_health_line,
+                    R.string.chroot_workspace_launcher_health_line,
                     chroot.mountState ?: stringResource(R.string.value_unknown),
                     chroot.health ?: stringResource(R.string.value_not_reported),
-                    chroot.warningCount,
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             ActionFlowRow {
-                OutlinedButton(onClick = onSelect, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.action_open_details))
+                Button(onClick = onSelect, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_open_workspace))
                 }
                 if (running) {
                     OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
@@ -237,30 +284,24 @@ private fun Phase32ChrootCard(
                 OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                     Text(stringResource(R.string.action_preview_snapshot))
                 }
-                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.action_preview_upgrade))
-                }
-                Button(onClick = { onStartLifecycle(chroot.name, "chroots.upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.action_upgrade_chroot))
-                }
-                OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "remove") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.action_preview_remove))
-                }
             }
         }
     }
 }
 
 @Composable
-private fun ChrootDetailCard(
+private fun ChrootWorkspaceScreen(
     chroot: ChrootSummary,
     checks: List<CheckSummary>,
     refreshing: Boolean,
     errorMessage: String?,
+    selectedTab: ChrootWorkspaceTab,
     lifecyclePreview: PreviewSummary?,
     snapshotPane: SnapshotPane,
     usersPane: UsersPane,
     servicesPane: ServicesPane,
+    onBack: () -> Unit,
+    onSelectTab: (ChrootWorkspaceTab) -> Unit,
     onRefreshDetail: () -> Unit,
     onPreviewLifecycle: (String, String) -> Unit,
     onStartLifecycle: (String, String) -> Unit,
@@ -278,62 +319,241 @@ private fun ChrootDetailCard(
     onRefreshServiceDetail: (String, String) -> Unit,
     onPreviewServicePayload: (String) -> Unit,
     onStartServiceOperation: (String, String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    StatusCard(
-        title = stringResource(R.string.chroot_detail_title, chroot.name),
-        body = stringResource(R.string.chroot_detail_body),
-        footer = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ActionFlowRow {
-                    Button(onClick = onRefreshDetail, enabled = !refreshing, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
-                        Text(if (refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_detail))
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionHeader(
+            title = stringResource(R.string.chroot_workspace_title, chroot.name),
+            body = chrootWorkspaceSummary(chroot),
+            action = {
+                OutlinedButton(onClick = onBack, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_back_to_chroots))
+                }
+            },
+        )
+        ActionFlowRow(contentDescription = stringResource(R.string.chroot_workspace_tabs_label)) {
+            chrootWorkspaceTabs().forEach { tab ->
+                ChrootWorkspaceTabButton(tab = tab, selected = tab == selectedTab, onSelect = onSelectTab)
+            }
+        }
+        when (selectedTab) {
+            ChrootWorkspaceTab.Overview -> WorkspaceOverviewTab(
+                chroot = chroot,
+                checks = checks,
+                refreshing = refreshing,
+                errorMessage = errorMessage,
+                lifecyclePreview = lifecyclePreview,
+                snapshotPane = snapshotPane,
+                usersPane = usersPane,
+                servicesPane = servicesPane,
+                onRefreshDetail = onRefreshDetail,
+                onPreviewLifecycle = onPreviewLifecycle,
+                onStartLifecycle = onStartLifecycle,
+                onPreviewSnapshotCreate = onPreviewSnapshotCreate,
+                onOpenTab = onSelectTab,
+            )
+            ChrootWorkspaceTab.Services -> ServicesPanel(
+                chroot = chroot,
+                pane = servicesPane,
+                onRefreshServices = onRefreshServices,
+                onRefreshServiceDetail = onRefreshServiceDetail,
+                onPreviewServicePayload = onPreviewServicePayload,
+                onStartServiceOperation = onStartServiceOperation,
+            )
+            ChrootWorkspaceTab.Users -> UsersPanel(
+                chroot = chroot,
+                pane = usersPane,
+                onRefreshUsers = onRefreshUsers,
+                onPreviewUserPayload = onPreviewUserPayload,
+                onStartUserOperation = onStartUserOperation,
+            )
+            ChrootWorkspaceTab.Snapshots -> SnapshotPanel(
+                chroot = chroot,
+                pane = snapshotPane,
+                onRefreshSnapshots = onRefreshSnapshots,
+                onPreviewSnapshotCreate = onPreviewSnapshotCreate,
+                onStartSnapshotCreate = onStartSnapshotCreate,
+                onPreviewSnapshotAction = onPreviewSnapshotAction,
+                onStartSnapshotRestore = onStartSnapshotRestore,
+                onStartSnapshotExport = onStartSnapshotExport,
+            )
+            ChrootWorkspaceTab.Advanced -> AdvancedWorkspaceTab(
+                chroot = chroot,
+                checks = checks,
+                lifecyclePreview = lifecyclePreview,
+                onPreviewLifecycle = onPreviewLifecycle,
+                onStartLifecycle = onStartLifecycle,
+                onExecuteRemove = onExecuteRemove,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChrootWorkspaceTabButton(tab: ChrootWorkspaceTab, selected: Boolean, onSelect: (ChrootWorkspaceTab) -> Unit) {
+    val label = when (tab) {
+        ChrootWorkspaceTab.Overview -> stringResource(R.string.chroot_workspace_tab_overview)
+        ChrootWorkspaceTab.Services -> stringResource(R.string.chroot_workspace_tab_services)
+        ChrootWorkspaceTab.Users -> stringResource(R.string.chroot_workspace_tab_users)
+        ChrootWorkspaceTab.Snapshots -> stringResource(R.string.chroot_workspace_tab_snapshots)
+        ChrootWorkspaceTab.Advanced -> stringResource(R.string.chroot_workspace_tab_advanced)
+    }
+    if (selected) {
+        Button(onClick = { onSelect(tab) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    } else {
+        OutlinedButton(onClick = { onSelect(tab) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+    }
+}
+
+@Composable
+private fun WorkspaceOverviewTab(
+    chroot: ChrootSummary,
+    checks: List<CheckSummary>,
+    refreshing: Boolean,
+    errorMessage: String?,
+    lifecyclePreview: PreviewSummary?,
+    snapshotPane: SnapshotPane,
+    usersPane: UsersPane,
+    servicesPane: ServicesPane,
+    onRefreshDetail: () -> Unit,
+    onPreviewLifecycle: (String, String) -> Unit,
+    onStartLifecycle: (String, String) -> Unit,
+    onPreviewSnapshotCreate: (String) -> Unit,
+    onOpenTab: (ChrootWorkspaceTab) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        errorMessage?.let { message ->
+            BridgePaneError(message = message, onRetry = onRefreshDetail)
+        }
+        StatusCard(
+            title = stringResource(R.string.chroot_workspace_overview_title),
+            body = stringResource(R.string.chroot_workspace_overview_body),
+            footer = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ActionFlowRow {
+                        StatusPill(chroot.status.ifBlank { stringResource(R.string.value_unknown) }, if (chroot.warningCount > 0) StatusTone.Warning else StatusTone.Success)
+                        StatusPill(chroot.health ?: stringResource(R.string.value_not_reported), if (chroot.warningCount > 0) StatusTone.Warning else StatusTone.Neutral)
+                        if (refreshing) StatusPill(stringResource(R.string.action_refreshing), StatusTone.Accent)
+                    }
+                    ResponsiveMetricCards(
+                        cards = listOf(
+                            MetricCardData(stringResource(R.string.chroot_workspace_metric_services), servicesPane.services.size.toString(), stringResource(R.string.chroot_workspace_metric_services_detail)),
+                            MetricCardData(stringResource(R.string.chroot_workspace_metric_users), usersPane.users.size.toString(), stringResource(R.string.chroot_workspace_metric_users_detail)),
+                            MetricCardData(stringResource(R.string.chroot_workspace_metric_snapshots), snapshotPane.snapshots.size.toString(), stringResource(R.string.chroot_workspace_metric_snapshots_detail)),
+                        ),
+                    )
+                    ActionFlowRow {
+                        Button(onClick = onRefreshDetail, enabled = !refreshing, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                            Text(if (refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_detail))
+                        }
+                        if (isRunningChrootStatus(chroot.status) || chroot.mountState?.let(::isRunningChrootStatus) == true) {
+                            Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                                Text(stringResource(R.string.action_restart_chroot))
+                            }
+                        } else {
+                            Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                                Text(stringResource(R.string.action_start_chroot))
+                            }
+                        }
+                        OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                            Text(stringResource(R.string.action_preview_upgrade))
+                        }
+                        OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                            Text(stringResource(R.string.action_preview_snapshot))
+                        }
+                    }
+                    ActionFlowRow {
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Services) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_services)) }
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Users) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_users)) }
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Snapshots) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_snapshots)) }
+                    }
+                    lifecyclePreview?.let { item -> PreviewSummaryBlock(item) }
+                }
+            },
+        )
+        if (checks.isEmpty()) {
+            EmptyState(
+                title = stringResource(R.string.chroot_workspace_checks_empty_title),
+                body = stringResource(R.string.chroot_detail_checks_empty),
+            )
+        } else {
+            StatusCard(
+                title = stringResource(R.string.chroot_workspace_checks_title),
+                body = stringResource(R.string.chroot_workspace_checks_body),
+                footer = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        checks.take(MAX_OVERVIEW_CHECKS).forEach { check -> CheckRow(check) }
+                        if (checks.size > MAX_OVERVIEW_CHECKS) {
+                            Text(stringResource(R.string.chroot_workspace_checks_more, checks.size - MAX_OVERVIEW_CHECKS), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdvancedWorkspaceTab(
+    chroot: ChrootSummary,
+    checks: List<CheckSummary>,
+    lifecyclePreview: PreviewSummary?,
+    onPreviewLifecycle: (String, String) -> Unit,
+    onStartLifecycle: (String, String) -> Unit,
+    onExecuteRemove: (String, String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LifecyclePanel(
+            chroot = chroot,
+            preview = lifecyclePreview,
+            onPreviewLifecycle = onPreviewLifecycle,
+            onStartLifecycle = onStartLifecycle,
+            onExecuteRemove = onExecuteRemove,
+        )
+        StatusCard(
+            title = stringResource(R.string.chroot_workspace_advanced_diagnostics_title),
+            body = stringResource(R.string.chroot_workspace_advanced_diagnostics_body),
+            footer = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DetailRow(stringResource(R.string.chroot_detail_status), chroot.status)
+                    DetailRow(stringResource(R.string.chroot_detail_release), listOfNotNull(chroot.distribution, chroot.release, chroot.architecture).joinToString(" · ").ifBlank { stringResource(R.string.value_not_reported) })
+                    DetailRow(stringResource(R.string.chroot_detail_path), chroot.path ?: stringResource(R.string.value_not_reported))
+                    DetailRow(stringResource(R.string.chroot_detail_raw_size), chroot.rawJson.length.toString())
+                    if (checks.isEmpty()) {
+                        Text(stringResource(R.string.chroot_detail_checks_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        checks.forEach { check -> CheckRow(check) }
                     }
                 }
-                LifecyclePanel(
-                    chroot = chroot,
-                    preview = lifecyclePreview,
-                    onPreviewLifecycle = onPreviewLifecycle,
-                    onStartLifecycle = onStartLifecycle,
-                    onExecuteRemove = onExecuteRemove,
-                )
-                SnapshotPanel(
-                    chroot = chroot,
-                    pane = snapshotPane,
-                    onRefreshSnapshots = onRefreshSnapshots,
-                    onPreviewSnapshotCreate = onPreviewSnapshotCreate,
-                    onStartSnapshotCreate = onStartSnapshotCreate,
-                    onPreviewSnapshotAction = onPreviewSnapshotAction,
-                    onStartSnapshotRestore = onStartSnapshotRestore,
-                    onStartSnapshotExport = onStartSnapshotExport,
-                )
-                UsersPanel(
-                    chroot = chroot,
-                    pane = usersPane,
-                    onRefreshUsers = onRefreshUsers,
-                    onPreviewUserPayload = onPreviewUserPayload,
-                    onStartUserOperation = onStartUserOperation,
-                )
-                ServicesPanel(
-                    chroot = chroot,
-                    pane = servicesPane,
-                    onRefreshServices = onRefreshServices,
-                    onRefreshServiceDetail = onRefreshServiceDetail,
-                    onPreviewServicePayload = onPreviewServicePayload,
-                    onStartServiceOperation = onStartServiceOperation,
-                )
-                errorMessage?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
-                DetailRow(stringResource(R.string.chroot_detail_status), chroot.status)
-                DetailRow(stringResource(R.string.chroot_detail_release), listOfNotNull(chroot.distribution, chroot.release, chroot.architecture).joinToString(" · ").ifBlank { stringResource(R.string.value_not_reported) })
-                DetailRow(stringResource(R.string.chroot_detail_path), chroot.path ?: stringResource(R.string.value_not_reported))
-                DetailRow(stringResource(R.string.chroot_detail_raw_size), chroot.rawJson.length.toString())
-                if (checks.isEmpty()) {
-                    Text(stringResource(R.string.chroot_detail_checks_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    checks.forEach { check -> CheckRow(check) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun BridgePaneError(message: String, onRetry: (() -> Unit)? = null) {
+    var detailsVisible by rememberSaveable(message) { mutableStateOf(false) }
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatusPill(stringResource(R.string.status_needs_attention), StatusTone.Danger)
+            Text(
+                if (isBridgeShapeError(message)) stringResource(R.string.bridge_shape_error_title) else stringResource(R.string.backend_issue_unknown_title),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(bridgeShapePrimaryMessage(message), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ActionFlowRow {
+                onRetry?.let { retry ->
+                    Button(onClick = retry, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_retry)) }
+                }
+                TextButton(onClick = { detailsVisible = !detailsVisible }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(if (detailsVisible) stringResource(R.string.action_hide_technical_details) else stringResource(R.string.action_show_technical_details))
                 }
             }
-        },
-    )
+            if (detailsVisible) {
+                PathText(message.take(1200), modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
 }
 
 @Composable
@@ -408,7 +628,7 @@ private fun SnapshotPanel(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            pane.errorMessage?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
+            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshSnapshots(chroot.name) }) }
             pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
             if (pane.targetName == chroot.name && pane.snapshots.isNotEmpty()) {
                 pane.snapshots.take(MAX_VISIBLE_SNAPSHOTS).forEach { snapshot ->
@@ -495,7 +715,7 @@ private fun UsersPanel(
             OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.user_password_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = confirmPassword, onValueChange = { confirmPassword = it }, label = { Text(stringResource(R.string.user_confirm_password_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            pane.errorMessage?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
+            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshUsers(chroot.name) }) }
             pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
             if (pane.targetName == chroot.name && pane.users.isNotEmpty()) {
                 pane.users.forEach { user ->
@@ -574,7 +794,7 @@ private fun ServicesPanel(
             Button(onClick = { onRefreshServices(chroot.name) }, enabled = !pane.refreshing) {
                 Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_services))
             }
-            pane.errorMessage?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
+            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshServices(chroot.name) }) }
             pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
             pane.selectedService?.takeIf { it.journalText.isNotBlank() }?.let { service ->
                 Text(stringResource(R.string.service_journal_title, service.service), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
@@ -670,3 +890,4 @@ private fun CheckRow(check: CheckSummary) {
 
 private const val MAX_VISIBLE_SNAPSHOTS = 8
 private const val MAX_JOURNAL_CHARS = 1_600
+private const val MAX_OVERVIEW_CHECKS = 4

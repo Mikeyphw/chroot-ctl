@@ -132,6 +132,30 @@ data class BridgeEnvelope(
         return dataArray ?: error("Bridge response data was ${dataType ?: "missing"}; expected a JSON array")
     }
 
+    fun requireDataOrWrappedArray(arrayKey: String, sourceLabel: String): JSONObject {
+        check(ok) { errorMessage ?: errorCode ?: "Bridge request failed" }
+        data?.let { return it }
+        dataArray?.let { array ->
+            return JSONObject()
+                .put(arrayKey, array)
+                .put("bridgeShapeAdapter", JSONObject()
+                    .put("source", sourceLabel)
+                    .put("originalDataType", "array"))
+        }
+        return error("Bridge response data was ${dataType ?: "missing"}; expected a JSON object")
+    }
+
+    fun requireArrayFromData(vararg objectKeys: String): JSONArray {
+        check(ok) { errorMessage ?: errorCode ?: "Bridge request failed" }
+        dataArray?.let { return it }
+        data?.let { obj ->
+            for (key in objectKeys) {
+                obj.optJSONArray(key)?.let { return it }
+            }
+        }
+        return error("Bridge response data was ${dataType ?: "missing"}; expected a JSON array")
+    }
+
     companion object {
         fun fromJson(raw: String): BridgeEnvelope {
             val json = runCatching { JSONObject(raw.trim()) }.getOrElse { error ->

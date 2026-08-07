@@ -39,6 +39,43 @@ class BridgeModelsTest {
         assertTrue(error.message.orEmpty().contains("expected a JSON object"))
     }
 
+
+
+    @Test
+    fun `array detail payload can be wrapped as checks for workspace detail`() {
+        val raw = JSONObject()
+            .put("protocolVersion", 1)
+            .put("requestId", "shape-test")
+            .put("ok", true)
+            .put("data", JSONArray().put(JSONObject().put("title", "status ok").put("severity", "info")))
+            .put("error", JSONObject.NULL)
+            .put("warnings", JSONArray())
+            .put("nextSteps", JSONArray())
+            .toString()
+
+        val wrapped = BridgeEnvelope.fromJson(raw).requireDataOrWrappedArray("checks", "system.status")
+
+        assertEquals("array", wrapped.getJSONObject("bridgeShapeAdapter").getString("originalDataType"))
+        assertEquals("status ok", wrapped.getJSONArray("checks").getJSONObject(0).getString("title"))
+    }
+
+    @Test
+    fun `array lists can be read from object wrappers`() {
+        val raw = JSONObject()
+            .put("protocolVersion", 1)
+            .put("requestId", "list-test")
+            .put("ok", true)
+            .put("data", JSONObject().put("services", JSONArray().put(JSONObject().put("service", "ssh"))))
+            .put("error", JSONObject.NULL)
+            .put("warnings", JSONArray())
+            .put("nextSteps", JSONArray())
+            .toString()
+
+        val services = BridgeEnvelope.fromJson(raw).requireArrayFromData("services", "items")
+
+        assertEquals("ssh", services.getJSONObject(0).getString("service"))
+    }
+
     @Test
     fun `capabilities accept legacy string and structured operations`() {
         val capabilities = BridgeCapabilities.fromData(

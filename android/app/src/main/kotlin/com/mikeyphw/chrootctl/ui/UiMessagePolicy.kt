@@ -18,6 +18,7 @@ fun classifyBackendIssue(rawMessage: String): BackendIssueKind {
             "service disconnected" in message -> BackendIssueKind.ServiceDisconnected
         "timeout" in message || "timed out" in message -> BackendIssueKind.Timeout
         "json" in message ||
+            "bridge response data was" in message ||
             "could not be parsed" in message ||
             "protocol" in message ||
             "invalid bridge response" in message -> BackendIssueKind.InvalidResponse
