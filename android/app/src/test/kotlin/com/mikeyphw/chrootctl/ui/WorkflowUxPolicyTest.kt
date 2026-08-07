@@ -2,8 +2,10 @@ package com.mikeyphw.chrootctl.ui
 
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.InstallDraft
+import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 import com.mikeyphw.chrootctl.model.UserSummary
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -104,6 +106,55 @@ class WorkflowUxPolicyTest {
         assertTrue(userWorkspaceActions(existingUser = false) == listOf(UserWorkspaceAction.Add))
     }
 
+    @Test
+    fun `phase 39 workspace exposes recovery storage logs and advanced rooms`() {
+        val tabs = chrootWorkspaceTabs()
+        assertTrue(tabs.contains(ChrootWorkspaceTab.Snapshots))
+        assertTrue(tabs.contains(ChrootWorkspaceTab.Storage))
+        assertTrue(tabs.contains(ChrootWorkspaceTab.Logs))
+        assertTrue(tabs.contains(ChrootWorkspaceTab.Advanced))
+        assertTrue(SnapshotWorkspaceAction.entries.containsAll(listOf(SnapshotWorkspaceAction.Create, SnapshotWorkspaceAction.Restore, SnapshotWorkspaceAction.Export)))
+    }
+
+    @Test
+    fun `log workspace filters map only to allowlisted severity values`() {
+        assertEquals(null, logWorkspaceBridgeLevel(LogWorkspaceFilter.All))
+        assertEquals("WARNING", logWorkspaceBridgeLevel(LogWorkspaceFilter.Warning))
+        assertEquals("ERROR", logWorkspaceBridgeLevel(LogWorkspaceFilter.Error))
+        assertEquals(LogWorkspaceFilter.All, selectedLogWorkspaceFilter("unknown"))
+    }
+
+    @Test
+    fun `failed chroot operation offers snapshot recovery but completed work does not`() {
+        val failed = sampleOperation(state = "failed", target = "androidos")
+        val interrupted = sampleOperation(state = "interrupted", target = "androidos")
+        val blocked = sampleOperation(state = "blocked", target = "androidos")
+        val complete = sampleOperation(state = "complete", target = "androidos")
+        val other = sampleOperation(state = "failed", target = "ubuntu")
+        assertTrue(operationNeedsSnapshotRecovery(failed, "androidos"))
+        assertTrue(operationNeedsSnapshotRecovery(interrupted, "androidos"))
+        assertTrue(operationNeedsSnapshotRecovery(blocked, "androidos"))
+        assertFalse(operationNeedsSnapshotRecovery(complete, "androidos"))
+        assertFalse(operationNeedsSnapshotRecovery(other, "androidos"))
+    }
+
+    @Test
+    fun `snapshot execution requires preview for the exact reviewed action and snapshot`() {
+        assertTrue(snapshotPreviewMatches(SnapshotWorkspaceAction.Restore, "snap-2", "restore", "snap-2"))
+        assertTrue(snapshotPreviewMatches(SnapshotWorkspaceAction.Export, "snap-2", "EXPORT", "snap-2"))
+        assertFalse(snapshotPreviewMatches(SnapshotWorkspaceAction.Restore, "snap-2", "export", "snap-2"))
+        assertFalse(snapshotPreviewMatches(SnapshotWorkspaceAction.Restore, "snap-2", "restore", "snap-1"))
+        assertFalse(snapshotPreviewMatches(SnapshotWorkspaceAction.Create, "", "create", ""))
+    }
+
+    @Test
+    fun `storage formatting stays compact and deterministic`() {
+        assertEquals("0 B", formatStorageBytes(-1))
+        assertEquals("1 KiB", formatStorageBytes(1024))
+        assertEquals("1 MiB", formatStorageBytes(1024L * 1024L))
+        assertEquals("1 GiB", formatStorageBytes(1024L * 1024L * 1024L))
+    }
+
     private fun sampleChroot(
         name: String = "ubuntu",
         distro: String = "Ubuntu",
@@ -137,6 +188,25 @@ class WorkflowUxPolicyTest {
         boot = enabled,
         description = description,
         journalText = journalText,
+    )
+
+
+    private fun sampleOperation(
+        state: String,
+        target: String,
+    ): OperationSummary = OperationSummary(
+        operationId = "op-1",
+        kind = "chroots.upgrade",
+        title = "Upgrade chroot",
+        state = state,
+        targetName = target,
+        phase = null,
+        progressPercent = null,
+        progressText = "",
+        errorCode = if (state == "failed") "TEST_FAILURE" else null,
+        errorMessage = null,
+        createdAt = 1L,
+        stale = false,
     )
 
 

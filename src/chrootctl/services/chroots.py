@@ -136,6 +136,37 @@ class ChrootService:
             common_count=len(left_pkgs & right_pkgs),
         )
 
+    def storage_status(self, name: str) -> dict[str, Any]:
+        record = self.services.registry.get(name)
+        if record is None:
+            raise RuntimeError(f"unknown chroot: {name}")
+        config = self.services.config_for(name)
+        runtime = self.services.runtime_for(name)
+        rootfs = Path(str(record.get("path") or config.chroot_base)).expanduser()
+        cache_path = rootfs / "var" / "cache"
+        probe = rootfs if rootfs.exists() else config.chroot_root.expanduser()
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+        usage = shutil.disk_usage(probe)
+        mount_rows = runtime.controller.status(verbose=True)
+        mounted_count = sum(1 for row in mount_rows if str(row.get("mounted", "")).lower() == "yes")
+        return {
+            "name": name,
+            "rootfsPath": str(rootfs),
+            "rootfsExists": rootfs.exists(),
+            "rootfsBytes": _directory_size(rootfs),
+            "cachePath": str(cache_path),
+            "cacheExists": cache_path.exists(),
+            "cacheBytes": _directory_size(cache_path),
+            "freeBytes": int(usage.free),
+            "usedBytes": int(usage.used),
+            "totalBytes": int(usage.total),
+            "mountState": "mounted" if mounted_count else "not-mounted",
+            "mountedCount": mounted_count,
+            "mountCount": len(mount_rows),
+            "snapshotDirectory": str(config.snapshot_dir),
+        }
+
     def export_preview(self, name: str, *, archive: Path | None = None) -> dict[str, Any]:
         record = self.services.registry.get(name)
         if record is None:

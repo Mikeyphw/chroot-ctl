@@ -15,6 +15,8 @@ import com.mikeyphw.chrootctl.model.InstallFormSummary
 import com.mikeyphw.chrootctl.model.PreviewSummary
 import com.mikeyphw.chrootctl.model.RepairItemSummary
 import com.mikeyphw.chrootctl.model.SnapshotSummary
+import com.mikeyphw.chrootctl.model.StorageSummary
+import com.mikeyphw.chrootctl.model.ChrootLogEntrySummary
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 import com.mikeyphw.chrootctl.model.UserSummary
 import com.mikeyphw.chrootctl.model.Loadable
@@ -201,8 +203,29 @@ class BridgeRepository(
         data.toJsonObjects().map { item -> item.toSnapshotSummary() }
     }
 
-    suspend fun previewSnapshotCreate(name: String): Result<PreviewSummary> = runCatching {
-        val snapshot = "snapshot-${System.currentTimeMillis() / 1000}"
+    suspend fun refreshStorage(name: String): Result<StorageSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("storage.status", JSONObject().put("name", name)).toJson()),
+        ).requireData()
+        data.toStorageSummary()
+    }
+
+    suspend fun refreshLogs(name: String, level: String? = null): Result<Pair<String, List<ChrootLogEntrySummary>>> = runCatching {
+        val payload = JSONObject().put("name", name).put("tail", 200)
+        level?.takeIf(String::isNotBlank)?.let { payload.put("level", it) }
+        val data = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("logs.list", payload).toJson()),
+        ).requireData()
+        val entries = data.optJSONArray("entries").toJsonObjects().map { row ->
+            ChrootLogEntrySummary(
+                line = row.firstString("line", "message", "text"),
+                level = row.firstString("level", "severity").ifBlank { "INFO" },
+            )
+        }
+        data.firstString("logFile", "log_file") to entries
+    }
+
+    suspend fun previewSnapshotCreate(name: String, snapshot: String): Result<PreviewSummary> = runCatching {
         val data = BridgeEnvelope.fromJson(
             rootClient.preview(
                 BridgeRequest(
@@ -538,6 +561,23 @@ private fun JSONObject.toChrootEntity(now: Long): ChrootEntity {
         stale = false,
     )
 }
+
+private fun JSONObject.toStorageSummary(): StorageSummary = StorageSummary(
+    name = firstString("name"),
+    rootfsPath = firstString("rootfsPath", "rootfs_path", "path"),
+    rootfsExists = optBoolean("rootfsExists", optBoolean("rootfs_exists", false)),
+    rootfsBytes = optLong("rootfsBytes", optLong("rootfs_bytes", 0L)),
+    cachePath = firstString("cachePath", "cache_path"),
+    cacheExists = optBoolean("cacheExists", optBoolean("cache_exists", false)),
+    cacheBytes = optLong("cacheBytes", optLong("cache_bytes", 0L)),
+    freeBytes = optLong("freeBytes", optLong("free_bytes", 0L)),
+    usedBytes = optLong("usedBytes", optLong("used_bytes", 0L)),
+    totalBytes = optLong("totalBytes", optLong("total_bytes", 0L)),
+    mountState = firstString("mountState", "mount_state").ifBlank { "unknown" },
+    mountedCount = optInt("mountedCount", optInt("mounted_count", 0)),
+    mountCount = optInt("mountCount", optInt("mount_count", 0)),
+    snapshotDirectory = firstString("snapshotDirectory", "snapshot_directory"),
+)
 
 private fun JSONObject.toOperationEntity(now: Long, stale: Boolean): OperationEntity = OperationEntity(
     operationId = firstString("operationId", "operation_id", "id").ifBlank { "unknown-$now" },

@@ -1,6 +1,7 @@
 package com.mikeyphw.chrootctl.ui
 
 import com.mikeyphw.chrootctl.model.ChrootSummary
+import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 import com.mikeyphw.chrootctl.model.UserSummary
 
@@ -9,6 +10,8 @@ enum class ChrootWorkspaceTab {
     Services,
     Users,
     Snapshots,
+    Storage,
+    Logs,
     Advanced,
 }
 
@@ -144,6 +147,53 @@ fun userWorkspaceActions(existingUser: Boolean): List<UserWorkspaceAction> = if 
     listOf(UserWorkspaceAction.Add)
 }
 
+enum class SnapshotWorkspaceAction {
+    Create,
+    Restore,
+    Export,
+}
+
+enum class LogWorkspaceFilter {
+    All,
+    Warning,
+    Error,
+}
+
+fun selectedLogWorkspaceFilter(name: String): LogWorkspaceFilter = LogWorkspaceFilter.entries
+    .firstOrNull { it.name == name }
+    ?: LogWorkspaceFilter.All
+
+fun logWorkspaceBridgeLevel(filter: LogWorkspaceFilter): String? = when (filter) {
+    LogWorkspaceFilter.All -> null
+    LogWorkspaceFilter.Warning -> "WARNING"
+    LogWorkspaceFilter.Error -> "ERROR"
+}
+
+fun operationNeedsSnapshotRecovery(operation: OperationSummary, chrootName: String): Boolean =
+    operation.targetName == chrootName && operation.state.trim().lowercase() in setOf("failed", "interrupted", "blocked")
+
+fun snapshotPreviewMatches(
+    action: SnapshotWorkspaceAction,
+    snapshotName: String,
+    previewAction: String?,
+    previewSnapshot: String?,
+): Boolean = snapshotName.isNotBlank() &&
+    previewAction?.trim()?.lowercase() == action.name.lowercase() &&
+    previewSnapshot == snapshotName
+
+fun formatStorageBytes(bytes: Long): String {
+    val safe = bytes.coerceAtLeast(0L)
+    val kib = 1024L
+    val mib = kib * 1024L
+    val gib = mib * 1024L
+    return when {
+        safe >= gib -> "${safe / gib} GiB"
+        safe >= mib -> "${safe / mib} MiB"
+        safe >= kib -> "${safe / kib} KiB"
+        else -> "$safe B"
+    }
+}
+
 fun chrootWorkspaceTabs(): List<ChrootWorkspaceTab> = ChrootWorkspaceTab.entries
 
 fun chrootWorkspaceTabId(tab: ChrootWorkspaceTab): String = when (tab) {
@@ -151,6 +201,8 @@ fun chrootWorkspaceTabId(tab: ChrootWorkspaceTab): String = when (tab) {
     ChrootWorkspaceTab.Services -> "services"
     ChrootWorkspaceTab.Users -> "users"
     ChrootWorkspaceTab.Snapshots -> "snapshots"
+    ChrootWorkspaceTab.Storage -> "storage"
+    ChrootWorkspaceTab.Logs -> "logs"
     ChrootWorkspaceTab.Advanced -> "advanced"
 }
 

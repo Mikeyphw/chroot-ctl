@@ -422,7 +422,7 @@
     <string name="operation_retry_fixes_preview_body">Retry with fixes is limited to install operations. It reuses the stored install request only after redaction checks, then enables resume and repair for the new foreground operation.</string>
 
     <string name="chroots_workspace_launcher_title">Chroot workspaces</string>
-    <string name="chroots_workspace_launcher_body">Open a chroot as a focused workspace. Services, users, snapshots and raw diagnostics stay inside that workspace instead of flooding this list.</string>
+    <string name="chroots_workspace_launcher_body">Open a chroot as a focused workspace. Services, users, recovery, storage, logs and diagnostics stay inside that workspace instead of flooding this list.</string>
     <string name="chroot_workspace_app_chip">Workspace</string>
     <string name="action_open_workspace">Open workspace</string>
     <string name="action_back_to_chroots">Back to chroots</string>
@@ -452,4 +452,75 @@
     <string name="chroot_workspace_advanced_diagnostics_title">Diagnostics and danger zone</string>
     <string name="chroot_workspace_advanced_diagnostics_body">Lifecycle removal, raw payload size, full checks and technical state for this chroot.</string>
     <string name="bridge_shape_error_title">Backend response shape changed</string>
+
+    <string name="value_yes">yes</string>
+    <string name="value_no">no</string>
+    <string name="chroot_workspace_tab_storage">Storage</string>
+    <string name="chroot_workspace_tab_logs">Logs</string>
+    <string name="chroot_workspace_open_storage">Open storage</string>
+    <string name="chroot_workspace_open_logs">Open logs</string>
+
+    <string name="snapshots_workspace_title">Snapshots and recovery</string>
+    <string name="snapshots_workspace_body">Keep recovery work focused: inspect compact snapshots, review one action, preview it, then execute only when the safety gate is satisfied.</string>
+    <string name="snapshot_review_create">Review create</string>
+    <string name="snapshot_review_restore">Review restore</string>
+    <string name="snapshot_review_export">Review export</string>
+    <string name="snapshot_action_review_title">Review %1$s</string>
+    <string name="snapshot_action_review_snapshot">Snapshot %1$s · %2$s</string>
+    <string name="snapshot_action_review_create_body">Create a recovery point for %1$s. Preview first to inspect the exact bridge plan.</string>
+    <string name="snapshot_create_name">Snapshot name</string>
+    <string name="snapshot_action_preview">Preview action</string>
+    <string name="snapshot_recovery_title">Failed-operation recovery</string>
+    <string name="snapshot_recovery_body">%1$s is %2$s. Review the newest snapshot before choosing a restore.</string>
+    <string name="snapshot_recovery_review_latest">Review latest restore</string>
+    <string name="snapshot_recovery_refresh">Refresh recovery points</string>
+
+    <string name="storage_workspace_title">Storage</string>
+    <string name="storage_workspace_body">Rootfs, cache, mounts, disk headroom and snapshot footprint from an allowlisted read-only bridge query.</string>
+    <string name="storage_refresh">Refresh storage</string>
+    <string name="storage_open_support">Open support and diagnostics</string>
+    <string name="storage_preview_support_export">Preview support export</string>
+    <string name="storage_export_support_info">Export support info</string>
+    <string name="storage_not_loaded">Storage state is not loaded yet.</string>
+    <string name="storage_stale_warning">Cached chroot state may be stale</string>
+    <string name="storage_missing_rootfs">Rootfs path is missing</string>
+    <string name="storage_rootfs_path">Rootfs path</string>
+    <string name="storage_rootfs_size">Rootfs size estimate</string>
+    <string name="storage_cache_path">Cache path</string>
+    <string name="storage_cache_size">Cache size estimate</string>
+    <string name="storage_mount_state">Mount state</string>
+    <string name="storage_disk_free">Free / total filesystem space</string>
+    <string name="storage_snapshot_footprint">Loaded snapshot footprint</string>
+    <string name="storage_snapshot_directory">Snapshot directory</string>
+
+    <string name="logs_workspace_title">Logs</string>
+    <string name="logs_workspace_body">Read bounded chroot logs, recent operation state and service journals without exposing a shell.</string>
+    <string name="logs_filters_label">Log level filters</string>
+    <string name="logs_filter_all">All</string>
+    <string name="logs_filter_warning">Warnings</string>
+    <string name="logs_filter_error">Errors</string>
+    <string name="logs_file_label">Log file</string>
+    <string name="logs_operations_title">Recent chroot operations</string>
+    <string name="logs_operations_empty">No recent operations for this chroot.</string>
+    <string name="logs_service_journals_title">Service journals</string>
+    <string name="logs_view_journal">View journal</string>
+
+    <string name="advanced_runtime_title">Runtime capabilities</string>
+    <string name="advanced_runtime_body">Protocol and backend capabilities stay inspectable here. Arbitrary shell access remains disabled.</string>
+    <string name="advanced_protocol">Protocol version</string>
+    <string name="advanced_backend">Backend version</string>
+    <string name="advanced_arbitrary_shell">Arbitrary shell</string>
+    <string name="advanced_capabilities_count">Allowlisted operations</string>
+    <string name="advanced_show_capabilities">Show capabilities</string>
+    <string name="advanced_hide_capabilities">Hide capabilities</string>
+    <string name="advanced_raw_payload_title">Raw bridge payload</string>
+    <string name="advanced_raw_payload_body">Technical cached payload for diagnostics. Display is bounded and read-only.</string>
+    <string name="advanced_show_raw">Show raw payload</string>
+    <string name="advanced_hide_raw">Hide raw payload</string>
+    <string name="advanced_support_title">Support bundle</string>
+    <string name="advanced_support_body">Refresh runtime evidence, preview the support bundle, then export only an accepted preview.</string>
+    <string name="advanced_repair_select">Select repair</string>
+    <string name="advanced_repair_deselect">Deselect repair</string>
+    <string name="advanced_repair_empty">Load the repair plan to inspect exact registry decisions.</string>
+
 </resources>

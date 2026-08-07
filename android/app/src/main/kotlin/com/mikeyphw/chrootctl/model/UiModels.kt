@@ -155,6 +155,46 @@ data class SnapshotPane(
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
     val preview: PreviewSummary? = null,
+    val previewAction: String? = null,
+    val previewSnapshot: String? = null,
+)
+
+data class StorageSummary(
+    val name: String,
+    val rootfsPath: String,
+    val rootfsExists: Boolean,
+    val rootfsBytes: Long,
+    val cachePath: String,
+    val cacheExists: Boolean,
+    val cacheBytes: Long,
+    val freeBytes: Long,
+    val usedBytes: Long,
+    val totalBytes: Long,
+    val mountState: String,
+    val mountedCount: Int,
+    val mountCount: Int,
+    val snapshotDirectory: String,
+)
+
+data class StoragePane(
+    val targetName: String? = null,
+    val summary: StorageSummary? = null,
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
+)
+
+data class ChrootLogEntrySummary(
+    val line: String,
+    val level: String,
+)
+
+data class LogsPane(
+    val targetName: String? = null,
+    val logFile: String = "",
+    val level: String = "",
+    val entries: List<ChrootLogEntrySummary> = emptyList(),
+    val refreshing: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 data class UserSummary(

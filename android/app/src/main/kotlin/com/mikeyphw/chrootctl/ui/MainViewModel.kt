@@ -7,6 +7,8 @@ import com.mikeyphw.chrootctl.model.ChrootDetail
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.HomeSnapshot
 import com.mikeyphw.chrootctl.model.SnapshotPane
+import com.mikeyphw.chrootctl.model.StoragePane
+import com.mikeyphw.chrootctl.model.LogsPane
 import com.mikeyphw.chrootctl.model.PreviewSummary
 import com.mikeyphw.chrootctl.model.InstallFormSummary
 import com.mikeyphw.chrootctl.model.InstallDraft
@@ -53,6 +55,8 @@ data class MainUiState(
     val installPreview: PreviewSummary? = null,
     val lifecyclePreview: PreviewSummary? = null,
     val snapshotPane: SnapshotPane = SnapshotPane(),
+    val storagePane: StoragePane = StoragePane(),
+    val logsPane: LogsPane = LogsPane(),
     val usersPane: UsersPane = UsersPane(),
     val servicesPane: ServicesPane = ServicesPane(),
     val catalogPane: CatalogPane = CatalogPane(),
@@ -90,6 +94,8 @@ private data class SecondaryUiSlice(
 private data class ChrootManagementSlice(
     val usersPane: UsersPane,
     val servicesPane: ServicesPane,
+    val storagePane: StoragePane,
+    val logsPane: LogsPane,
 )
 
 private data class ToolsUiSlice(
@@ -113,6 +119,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val installPreview = MutableStateFlow<PreviewSummary?>(null)
     private val lifecyclePreview = MutableStateFlow<PreviewSummary?>(null)
     private val snapshotPane = MutableStateFlow(SnapshotPane())
+    private val storagePane = MutableStateFlow(StoragePane())
+    private val logsPane = MutableStateFlow(LogsPane())
     private val usersPane = MutableStateFlow(UsersPane())
     private val servicesPane = MutableStateFlow(ServicesPane())
     private val catalogPane = MutableStateFlow(CatalogPane())
@@ -199,8 +207,15 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val chrootManagementSlice = combine(
         usersPane.asStateFlow(),
         servicesPane.asStateFlow(),
-    ) { users, services ->
-        ChrootManagementSlice(usersPane = users, servicesPane = services)
+        storagePane.asStateFlow(),
+        logsPane.asStateFlow(),
+    ) { users, services, storage, logs ->
+        ChrootManagementSlice(
+            usersPane = users,
+            servicesPane = services,
+            storagePane = storage,
+            logsPane = logs,
+        )
     }
 
     private val toolsUiSlice = combine(
@@ -240,6 +255,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             installPreview = tertiary.installPreview,
             lifecyclePreview = tertiary.lifecyclePreview,
             snapshotPane = tertiary.snapshotPane,
+            storagePane = management.storagePane,
+            logsPane = management.logsPane,
             usersPane = management.usersPane,
             servicesPane = management.servicesPane,
             catalogPane = tools.catalogPane,
@@ -393,25 +410,97 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
-    fun previewSnapshotCreate(name: String) {
+    fun refreshStorage(name: String) {
         viewModelScope.launch {
-            repository.previewSnapshotCreate(name)
-                .onSuccess { preview -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = preview) }
-                .onFailure { error -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = errorPreview("Snapshot preview", error)) }
+            storagePane.value = storagePane.value.copy(targetName = name, refreshing = true, errorMessage = null)
+            repository.refreshStorage(name)
+                .onSuccess { summary -> storagePane.value = StoragePane(targetName = name, summary = summary) }
+                .onFailure { error ->
+                    storagePane.value = storagePane.value.copy(
+                        targetName = name,
+                        refreshing = false,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun refreshLogs(name: String, level: String? = null) {
+        viewModelScope.launch {
+            val normalizedLevel = level?.takeIf(String::isNotBlank)
+            logsPane.value = logsPane.value.copy(
+                targetName = name,
+                level = normalizedLevel.orEmpty(),
+                refreshing = true,
+                errorMessage = null,
+            )
+            repository.refreshLogs(name, normalizedLevel)
+                .onSuccess { (logFile, entries) ->
+                    logsPane.value = LogsPane(
+                        targetName = name,
+                        logFile = logFile,
+                        level = normalizedLevel.orEmpty(),
+                        entries = entries,
+                    )
+                }
+                .onFailure { error ->
+                    logsPane.value = logsPane.value.copy(
+                        targetName = name,
+                        refreshing = false,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun previewSnapshotCreate(name: String, snapshot: String) {
+        viewModelScope.launch {
+            repository.previewSnapshotCreate(name, snapshot)
+                .onSuccess { preview ->
+                    snapshotPane.value = snapshotPane.value.copy(
+                        targetName = name,
+                        preview = preview,
+                        previewAction = "create",
+                        previewSnapshot = snapshot,
+                    )
+                }
+                .onFailure { error ->
+                    snapshotPane.value = snapshotPane.value.copy(
+                        targetName = name,
+                        preview = errorPreview("Snapshot preview", error),
+                        previewAction = "create",
+                        previewSnapshot = snapshot,
+                    )
+                }
         }
     }
 
     fun previewSnapshotAction(name: String, snapshot: String, action: String) {
+        val normalizedAction = action.trim().lowercase()
         viewModelScope.launch {
-            repository.previewSnapshotAction(name, snapshot, action)
-                .onSuccess { preview -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = preview) }
-                .onFailure { error -> snapshotPane.value = snapshotPane.value.copy(targetName = name, preview = errorPreview("Snapshot preview", error)) }
+            repository.previewSnapshotAction(name, snapshot, normalizedAction)
+                .onSuccess { preview ->
+                    snapshotPane.value = snapshotPane.value.copy(
+                        targetName = name,
+                        preview = preview,
+                        previewAction = normalizedAction,
+                        previewSnapshot = snapshot,
+                    )
+                }
+                .onFailure { error ->
+                    snapshotPane.value = snapshotPane.value.copy(
+                        targetName = name,
+                        preview = errorPreview("Snapshot preview", error),
+                        previewAction = normalizedAction,
+                        previewSnapshot = snapshot,
+                    )
+                }
         }
     }
 
-    fun snapshotCreatePayloadJson(name: String): String = JSONObject()
+    fun snapshotCreatePayloadJson(name: String, snapshot: String): String = JSONObject()
         .put("name", name)
-        .put("snapshot", "snapshot-${System.currentTimeMillis() / 1000}")
+        .put("snapshot", snapshot)
         .toString()
 
     fun snapshotRestorePayloadJson(name: String, snapshot: String, confirmation: String): String = JSONObject()
@@ -772,7 +861,14 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
-    fun supportBundlePayloadJson(): String = JSONObject().toString()
+    fun supportBundlePayloadJson(): String {
+        val payload = JSONObject()
+        val archive = systemSupportPane.value.supportPreview?.rawJson
+            ?.let { raw -> runCatching { JSONObject(raw).optString("archive") }.getOrNull() }
+            ?.takeIf(String::isNotBlank)
+        if (archive != null) payload.put("archive", archive)
+        return payload.toString()
+    }
 
     fun moduleBuildPayloadJson(): String = JSONObject().toString()
 

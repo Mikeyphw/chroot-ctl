@@ -440,6 +440,35 @@ def _snapshot_export(
     return result
 
 
+def _storage_status(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    return services.chroots().storage_status(_required_name(payload))
+
+
+def _logs_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    name = _required_name(payload)
+    if services.registry.get(name) is None:
+        raise BridgeProtocolError("UNKNOWN_CHROOT", f"unknown chroot: {name}")
+    try:
+        tail = int(payload.get("tail", 200))
+    except (TypeError, ValueError) as exc:
+        raise BridgeProtocolError("INVALID_LOG_TAIL", "payload.tail must be an integer") from exc
+    tail = max(20, min(tail, 500))
+    level = str(payload.get("level") or "").strip().upper() or None
+    if level not in {None, "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise BridgeProtocolError("INVALID_LOG_LEVEL", "payload.level must be DEBUG, INFO, WARNING, ERROR, or CRITICAL")
+    snapshot = services.system().logs(name, tail=tail, level=level, follow=False)
+    return {
+        "name": name,
+        "logFile": str(snapshot.log_file),
+        "level": snapshot.level or "",
+        "tail": tail,
+        "entries": [
+            {"line": entry.line, "level": entry.level or ""}
+            for entry in snapshot.entries
+        ],
+    }
+
+
 def _required_username(payload: dict[str, Any]) -> str:
     username = str(payload.get("username") or "").strip()
     if not username:
@@ -1469,6 +1498,7 @@ _SPECS = (
     OperationSpec("system.doctor", "query", "Return doctor checks for one chroot", query_handler=_doctor),
     OperationSpec("chroots.list", "query", "List registered chroots", query_handler=_chroots_list),
     OperationSpec("chroots.get", "query", "Return one registered chroot", query_handler=_chroots_get),
+    OperationSpec("storage.status", "query", "Return structured storage status for one chroot", query_handler=_storage_status),
     OperationSpec("install.form", "query", "Return native install form state", query_handler=_install_form),
     OperationSpec("snapshots.list", "query", "List snapshots for one or all chroots", query_handler=_snapshot_list),
     OperationSpec("users.list", "query", "List chroot users", query_handler=_users_list),
@@ -1476,6 +1506,7 @@ _SPECS = (
     OperationSpec("services.list", "query", "List chroot service units", query_handler=_services_list),
     OperationSpec("services.get", "query", "Return service status and journal", query_handler=_services_get),
     OperationSpec("services.journal", "query", "Return service journal with status context", query_handler=_services_journal),
+    OperationSpec("logs.list", "query", "Return bounded chrootctl log entries for one chroot", query_handler=_logs_list),
     OperationSpec("operations.list", "query", "List persistent operation records", query_handler=_operations_list),
     OperationSpec("operations.get", "query", "Return one persistent operation with events", query_handler=_operations_get),
     OperationSpec("install.preview", "preview", "Preview a native install request", preview_handler=_install_preview),
