@@ -29,6 +29,7 @@ object ChrootReleaseA11y {
     const val SupportedFontScalePercent: Int = 200
     const val LiveLogPollingSeconds: Int = 3
     const val SmokeProfileCount: Int = 5
+    const val WorkspaceSmokeCheckCount: Int = 9
 }
 
 object ChrootStatusColors {

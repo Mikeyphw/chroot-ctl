@@ -523,4 +523,21 @@
     <string name="advanced_repair_deselect">Deselect repair</string>
     <string name="advanced_repair_empty">Load the repair plan to inspect exact registry decisions.</string>
 
+
+    <!-- Phase 41-42 UI quality and real-device smoke seal -->
+    <string name="chroot_workspace_pane_title">%1$s · %2$s workspace</string>
+    <string name="chroot_workspace_degraded_title">Limited backend capabilities</string>
+    <string name="chroot_workspace_degraded_body">This backend does not advertise every workspace query. Unsupported rooms stay disabled instead of issuing failing requests; Overview and Advanced remain available for recovery and diagnostics.</string>
+    <string name="workspace_loading_services">Loading services…</string>
+    <string name="workspace_loading_users">Loading users…</string>
+    <string name="workspace_loading_snapshots">Loading snapshots…</string>
+    <string name="workspace_loading_storage">Loading storage state…</string>
+    <string name="workspace_loading_logs">Loading logs…</string>
+    <string name="workspace_loading_advanced">Loading diagnostics…</string>
+    <string name="snapshots_workspace_empty_title">No recovery points loaded</string>
+    <string name="storage_workspace_empty_title">Storage state not loaded</string>
+    <string name="logs_workspace_empty_title">No log snapshot loaded</string>
+    <string name="advanced_workspace_empty_title">Diagnostics not loaded</string>
+    <string name="advanced_workspace_empty_body">Refresh support and diagnostics to load runtime evidence. Chroot lifecycle controls remain available.</string>
+
 </resources>

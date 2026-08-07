@@ -109,6 +109,7 @@ private data class ToolsUiSlice(
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
+    private val availableWorkspaceOperations = MutableStateFlow<Set<String>?>(null)
     private val toolGroups = MutableStateFlow<List<ToolCapabilityGroup>>(emptyList())
     private val selectedChrootName = MutableStateFlow<String?>(null)
     private val selectedOperationId = MutableStateFlow<String?>(null)
@@ -282,7 +283,10 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             refreshState.value = RefreshState.Refreshing
             repository.refreshHome()
                 .onSuccess { snapshot ->
+                    val operations = snapshot.capabilities.operations.toSet()
+                    availableWorkspaceOperations.value = operations
                     toolGroups.value = repository.capabilityGroups(snapshot.capabilities)
+                    selectedChrootName.value?.let { name -> refreshCapabilityGatedChrootRooms(name, operations) }
                     refreshState.value = RefreshState.Idle
                 }
                 .onFailure { error ->
@@ -294,16 +298,19 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     fun selectChroot(name: String) {
         selectedChrootName.value = name
         refreshChrootDetail(name)
-        refreshUsers(name)
-        refreshServices(name)
+        refreshCapabilityGatedChrootRooms(name, availableWorkspaceOperations.value)
     }
 
     fun refreshSelectedChroot() {
         selectedChrootName.value?.let { name ->
             refreshChrootDetail(name)
-            refreshUsers(name)
-            refreshServices(name)
+            refreshCapabilityGatedChrootRooms(name, availableWorkspaceOperations.value)
         }
+    }
+
+    private fun refreshCapabilityGatedChrootRooms(name: String, operations: Set<String>?) {
+        if (workspaceTabSupported(ChrootWorkspaceTab.Users, operations)) refreshUsers(name)
+        if (workspaceTabSupported(ChrootWorkspaceTab.Services, operations)) refreshServices(name)
     }
 
     fun selectOperation(operationId: String) {

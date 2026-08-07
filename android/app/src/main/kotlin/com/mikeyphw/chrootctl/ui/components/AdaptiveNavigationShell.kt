@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -34,6 +35,7 @@ import com.mikeyphw.chrootctl.ui.ChrootLayout
 import com.mikeyphw.chrootctl.ui.ChrootSpacing
 import com.mikeyphw.chrootctl.ui.PrimaryNavigationType
 import com.mikeyphw.chrootctl.ui.primaryNavigationType
+import com.mikeyphw.chrootctl.ui.compactNavigationShowsVisualLabels
 
 @Composable
 fun AdaptiveNavigationShell(
@@ -43,6 +45,7 @@ fun AdaptiveNavigationShell(
     content: @Composable (Modifier) -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
+        val showCompactVisualLabels = compactNavigationShowsVisualLabels(LocalDensity.current.fontScale)
         if (primaryNavigationType(maxWidth.value) == PrimaryNavigationType.Rail) {
             Row(Modifier.fillMaxSize().safeDrawingPadding()) {
                 val appName = stringResource(R.string.app_name)
@@ -101,7 +104,8 @@ fun AdaptiveNavigationShell(
                                     .heightIn(min = ChrootLayout.MinimumTouchTarget)
                                     .semantics { contentDescription = label },
                                 icon = { Text(stringResource(item.glyphRes)) },
-                                label = { Text(label) },
+                                label = if (showCompactVisualLabels) ({ Text(label) }) else null,
+                                alwaysShowLabel = showCompactVisualLabels,
                             )
                         }
                     }

@@ -33,11 +33,28 @@ object ReleaseUxPolicy {
     val accessibilitySealChecks: List<String> = listOf(
         "minimum-48dp-touch-targets",
         "pane-title-per-destination",
+        "pane-title-per-workspace-room",
         "heading-per-screen",
         "font-scale-200-percent",
         "talkback-labels-for-navigation",
+        "keyboard-traversal-groups",
         "bounded-live-log-polling",
         "no-automatic-mutating-replay",
+        "mutation-review-state-not-saveable",
+    )
+
+    val workspaceStateSealChecks: Set<WorkspacePaneState> = WorkspacePaneState.entries.toSet()
+
+    val realDeviceWorkspaceSmokeChecks: List<String> = listOf(
+        "root-module-discovery",
+        "root-service-reconnect",
+        "services-workspace",
+        "users-workspace",
+        "snapshots-workspace",
+        "storage-workspace",
+        "logs-workspace",
+        "advanced-workspace",
+        "degraded-protocol-fallback",
     )
 
     fun smokeProfileIds(): Set<String> = smokeProfiles.mapTo(linkedSetOf()) { it.id }
@@ -50,6 +67,8 @@ object ReleaseUxPolicy {
             maximumContentWidthDp == ChrootLayout.MaximumContentWidth.value.toInt() &&
             liveLogPollingSeconds == ChrootReleaseA11y.LiveLogPollingSeconds &&
             smokeProfiles.size == ChrootReleaseA11y.SmokeProfileCount &&
-            releaseRoutes == AppDestination.entries
+            releaseRoutes == AppDestination.entries &&
+            workspaceStateSealChecks == WorkspacePaneState.entries.toSet() &&
+            realDeviceWorkspaceSmokeChecks.size == ChrootReleaseA11y.WorkspaceSmokeCheckCount
     }
 }

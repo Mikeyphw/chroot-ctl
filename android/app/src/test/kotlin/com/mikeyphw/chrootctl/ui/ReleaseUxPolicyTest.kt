@@ -27,4 +27,45 @@ class ReleaseUxPolicyTest {
         assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("minimum-48dp-touch-targets"))
         assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("no-automatic-mutating-replay"))
     }
+    @Test
+    fun `phase 41 accessibility seal covers pane state restoration and traversal`() {
+        assertEquals(4, ReleaseUxPolicy.workspaceStateSealChecks.size)
+        assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("pane-title-per-workspace-room"))
+        assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("keyboard-traversal-groups"))
+        assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("mutation-review-state-not-saveable"))
+        assertTrue(WorkspaceRestorationPolicy.maySave("workspace-tab"))
+        assertTrue(WorkspaceRestorationPolicy.maySave("logs-live-tail"))
+        assertFalse(WorkspaceRestorationPolicy.maySave("snapshot-review"))
+        assertFalse(WorkspaceRestorationPolicy.maySave("service-review"))
+    }
+
+    @Test
+    fun `phase 41 adaptive header and compact nav remain usable at large font scale`() {
+        assertTrue(sectionHeaderStacks(390f, 1f))
+        assertFalse(sectionHeaderStacks(640f, 1f))
+        assertFalse(sectionHeaderStacks(900f, 1f))
+        assertTrue(sectionHeaderStacks(900f, 2f))
+        assertTrue(compactNavigationShowsVisualLabels(1.49f))
+        assertFalse(compactNavigationShowsVisualLabels(1.5f))
+        assertFalse(compactNavigationShowsVisualLabels(2f))
+    }
+
+    @Test
+    fun `phase 42 real device smoke seal covers every selected chroot room`() {
+        assertEquals(
+            listOf(
+                "root-module-discovery",
+                "root-service-reconnect",
+                "services-workspace",
+                "users-workspace",
+                "snapshots-workspace",
+                "storage-workspace",
+                "logs-workspace",
+                "advanced-workspace",
+                "degraded-protocol-fallback",
+            ),
+            ReleaseUxPolicy.realDeviceWorkspaceSmokeChecks,
+        )
+    }
+
 }

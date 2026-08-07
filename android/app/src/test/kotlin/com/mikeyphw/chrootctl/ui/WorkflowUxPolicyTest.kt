@@ -155,6 +155,43 @@ class WorkflowUxPolicyTest {
         assertEquals("1 GiB", formatStorageBytes(1024L * 1024L * 1024L))
     }
 
+
+    @Test
+    fun `workspace pane state distinguishes loading empty ready and failure`() {
+        assertEquals(WorkspacePaneState.Loading, workspacePaneState(refreshing = true, errorMessage = null, hasContent = false))
+        assertEquals(WorkspacePaneState.Empty, workspacePaneState(refreshing = false, errorMessage = null, hasContent = false))
+        assertEquals(WorkspacePaneState.Ready, workspacePaneState(refreshing = false, errorMessage = null, hasContent = true))
+        assertEquals(WorkspacePaneState.Failure, workspacePaneState(refreshing = false, errorMessage = "offline", hasContent = false))
+        assertEquals(WorkspacePaneState.Ready, workspacePaneState(refreshing = false, errorMessage = "cached failure", hasContent = true))
+    }
+
+    @Test
+    fun `degraded protocol disables only rooms whose query capability is missing`() {
+        val legacy = setOf("services.list", "users.list", "snapshots.list")
+        assertTrue(workspaceTabSupported(ChrootWorkspaceTab.Overview, legacy))
+        assertTrue(workspaceTabSupported(ChrootWorkspaceTab.Services, legacy))
+        assertTrue(workspaceTabSupported(ChrootWorkspaceTab.Users, legacy))
+        assertTrue(workspaceTabSupported(ChrootWorkspaceTab.Snapshots, legacy))
+        assertFalse(workspaceTabSupported(ChrootWorkspaceTab.Storage, legacy))
+        assertFalse(workspaceTabSupported(ChrootWorkspaceTab.Logs, legacy))
+        assertTrue(workspaceTabSupported(ChrootWorkspaceTab.Advanced, legacy))
+        assertEquals(5, supportedChrootWorkspaceTabs(legacy).size)
+        assertFalse(workspaceTabSupported(ChrootWorkspaceTab.Logs, null))
+        assertEquals(ChrootWorkspaceTab.Overview, effectiveWorkspaceTab(ChrootWorkspaceTab.Logs, null))
+        assertFalse(shouldPersistWorkspaceFallback(ChrootWorkspaceTab.Logs, ChrootWorkspaceTab.Overview, capabilitiesKnown = false))
+        assertTrue(shouldPersistWorkspaceFallback(ChrootWorkspaceTab.Logs, ChrootWorkspaceTab.Overview, capabilitiesKnown = true))
+        assertEquals(ChrootWorkspaceTab.Logs, effectiveWorkspaceTab(ChrootWorkspaceTab.Logs, setOf("logs.list")))
+    }
+
+    @Test
+    fun `restored workspace rebinds backend selection only when available`() {
+        assertTrue(workspaceSelectionNeedsRebind("ubuntu", null, workspaceAvailable = true))
+        assertTrue(workspaceSelectionNeedsRebind("ubuntu", "debian", workspaceAvailable = true))
+        assertFalse(workspaceSelectionNeedsRebind("ubuntu", "ubuntu", workspaceAvailable = true))
+        assertFalse(workspaceSelectionNeedsRebind("ubuntu", null, workspaceAvailable = false))
+        assertFalse(workspaceSelectionNeedsRebind(null, null, workspaceAvailable = true))
+    }
+
     private fun sampleChroot(
         name: String = "ubuntu",
         distro: String = "Ubuntu",

@@ -23,9 +23,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mikeyphw.chrootctl.R
 import com.mikeyphw.chrootctl.model.CheckSummary
 import com.mikeyphw.chrootctl.model.ChrootDetail
@@ -48,8 +54,10 @@ import com.mikeyphw.chrootctl.ui.LogWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.SnapshotWorkspaceAction
 import com.mikeyphw.chrootctl.ui.ServiceWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.UserWorkspaceAction
+import com.mikeyphw.chrootctl.ui.WorkspacePaneState
 import com.mikeyphw.chrootctl.ui.UserWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.bridgeShapePrimaryMessage
+import com.mikeyphw.chrootctl.ui.effectiveWorkspaceTab
 import com.mikeyphw.chrootctl.ui.chrootListIsWorkspaceLauncherOnly
 import com.mikeyphw.chrootctl.ui.chrootMatchesFilter
 import com.mikeyphw.chrootctl.ui.chrootMatchesQuery
@@ -75,8 +83,13 @@ import com.mikeyphw.chrootctl.ui.userIsSystem
 import com.mikeyphw.chrootctl.ui.userMatchesWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.userWorkspaceActions
 import com.mikeyphw.chrootctl.ui.userWorkspaceFilters
+import com.mikeyphw.chrootctl.ui.workspacePaneState
+import com.mikeyphw.chrootctl.ui.workspaceSelectionNeedsRebind
+import com.mikeyphw.chrootctl.ui.shouldPersistWorkspaceFallback
+import com.mikeyphw.chrootctl.ui.workspaceTabSupported
 import com.mikeyphw.chrootctl.ui.components.ActionFlowRow
 import com.mikeyphw.chrootctl.ui.components.EmptyState
+import com.mikeyphw.chrootctl.ui.components.LoadingState
 import com.mikeyphw.chrootctl.ui.components.MetricCardData
 import com.mikeyphw.chrootctl.ui.components.PathText
 import com.mikeyphw.chrootctl.ui.components.ResponsiveMetricCards
@@ -134,6 +147,7 @@ fun ChrootsScreen(
     var filterName by rememberSaveable { mutableStateOf(ChrootListFilter.All.name) }
     var workspaceName by rememberSaveable { mutableStateOf(selectedName) }
     var workspaceTabName by rememberSaveable { mutableStateOf(ChrootWorkspaceTab.Overview.name) }
+    var requestedWorkspaceSelection by remember { mutableStateOf(selectedName) }
     val filter = selectedChrootListFilter(filterName)
     val workspaceTab = selectedChrootWorkspaceTab(workspaceTabName)
     val visibleChroots = chroots.filter { chroot ->
@@ -141,6 +155,15 @@ fun ChrootsScreen(
     }
     val workspaceChroot = workspaceName?.let { wanted ->
         detail.chroot?.takeIf { it.name == wanted } ?: chroots.firstOrNull { it.name == wanted }
+    }
+    LaunchedEffect(workspaceName, workspaceChroot?.name, selectedName, requestedWorkspaceSelection) {
+        val restoredName = workspaceName
+        if (workspaceSelectionNeedsRebind(restoredName, selectedName, workspaceChroot != null) && requestedWorkspaceSelection != restoredName) {
+            requestedWorkspaceSelection = restoredName
+            onSelect(checkNotNull(restoredName))
+        } else if (restoredName != null && selectedName == restoredName) {
+            requestedWorkspaceSelection = restoredName
+        }
     }
 
     if (workspaceName != null && workspaceChroot != null) {
@@ -199,6 +222,7 @@ fun ChrootsScreen(
             onOpenWorkspace = { name ->
                 workspaceName = name
                 workspaceTabName = ChrootWorkspaceTab.Overview.name
+                requestedWorkspaceSelection = name
                 onSelect(name)
             },
             onPreviewLifecycle = onPreviewLifecycle,
@@ -391,7 +415,18 @@ private fun ChrootWorkspaceScreen(
     onStartRepair: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    val availableOperations = capabilities?.operations?.toSet()
+    val capabilitiesKnown = capabilities != null
+    val effectiveTab = effectiveWorkspaceTab(selectedTab, availableOperations)
+    val paneLabel = workspaceTabLabel(effectiveTab)
+    val paneDescription = stringResource(R.string.chroot_workspace_pane_title, chroot.name, paneLabel)
+    LaunchedEffect(selectedTab, effectiveTab, capabilitiesKnown) {
+        if (shouldPersistWorkspaceFallback(selectedTab, effectiveTab, capabilitiesKnown)) onSelectTab(effectiveTab)
+    }
+    Column(
+        modifier.semantics { paneTitle = paneDescription },
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         SectionHeader(
             title = stringResource(R.string.chroot_workspace_title, chroot.name),
             body = chrootWorkspaceSummary(chroot),
@@ -403,10 +438,21 @@ private fun ChrootWorkspaceScreen(
         )
         ActionFlowRow(contentDescription = stringResource(R.string.chroot_workspace_tabs_label)) {
             chrootWorkspaceTabs().forEach { tab ->
-                ChrootWorkspaceTabButton(tab = tab, selected = tab == selectedTab, onSelect = onSelectTab)
+                ChrootWorkspaceTabButton(
+                    tab = tab,
+                    selected = tab == effectiveTab,
+                    supported = workspaceTabSupported(tab, availableOperations),
+                    onSelect = onSelectTab,
+                )
             }
         }
-        when (selectedTab) {
+        if (capabilities != null && chrootWorkspaceTabs().any { !workspaceTabSupported(it, availableOperations) }) {
+            StatusCard(
+                title = stringResource(R.string.chroot_workspace_degraded_title),
+                body = stringResource(R.string.chroot_workspace_degraded_body),
+            )
+        }
+        when (effectiveTab) {
             ChrootWorkspaceTab.Overview -> WorkspaceOverviewTab(
                 chroot = chroot,
                 checks = checks,
@@ -420,6 +466,7 @@ private fun ChrootWorkspaceScreen(
                 onPreviewLifecycle = onPreviewLifecycle,
                 onStartLifecycle = onStartLifecycle,
                 onPreviewSnapshotCreate = onPreviewSnapshotCreate,
+                availableOperations = availableOperations,
                 onOpenTab = onSelectTab,
             )
             ChrootWorkspaceTab.Services -> ServicesPanel(
@@ -488,21 +535,37 @@ private fun ChrootWorkspaceScreen(
 }
 
 @Composable
-private fun ChrootWorkspaceTabButton(tab: ChrootWorkspaceTab, selected: Boolean, onSelect: (ChrootWorkspaceTab) -> Unit) {
-    val label = when (tab) {
-        ChrootWorkspaceTab.Overview -> stringResource(R.string.chroot_workspace_tab_overview)
-        ChrootWorkspaceTab.Services -> stringResource(R.string.chroot_workspace_tab_services)
-        ChrootWorkspaceTab.Users -> stringResource(R.string.chroot_workspace_tab_users)
-        ChrootWorkspaceTab.Snapshots -> stringResource(R.string.chroot_workspace_tab_snapshots)
-        ChrootWorkspaceTab.Storage -> stringResource(R.string.chroot_workspace_tab_storage)
-        ChrootWorkspaceTab.Logs -> stringResource(R.string.chroot_workspace_tab_logs)
-        ChrootWorkspaceTab.Advanced -> stringResource(R.string.chroot_workspace_tab_advanced)
-    }
+private fun ChrootWorkspaceTabButton(
+    tab: ChrootWorkspaceTab,
+    selected: Boolean,
+    supported: Boolean,
+    onSelect: (ChrootWorkspaceTab) -> Unit,
+) {
+    val label = workspaceTabLabel(tab)
     if (selected) {
-        Button(onClick = { onSelect(tab) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        Button(
+            onClick = { onSelect(tab) },
+            enabled = supported,
+            modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+        ) { Text(label) }
     } else {
-        OutlinedButton(onClick = { onSelect(tab) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        OutlinedButton(
+            onClick = { onSelect(tab) },
+            enabled = supported,
+            modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+        ) { Text(label) }
     }
+}
+
+@Composable
+private fun workspaceTabLabel(tab: ChrootWorkspaceTab): String = when (tab) {
+    ChrootWorkspaceTab.Overview -> stringResource(R.string.chroot_workspace_tab_overview)
+    ChrootWorkspaceTab.Services -> stringResource(R.string.chroot_workspace_tab_services)
+    ChrootWorkspaceTab.Users -> stringResource(R.string.chroot_workspace_tab_users)
+    ChrootWorkspaceTab.Snapshots -> stringResource(R.string.chroot_workspace_tab_snapshots)
+    ChrootWorkspaceTab.Storage -> stringResource(R.string.chroot_workspace_tab_storage)
+    ChrootWorkspaceTab.Logs -> stringResource(R.string.chroot_workspace_tab_logs)
+    ChrootWorkspaceTab.Advanced -> stringResource(R.string.chroot_workspace_tab_advanced)
 }
 
 @Composable
@@ -519,6 +582,7 @@ private fun WorkspaceOverviewTab(
     onPreviewLifecycle: (String, String) -> Unit,
     onStartLifecycle: (String, String) -> Unit,
     onPreviewSnapshotCreate: (String, String) -> Unit,
+    availableOperations: Set<String>?,
     onOpenTab: (ChrootWorkspaceTab) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -563,11 +627,11 @@ private fun WorkspaceOverviewTab(
                         }
                     }
                     ActionFlowRow {
-                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Services) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_services)) }
-                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Users) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_users)) }
-                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Snapshots) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_snapshots)) }
-                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Storage) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_storage)) }
-                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Logs) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_logs)) }
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Services) }, enabled = workspaceTabSupported(ChrootWorkspaceTab.Services, availableOperations), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_services)) }
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Users) }, enabled = workspaceTabSupported(ChrootWorkspaceTab.Users, availableOperations), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_users)) }
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Snapshots) }, enabled = workspaceTabSupported(ChrootWorkspaceTab.Snapshots, availableOperations), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_snapshots)) }
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Storage) }, enabled = workspaceTabSupported(ChrootWorkspaceTab.Storage, availableOperations), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_storage)) }
+                        OutlinedButton(onClick = { onOpenTab(ChrootWorkspaceTab.Logs) }, enabled = workspaceTabSupported(ChrootWorkspaceTab.Logs, availableOperations), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.chroot_workspace_open_logs)) }
                     }
                     lifecyclePreview?.let { item -> PreviewSummaryBlock(item) }
                 }
@@ -614,7 +678,24 @@ private fun AdvancedWorkspaceTab(
 ) {
     var capabilitiesVisible by rememberSaveable(chroot.name) { mutableStateOf(false) }
     var rawPayloadVisible by rememberSaveable(chroot.name) { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val paneState = workspacePaneState(
+        refreshing = supportPane.refreshing,
+        errorMessage = supportPane.errorMessage,
+        hasContent = capabilities != null || checks.isNotEmpty() || supportPane.runtimeRows.isNotEmpty(),
+    )
+    val paneTitleText = stringResource(R.string.chroot_workspace_tab_advanced)
+    Column(
+        Modifier.fillMaxWidth().semantics { paneTitle = paneTitleText },
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        WorkspacePaneFeedback(
+            state = paneState,
+            loadingLabel = stringResource(R.string.workspace_loading_advanced),
+            emptyTitle = stringResource(R.string.advanced_workspace_empty_title),
+            emptyBody = stringResource(R.string.advanced_workspace_empty_body),
+            errorMessage = supportPane.errorMessage,
+            onRetry = onRefreshSystemSupport,
+        )
         LifecyclePanel(
             chroot = chroot,
             preview = lifecyclePreview,
@@ -699,7 +780,6 @@ private fun AdvancedWorkspaceTab(
                         Text(stringResource(R.string.system_row, row.label, row.value, row.state), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                     supportPane.supportPreview?.let { PreviewSummaryBlock(it) }
-                    supportPane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = onRefreshSystemSupport) }
                 }
             },
         )
@@ -736,6 +816,23 @@ private fun AdvancedWorkspaceTab(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun WorkspacePaneFeedback(
+    state: WorkspacePaneState,
+    loadingLabel: String,
+    emptyTitle: String,
+    emptyBody: String,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+) {
+    when (state) {
+        WorkspacePaneState.Loading -> LoadingState(loadingLabel)
+        WorkspacePaneState.Empty -> EmptyState(title = emptyTitle, body = emptyBody)
+        WorkspacePaneState.Failure -> errorMessage?.let { BridgePaneError(message = it, onRetry = onRetry) }
+        WorkspacePaneState.Ready -> errorMessage?.let { BridgePaneError(message = it, onRetry = onRetry) }
     }
 }
 
@@ -820,14 +917,20 @@ private fun SnapshotPanel(
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
 ) {
-    var reviewToken by rememberSaveable(chroot.name) { mutableStateOf("") }
+    var reviewToken by remember(chroot.name) { mutableStateOf("") }
     val snapshots = if (pane.targetName == chroot.name) pane.snapshots else emptyList()
     val failedOperation = operations.firstOrNull { operationNeedsSnapshotRecovery(it, chroot.name) }
     LaunchedEffect(chroot.name) {
         if (pane.targetName != chroot.name) onRefreshSnapshots(chroot.name)
     }
     val review = snapshotReviewToken(reviewToken, snapshots)
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    val paneState = workspacePaneState(
+        refreshing = pane.refreshing,
+        errorMessage = pane.errorMessage,
+        hasContent = snapshots.isNotEmpty() || pane.preview != null,
+    )
+    val paneTitleText = stringResource(R.string.snapshots_workspace_title)
+    OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = paneTitleText }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.snapshots_workspace_title), fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.snapshots_workspace_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -857,7 +960,14 @@ private fun SnapshotPanel(
                     },
                 )
             }
-            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshSnapshots(chroot.name) }) }
+            WorkspacePaneFeedback(
+                state = paneState,
+                loadingLabel = stringResource(R.string.workspace_loading_snapshots),
+                emptyTitle = stringResource(R.string.snapshots_workspace_empty_title),
+                emptyBody = stringResource(R.string.snapshot_list_empty),
+                errorMessage = pane.errorMessage,
+                onRetry = { onRefreshSnapshots(chroot.name) },
+            )
             review?.let { (action, snapshot) ->
                 SnapshotActionReviewSheet(
                     chroot = chroot,
@@ -875,9 +985,7 @@ private fun SnapshotPanel(
                 )
             }
             if (review == null) pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
-            if (snapshots.isEmpty()) {
-                Text(stringResource(R.string.snapshot_list_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
+            if (paneState == WorkspacePaneState.Ready && snapshots.isNotEmpty()) {
                 snapshots.take(MAX_VISIBLE_SNAPSHOTS).forEach { snapshot ->
                     FocusedSnapshotRow(
                         snapshot = snapshot,
@@ -904,8 +1012,8 @@ private fun SnapshotActionReviewSheet(
     onStartSnapshotRestore: (String, String, String) -> Unit,
     onStartSnapshotExport: (String, String) -> Unit,
 ) {
-    var restoreConfirmation by rememberSaveable(chroot.name, action.name, snapshot?.name) { mutableStateOf("") }
-    val createSnapshotName by rememberSaveable(chroot.name, action.name, snapshot?.name) {
+    var restoreConfirmation by remember(chroot.name, action.name, snapshot?.name) { mutableStateOf("") }
+    val createSnapshotName by remember(chroot.name, action.name, snapshot?.name) {
         mutableStateOf("snapshot-${System.currentTimeMillis() / 1000}")
     }
     val reviewedSnapshotName = snapshot?.name ?: createSnapshotName
@@ -924,8 +1032,10 @@ private fun SnapshotActionReviewSheet(
         SnapshotWorkspaceAction.Restore -> stringResource(R.string.action_restore_snapshot)
         SnapshotWorkspaceAction.Export -> stringResource(R.string.action_export_snapshot)
     }
+    val reviewTitle = stringResource(R.string.snapshot_action_review_title, actionLabel)
     StatusCard(
-        title = stringResource(R.string.snapshot_action_review_title, actionLabel),
+        title = reviewTitle,
+        modifier = Modifier.semantics { paneTitle = reviewTitle },
         body = snapshot?.let { stringResource(R.string.snapshot_action_review_snapshot, it.name, it.createdAt) } ?: stringResource(R.string.snapshot_action_review_create_body, chroot.name),
         footer = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1028,7 +1138,9 @@ private fun StoragePanel(
     LaunchedEffect(chroot.name) {
         if (pane.targetName != chroot.name) onRefreshStorage(chroot.name)
     }
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    val paneState = workspacePaneState(pane.refreshing, pane.errorMessage, summary != null)
+    val paneTitleText = stringResource(R.string.storage_workspace_title)
+    OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = paneTitleText }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.storage_workspace_title), fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.storage_workspace_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -1051,13 +1163,18 @@ private fun StoragePanel(
                 }
             }
             supportPane.supportPreview?.let { PreviewSummaryBlock(it) }
-            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshStorage(chroot.name) }) }
+            WorkspacePaneFeedback(
+                state = paneState,
+                loadingLabel = stringResource(R.string.workspace_loading_storage),
+                emptyTitle = stringResource(R.string.storage_workspace_empty_title),
+                emptyBody = stringResource(R.string.storage_not_loaded),
+                errorMessage = pane.errorMessage,
+                onRetry = { onRefreshStorage(chroot.name) },
+            )
             if (chroot.stale) {
                 StatusPill(stringResource(R.string.storage_stale_warning), StatusTone.Warning)
             }
-            if (summary == null) {
-                Text(stringResource(R.string.storage_not_loaded), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
+            if (paneState == WorkspacePaneState.Ready && summary != null) {
                 if (!summary.rootfsExists) StatusPill(stringResource(R.string.storage_missing_rootfs), StatusTone.Danger)
                 DetailRow(stringResource(R.string.storage_rootfs_path), summary.rootfsPath)
                 DetailRow(stringResource(R.string.storage_rootfs_size), formatStorageBytes(summary.rootfsBytes))
@@ -1088,18 +1205,27 @@ private fun LogsPanel(
     val bridgeLevel = logWorkspaceBridgeLevel(filter)
     val entries = if (pane.targetName == chroot.name) pane.entries else emptyList()
     val recentOperations = operations.filter { it.targetName == chroot.name }.take(MAX_VISIBLE_LOG_OPERATIONS)
+    val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(chroot.name) {
         if (pane.targetName != chroot.name) onRefreshLogs(chroot.name, bridgeLevel)
         if (servicesPane.targetName != chroot.name) onRefreshServices(chroot.name)
     }
     val services = if (servicesPane.targetName == chroot.name) servicesPane.services else emptyList()
     LaunchedEffect(liveTail, filterName, chroot.name) {
-        while (liveTail) {
-            onRefreshLogs(chroot.name, bridgeLevel)
-            delay(LOG_POLL_INTERVAL_MS)
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (liveTail) {
+                onRefreshLogs(chroot.name, bridgeLevel)
+                delay(LOG_POLL_INTERVAL_MS)
+            }
         }
     }
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    val paneState = workspacePaneState(
+        refreshing = pane.refreshing,
+        errorMessage = pane.errorMessage,
+        hasContent = pane.targetName == chroot.name && (pane.logFile.isNotBlank() || entries.isNotEmpty()),
+    )
+    val paneTitleText = stringResource(R.string.logs_workspace_title)
+    OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = paneTitleText }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.logs_workspace_title), fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.logs_workspace_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -1126,11 +1252,18 @@ private fun LogsPanel(
                     Text(if (liveTail) stringResource(R.string.logs_stop_follow_action) else stringResource(R.string.logs_follow_action))
                 }
             }
-            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshLogs(chroot.name, bridgeLevel) }) }
-            if (pane.logFile.isNotBlank()) DetailRow(stringResource(R.string.logs_file_label), pane.logFile)
-            if (entries.isEmpty()) {
+            WorkspacePaneFeedback(
+                state = paneState,
+                loadingLabel = stringResource(R.string.workspace_loading_logs),
+                emptyTitle = stringResource(R.string.logs_workspace_empty_title),
+                emptyBody = stringResource(R.string.logs_empty),
+                errorMessage = pane.errorMessage,
+                onRetry = { onRefreshLogs(chroot.name, bridgeLevel) },
+            )
+            if (paneState == WorkspacePaneState.Ready && pane.logFile.isNotBlank()) DetailRow(stringResource(R.string.logs_file_label), pane.logFile)
+            if (paneState == WorkspacePaneState.Ready && entries.isEmpty()) {
                 Text(stringResource(R.string.logs_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
+            } else if (paneState == WorkspacePaneState.Ready) {
                 entries.takeLast(MAX_VISIBLE_LOG_LINES).forEach { entry ->
                     Text(
                         if (entry.level.isBlank()) entry.line else "${entry.level} · ${entry.line}",
@@ -1196,7 +1329,7 @@ private fun UsersPanel(
     onStartUserOperation: (String, String) -> Unit,
 ) {
     var filterName by rememberSaveable(chroot.name) { mutableStateOf(UserWorkspaceFilter.Managed.name) }
-    var reviewUserToken by rememberSaveable(chroot.name) { mutableStateOf("") }
+    var reviewUserToken by remember(chroot.name) { mutableStateOf("") }
     val filter = selectedUserWorkspaceFilter(filterName)
     val userList = if (pane.targetName == chroot.name) pane.users else emptyList()
     val visibleUsers = userList.filter { userMatchesWorkspaceFilter(it, filter) }
@@ -1204,8 +1337,10 @@ private fun UsersPanel(
     val reviewUser = reviewUsername(reviewUserToken)
         ?.let { username -> userList.firstOrNull { it.username == username } }
     val reviewIsAdd = reviewUserToken == ADD_USER_REVIEW_TOKEN
+    val paneState = workspacePaneState(pane.refreshing, pane.errorMessage, userList.isNotEmpty())
+    val paneTitleText = stringResource(R.string.users_workspace_title)
 
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = paneTitleText }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.users_workspace_title), fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.users_workspace_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -1233,7 +1368,14 @@ private fun UsersPanel(
                     Text(stringResource(R.string.action_review_add_user))
                 }
             }
-            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshUsers(chroot.name) }) }
+            WorkspacePaneFeedback(
+                state = paneState,
+                loadingLabel = stringResource(R.string.workspace_loading_users),
+                emptyTitle = stringResource(R.string.users_workspace_empty_title),
+                emptyBody = stringResource(R.string.users_list_empty),
+                errorMessage = pane.errorMessage,
+                onRetry = { onRefreshUsers(chroot.name) },
+            )
             if (reviewIsAdd || reviewUser != null) {
                 UserActionReviewSheet(
                     chroot = chroot.name,
@@ -1245,15 +1387,11 @@ private fun UsersPanel(
             }
             pane.preview?.let { preview -> PreviewSummaryBlock(preview) }
             when {
-                userList.isEmpty() -> EmptyState(
-                    title = stringResource(R.string.users_workspace_empty_title),
-                    body = stringResource(R.string.users_list_empty),
-                )
-                visibleUsers.isEmpty() -> EmptyState(
+                paneState == WorkspacePaneState.Ready && visibleUsers.isEmpty() -> EmptyState(
                     title = stringResource(R.string.users_workspace_no_matches_title),
                     body = stringResource(R.string.users_workspace_no_matches_body),
                 )
-                else -> visibleUsers.forEach { user ->
+                paneState == WorkspacePaneState.Ready -> visibleUsers.forEach { user ->
                     FocusedUserRow(
                         user = user,
                         onReviewUserActions = { reviewUserToken = userReviewToken(user.username) },
@@ -1383,12 +1521,18 @@ private fun UserActionReviewSheet(
         UserWorkspaceAction.SetPassword -> existingUser && confirmation == username && password.isNotBlank() && password == confirmPassword
         UserWorkspaceAction.Remove -> existingUser && confirmation == username
     }
+    val reviewTitle = if (existingUser) {
+        stringResource(R.string.user_action_review_title, username)
+    } else {
+        stringResource(R.string.user_add_review_title)
+    }
 
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = reviewTitle }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                if (existingUser) stringResource(R.string.user_action_review_title, username) else stringResource(R.string.user_add_review_title),
+                reviewTitle,
                 fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { heading() },
             )
             Text(stringResource(R.string.user_action_review_body, chroot), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             user?.let { currentUser ->
@@ -1515,7 +1659,7 @@ private fun ServicesPanel(
     onStartServiceOperation: (String, String) -> Unit,
 ) {
     var filterName by rememberSaveable(chroot.name) { mutableStateOf(ServiceWorkspaceFilter.All.name) }
-    var pendingActionToken by rememberSaveable(chroot.name) { mutableStateOf("") }
+    var pendingActionToken by remember(chroot.name) { mutableStateOf("") }
     val filter = selectedServiceWorkspaceFilter(filterName)
     val serviceList = if (pane.targetName == chroot.name) pane.services else emptyList()
     val visibleServices = serviceList.filter { serviceMatchesWorkspaceFilter(it, filter) }
@@ -1523,8 +1667,10 @@ private fun ServicesPanel(
         serviceList.firstOrNull { it.chrootName == action.chrootName && it.service == action.service }
             ?.let { service -> service to action }
     }
+    val paneState = workspacePaneState(pane.refreshing, pane.errorMessage, serviceList.isNotEmpty())
+    val paneTitleText = stringResource(R.string.services_workspace_title)
 
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = paneTitleText }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.services_workspace_title), fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.services_workspace_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -1546,7 +1692,14 @@ private fun ServicesPanel(
                     Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_services))
                 }
             }
-            pane.errorMessage?.let { message -> BridgePaneError(message = message, onRetry = { onRefreshServices(chroot.name) }) }
+            WorkspacePaneFeedback(
+                state = paneState,
+                loadingLabel = stringResource(R.string.workspace_loading_services),
+                emptyTitle = stringResource(R.string.services_workspace_empty_title),
+                emptyBody = stringResource(R.string.services_list_empty),
+                errorMessage = pane.errorMessage,
+                onRetry = { onRefreshServices(chroot.name) },
+            )
             pendingServiceReview?.let { (service, reviewAction) ->
                 ServiceActionReviewSheet(
                     service = service,
@@ -1564,15 +1717,11 @@ private fun ServicesPanel(
                 )
             }
             when {
-                serviceList.isEmpty() -> EmptyState(
-                    title = stringResource(R.string.services_workspace_empty_title),
-                    body = stringResource(R.string.services_list_empty),
-                )
-                visibleServices.isEmpty() -> EmptyState(
+                paneState == WorkspacePaneState.Ready && visibleServices.isEmpty() -> EmptyState(
                     title = stringResource(R.string.services_workspace_no_matches_title),
                     body = stringResource(R.string.services_workspace_no_matches_body),
                 )
-                else -> visibleServices.forEach { service ->
+                paneState == WorkspacePaneState.Ready -> visibleServices.forEach { service ->
                     FocusedServiceRow(
                         service = service,
                         onRefreshServiceDetail = onRefreshServiceDetail,
@@ -1667,11 +1816,13 @@ private fun ServiceActionReviewSheet(
 ) {
     val payload = servicePayload(service.chrootName, service.service, action).toString()
     val operation = serviceActionOperation(action)
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    val reviewTitle = stringResource(R.string.service_action_review_title, serviceActionLabel(action), service.service)
+    OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = reviewTitle }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                stringResource(R.string.service_action_review_title, serviceActionLabel(action), service.service),
+                reviewTitle,
                 fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { heading() },
             )
             Text(
                 stringResource(R.string.service_action_review_body, service.chrootName),

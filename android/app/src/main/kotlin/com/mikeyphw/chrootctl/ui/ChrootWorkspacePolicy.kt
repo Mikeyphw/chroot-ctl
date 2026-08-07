@@ -16,6 +16,84 @@ enum class ChrootWorkspaceTab {
 }
 
 
+enum class WorkspacePaneState {
+    Loading,
+    Empty,
+    Ready,
+    Failure,
+}
+
+fun workspacePaneState(
+    refreshing: Boolean,
+    errorMessage: String?,
+    hasContent: Boolean,
+): WorkspacePaneState = when {
+    errorMessage != null && !hasContent -> WorkspacePaneState.Failure
+    refreshing && !hasContent -> WorkspacePaneState.Loading
+    !hasContent -> WorkspacePaneState.Empty
+    else -> WorkspacePaneState.Ready
+}
+
+fun workspaceTabRequiredOperation(tab: ChrootWorkspaceTab): String? = when (tab) {
+    ChrootWorkspaceTab.Overview, ChrootWorkspaceTab.Advanced -> null
+    ChrootWorkspaceTab.Services -> "services.list"
+    ChrootWorkspaceTab.Users -> "users.list"
+    ChrootWorkspaceTab.Snapshots -> "snapshots.list"
+    ChrootWorkspaceTab.Storage -> "storage.status"
+    ChrootWorkspaceTab.Logs -> "logs.list"
+}
+
+fun workspaceTabSupported(tab: ChrootWorkspaceTab, availableOperations: Set<String>?): Boolean {
+    val required = workspaceTabRequiredOperation(tab) ?: return true
+    return availableOperations?.contains(required) == true
+}
+
+fun effectiveWorkspaceTab(selectedTab: ChrootWorkspaceTab, availableOperations: Set<String>?): ChrootWorkspaceTab =
+    if (workspaceTabSupported(selectedTab, availableOperations)) selectedTab else ChrootWorkspaceTab.Overview
+
+fun shouldPersistWorkspaceFallback(
+    selectedTab: ChrootWorkspaceTab,
+    effectiveTab: ChrootWorkspaceTab,
+    capabilitiesKnown: Boolean,
+): Boolean = capabilitiesKnown && selectedTab != effectiveTab
+
+fun workspaceSelectionNeedsRebind(
+    restoredWorkspaceName: String?,
+    selectedWorkspaceName: String?,
+    workspaceAvailable: Boolean,
+): Boolean = workspaceAvailable &&
+    !restoredWorkspaceName.isNullOrBlank() &&
+    restoredWorkspaceName != selectedWorkspaceName
+
+fun supportedChrootWorkspaceTabs(availableOperations: Set<String>?): List<ChrootWorkspaceTab> =
+    chrootWorkspaceTabs().filter { workspaceTabSupported(it, availableOperations) }
+
+object WorkspaceRestorationPolicy {
+    val saveableStateKeys: Set<String> = setOf(
+        "launcher-query",
+        "launcher-filter",
+        "workspace-name",
+        "workspace-tab",
+        "services-filter",
+        "users-filter",
+        "logs-filter",
+        "logs-live-tail",
+        "advanced-disclosure",
+    )
+
+    val transientMutationStateKeys: Set<String> = setOf(
+        "snapshot-review",
+        "snapshot-create-name",
+        "snapshot-restore-confirmation",
+        "user-review",
+        "service-review",
+        "remove-confirmation",
+    )
+
+    fun maySave(key: String): Boolean = key in saveableStateKeys && key !in transientMutationStateKeys
+}
+
+
 enum class ServiceWorkspaceFilter {
     All,
     Running,

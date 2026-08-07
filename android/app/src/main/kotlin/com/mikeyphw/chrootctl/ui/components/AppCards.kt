@@ -2,6 +2,7 @@ package com.mikeyphw.chrootctl.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.mikeyphw.chrootctl.ui.ChrootLayout
 import com.mikeyphw.chrootctl.ui.ChrootPathFont
 import com.mikeyphw.chrootctl.ui.ChrootSpacing
+import com.mikeyphw.chrootctl.ui.sectionHeaderStacks
 import com.mikeyphw.chrootctl.ui.ChrootStatusColors
 
 enum class StatusTone {
@@ -206,7 +209,8 @@ fun ActionFlowRow(
     FlowRow(
         modifier = semanticModifier
             .fillMaxWidth()
-            .heightIn(min = ChrootLayout.MinimumTouchTarget),
+            .heightIn(min = ChrootLayout.MinimumTouchTarget)
+            .focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(ChrootSpacing.xs),
         verticalArrangement = Arrangement.spacedBy(ChrootSpacing.xs),
         content = content,
@@ -220,21 +224,39 @@ fun SectionHeader(
     body: String? = null,
     action: (@Composable () -> Unit)? = null,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ChrootSpacing.md),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ChrootSpacing.xxs)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.semantics { heading() },
-            )
-            body?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stackHeader = sectionHeaderStacks(maxWidth.value, LocalDensity.current.fontScale)
+        if (stackHeader) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ChrootSpacing.sm)) {
+                Column(verticalArrangement = Arrangement.spacedBy(ChrootSpacing.xxs)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    body?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                action?.invoke()
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ChrootSpacing.md),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ChrootSpacing.xxs)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    body?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                action?.invoke()
+            }
         }
-        action?.invoke()
     }
 }
 
@@ -247,7 +269,8 @@ fun PageHeader(
     statusTone: StatusTone = StatusTone.Neutral,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        if (maxWidth < ChrootLayout.StackedHeaderBreakpoint) {
+        val stackHeader = sectionHeaderStacks(maxWidth.value, LocalDensity.current.fontScale)
+        if (stackHeader) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ChrootSpacing.sm)) {
                 PageTitleBlock(title = title, subtitle = subtitle)
                 statusLabel?.let { StatusPill(label = it, tone = statusTone) }

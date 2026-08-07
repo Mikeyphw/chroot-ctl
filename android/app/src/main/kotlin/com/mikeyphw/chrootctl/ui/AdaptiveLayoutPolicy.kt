@@ -4,6 +4,8 @@ const val COMPACT_NAVIGATION_BREAKPOINT_DP: Float = 720f
 const val TABLET_CONTENT_BREAKPOINT_DP: Float = 840f
 const val DESKTOP_CONTENT_BREAKPOINT_DP: Float = 1180f
 const val COMPACT_LANDSCAPE_HEIGHT_LIMIT_DP: Float = 480f
+const val LARGE_TYPE_LAYOUT_THRESHOLD: Float = 1.5f
+const val STACKED_HEADER_BREAKPOINT_DP: Float = 560f
 
 enum class PrimaryNavigationType {
     BottomBar,
@@ -17,6 +19,12 @@ enum class ReleaseWindowProfile {
     Tablet,
     DesktopWidth,
 }
+
+fun sectionHeaderStacks(availableWidthDp: Float, fontScale: Float): Boolean =
+    availableWidthDp < STACKED_HEADER_BREAKPOINT_DP || fontScale >= LARGE_TYPE_LAYOUT_THRESHOLD
+
+fun compactNavigationShowsVisualLabels(fontScale: Float): Boolean =
+    fontScale < LARGE_TYPE_LAYOUT_THRESHOLD
 
 fun primaryNavigationType(availableWidthDp: Float): PrimaryNavigationType {
     return if (availableWidthDp >= COMPACT_NAVIGATION_BREAKPOINT_DP) {

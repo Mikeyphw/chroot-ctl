@@ -1225,28 +1225,53 @@ def _debug_export(services: ServiceContainer, payload: dict[str, Any], progress:
     return {"archive": str(bundle.archive), "probes": probes, "included": list(bundle.included)}
 
 
-def _smoke_steps() -> list[dict[str, Any]]:
+def _smoke_target_name(services: ServiceContainer, payload: dict[str, Any]) -> str | None:
+    requested = _optional_text(payload, "name") or _optional_text(payload, "target")
+    if requested:
+        return requested
+    rows = serialize_value(services.chroots().list())
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                name = str(row.get("name") or "").strip()
+                if name:
+                    return name
+    return None
+
+
+def _smoke_steps(target_name: str | None = None) -> list[dict[str, Any]]:
+    target_payload = {"name": target_name} if target_name else {}
+    workspace_required = bool(target_name)
     return [
+        {"id": "root_module_discovery", "title": "Root module discovery", "kind": "query", "operation": "system.module_status", "required": True},
         {"id": "bridge_capabilities", "title": "Bridge capabilities", "kind": "query", "operation": "system.dashboard", "required": True},
         {"id": "chroots_list", "title": "Chroots list", "kind": "query", "operation": "chroots.list", "required": True},
         {"id": "operations_list", "title": "Operation history", "kind": "query", "operation": "operations.list", "required": True},
+        {"id": "workspace_services", "title": "Services workspace query", "kind": "query", "operation": "services.list", "required": workspace_required, "target": target_name, "payload": target_payload},
+        {"id": "workspace_users", "title": "Users workspace query", "kind": "query", "operation": "users.list", "required": workspace_required, "target": target_name, "payload": target_payload},
+        {"id": "workspace_snapshots", "title": "Snapshots workspace query", "kind": "query", "operation": "snapshots.list", "required": workspace_required, "target": target_name, "payload": target_payload},
+        {"id": "workspace_storage", "title": "Storage workspace query", "kind": "query", "operation": "storage.status", "required": workspace_required, "target": target_name, "payload": target_payload},
+        {"id": "workspace_logs", "title": "Logs workspace query", "kind": "query", "operation": "logs.list", "required": workspace_required, "target": target_name, "payload": {**target_payload, "tail": 40}},
+        {"id": "workspace_advanced", "title": "Advanced diagnostics query", "kind": "query", "operation": "system.runtime", "required": True},
         {"id": "debug_probes", "title": "Debug probes", "kind": "query", "operation": "debug.probes", "required": True},
         {"id": "support_preview", "title": "Support bundle preview", "kind": "preview", "operation": "support.preview", "required": False},
         {"id": "module_preview", "title": "Module build preview", "kind": "preview", "operation": "system.module_build_preview", "required": False},
         {"id": "transfer_artifacts", "title": "Managed artifacts list", "kind": "query", "operation": "artifacts.list", "required": False},
+        {"id": "degraded_protocol_fallback", "title": "Degraded protocol fallback", "kind": "manual", "operation": "android.workspace.degraded_protocol", "required": False},
+        {"id": "root_service_reconnect", "title": "RootService reconnect/recovery", "kind": "manual", "operation": "android.root_service.reconnect", "required": False},
     ]
 
-
 def _smoke_plan(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    del services
     scope = str(payload.get("scope") or "real-device").strip() or "real-device"
     include_optional = bool(payload.get("includeOptional", payload.get("include_optional", True)))
-    steps = [step for step in _smoke_steps() if include_optional or step["required"]]
+    target_name = _smoke_target_name(services, payload)
+    steps = [step for step in _smoke_steps(target_name) if include_optional or step["required"]]
     return {
         "ok": True,
         "kind": "smoke.plan",
         "scope": scope,
         "stepCount": len(steps),
+        "target": target_name,
         "steps": steps,
         "blocking": [],
         "warnings": ["Smoke probes are read-only except for the operation journal entry created by smoke.run."],
@@ -1262,26 +1287,57 @@ def _smoke_report(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     recent = [record.to_dict() for record in manager.list_recent(limit=limit)]
     smoke_records = [item for item in recent if str(item.get("kind") or "") == "smoke.run"]
     latest = smoke_records[0] if smoke_records else None
+    failed = _smoke_result_failed(latest)
+    manual_pending_count = _smoke_result_manual_pending(latest)
+    blocking = []
+    if latest is None:
+        blocking.append({"code": "no_smoke_run", "message": "No smoke.run operation has been recorded yet."})
+    elif failed:
+        blocking.append({"code": "smoke_failed", "message": "The latest smoke run contains failed required checks."})
+    warnings = [f"{manual_pending_count} manual Android smoke check(s) remain pending."] if manual_pending_count > 0 else []
     return {
-        "ok": latest is not None,
+        "ok": latest is not None and not failed,
         "kind": "smoke.report",
         "latest": latest,
+        "failed": failed,
+        "manualPendingCount": manual_pending_count,
         "recentCount": len(smoke_records),
-        "blocking": [] if latest is not None else [{"code": "no_smoke_run", "message": "No smoke.run operation has been recorded yet."}],
-        "warnings": [],
-        "steps": _smoke_steps(),
+        "blocking": blocking,
+        "warnings": warnings,
+        "steps": _smoke_steps(_smoke_target_name(services, payload)),
     }
 
 
 def _run_smoke_step(services: ServiceContainer, step: dict[str, Any]) -> dict[str, Any]:
     step_id = str(step["id"])
     try:
-        if step_id == "bridge_capabilities":
+        target = str(step.get("target") or "").strip()
+        if step.get("kind") == "manual":
+            return {**step, "status": "manual", "message": "Complete this Android real-device check and record the result in smoke evidence."}
+        if step_id.startswith("workspace_") and not target and step_id != "workspace_advanced":
+            return {**step, "status": "skip", "message": "No registered chroot is available for this workspace query."}
+        if step_id == "root_module_discovery":
+            module = _module_status(services, {})
+            if not bool(module.get("installed")):
+                return {**step, "status": "fail", "message": "No active chrootctl root module was detected."}
+        elif step_id == "bridge_capabilities":
             services.system().dashboard(details=True, tail=5)
         elif step_id == "chroots_list":
             services.chroots().list()
         elif step_id == "operations_list":
             _operations_list(services, {"limit": 5})
+        elif step_id == "workspace_services":
+            _services_list(services, {"name": target})
+        elif step_id == "workspace_users":
+            _users_list(services, {"name": target})
+        elif step_id == "workspace_snapshots":
+            _snapshot_list(services, {"name": target, "limit": 20})
+        elif step_id == "workspace_storage":
+            _storage_status(services, {"name": target})
+        elif step_id == "workspace_logs":
+            _logs_list(services, {"name": target, "tail": 40})
+        elif step_id == "workspace_advanced":
+            _system_runtime(services, {})
         elif step_id == "debug_probes":
             probes = _debug_probes(services, {"group": "all"})
             if int(probes.get("failCount") or 0) > 0:
@@ -1311,6 +1367,7 @@ def _smoke_run(services: ServiceContainer, payload: dict[str, Any], progress: Ca
         results.append(_run_smoke_step(services, step))
     failed_required = [item for item in results if item.get("required") and item.get("status") == "fail"]
     warnings = [item for item in results if item.get("status") == "warn"]
+    manual_pending = [item for item in results if item.get("status") == "manual"]
     progress({"phase": "complete", "percent": 100, "message": "Smoke suite completed"})
     return {
         "ok": not failed_required,
@@ -1319,8 +1376,10 @@ def _smoke_run(services: ServiceContainer, payload: dict[str, Any], progress: Ca
         "passCount": sum(1 for item in results if item.get("status") == "pass"),
         "warnCount": len(warnings),
         "failCount": sum(1 for item in results if item.get("status") == "fail"),
+        "manualPendingCount": len(manual_pending),
+        "manualPending": [str(item.get("id")) for item in manual_pending],
         "blocking": [{"code": str(item.get("id")), "message": str(item.get("message"))} for item in failed_required],
-        "warnings": [str(item.get("message")) for item in warnings],
+        "warnings": [str(item.get("message")) for item in warnings] + (["Manual Android smoke checks remain pending."] if manual_pending else []),
     }
 
 
@@ -1357,18 +1416,43 @@ def _smoke_result_failed(latest: dict[str, Any] | None) -> bool:
     )
 
 
+def _smoke_result_manual_pending(latest: dict[str, Any] | None) -> int:
+    if latest is None:
+        return 0
+    result = latest.get("resultPayload") or latest.get("result_payload") or {}
+    if not isinstance(result, dict):
+        return 0
+    value = result.get("manualPendingCount", result.get("manual_pending_count", 0))
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _smoke_result_payload(services: ServiceContainer, payload: dict[str, Any]) -> dict[str, Any]:
     latest = _latest_smoke_record(services, limit=int(payload.get("limit", 25)))
     failed = _smoke_result_failed(latest)
+    manual_pending_count = _smoke_result_manual_pending(latest)
+    blocking = []
+    if latest is None:
+        blocking.append({"code": "no_smoke_run", "message": "No smoke.run operation has been recorded yet."})
+    elif failed:
+        blocking.append({"code": "smoke_failed", "message": "The latest smoke run contains failed required checks."})
+    warnings = []
+    if failed:
+        warnings.append("Create a smoke failure support bundle before changing the device state.")
+    if manual_pending_count > 0:
+        warnings.append(f"{manual_pending_count} manual Android smoke check(s) remain pending.")
     return {
-        "ok": latest is not None,
+        "ok": latest is not None and not failed,
         "kind": "smoke.last_result",
         "latest": latest,
         "failed": failed,
+        "manualPendingCount": manual_pending_count,
         "exportRecommended": latest is not None,
         "supportBundleRecommended": failed,
-        "blocking": [] if latest is not None else [{"code": "no_smoke_run", "message": "No smoke.run operation has been recorded yet."}],
-        "warnings": ["Create a smoke failure support bundle before changing the device state."] if failed else [],
+        "blocking": blocking,
+        "warnings": warnings,
     }
 
 
@@ -1480,7 +1564,16 @@ def _final_preflight(services: ServiceContainer, payload: dict[str, Any]) -> Any
         {"id": "runtime", "status": "pass", "detail": "Runtime query completed."},
         {"id": "release_readiness", "status": "pass" if bool(release.get("ok")) else "warn", "detail": str(release.get("summary"))},
         {"id": "webui_regression", "status": "pass" if bool(webui.get("ok")) else "fail", "detail": "WebUI regression gate completed."},
-        {"id": "smoke_result", "status": "pass" if smoke.get("latest") is not None else "warn", "detail": "Latest smoke result is available." if smoke.get("latest") is not None else "Run smoke.run before final release."},
+        {
+            "id": "smoke_result",
+            "status": "fail" if smoke.get("failed") else ("warn" if smoke.get("latest") is None or int(smoke.get("manualPendingCount") or 0) > 0 else "pass"),
+            "detail": (
+                "Latest smoke run failed required checks." if smoke.get("failed")
+                else f"Latest smoke run has {int(smoke.get('manualPendingCount') or 0)} manual check(s) pending." if int(smoke.get("manualPendingCount") or 0) > 0
+                else "Latest smoke result is available." if smoke.get("latest") is not None
+                else "Run smoke.run before final release."
+            ),
+        },
     ]
     return {"ok": not any(item["status"] == "fail" for item in checks), "kind": "final.preflight", "runtime": serialize_value(runtime), "release": serialize_value(release), "checks": checks}
 
