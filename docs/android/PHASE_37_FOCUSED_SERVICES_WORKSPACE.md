@@ -19,3 +19,7 @@ Phase 37 keeps the Phase 35-36 chroot workspace shell and redesigns the Services
 - No WebView, HTTP server or arbitrary shell bridge is introduced.
 - Bridge shape adapter from Phase 35-36 is preserved.
 - Destructive or mutating service actions do not execute directly from service rows.
+## R3 rebase note
+
+The 2026-08-07 12:45 uploaded repository snapshot already contained the Phase 37 r2 service workspace output. The r3 overlay is therefore a source-hash rebase and acceptance seal for that current tree: it preserves the focused Services UI, the explicit needs-attention matching, and the review-sheet action flow while changing only this note.
+
