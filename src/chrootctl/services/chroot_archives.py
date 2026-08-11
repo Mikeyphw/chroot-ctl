@@ -167,6 +167,40 @@ def _tar_with_zstd_args(*, create: bool, archive: Path, cwd: Path, members: list
     return [*base, *members]
 
 
+def _tar_zstd_env() -> dict[str, str]:
+    """Return an environment where tar can find zstd from Android/root shells."""
+    env = os.environ.copy()
+
+    candidates = [
+        shutil.which("zstd"),
+        "/data/data/com.termux/files/usr/bin/zstd",
+        "/data/user/0/com.termux/files/usr/bin/zstd",
+        "/system/bin/zstd",
+        "/usr/bin/zstd",
+        "/bin/zstd",
+    ]
+
+    zstd = next(
+        (
+            Path(candidate)
+            for candidate in candidates
+            if candidate
+            and Path(candidate).is_file()
+            and os.access(candidate, os.X_OK)
+        ),
+        None,
+    )
+
+    if zstd is None:
+        raise RuntimeError(
+            "zstd command not found. Install zstd on the host "
+            "(Termux: pkg install zstd) or provide it in PATH."
+        )
+
+    env["PATH"] = f"{zstd.parent}:{env.get('PATH', '')}"
+    return env
+
+
 def _read_export_manifest(archive: Path, *, password: str | None = None) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="chrootctl-import-manifest-") as tmp:
         tmpdir = Path(tmp)
@@ -178,6 +212,7 @@ def _read_export_manifest(archive: Path, *, password: str | None = None) -> dict
             check=False,
             capture_output=True,
             text=True,
+            env=_tar_zstd_env(),
         )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or f"failed to read export manifest from {archive}")
@@ -246,10 +281,23 @@ def export_chroot(config, registry: ChrootRegistry, runner, logger: Any, name: s
         "metadata": record.get("metadata", {}),
         "path_name": chroot_path.name,
     }
-    with tempfile.TemporaryDirectory(prefix="chrootctl-export-") as tmp:
-        tmpdir = Path(tmp)
-        manifest_path = tmpdir / ".chrootctl-export.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    # Android/Toybox tar does not support the GNU-tar positional -C
+    # behavior used by the previous implementation. Place the small
+    # manifest beside the chroot temporarily so only one -C is required.
+    manifest_path = chroot_path.parent / ".chrootctl-export.json"
+
+    if manifest_path.exists():
+        raise RuntimeError(
+            f"temporary export manifest already exists: {manifest_path}; "
+            "remove it if no export is currently running"
+        )
+
+    try:
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
         result = subprocess.run(
             [
                 "tar",
@@ -259,16 +307,21 @@ def export_chroot(config, registry: ChrootRegistry, runner, logger: Any, name: s
                 "-C",
                 str(chroot_path.parent),
                 chroot_path.name,
-                "-C",
-                str(tmpdir),
                 manifest_path.name,
             ],
             check=False,
             capture_output=True,
             text=True,
+            env=_tar_zstd_env(),
         )
+
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or f"failed to export {name} to {archive_path}")
+            raise RuntimeError(
+                result.stderr.strip()
+                or f"failed to export {name} to {archive_path}"
+            )
+    finally:
+        manifest_path.unlink(missing_ok=True)
     encrypted = False
     if password:
         archive_path = _encrypt_archive(archive_path, password)
@@ -333,6 +386,7 @@ def import_chroot(
             check=False,
             capture_output=True,
             text=True,
+            env=_tar_zstd_env(),
         )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or f"failed to extract {archive_path}")
