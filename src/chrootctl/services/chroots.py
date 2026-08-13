@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 import shutil
 from typing import Any
 
 from ..models import ChrootDetails, ChrootRecord, ChrootRemovalResult, ChrootRenameResult, PackageDiffResult, SessionActionResult
+from ..validation import validate_chroot_name
 from .context import ServiceContainer
 from .chroot_archives import (
     export_chroot,
@@ -20,8 +20,6 @@ from .chroot_archives import (
     _package_inventory,
     _directory_size,
 )
-
-CHROOT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class ChrootService:
@@ -223,12 +221,3 @@ class ChrootService:
             "path": str(target),
             "reclaim_bytes": size_bytes,
         }
-
-
-def validate_chroot_name(name: str) -> str:
-    normalized = name.strip()
-    if not normalized:
-        raise RuntimeError("new chroot name is required")
-    if not CHROOT_NAME_PATTERN.fullmatch(normalized):
-        raise RuntimeError(f"invalid chroot name: {name!r}")
-    return normalized

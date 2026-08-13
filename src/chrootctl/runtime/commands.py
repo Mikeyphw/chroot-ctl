@@ -86,6 +86,8 @@ COMMAND_SPECS: dict[str, CommandSpec] = {
     "upgrade": CommandSpec("upgrade", handle_upgrade, RootPolicy.always_required()),
     "magisk": CommandSpec("magisk", handle_magisk),
     "clipboard": CommandSpec("clipboard", handle_clipboard),
+    "events": CommandSpec("events", lambda context: handle_events(context)),
+    "support-bundle": CommandSpec("support-bundle", lambda context: handle_support_bundle(context)),
 }
 
 

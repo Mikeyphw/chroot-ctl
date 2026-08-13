@@ -10,7 +10,7 @@ def confirm_action(prompt: str, *, assume_yes: bool = False, non_interactive: bo
     if non_interactive:
         raise RuntimeError("confirmation required in non-interactive mode; rerun with --yes")
     if not _interactive_tty():
-        return
+        raise RuntimeError("confirmation required without an interactive terminal; rerun with --yes")
     reply = input(f"{prompt} [y/N]: ").strip().lower()
     if reply not in {"y", "yes"}:
         raise RuntimeError("operation cancelled")

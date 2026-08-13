@@ -9,11 +9,16 @@ import shutil
 import subprocess
 import sys
 import tarfile
+from fnmatch import fnmatch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 DIST = ROOT / "dist"
+FORBIDDEN_SOURCE_PATTERNS = ("*.bak", "*.bak-*", "*.orig", "*.rej", "*~", "*.pyc")
+CACHE_SOURCE_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+EXCLUDED_SOURCE_DIRS = CACHE_SOURCE_DIRS | {".git"}
+FORBIDDEN_SOURCE_DIRS = {"tmpout", ".venv"}
 
 
 def _run(args: list[str], *, env: dict[str, str] | None = None) -> None:
@@ -124,14 +129,21 @@ def _source_archive_path(version: str) -> Path:
 
 def _build_source_archive(args: argparse.Namespace) -> None:
     version = args.version
-    archive_path = args.output or _source_archive_path(version)
+    archive_path = (args.output or _source_archive_path(version)).resolve()
     DIST.mkdir(parents=True, exist_ok=True)
-    excludes = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".git", "dist", "tmpout", ".venv"}
+    if ROOT in archive_path.parents and DIST not in archive_path.parents:
+        raise SystemExit("source archive output inside the repo must be under dist/ to avoid self-inclusion")
+    _validate_source_hygiene()
+    excludes = set(EXCLUDED_SOURCE_DIRS) | {"dist"}
     with tarfile.open(archive_path, "w:gz") as tar:
         for path in ROOT.rglob("*"):
             rel = path.relative_to(ROOT)
             if any(part in excludes for part in rel.parts):
                 continue
+            if path.resolve(strict=False) == archive_path:
+                continue
+            if _forbidden_source_path(rel):
+                raise SystemExit(f"refusing to package forbidden source artifact: {rel}")
             tar.add(path, arcname=str(Path(ROOT.name) / rel), recursive=False)
     print(archive_path)
     if args.checksum:
@@ -144,6 +156,7 @@ def _release(args: argparse.Namespace) -> None:
     magisk_zip = DIST / f"chrootctl-magisk-{version}.zip"
     archive_path = args.source_archive or _source_archive_path(version)
     _lint(args)
+    _validate_source_hygiene()
     _typecheck(args)
     _test(argparse.Namespace(python=args.python, pytest_args=[]))
     _build_magisk(argparse.Namespace(
@@ -155,6 +168,31 @@ def _release(args: argparse.Namespace) -> None:
     ))
     _build_source_archive(argparse.Namespace(version=version, output=archive_path, checksum=True))
     print(f"release-ready: {magisk_zip} {archive_path}")
+
+
+def _forbidden_source_path(rel: Path) -> bool:
+    return any(fnmatch(rel.name, pattern) for pattern in FORBIDDEN_SOURCE_PATTERNS)
+
+
+def _validate_source_hygiene() -> None:
+    forbidden: list[str] = []
+    for path in ROOT.rglob("*"):
+        rel = path.relative_to(ROOT)
+        if "dist" in rel.parts:
+            continue
+        if any(part in CACHE_SOURCE_DIRS for part in rel.parts):
+            continue
+        if any(part in FORBIDDEN_SOURCE_DIRS for part in rel.parts) or _forbidden_source_path(rel):
+            forbidden.append(str(rel))
+    if forbidden:
+        sample = "\n".join(forbidden[:50])
+        raise SystemExit(f"forbidden source artifacts found:\n{sample}")
+    from chrootctl.validation import no_duplicate_top_level_functions
+
+    duplicates = no_duplicate_top_level_functions((ROOT / "src" / "chrootctl").rglob("*.py"))
+    if duplicates:
+        details = "\n".join(f"{path}: {', '.join(names)}" for path, names in sorted(duplicates.items()))
+        raise SystemExit(f"duplicate top-level Python function definitions found:\n{details}")
 
 
 

@@ -8,10 +8,17 @@ import pytest
 from chrootctl.runtime.confirm import confirm_action
 
 
-def test_confirm_action_skips_without_tty(monkeypatch) -> None:
+def test_confirm_action_fails_closed_without_tty(monkeypatch) -> None:
     monkeypatch.setattr(os, "isatty", lambda fd: False)
 
-    confirm_action("Remove chroot?")
+    with pytest.raises(RuntimeError, match="interactive terminal"):
+        confirm_action("Remove chroot?")
+
+
+def test_confirm_action_assume_yes_skips_without_tty(monkeypatch) -> None:
+    monkeypatch.setattr(os, "isatty", lambda fd: False)
+
+    confirm_action("Remove chroot?", assume_yes=True)
 
 
 def test_confirm_action_accepts_yes(monkeypatch) -> None:

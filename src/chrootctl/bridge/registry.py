@@ -7,6 +7,17 @@ from typing import Any, Callable
 from ..models import InstallRequest
 from ..operations.manager import OperationCancelled
 from ..services import ServiceContainer
+from ..validation import (
+    optional_bool,
+    optional_bounded_int,
+    strict_string_list,
+    unique_catalog_names,
+    validate_catalog_name,
+    validate_chroot_name,
+    validate_service_name,
+    validate_snapshot_name,
+    validate_username,
+)
 from .protocol import BridgeProtocolError, BridgeRequest, serialize_value
 
 QueryHandler = Callable[[ServiceContainer, dict[str, Any]], Any]
@@ -39,22 +50,34 @@ def _required_name(payload: dict[str, Any]) -> str:
     name = str(payload.get("name") or "").strip()
     if not name:
         raise BridgeProtocolError("MISSING_CHROOT_NAME", "payload.name is required")
-    return name
+    try:
+        return validate_chroot_name(name, field="payload.name")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_CHROOT_NAME", str(exc)) from exc
 
 
 def _required_snapshot(payload: dict[str, Any]) -> str:
     snapshot = str(payload.get("snapshot") or payload.get("snapshotName") or payload.get("snapshot_name") or "").strip()
     if not snapshot:
         raise BridgeProtocolError("MISSING_SNAPSHOT_NAME", "payload.snapshot is required")
-    return snapshot
+    try:
+        return validate_snapshot_name(snapshot, field="payload.snapshot")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_SNAPSHOT_NAME", str(exc)) from exc
 
 
 def _install_request(payload: dict[str, Any]) -> InstallRequest:
     distro = str(payload.get("distro") or "ubuntu").strip() or "ubuntu"
-    name = str(payload.get("name") or distro).strip() or distro
-    username = str(payload.get("username") or "mike").strip() or "mike"
-    tools = tuple(str(item).strip() for item in payload.get("tools", ()) if str(item).strip()) if isinstance(payload.get("tools", ()), (list, tuple)) else ()
-    addons = tuple(str(item).strip() for item in payload.get("addons", ()) if str(item).strip()) if isinstance(payload.get("addons", ()), (list, tuple)) else ()
+    try:
+        name = validate_chroot_name(str(payload.get("name") or distro).strip() or distro, field="payload.name")
+        username = validate_username(str(payload.get("username") or "mike").strip() or "mike", field="payload.username")
+        tools = tuple(validate_catalog_name(item, field="payload.tools item") for item in strict_string_list(payload.get("tools", []), field="payload.tools"))
+        addons = tuple(validate_catalog_name(item, field="payload.addons item") for item in strict_string_list(payload.get("addons", []), field="payload.addons"))
+        force_phase = optional_bool(payload, "forcePhase", "force_phase", default=False, field="payload.forcePhase")
+        resume = optional_bool(payload, "resume", default=False, field="payload.resume")
+        repair = optional_bool(payload, "repair", default=False, field="payload.repair")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_INSTALL_PAYLOAD", str(exc)) from exc
     return InstallRequest(
         distro=distro,
         name=name,
@@ -66,9 +89,9 @@ def _install_request(payload: dict[str, Any]) -> InstallRequest:
         version=_optional_text(payload, "version"),
         mirror=_optional_text(payload, "mirror"),
         phase=_optional_text(payload, "phase"),
-        force_phase=bool(payload.get("forcePhase") or payload.get("force_phase") or False),
-        resume=bool(payload.get("resume") or False),
-        repair=bool(payload.get("repair") or False),
+        force_phase=force_phase,
+        resume=resume,
+        repair=repair,
         tools=tools,
         addons=addons,
     )
@@ -83,8 +106,15 @@ def _optional_text(payload: dict[str, Any], key: str) -> str | None:
 
 
 def _dashboard(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    target = str(payload.get("name") or "").strip() or None
-    return services.system().dashboard(target_name=target, details=bool(payload.get("details", True)), tail=int(payload.get("tail", 20)))
+    target = None
+    if _optional_text(payload, "name"):
+        target = _required_name(payload)
+    try:
+        details = optional_bool(payload, "details", default=True, field="payload.details")
+        tail = optional_bounded_int(payload, "tail", default=20, minimum=0, maximum=500)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_DASHBOARD_PAYLOAD", str(exc)) from exc
+    return services.system().dashboard(target_name=target, details=details, tail=tail)
 
 
 def _chroots_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -97,7 +127,11 @@ def _chroots_get(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 
 
 def _status(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    return services.system().status(_required_name(payload), details=bool(payload.get("details", True)))
+    try:
+        details = optional_bool(payload, "details", default=True, field="payload.details")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_STATUS_PAYLOAD", str(exc)) from exc
+    return services.system().status(_required_name(payload), details=details)
 
 
 def _doctor(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -145,7 +179,14 @@ def _lifecycle_preview(services: ServiceContainer, payload: dict[str, Any]) -> A
 
 
 def _snapshot_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    return services.snapshots().list(chroot_name=_optional_text(payload, "name"), limit=int(payload.get("limit", 100)))
+    name = _optional_text(payload, "name")
+    if name is not None:
+        name = _required_name(payload)
+    try:
+        limit = optional_bounded_int(payload, "limit", default=100, minimum=0, maximum=500)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_SNAPSHOT_LIMIT", str(exc)) from exc
+    return services.snapshots().list(chroot_name=name, limit=limit)
 
 
 def _snapshot_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -155,7 +196,10 @@ def _snapshot_preview(services: ServiceContainer, payload: dict[str, Any]) -> An
     archive = _optional_text(payload, "archive")
     existing = services.snapshots().list(chroot_name=name, limit=100)
     if action == "create":
-        requested = snapshot or "snapshot"
+        try:
+            requested = validate_snapshot_name(snapshot or "snapshot", field="payload.snapshot")
+        except ValueError as exc:
+            raise BridgeProtocolError("INVALID_SNAPSHOT_NAME", str(exc)) from exc
         conflict = any(str(getattr(item, "name", "")) == requested for item in existing)
         return {
             "ok": not conflict,
@@ -168,7 +212,7 @@ def _snapshot_preview(services: ServiceContainer, payload: dict[str, Any]) -> An
             "confirm": False,
         }
     if action == "restore":
-        requested = snapshot or _required_snapshot(payload)
+        requested = _required_snapshot({**payload, "snapshot": snapshot}) if snapshot else _required_snapshot(payload)
         return {
             "ok": True,
             "kind": "snapshot.restore",
@@ -180,7 +224,7 @@ def _snapshot_preview(services: ServiceContainer, payload: dict[str, Any]) -> An
             "confirm": True,
         }
     if action == "export":
-        requested = snapshot or _required_snapshot(payload)
+        requested = _required_snapshot({**payload, "snapshot": snapshot}) if snapshot else _required_snapshot(payload)
         return {
             "ok": True,
             "kind": "snapshot.export",
@@ -197,8 +241,13 @@ def _snapshot_preview(services: ServiceContainer, payload: dict[str, Any]) -> An
 def _operations_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     from ..operations import OperationManager
 
-    target = str(payload.get("name") or "").strip() or None
-    limit = int(payload.get("limit", 50))
+    target = _optional_text(payload, "name")
+    if target is not None:
+        target = _required_name(payload)
+    try:
+        limit = optional_bounded_int(payload, "limit", default=50, minimum=0, maximum=1000)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_OPERATION_LIMIT", str(exc)) from exc
     manager = OperationManager(services.base_config.database_path.parent / "operations")
     return [record.to_dict() for record in manager.list_recent(limit=limit, target_name=target)]
 
@@ -321,7 +370,12 @@ def _start_chroot(
     progress({"phase": "start", "percent": 10, "message": f"Starting {name}"})
     if cancelled():
         raise OperationCancelled("Start was cancelled")
-    result = services.chroots().start(name, login=bool(payload.get("login", True)), root_login=bool(payload.get("rootLogin", payload.get("root_login", False))))
+    try:
+        login = optional_bool(payload, "login", default=True, field="payload.login")
+        root_login = optional_bool(payload, "rootLogin", "root_login", default=False, field="payload.rootLogin")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
+    result = services.chroots().start(name, login=login, root_login=root_login)
     progress({"phase": "complete", "percent": 100, "message": f"Started {name}"})
     return result
 
@@ -336,7 +390,12 @@ def _restart_chroot(
     progress({"phase": "restart", "percent": 10, "message": f"Restarting {name}"})
     if cancelled():
         raise OperationCancelled("Restart was cancelled")
-    result = services.chroots().restart(name, login=bool(payload.get("login", True)), root_login=bool(payload.get("rootLogin", payload.get("root_login", False))))
+    try:
+        login = optional_bool(payload, "login", default=True, field="payload.login")
+        root_login = optional_bool(payload, "rootLogin", "root_login", default=False, field="payload.rootLogin")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
+    result = services.chroots().restart(name, login=login, root_login=root_login)
     progress({"phase": "complete", "percent": 100, "message": f"Restarted {name}"})
     return result
 
@@ -449,9 +508,9 @@ def _logs_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     if services.registry.get(name) is None:
         raise BridgeProtocolError("UNKNOWN_CHROOT", f"unknown chroot: {name}")
     try:
-        tail = int(payload.get("tail", 200))
-    except (TypeError, ValueError) as exc:
-        raise BridgeProtocolError("INVALID_LOG_TAIL", "payload.tail must be an integer") from exc
+        tail = optional_bounded_int(payload, "tail", default=200, minimum=0, maximum=500)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_LOG_TAIL", str(exc)) from exc
     tail = max(20, min(tail, 500))
     level = str(payload.get("level") or "").strip().upper() or None
     if level not in {None, "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
@@ -473,23 +532,27 @@ def _required_username(payload: dict[str, Any]) -> str:
     username = str(payload.get("username") or "").strip()
     if not username:
         raise BridgeProtocolError("MISSING_USERNAME", "payload.username is required")
-    return username
+    try:
+        return validate_username(username, field="payload.username")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_USERNAME", str(exc)) from exc
 
 
 def _required_service(payload: dict[str, Any]) -> str:
     service = str(payload.get("service") or payload.get("serviceName") or payload.get("unit") or "").strip()
     if not service:
         raise BridgeProtocolError("MISSING_SERVICE", "payload.service is required")
-    return service
+    try:
+        return validate_service_name(service, field="payload.service")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_SERVICE", str(exc)) from exc
 
 
 def _payload_bool(payload: dict[str, Any], key: str, default: bool = False) -> bool:
-    value = payload.get(key)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() not in {"", "0", "false", "off", "no"}
+    try:
+        return optional_bool(payload, key, default=default, field=f"payload.{key}")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
 
 
 def _users_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -637,7 +700,12 @@ def _services_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 def _services_get(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     service = _required_service(payload)
     name = _optional_text(payload, "name") or _optional_text(payload, "chroot")
-    tail = int(payload.get("tail", 120))
+    if name is not None:
+        name = validate_chroot_name(name, field="payload.name")
+    try:
+        tail = optional_bounded_int(payload, "tail", default=120, minimum=0, maximum=500)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_SERVICE_TAIL", str(exc)) from exc
     runner = _service_runner(services)
     return {
         "status": runner.status(service, chroot=name),
@@ -648,7 +716,12 @@ def _services_get(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 def _services_journal(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     service = _required_service(payload)
     name = _optional_text(payload, "name") or _optional_text(payload, "chroot")
-    tail = int(payload.get("tail", 120))
+    if name is not None:
+        name = validate_chroot_name(name, field="payload.name")
+    try:
+        tail = optional_bounded_int(payload, "tail", default=120, minimum=0, maximum=500)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_SERVICE_TAIL", str(exc)) from exc
     runner = _service_runner(services)
     return {
         "status": runner.status(service, chroot=name),
@@ -659,6 +732,8 @@ def _services_journal(services: ServiceContainer, payload: dict[str, Any]) -> An
 def _service_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     service = _required_service(payload)
     name = _optional_text(payload, "name") or _optional_text(payload, "chroot")
+    if name is not None:
+        name = validate_chroot_name(name, field="payload.name")
     action = str(payload.get("action") or "start").strip() or "start"
     if action not in {"start", "stop", "restart", "enable", "disable"}:
         raise BridgeProtocolError("INVALID_SERVICE_ACTION", f"Unsupported service action: {action}")
@@ -681,6 +756,8 @@ def _service_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any
 def _service_action(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
     service = _required_service(payload)
     name = _optional_text(payload, "name") or _optional_text(payload, "chroot")
+    if name is not None:
+        name = validate_chroot_name(name, field="payload.name")
     action = str(payload.get("action") or "start").strip() or "start"
     if action not in {"start", "stop", "restart", "enable", "disable"}:
         raise BridgeProtocolError("INVALID_SERVICE_ACTION", f"Unsupported service action: {action}")
@@ -718,13 +795,12 @@ def _payload_names(payload: dict[str, Any]) -> list[str]:
         if key in payload:
             raw = payload.get(key)
             break
-    if isinstance(raw, str):
-        values = [item.strip() for item in raw.split(",")]
-    elif isinstance(raw, (list, tuple)):
-        values = [str(item).strip() for item in raw]
-    else:
-        values = []
-    return [item for item in values if item]
+    if raw in (None, ""):
+        return []
+    try:
+        return list(unique_catalog_names(raw))
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_CATALOG_NAMES", str(exc)) from exc
 
 
 def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
@@ -741,6 +817,8 @@ def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
 def _catalog_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     kind = _required_catalog_kind(payload)
     target = _optional_text(payload, "name") or _optional_text(payload, "targetName")
+    if target is not None:
+        target = validate_chroot_name(target, field="payload.name")
     distro = _optional_text(payload, "distro")
     category = _optional_text(payload, "category")
     query = (_optional_text(payload, "query") or _optional_text(payload, "q") or "").lower()
@@ -847,7 +925,10 @@ def _packages_inventory(services: ServiceContainer, payload: dict[str, Any]) -> 
 
     name = _required_name(payload)
     packages = sorted(_package_inventory(services.config_for(name).chroot_base))
-    limit = int(payload.get("limit", 500))
+    try:
+        limit = optional_bounded_int(payload, "limit", default=500, minimum=0, maximum=5000)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_PACKAGE_LIMIT", str(exc)) from exc
     return {
         "name": name,
         "count": len(packages),
@@ -861,6 +942,11 @@ def _packages_compare(services: ServiceContainer, payload: dict[str, Any]) -> An
     right = str(payload.get("right") or payload.get("rightName") or "").strip()
     if not left or not right:
         raise BridgeProtocolError("MISSING_PACKAGE_COMPARE_TARGETS", "payload.left and payload.right are required")
+    try:
+        left = validate_chroot_name(left, field="payload.left")
+        right = validate_chroot_name(right, field="payload.right")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_PACKAGE_COMPARE_TARGETS", str(exc)) from exc
     return services.chroots().package_diff(left, right)
 
 
@@ -950,7 +1036,11 @@ def _artifacts_cleanup(services: ServiceContainer, payload: dict[str, Any], prog
     progress({"phase": "cleanup", "percent": 10, "message": "Cleaning transfer artifacts"})
     if cancelled():
         raise OperationCancelled("Artifact cleanup was cancelled")
-    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=bool(payload.get("deleteAll") or payload.get("delete_all") or False))
+    try:
+        delete_all = optional_bool(payload, "deleteAll", "delete_all", default=False, field="payload.deleteAll")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
+    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=delete_all)
     progress({"phase": "complete", "percent": 100, "message": "Transfer artifact cleanup complete"})
     return result
 
@@ -1044,8 +1134,11 @@ def _module_status(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 def _module_build_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     from ..magisk import resolve_startup_targets
 
-    selected = tuple(str(item).strip() for item in payload.get("startupTargets", ()) if str(item).strip()) if isinstance(payload.get("startupTargets", ()), (list, tuple)) else ()
-    all_installed = bool(payload.get("allInstalled") or payload.get("all_installed") or False)
+    try:
+        selected = tuple(validate_chroot_name(item, field="payload.startupTargets item") for item in strict_string_list(payload.get("startupTargets", []), field="payload.startupTargets"))
+        all_installed = optional_bool(payload, "allInstalled", "all_installed", default=False, field="payload.allInstalled")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_MODULE_BUILD_PAYLOAD", str(exc)) from exc
     targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
     archive = _managed_transfer_archive("chrootctl-magisk", "zip")
     return {
@@ -1139,6 +1232,8 @@ def _debug_probe_rows(services: ServiceContainer, group: str = "all") -> list[di
 
 def _debug_probes(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     group = str(payload.get("group") or "all").strip() or "all"
+    if group not in {"all", "root", "backend", "storage", "runtime", "recovery", "operations"}:
+        raise BridgeProtocolError("INVALID_DEBUG_GROUP", "payload.group must be one of all, root, backend, storage, runtime, recovery, operations")
     rows = _debug_probe_rows(services, group)
     return {
         "group": group,
@@ -1151,7 +1246,10 @@ def _debug_probes(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 
 
 def _debug_timeline(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    limit = int(payload.get("limit", 50))
+    try:
+        limit = optional_bounded_int(payload, "limit", default=50, minimum=0, maximum=500)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_DEBUG_LIMIT", str(exc)) from exc
     events = [event.to_display_dict() for event in services.audit().recent(limit=limit)]
     return {"events": events, "limit": limit}
 
@@ -1170,8 +1268,11 @@ def _module_build(services: ServiceContainer, payload: dict[str, Any], progress:
     from ..magisk import MagiskModuleConfig, render_magisk_module, resolve_startup_targets, validate_magisk_module, zip_magisk_module
     import tempfile
 
-    selected = tuple(str(item).strip() for item in payload.get("startupTargets", ()) if str(item).strip()) if isinstance(payload.get("startupTargets", ()), (list, tuple)) else ()
-    all_installed = bool(payload.get("allInstalled") or payload.get("all_installed") or False)
+    try:
+        selected = tuple(validate_chroot_name(item, field="payload.startupTargets item") for item in strict_string_list(payload.get("startupTargets", []), field="payload.startupTargets"))
+        all_installed = optional_bool(payload, "allInstalled", "all_installed", default=False, field="payload.allInstalled")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_MODULE_BUILD_PAYLOAD", str(exc)) from exc
     targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
     archive = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-magisk", "zip")))
     progress({"phase": "render", "percent": 20, "message": "Rendering module payload"})
@@ -1209,7 +1310,11 @@ def _cleanup_temp(services: ServiceContainer, payload: dict[str, Any], progress:
     progress({"phase": "cleanup", "percent": 10, "message": "Cleaning temporary artifacts"})
     if cancelled():
         raise OperationCancelled("Temporary cleanup was cancelled")
-    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=bool(payload.get("deleteAll") or payload.get("delete_all") or True))
+    try:
+        delete_all = optional_bool(payload, "deleteAll", "delete_all", default=True, field="payload.deleteAll")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
+    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=delete_all)
     progress({"phase": "complete", "percent": 100, "message": "Temporary cleanup complete"})
     return result
 
@@ -1228,7 +1333,10 @@ def _debug_export(services: ServiceContainer, payload: dict[str, Any], progress:
 def _smoke_target_name(services: ServiceContainer, payload: dict[str, Any]) -> str | None:
     requested = _optional_text(payload, "name") or _optional_text(payload, "target")
     if requested:
-        return requested
+        try:
+            return validate_chroot_name(requested, field="payload.name")
+        except ValueError as exc:
+            raise BridgeProtocolError("INVALID_CHROOT_NAME", str(exc)) from exc
     rows = serialize_value(services.chroots().list())
     if isinstance(rows, list):
         for row in rows:
@@ -1263,7 +1371,10 @@ def _smoke_steps(target_name: str | None = None) -> list[dict[str, Any]]:
 
 def _smoke_plan(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     scope = str(payload.get("scope") or "real-device").strip() or "real-device"
-    include_optional = bool(payload.get("includeOptional", payload.get("include_optional", True)))
+    try:
+        include_optional = optional_bool(payload, "includeOptional", "include_optional", default=True, field="payload.includeOptional")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
     target_name = _smoke_target_name(services, payload)
     steps = [step for step in _smoke_steps(target_name) if include_optional or step["required"]]
     return {
@@ -1282,7 +1393,10 @@ def _smoke_plan(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 def _smoke_report(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     from ..operations import OperationManager
 
-    limit = int(payload.get("limit", 12))
+    try:
+        limit = optional_bounded_int(payload, "limit", default=12, minimum=1, maximum=100)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_SMOKE_LIMIT", str(exc)) from exc
     manager = OperationManager(services.base_config.database_path.parent / "operations")
     recent = [record.to_dict() for record in manager.list_recent(limit=limit)]
     smoke_records = [item for item in recent if str(item.get("kind") or "") == "smoke.run"]
@@ -1430,7 +1544,11 @@ def _smoke_result_manual_pending(latest: dict[str, Any] | None) -> int:
 
 
 def _smoke_result_payload(services: ServiceContainer, payload: dict[str, Any]) -> dict[str, Any]:
-    latest = _latest_smoke_record(services, limit=int(payload.get("limit", 25)))
+    try:
+        limit = optional_bounded_int(payload, "limit", default=25, minimum=1, maximum=100)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_SMOKE_LIMIT", str(exc)) from exc
+    latest = _latest_smoke_record(services, limit=limit)
     failed = _smoke_result_failed(latest)
     manual_pending_count = _smoke_result_manual_pending(latest)
     blocking = []
@@ -1683,6 +1801,93 @@ _SPECS = (
 )
 SPECS = {spec.name: spec for spec in _SPECS}
 
+_PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
+    "system.dashboard": frozenset({"name", "details", "tail"}),
+    "system.status": frozenset({"name", "details"}),
+    "system.doctor": frozenset({"name"}),
+    "chroots.list": frozenset(),
+    "chroots.get": frozenset({"name"}),
+    "storage.status": frozenset({"name"}),
+    "install.form": frozenset({"name", "distro"}),
+    "install.preview": frozenset({"distro", "name", "username", "preset", "profile", "desktop", "release", "version", "mirror", "phase", "forcePhase", "force_phase", "resume", "repair", "tools", "addons"}),
+    "install.run": frozenset({"distro", "name", "username", "preset", "profile", "desktop", "release", "version", "mirror", "phase", "forcePhase", "force_phase", "resume", "repair", "tools", "addons"}),
+    "chroots.lifecycle.preview": frozenset({"name", "action"}),
+    "chroots.remove.preview": frozenset({"name"}),
+    "chroots.export": frozenset({"name", "archive"}),
+    "chroots.start": frozenset({"name", "login", "rootLogin", "root_login"}),
+    "chroots.restart": frozenset({"name", "login", "rootLogin", "root_login"}),
+    "chroots.upgrade": frozenset({"name", "username"}),
+    "chroots.remove.execute": frozenset({"name", "confirmation", "confirmName"}),
+    "snapshots.list": frozenset({"name", "limit"}),
+    "snapshots.preview": frozenset({"name", "action", "snapshot", "snapshotName", "snapshot_name", "archive"}),
+    "snapshots.create": frozenset({"name", "snapshot", "snapshotName", "snapshot_name", "description"}),
+    "snapshots.restore": frozenset({"name", "snapshot", "snapshotName", "snapshot_name", "confirmation", "confirmName"}),
+    "snapshots.export": frozenset({"name", "snapshot", "snapshotName", "snapshot_name", "archive"}),
+    "users.list": frozenset({"name"}),
+    "users.get": frozenset({"name", "username"}),
+    "users.preview": frozenset({"name", "username", "action", "shell", "sudo", "deleteHome", "fixOwnership", "enabled"}),
+    "users.add": frozenset({"name", "username", "shell", "sudo"}),
+    "users.remove": frozenset({"name", "username", "confirmation", "confirmUsername", "deleteHome"}),
+    "users.sync_uid_gid": frozenset({"name", "username", "fixOwnership"}),
+    "users.set_shell": frozenset({"name", "username", "shell"}),
+    "users.set_sudo": frozenset({"name", "username", "enabled", "sudo"}),
+    "users.set_password": frozenset({"name", "username", "password", "confirmPassword", "confirmation", "confirmUsername"}),
+    "services.list": frozenset({"name"}),
+    "services.get": frozenset({"name", "chroot", "service", "serviceName", "unit", "tail"}),
+    "services.journal": frozenset({"name", "chroot", "service", "serviceName", "unit", "tail"}),
+    "services.preview": frozenset({"name", "chroot", "service", "serviceName", "unit", "action", "target"}),
+    "services.start": frozenset({"name", "chroot", "service", "serviceName", "unit", "action", "target"}),
+    "services.stop": frozenset({"name", "chroot", "service", "serviceName", "unit", "action", "target"}),
+    "services.restart": frozenset({"name", "chroot", "service", "serviceName", "unit", "action", "target"}),
+    "services.enable": frozenset({"name", "chroot", "service", "serviceName", "unit", "action", "target"}),
+    "services.disable": frozenset({"name", "chroot", "service", "serviceName", "unit", "action", "target"}),
+    "logs.list": frozenset({"name", "tail", "level"}),
+    "operations.list": frozenset({"name", "limit"}),
+    "operations.get": frozenset({"operationId", "operation_id", "id"}),
+    "operations.retry": frozenset({"operationId", "operation_id", "id", "mode"}),
+    "system.refresh": frozenset(),
+    "catalog.tools": frozenset({"name", "targetName", "distro", "category", "query", "q"}),
+    "catalog.addons": frozenset({"name", "targetName", "distro", "category", "query", "q"}),
+    "catalog.search": frozenset({"kind", "name", "targetName", "distro", "category", "query", "q"}),
+    "catalog.preview": frozenset({"kind", "name", "names", "entries", "entry"}),
+    "catalog.apply": frozenset({"kind", "name", "names", "entries", "entry"}),
+    "packages.inventory": frozenset({"name", "limit"}),
+    "packages.compare": frozenset({"left", "right", "leftName", "rightName"}),
+    "transfer.inspect_import": frozenset({"archive", "path", "password"}),
+    "transfer.import_preview": frozenset({"archive", "path", "name", "conflict", "password"}),
+    "transfer.preview_export": frozenset({"name", "archive", "password"}),
+    "transfer.import": frozenset({"archive", "path", "name", "conflict", "password", "postImport", "post_import"}),
+    "transfer.export": frozenset({"name", "archive", "password"}),
+    "transfer.artifact_root": frozenset(),
+    "artifacts.list": frozenset(),
+    "artifacts.cleanup": frozenset({"path", "deleteAll", "delete_all"}),
+    "system.runtime": frozenset(),
+    "system.module_status": frozenset(),
+    "support.preview": frozenset({"archive"}),
+    "support.bundle": frozenset({"archive"}),
+    "system.module_build_preview": frozenset({"startupTargets", "allInstalled", "all_installed", "archive"}),
+    "system.module_build": frozenset({"startupTargets", "allInstalled", "all_installed", "archive"}),
+    "repair.preview": frozenset({"decisions"}),
+    "repair.apply": frozenset({"decisions"}),
+    "cleanup.temp_preview": frozenset({"path", "deleteAll", "delete_all"}),
+    "cleanup.temp": frozenset({"path", "deleteAll", "delete_all"}),
+    "debug.probes": frozenset({"group"}),
+    "debug.timeline": frozenset({"limit"}),
+    "debug.export": frozenset({"archive", "group", "limit"}),
+    "smoke.plan": frozenset({"name", "target", "scope", "includeOptional", "include_optional"}),
+    "smoke.report": frozenset({"name", "target", "limit"}),
+    "smoke.run": frozenset({"name", "target", "scope", "includeOptional", "include_optional"}),
+    "smoke.last_result": frozenset({"limit"}),
+    "smoke.result.persist": frozenset({"archive", "limit"}),
+    "smoke.result.export": frozenset({"archive", "limit"}),
+    "smoke.failure.bundle": frozenset({"archive", "limit"}),
+    "release.readiness": frozenset(),
+    "final.preflight": frozenset(),
+    "final.packaging_audit": frozenset(),
+    "final.no_webui_regression": frozenset(),
+    "final.release_seal": frozenset(),
+}
+
 
 def resolve_spec(request: BridgeRequest, expected_mode: str) -> OperationSpec:
     spec = SPECS.get(request.operation)
@@ -1693,7 +1898,17 @@ def resolve_spec(request: BridgeRequest, expected_mode: str) -> OperationSpec:
             "OPERATION_MODE_MISMATCH",
             f"Operation {request.operation} is a {spec.mode} operation, not {expected_mode}",
         )
+    _validate_payload_fields(request.operation, request.payload)
     return spec
+
+
+def _validate_payload_fields(operation: str, payload: dict[str, Any]) -> None:
+    allowed = _PAYLOAD_FIELDS.get(operation)
+    if allowed is None:
+        return
+    unknown = sorted(key for key in payload.keys() if key not in allowed)
+    if unknown:
+        raise BridgeProtocolError("UNKNOWN_PAYLOAD_FIELD", f"Unsupported field(s) for {operation}", details={"fields": unknown})
 
 
 def capabilities() -> list[dict[str, Any]]:

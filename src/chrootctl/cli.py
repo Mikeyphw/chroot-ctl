@@ -18,10 +18,12 @@ def apply_start_name_shorthand(
 
 
 def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "app":
+    if "app" in sys.argv[1:]:
         from .bridge.cli import main as bridge_main
 
-        raise SystemExit(bridge_main(sys.argv[2:]))
+        app_index = sys.argv.index("app")
+        bridge_argv = [*sys.argv[1:app_index], *sys.argv[app_index + 1 :]]
+        raise SystemExit(bridge_main(bridge_argv))
     parser = build_parser()
     args = parser.parse_args()
     cli_runtime.execute_cli(

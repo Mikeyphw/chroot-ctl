@@ -151,7 +151,7 @@ def main() -> int:
         "android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/BridgeProcess.kt": "603695276da2e054b0067626541feca2d5ee1507c448952665b7ac05202f57a4",
         "android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/ChrootRootService.kt": "846acef5e80773eebc06acdb376781ca54220b3964240a2d176cd4fc66724ad0",
         "android/app/src/main/kotlin/com/mikeyphw/chrootctl/repository/BridgeRepository.kt": "6c97ed75b1a24c6b52f73ff2394966395a57b8c7a907c7a5235bb15298de4188",
-        "android/app/lint.xml": "994ca686cb90f115c56edadab4e2a25e129b8d0d7b091bd48ad1139d75c2f8c2",
+        "android/app/lint.xml": "dae3a0a90ef1a7a1a05fc8a2f2043b589a0fc274611911bf2f5daed3063ae86f",
     }
     for rel, expected in protected_hashes.items():
         require(sha(rel) == expected, f"protected landed runtime file changed: {rel}")

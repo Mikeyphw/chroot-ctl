@@ -16,6 +16,10 @@ _SECRET_KEYS = frozenset({
     "token",
 })
 _BEARER_RE = re.compile(r"(?i)\b(bearer|token)\s+[A-Za-z0-9._~+/-]+=*")
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(password|passphrase|token|secret|authorization|access_token|cookie|csrf)(\s*[:=]\s*)([^\s,;]+)"
+)
+_OPENSSL_PASS_RE = re.compile(r"(?i)(-pass\s+pass:)([^\s,;]+)")
 
 
 def redact_value(value: Any) -> Any:
@@ -29,7 +33,10 @@ def redact_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(redact_value(item) for item in value)
     if isinstance(value, str):
-        return _BEARER_RE.sub(lambda match: f"{match.group(1)} <redacted>", value)
+        text = _BEARER_RE.sub(lambda match: f"{match.group(1)} <redacted>", value)
+        text = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}{match.group(2)}<redacted>", text)
+        text = _OPENSSL_PASS_RE.sub(lambda match: f"{match.group(1)}<redacted>", text)
+        return text
     return value
 
 

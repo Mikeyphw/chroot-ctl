@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import textwrap
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from .models import DisplayRenderable, to_display_dict
@@ -86,11 +87,11 @@ def render_table(
     console: Any | None = None,
     json_output: bool = False,
 ) -> None:
-    normalized_rows = [to_display_dict(row) for row in rows]
     console = build_console(plain=json_output) if console is None else console
     if json_output:
-        render_json(normalized_rows, console=console)
+        render_json([_json_ready(row) for row in rows], console=console)
         return
+    normalized_rows = [to_display_dict(row) for row in rows]
 
     keys: list[str] = []
     for row in normalized_rows:
@@ -124,11 +125,11 @@ def result_panel(
     console: Any | None = None,
     json_output: bool = False,
 ) -> None:
-    normalized = to_display_dict(data)
     console = build_console(plain=json_output) if console is None else console
     if json_output:
-        render_json(normalized, console=console)
+        render_json(_json_ready(data), console=console)
         return
+    normalized = to_display_dict(data)
 
     body = Table.grid(expand=True)
     body.add_column(style="bold cyan", no_wrap=True)
@@ -138,9 +139,28 @@ def result_panel(
     console.print(Panel(body, title=title, expand=False))
 
 
-def render_json(data: dict[str, Any] | list[dict[str, Any]], *, console: Any | None = None) -> None:
+def render_json(data: Any, *, console: Any | None = None) -> None:
     console = build_console(plain=True) if console is None else console
     console.print(json.dumps(data, indent=2, sort_keys=True))
+
+
+def _json_ready(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if is_dataclass(value):
+        return _json_ready(asdict(value))
+    if isinstance(value, DisplayRenderable):
+        raw = getattr(value, "__dict__", None)
+        if isinstance(raw, dict):
+            return {str(key): _json_ready(item) for key, item in raw.items()}
+        return to_display_dict(value)
+    if isinstance(value, dict):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_ready(item) for item in value]
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return _json_ready(value.to_dict())
+    return str(value)
 
 
 def _render_compact_rows(title: str, rows: list[dict[str, str]], *, console: Any) -> None:

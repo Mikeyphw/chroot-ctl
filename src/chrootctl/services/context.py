@@ -10,6 +10,7 @@ from ..logging_utils import configure_logging
 from ..registry import ChrootRegistry
 from ..system import SystemRunner
 from ..user_sync import UserSyncManager
+from ..validation import validate_chroot_name, validate_username
 
 
 @dataclass(slots=True)
@@ -29,9 +30,10 @@ class ServiceContainer:
     dry_run: bool = False
 
     def config_for(self, name: str | None = None, *, username: str | None = None) -> ChrootConfig:
-        config = self.base_config.for_chroot(name) if name else self.base_config
+        safe_name = validate_chroot_name(name, field="chroot name") if name is not None else None
+        config = self.base_config.for_chroot(safe_name) if safe_name else self.base_config
         if username is not None:
-            config = config.with_overrides(username=username)
+            config = config.with_overrides(username=validate_username(username, field="username"))
         return config
 
     def runtime_for(self, name: str | None = None, *, username: str | None = None) -> ServiceRuntime:

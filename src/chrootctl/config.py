@@ -9,6 +9,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
 
+from .validation import strict_bool, validate_chroot_name, validate_relative_chroot_path
+
 DEFAULT_MEDIA_MOUNTS = {
     "/sdcard/Documents": "home/mike/Documents",
     "/sdcard/Download": "home/mike/Downloads",
@@ -136,14 +138,14 @@ def _normalize_mounts(payload: Any) -> tuple[BindMount, ...]:
         items = payload.items()
         for source, value in items:
             if isinstance(value, str):
-                mounts.append(BindMount(source=str(source), target=value))
+                mounts.append(BindMount(source=str(source), target=validate_relative_chroot_path(value, field=f"mount target for {source}")))
             elif isinstance(value, dict):
                 mounts.append(
                     BindMount(
                         source=str(source),
-                        target=str(value["target"]),
-                        enabled=bool(value.get("enabled", True)),
-                        read_only=bool(value.get("read_only", False)),
+                        target=validate_relative_chroot_path(value["target"], field=f"mount target for {source}"),
+                        enabled=strict_bool(value.get("enabled", True), field=f"mount enabled for {source}"),
+                        read_only=strict_bool(value.get("read_only", False), field=f"mount read_only for {source}"),
                     )
                 )
             else:
@@ -156,9 +158,9 @@ def _normalize_mounts(payload: Any) -> tuple[BindMount, ...]:
             mounts.append(
                 BindMount(
                     source=str(item["source"]),
-                    target=str(item["target"]),
-                    enabled=bool(item.get("enabled", True)),
-                    read_only=bool(item.get("read_only", False)),
+                    target=validate_relative_chroot_path(item["target"], field="mount target"),
+                    enabled=strict_bool(item.get("enabled", True), field="mount enabled"),
+                    read_only=strict_bool(item.get("read_only", False), field="mount read_only"),
                 )
             )
         return tuple(mounts)
@@ -169,7 +171,12 @@ def _normalize_strings(payload: Any) -> tuple[str, ...]:
         return ()
     if not isinstance(payload, list):
         raise TypeError("expected a list of strings")
-    return tuple(str(item) for item in payload)
+    values: list[str] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, str):
+            raise TypeError(f"expected string at index {index}")
+        values.append(item)
+    return tuple(values)
 
 
 def _normalize_paths(payload: Any) -> tuple[Path, ...]:
@@ -268,7 +275,9 @@ class ChrootConfig:
             "log_file": Path(payload.get("log_file", str(current.log_file))),
             "database_path": _normalize_android_runtime_path(Path(payload.get("database_path", str(current.database_path))), legacy=_legacy_database_path(), stable=_default_database_path()),
             "shell_path": payload.get("shell_path", current.shell_path),
-            "mount_data_with_dev_suid": payload.get("mount_data_with_dev_suid", current.mount_data_with_dev_suid),
+            "mount_data_with_dev_suid": strict_bool(
+                payload.get("mount_data_with_dev_suid", current.mount_data_with_dev_suid), field="mount_data_with_dev_suid"
+            ),
             "dev_shm_size": payload.get("dev_shm_size", current.dev_shm_size),
             "media_mounts": _normalize_mounts(payload.get("media_mounts", current.media_mounts)),
             "extra_bind_mounts": _normalize_mounts(payload.get("extra_bind_mounts", current.extra_bind_mounts)),
@@ -278,7 +287,9 @@ class ChrootConfig:
             "post_install_hooks": _normalize_strings(payload.get("post_install_hooks", list(current.post_install_hooks))),
             "install_profile": payload.get("install_profile", current.install_profile),
             "snapshot_dir": _normalize_android_runtime_path(Path(payload.get("snapshot_dir", str(current.snapshot_dir))), legacy=_legacy_snapshot_dir(), stable=_default_snapshot_dir()),
-            "snapshot_before_destructive": payload.get("snapshot_before_destructive", current.snapshot_before_destructive),
+            "snapshot_before_destructive": strict_bool(
+                payload.get("snapshot_before_destructive", current.snapshot_before_destructive), field="snapshot_before_destructive"
+            ),
             "tool_manifest_dirs": _normalize_paths(payload.get("tool_manifest_dirs", repositories.get("tool_manifests", list(current.tool_manifest_dirs)))),
             "tool_script_dirs": _normalize_paths(payload.get("tool_script_dirs", repositories.get("tool_scripts", list(current.tool_script_dirs)))),
             "addon_manifest_dirs": _normalize_paths(payload.get("addon_manifest_dirs", repositories.get("addon_manifests", list(current.addon_manifest_dirs)))),
@@ -311,6 +322,7 @@ class ChrootConfig:
         return replace(self, **kwargs)
 
     def for_chroot(self, name: str) -> "ChrootConfig":
+        name = validate_chroot_name(name)
         cfg = self.with_overrides(distro_name=name)
         overrides = self.chroot_overrides.get(name)
         if not overrides:

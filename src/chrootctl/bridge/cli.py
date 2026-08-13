@@ -7,7 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Sequence
 
-from .protocol import BridgeProtocolError, BridgeRequest, BridgeResponse, PROTOCOL_VERSION
+from .protocol import BridgeProtocolError, BridgeRequest, BridgeResponse, MAX_BRIDGE_REQUEST_BYTES, PROTOCOL_VERSION, extract_request_id_safely
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,6 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
+        raw_request: str | None = None
         if args.command == "capabilities":
             response = _capabilities_response(config_path=args.config)
             _write_json(response.to_dict())
@@ -52,7 +53,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _write_json(response.to_dict())
             return 0 if response.ok else 2
         if args.command in {"query", "preview", "run"}:
-            request = BridgeRequest.from_json(_read_request(args.request_file))
+            raw_request = _read_request(args.request_file)
+            request = BridgeRequest.from_json(raw_request)
             if args.command == "query":
                 response = dispatcher.query(request)
                 _write_json(response.to_dict())
@@ -75,10 +77,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             _write_json(response.to_dict())
             return 0 if response.ok else 2
     except BridgeProtocolError as exc:
-        _write_json(BridgeResponse.failure("unknown", exc).to_dict())
+        _write_json(BridgeResponse.failure(_request_id_from_raw(locals().get("raw_request")), exc).to_dict())
         return 2
     except Exception as exc:
-        _write_json(BridgeResponse.failure("unknown", exc).to_dict())
+        _write_json(BridgeResponse.failure(_request_id_from_raw(locals().get("raw_request")), exc).to_dict())
         return 2
     parser.error("unsupported bridge command")
     return 2
@@ -149,8 +151,23 @@ def _safe_error_message(error: Exception) -> str:
 
 def _read_request(path: str) -> str:
     if path == "-":
-        return sys.stdin.read()
-    return Path(path).read_text(encoding="utf-8")
+        data = sys.stdin.buffer.read(MAX_BRIDGE_REQUEST_BYTES + 1)
+        if len(data) > MAX_BRIDGE_REQUEST_BYTES:
+            raise BridgeProtocolError("REQUEST_TOO_LARGE", f"Bridge request must not exceed {MAX_BRIDGE_REQUEST_BYTES} bytes")
+        return data.decode("utf-8")
+    request_path = Path(path)
+    try:
+        if request_path.stat().st_size > MAX_BRIDGE_REQUEST_BYTES:
+            raise BridgeProtocolError("REQUEST_TOO_LARGE", f"Bridge request must not exceed {MAX_BRIDGE_REQUEST_BYTES} bytes")
+    except FileNotFoundError:
+        raise
+    return request_path.read_text(encoding="utf-8")
+
+
+def _request_id_from_raw(raw: object) -> str:
+    if isinstance(raw, str):
+        return extract_request_id_safely(raw) or "unknown"
+    return "unknown"
 
 
 def _write_json(payload: dict[str, object]) -> None:

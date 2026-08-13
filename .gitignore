@@ -132,7 +132,6 @@ service-account.json
 **/build/
 *.apk
 *.aab
-android/app/schemas/
 # ===================
 # Generated chrootctl module outputs
 # ===================

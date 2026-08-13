@@ -1,18 +1,11 @@
 from __future__ import annotations
 
-import re
 import shlex
 
 from .config import ChrootConfig
 from .models import UserIdStatus, UserIdSyncResult
 from .system import SystemRunner
-
-USERNAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]*[$]?$")
-
-def validate_username(username: str) -> str:
-    if not USERNAME_PATTERN.fullmatch(username):
-        raise ValueError(f"invalid username: {username!r}")
-    return username
+from .validation import validate_username
 
 class UserSyncManager:
     def __init__(self, config: ChrootConfig, runner: SystemRunner, logger) -> None:

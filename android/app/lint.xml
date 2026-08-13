@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <lint>
-    <!-- API/dependency versions are pinned by the Android phase contract; keep behavioral lint fatal. -->
+    <!-- Keep only the explicit API-level suppression required by the Android release contract. -->
     <issue id="OldTargetApi" severity="ignore" />
-    <issue id="GradleDependency" severity="ignore" />
-    <issue id="NewerVersionAvailable" severity="ignore" />
-
-    <!-- Strings are staged by feature phase and intentionally kept ahead of some call sites. -->
-    <issue id="UnusedResources" severity="ignore" />
-    <issue id="PluralsCandidate" severity="ignore" />
 </lint>

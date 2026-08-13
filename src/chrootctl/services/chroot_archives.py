@@ -7,7 +7,6 @@ import secrets
 import shutil
 import subprocess
 import tempfile
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,40 +14,8 @@ from typing import Any
 from ..errors import AppError
 from ..models import ChrootArchiveInspection, ChrootExportResult, ChrootImportResult, ChrootRecord, ChrootRemovalResult, ChrootRenameResult
 from ..registry import ChrootRegistry
+from ..validation import validate_chroot_name as _validate_chroot_name
 
-CHROOT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
-
-def validate_chroot_name(name: str) -> str:
-    normalized = name.strip()
-    if not normalized:
-        raise RuntimeError("new chroot name is required")
-    if not CHROOT_NAME_PATTERN.fullmatch(normalized):
-        raise RuntimeError(f"invalid chroot name: {name!r}")
-    return normalized
-
-
-def record_from_registry(row: dict[str, object]) -> ChrootRecord:
-    return ChrootRecord(
-        name=str(row.get("name", "")),
-        distro=str(row.get("distro", "")),
-        path=str(row.get("path", "")),
-        release_name=str(row.get("release_name", "")),
-        version=str(row.get("version", "")),
-        phase=str(row.get("phase", "")),
-        installed=bool(row.get("installed")),
-        created_at=str(row.get("created_at", "")),
-        updated_at=str(row.get("updated_at", "")),
-    )
-
-
-def mount_summary(config) -> str:
-    mounts: list[str] = []
-    for mount in config.media_mounts + config.extra_bind_mounts:
-        if mount.enabled:
-            mode = "ro" if mount.read_only else "rw"
-            mounts.append(f"{mount.source}->{mount.target}({mode})")
-    return ", ".join(mounts) or "default"
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -61,6 +28,18 @@ def _sha256_file(path: Path) -> str:
 def _read_checksum_file(path: Path) -> str:
     line = path.read_text(encoding="utf-8").strip().splitlines()[0]
     return line.split()[0].strip()
+
+
+def validate_chroot_name(name: str) -> str:
+    try:
+        return _validate_chroot_name(name)
+    except ValueError as exc:
+        message = str(exc)
+        if "is required" in message:
+            message = "new chroot name is required"
+        elif "invalid chroot name" not in message:
+            message = f"invalid chroot name: {name!r}"
+        raise RuntimeError(message) from exc
 
 
 def _next_available_name(name: str, registry: ChrootRegistry, config) -> str:
@@ -84,15 +63,6 @@ def record_from_registry(row: dict[str, object]) -> ChrootRecord:
         created_at=str(row.get("created_at", "")),
         updated_at=str(row.get("updated_at", "")),
     )
-
-
-def validate_chroot_name(name: str) -> str:
-    normalized = name.strip()
-    if not normalized:
-        raise RuntimeError("new chroot name is required")
-    if not CHROOT_NAME_PATTERN.fullmatch(normalized):
-        raise RuntimeError(f"invalid chroot name: {name!r}")
-    return normalized
 
 
 def mount_summary(config) -> str:

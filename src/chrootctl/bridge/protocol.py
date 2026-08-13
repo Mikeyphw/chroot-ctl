@@ -9,8 +9,15 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..models import DisplayRenderable
+from .redaction import redact_value
 
 PROTOCOL_VERSION = 1
+MAX_BRIDGE_REQUEST_BYTES = 1024 * 1024
+MAX_BRIDGE_JSON_DEPTH = 24
+MAX_BRIDGE_STRING_LENGTH = 16 * 1024
+MAX_BRIDGE_ARRAY_LENGTH = 2048
+MAX_BRIDGE_OBJECT_KEYS = 512
+_REQUEST_TOP_LEVEL_KEYS = frozenset({"protocolVersion", "requestId", "operation", "payload"})
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _OPERATION_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,80}$")
 
@@ -32,6 +39,9 @@ class BridgeRequest:
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "BridgeRequest":
+        unknown = sorted(str(key) for key in value.keys() if str(key) not in _REQUEST_TOP_LEVEL_KEYS)
+        if unknown:
+            raise BridgeProtocolError("UNKNOWN_REQUEST_FIELD", "Request contains unknown top-level field(s)", details={"fields": unknown})
         version = value.get("protocolVersion")
         if version != PROTOCOL_VERSION:
             raise BridgeProtocolError(
@@ -52,16 +62,24 @@ class BridgeRequest:
             payload = {}
         if not isinstance(payload, Mapping):
             raise BridgeProtocolError("INVALID_PAYLOAD", "payload must be a JSON object")
+        _validate_json_shape(payload, field="payload")
         return cls(version, request_id, operation, {str(key): item for key, item in payload.items()})
 
     @classmethod
     def from_json(cls, raw: str) -> "BridgeRequest":
+        if len(raw.encode("utf-8", errors="ignore")) > MAX_BRIDGE_REQUEST_BYTES:
+            raise BridgeProtocolError(
+                "REQUEST_TOO_LARGE",
+                f"Bridge request must not exceed {MAX_BRIDGE_REQUEST_BYTES} bytes",
+                details={"maxBytes": MAX_BRIDGE_REQUEST_BYTES},
+            )
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise BridgeProtocolError("INVALID_JSON", f"Request is not valid JSON: {exc.msg}") from exc
         if not isinstance(value, Mapping):
             raise BridgeProtocolError("INVALID_REQUEST", "Request must be a JSON object")
+        _validate_json_shape(value, field="request")
         return cls.from_mapping(value)
 
 
@@ -102,9 +120,9 @@ class BridgeResponse:
     @classmethod
     def failure(cls, request_id: str, error: BridgeProtocolError | Exception) -> "BridgeResponse":
         if isinstance(error, BridgeProtocolError):
-            payload = {"code": error.code, "message": error.message, "details": serialize_value(error.details)}
+            payload = {"code": error.code, "message": _safe_error_message(error.message), "details": serialize_value(redact_value(error.details))}
         else:
-            payload = {"code": "INTERNAL_ERROR", "message": str(error) or error.__class__.__name__, "details": {}}
+            payload = {"code": "INTERNAL_ERROR", "message": _safe_error_message(str(error) or error.__class__.__name__), "details": {}}
         return cls(request_id=request_id, ok=False, error=payload)
 
 
@@ -136,3 +154,48 @@ def serialize_value(value: Any) -> Any:
     if callable(to_dict):
         return serialize_value(to_dict())
     return str(value)
+
+
+def extract_request_id_safely(raw: str) -> str | None:
+    try:
+        value = json.loads(raw[:MAX_BRIDGE_REQUEST_BYTES])
+    except Exception:
+        return None
+    if not isinstance(value, Mapping):
+        return None
+    request_id = str(value.get("requestId") or "").strip()
+    return request_id if _REQUEST_ID_RE.fullmatch(request_id) else None
+
+
+def _safe_error_message(message: str) -> str:
+    redacted = redact_value(message)
+    text = str(redacted).strip() or "Bridge request failed"
+    return " ".join(text.split())[:512]
+
+
+def _validate_json_shape(value: Any, *, field: str, depth: int = 0) -> None:
+    if depth > MAX_BRIDGE_JSON_DEPTH:
+        raise BridgeProtocolError("REQUEST_TOO_DEEP", f"{field} exceeds maximum JSON nesting depth")
+    if isinstance(value, str):
+        if len(value) > MAX_BRIDGE_STRING_LENGTH:
+            raise BridgeProtocolError("REQUEST_STRING_TOO_LONG", f"{field} exceeds maximum string length")
+        return
+    if value is None or isinstance(value, (int, float, bool)):
+        return
+    if isinstance(value, Mapping):
+        if len(value) > MAX_BRIDGE_OBJECT_KEYS:
+            raise BridgeProtocolError("REQUEST_OBJECT_TOO_LARGE", f"{field} has too many keys")
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise BridgeProtocolError("INVALID_JSON_KEY", f"{field} contains a non-string key")
+            if len(key) > 256:
+                raise BridgeProtocolError("REQUEST_KEY_TOO_LONG", f"{field} contains an overlong key")
+            _validate_json_shape(item, field=f"{field}.{key}", depth=depth + 1)
+        return
+    if isinstance(value, list):
+        if len(value) > MAX_BRIDGE_ARRAY_LENGTH:
+            raise BridgeProtocolError("REQUEST_ARRAY_TOO_LARGE", f"{field} has too many array items")
+        for index, item in enumerate(value):
+            _validate_json_shape(item, field=f"{field}[{index}]", depth=depth + 1)
+        return
+    raise BridgeProtocolError("INVALID_JSON_VALUE", f"{field} contains unsupported JSON value type")
