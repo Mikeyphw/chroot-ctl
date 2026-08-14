@@ -987,10 +987,58 @@ def _packages_compare(services: ServiceContainer, payload: dict[str, Any]) -> An
     return services.chroots().package_diff(left, right)
 
 
-def _managed_transfer_archive(name: str, suffix: str = "tar.zst") -> Path:
+def _managed_transfer_archive(name: str, suffix: str = "tar.zst", *, create_root: bool = True) -> Path:
     from ..services.transfer import managed_transfer_archive
 
-    return managed_transfer_archive(name, suffix)
+    return managed_transfer_archive(name, suffix, create_root=create_root)
+
+
+def _managed_artifact_output(payload: dict[str, Any], *, key: str, default: Path, suffix: str, create_root: bool = True) -> Path:
+    from ..services.storage_safety import require_contained
+    from ..services.transfer import managed_transfer_root
+
+    raw = _optional_text(payload, key)
+    raw_candidate = Path(raw).expanduser() if raw else default.expanduser()
+    if raw and raw_candidate.is_symlink():
+        raise BridgeProtocolError("INVALID_ARTIFACT_PATH", f"payload.{key} must not be a symlink")
+    candidate = raw_candidate.resolve()
+    root = managed_transfer_root(create=create_root).resolve()
+    candidate = require_contained(root, candidate, label=f"payload.{key} managed artifact")
+    if candidate == root or not candidate.name.endswith(suffix):
+        raise BridgeProtocolError("INVALID_ARTIFACT_PATH", f"payload.{key} must be a managed {suffix} artifact")
+    if candidate.exists() and (candidate.is_symlink() or not candidate.is_file()):
+        raise BridgeProtocolError("INVALID_ARTIFACT_PATH", f"payload.{key} is not a regular managed artifact")
+    return candidate
+
+
+def _managed_output_preflight(target: Path) -> tuple[bool, str]:
+    from ..services.transfer import managed_transfer_root
+
+    root = managed_transfer_root(create=False)
+    if root.exists():
+        if root.is_symlink() or not root.is_dir():
+            return False, "Managed artifact root exists but is not a safe directory."
+        try:
+            mode_writable = bool(root.stat().st_mode & 0o222)
+        except OSError:
+            return False, "Managed artifact root metadata is unreadable."
+        if not mode_writable or not __import__("os").access(root, __import__("os").W_OK):
+            return False, "Managed artifact root is not writable by the current runtime."
+    else:
+        parent = root.parent
+        if parent.is_symlink() or not parent.is_dir():
+            return False, "Managed artifact root parent is unavailable or unsafe."
+        try:
+            mode_writable = bool(parent.stat().st_mode & 0o222)
+        except OSError:
+            return False, "Managed artifact root parent metadata is unreadable."
+        if not mode_writable or not __import__("os").access(parent, __import__("os").W_OK):
+            return False, "Managed artifact root cannot be created by the current runtime."
+    try:
+        target.resolve(strict=False).relative_to(root.resolve(strict=False))
+    except (OSError, ValueError):
+        return False, "Managed artifact target escapes the managed root."
+    return True, "Managed artifact target is ready."
 
 
 def _transfer_artifact_root(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -1119,11 +1167,22 @@ def _artifacts_cleanup(services: ServiceContainer, payload: dict[str, Any], prog
 
 
 def _path_state(path: Path) -> dict[str, Any]:
+    exists = path.exists()
+    is_symlink = path.is_symlink()
+    is_dir = path.is_dir() if exists and not is_symlink else False
+    mode_writable = False
+    if exists and is_dir and not is_symlink:
+        try:
+            mode_writable = bool(path.stat().st_mode & 0o222)
+        except OSError:
+            mode_writable = False
     return {
         "path": str(path),
-        "exists": path.exists(),
-        "isDir": path.is_dir(),
-        "writable": path.exists() and path.is_dir() and __import__("os").access(path, __import__("os").W_OK),
+        "exists": exists,
+        "isDir": is_dir,
+        "isSymlink": is_symlink,
+        "writable": mode_writable,
+        "effectiveRootWritable": exists and is_dir and not is_symlink and __import__("os").access(path, __import__("os").W_OK),
     }
 
 
@@ -1147,7 +1206,7 @@ def _system_runtime(services: ServiceContainer, payload: dict[str, Any]) -> Any:
             "databaseDir": _path_state(config.database_path.parent),
             "logDir": _path_state(config.log_file.parent),
             "operationsDir": _path_state(config.database_path.parent / "operations"),
-            "transferDir": _path_state(_managed_transfer_archive("probe").parent),
+            "transferDir": _path_state(_managed_transfer_archive("probe", create_root=False).parent),
         },
         "hostDoctor": serialize_value(host_rows),
         "crossArch": serialize_value(services.system().cross_arch_state()),
@@ -1156,85 +1215,87 @@ def _system_runtime(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 
 
 def _module_candidates() -> list[Path]:
+    """Return diagnostic module locations; only /data/adb/modules is executable."""
     return [
-        Path("/data/adb/modules/chrootctl"),
-        Path("/data/adb/modules_update/chrootctl"),
-        Path("/data/adb/ksu/modules/chrootctl"),
-        Path("/data/adb/ksu/modules_update/chrootctl"),
+        Path("/data/adb/modules/chrootctl-magisk"),
+        Path("/data/adb/modules_update/chrootctl-magisk"),
+        Path("/data/adb/ksu/modules_update/chrootctl-magisk"),
     ]
 
 
 def _module_status(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    del services
     del payload
-    candidates: list[dict[str, Any]] = []
-    active: dict[str, Any] | None = None
-    for root in _module_candidates():
-        prop = root / "module.prop"
-        disabled = root / "disable"
-        remove = root / "remove"
-        meta = {
-            "path": str(root),
-            "exists": root.exists(),
-            "moduleProp": str(prop),
-            "hasModuleProp": prop.exists(),
-            "disabled": disabled.exists(),
-            "pendingRemoval": remove.exists(),
-            "manager": "KernelSU" if "/ksu/" in str(root) else "Magisk/APatch",
-            "version": "",
-            "id": "",
-            "name": "",
-        }
-        if prop.exists():
-            for line in prop.read_text(encoding="utf-8", errors="ignore").splitlines():
-                if "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                if key in {"id", "name", "version"}:
-                    meta[key] = value
-            if active is None:
-                active = meta
-        candidates.append(meta)
-    return {
-        "active": active,
-        "installed": active is not None,
-        "candidates": candidates,
-        "warnings": [] if active is not None else ["No installed chrootctl Magisk/KernelSU module was detected."],
-    }
+    return services.module_runtime().status()
 
 
 def _module_build_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    from ..magisk import resolve_startup_targets
+    from ..magisk import MagiskModuleConfig, _compatibility_manifest_payload, resolve_startup_targets
+    import json
 
     try:
         selected = tuple(validate_chroot_name(item, field="payload.startupTargets item") for item in strict_string_list(payload.get("startupTargets", []), field="payload.startupTargets"))
         all_installed = optional_bool(payload, "allInstalled", "all_installed", default=False, field="payload.allInstalled")
+        targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_MODULE_BUILD_PAYLOAD", str(exc)) from exc
-    targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
-    archive = _managed_transfer_archive("chrootctl-magisk", "zip")
+    archive = _managed_artifact_output(payload, key="archive", default=_managed_transfer_archive("chrootctl-magisk", "zip", create_root=False), suffix=".zip", create_root=False)
+    config = MagiskModuleConfig()
+    blocking: list[dict[str, str]] = []
+    artifact_ready, artifact_detail = _managed_output_preflight(archive)
+    if not artifact_ready:
+        blocking.append({"code": "managed_artifact_unavailable", "message": artifact_detail})
+    warnings: list[str] = []
+    source_root = config.package_root() / "chrootctl"
+    if not source_root.is_dir() or source_root.is_symlink():
+        blocking.append({"code": "python_source_missing", "message": f"Missing or unsafe Python package source: {source_root}"})
+    compatibility = config.package_root().parent / "docs/release/compatibility-manifest.json"
+    module = services.module_runtime().status()
+    source_manifest = None
+    if compatibility.is_file() and not compatibility.is_symlink():
+        try:
+            source_manifest = json.loads(compatibility.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            source_manifest = None
+    if source_manifest is None:
+        installed_state = module.get("installedState") if isinstance(module.get("installedState"), dict) else {}
+        compatibility_state = installed_state.get("compatibility") if isinstance(installed_state.get("compatibility"), dict) else {}
+        candidate = compatibility_state.get("manifest")
+        if isinstance(candidate, dict):
+            source_manifest = candidate
+    if source_manifest is None:
+        blocking.append({"code": "compatibility_manifest_invalid", "message": "No trusted source or active-module compatibility manifest is available."})
+    elif source_manifest != _compatibility_manifest_payload(config):
+        blocking.append({"code": "compatibility_manifest_drift", "message": "Compatibility manifest does not match module/Python/Android build identity."})
+    if module.get("pendingUpdate"):
+        warnings.append("A pending module update exists; it is diagnostic only and will not be executed before reboot activation.")
+    if not targets:
+        warnings.append("No installed startup target was selected; the module will not auto-start chroots.")
     return {
-        "ok": True,
+        "ok": not blocking,
         "kind": "system.module_build",
         "archive": str(archive),
         "startupTargets": list(targets),
-        "blocking": [],
-        "warnings": [] if targets else ["No installed startup target was selected; the module will not auto-start chroots."],
-        "confirm": False,
+        "blocking": blocking,
+        "warnings": warnings,
+        "moduleRuntime": serialize_value(module),
+        "confirm": not blocking,
     }
 
 
 def _support_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     del services
-    archive = _optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-support-bundle", "tar.gz"))
+    archive = _managed_artifact_output(payload, key="archive", default=_managed_transfer_archive("chrootctl-support-bundle", "tar.gz", create_root=False), suffix=".tar.gz", create_root=False)
+    artifact_ready, artifact_detail = _managed_output_preflight(archive)
+    blocking = [] if artifact_ready else [{"code": "managed_artifact_unavailable", "message": artifact_detail}]
     return {
-        "ok": True,
+        "ok": not blocking,
         "kind": "support.bundle",
-        "archive": archive,
-        "blocking": [],
-        "warnings": ["The bundle is sanitized, but review it before sharing."],
+        "archive": str(archive),
+        "blocking": blocking,
+        "warnings": ["The bundle is recursively redacted and byte-bounded, but review it before sharing."],
         "included": ["manifest.json", "events.json", "doctor-host.json", "chroots.json", "config-sanitized.json", "logs/chrootctl.log"],
-        "confirm": False,
+        "managed": True,
+        "confirm": not blocking,
     }
 
 
@@ -1298,10 +1359,19 @@ def _debug_probe_rows(services: ServiceContainer, group: str = "all") -> list[di
         if group in {"all", group_name}:
             rows.append({"group": group_name, "code": code, "status": status, "detail": detail, "next": next_step})
 
-    add("root", "python_runtime", "pass", "Python bridge runtime responded to the probe.")
+    import sys
+    python_path = Path(sys.executable).expanduser()
+    python_ok = python_path.is_file() and os.access(python_path, os.X_OK)
+    try:
+        python_detail = str(python_path.resolve(strict=True)) if python_ok else str(python_path)
+    except OSError:
+        python_ok = False
+        python_detail = str(python_path)
+    add("root", "python_runtime", "pass" if python_ok else "fail", f"Bridge Python executable: {python_detail}", "Repair the bridge Python runtime." if not python_ok else "")
     add("backend", "database_path", "pass" if config.database_path.parent.exists() else "warn", str(config.database_path), "Create or repair the database directory." if not config.database_path.parent.exists() else "")
     add("storage", "chroot_root", "pass" if config.chroot_root.exists() else "warn", str(config.chroot_root), "Create the chroot root or run repair." if not config.chroot_root.exists() else "")
-    add("storage", "transfer_dir", "pass" if _managed_transfer_archive("probe").parent.exists() else "warn", str(_managed_transfer_archive("probe").parent), "Create the transfer staging directory." if not _managed_transfer_archive("probe").parent.exists() else "")
+    transfer_probe_dir = _managed_transfer_archive("probe", create_root=False).parent
+    add("storage", "transfer_dir", "pass" if transfer_probe_dir.exists() else "warn", str(transfer_probe_dir), "Create the transfer staging directory." if not transfer_probe_dir.exists() else "")
     try:
         host_rows = services.system().host_doctor()
         for row in host_rows[:8]:
@@ -1317,9 +1387,17 @@ def _debug_probe_rows(services: ServiceContainer, group: str = "all") -> list[di
     try:
         operations_root = config.database_path.parent / "operations"
         stale = list(operations_root.glob("*.json")) if operations_root.exists() else []
-        add("operations", "operation_journal", "pass", f"{len(stale)} operation record file(s) visible.")
+        add("operations", "operation_journal", "pass", f"{len(stale)} operation record file(s) visible at {operations_root}.")
     except Exception as exc:
         add("operations", "operation_journal", "warn", str(exc), "Repair operation journal permissions.")
+    try:
+        module = services.module_runtime().status()
+        installed_state = module.get("installedState") if isinstance(module.get("installedState"), dict) else {}
+        module_path = str(installed_state.get("path") or "/data/adb/modules/chrootctl-magisk")
+        status = "pass" if module.get("ready") else ("warn" if module.get("installed") else "warn")
+        add("runtime", "module_runtime", status, f"active={bool(module.get('active'))} ready={bool(module.get('ready'))} path={module_path}", "Reboot pending updates or run the module dependency bootstrap." if not module.get("ready") else "")
+    except Exception as exc:
+        add("runtime", "module_runtime", "warn", str(exc), "Inspect module status and dependency readiness.")
     return rows
 
 
@@ -1348,42 +1426,47 @@ def _debug_timeline(services: ServiceContainer, payload: dict[str, Any]) -> Any:
 
 
 def _support_bundle(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
-    archive = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-support-bundle", "tar.gz")))
-    progress({"phase": "support", "percent": 10, "message": "Collecting sanitized support evidence"})
+    archive = _managed_artifact_output(payload, key="archive", default=_managed_transfer_archive("chrootctl-support-bundle", "tar.gz"), suffix=".tar.gz")
+    progress({"phase": "support", "percent": 10, "message": "Collecting redacted bounded support evidence"})
     if cancelled():
         raise OperationCancelled("Support bundle export was cancelled")
     result = services.support().export_bundle(archive=archive, jobs=None)
-    services.transfer().register_artifact(result.archive, kind="support-bundle")
+    artifact = services.registry.artifact_by_path(str(result.archive.resolve()))
+    if artifact is None:
+        raise RuntimeError("support bundle was not registered as a managed artifact")
     progress({"phase": "complete", "percent": 100, "message": "Support bundle exported"})
     return result
 
 
 def _module_build(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
-    from ..magisk import MagiskModuleConfig, render_magisk_module, resolve_startup_targets, validate_magisk_module, zip_magisk_module
+    from ..magisk import MagiskModuleConfig, render_magisk_module, resolve_startup_targets, validate_magisk_module, validate_magisk_zip, zip_magisk_module
     import tempfile
 
     try:
         selected = tuple(validate_chroot_name(item, field="payload.startupTargets item") for item in strict_string_list(payload.get("startupTargets", []), field="payload.startupTargets"))
         all_installed = optional_bool(payload, "allInstalled", "all_installed", default=False, field="payload.allInstalled")
+        targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_MODULE_BUILD_PAYLOAD", str(exc)) from exc
-    targets = resolve_startup_targets(services, selected_names=selected, all_installed=all_installed)
-    archive = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-magisk", "zip")))
+    archive = _managed_artifact_output(payload, key="archive", default=_managed_transfer_archive("chrootctl-magisk", "zip"), suffix=".zip")
     progress({"phase": "render", "percent": 20, "message": "Rendering module payload"})
     if cancelled():
         raise OperationCancelled("Module build was cancelled")
     with tempfile.TemporaryDirectory(prefix="chrootctl-module-") as tmp:
         module_dir = Path(tmp) / "module"
         result = render_magisk_module(module_dir, services=services, startup_targets=targets, module_config=MagiskModuleConfig())
-        progress({"phase": "validate", "percent": 65, "message": "Validating module layout"})
+        progress({"phase": "validate", "percent": 60, "message": "Deep-validating module layout"})
         validate_magisk_module(result.output_dir)
         if cancelled():
             raise OperationCancelled("Module build was cancelled")
-        progress({"phase": "zip", "percent": 85, "message": "Creating module zip"})
+        progress({"phase": "zip", "percent": 82, "message": "Creating and reopening module zip"})
         zip_path = zip_magisk_module(result.output_dir, archive)
-    services.transfer().register_artifact(zip_path, kind="module-archive", metadata={"startupTargets": list(targets)})
-    progress({"phase": "complete", "percent": 100, "message": "Module zip created"})
-    return {"archive": str(zip_path), "startupTargets": list(targets), "bytes": zip_path.stat().st_size}
+        validate_magisk_zip(zip_path)
+    artifact = services.transfer().register_artifact(zip_path, kind="module-archive", metadata={"startupTargets": list(targets), "deepValidated": True})
+    if artifact is None:
+        raise RuntimeError("module archive was not registered as a managed artifact")
+    progress({"phase": "complete", "percent": 100, "message": "Validated module zip created"})
+    return {"archive": str(zip_path), "startupTargets": list(targets), "bytes": zip_path.stat().st_size, "deepValidated": True}
 
 
 def _repair_apply(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
@@ -1416,13 +1499,24 @@ def _cleanup_temp(services: ServiceContainer, payload: dict[str, Any], progress:
 
 
 def _debug_export(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
-    archive = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-debug-evidence", "tar.gz")))
-    progress({"phase": "probes", "percent": 10, "message": "Running debug probes"})
+    archive = _managed_artifact_output(payload, key="archive", default=_managed_transfer_archive("chrootctl-debug-evidence", "tar.gz"), suffix=".tar.gz")
+    try:
+        timeline_limit = optional_bounded_int(payload, "limit", default=100, minimum=0, maximum=500)
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_DEBUG_LIMIT", str(exc)) from exc
+    progress({"phase": "probes", "percent": 10, "message": "Running typed debug probes"})
     probes = _debug_probes(services, payload)
+    timeline = _debug_timeline(services, {"limit": timeline_limit})
     if cancelled():
         raise OperationCancelled("Debug export was cancelled")
-    bundle = services.support().export_bundle(archive=archive, jobs=None)
-    services.transfer().register_artifact(bundle.archive, kind="debug-evidence")
+    bundle = services.support().export_bundle(
+        archive=archive,
+        jobs=None,
+        extra_json={"debug/probes.json": probes, "debug/timeline.json": timeline},
+    )
+    artifact = services.transfer().register_artifact(bundle.archive, kind="debug-evidence", metadata={"probeGroup": str(payload.get("group") or "all"), "sanitized": True, "containsProbes": True})
+    if artifact is None:
+        raise RuntimeError("debug evidence was not registered as a managed artifact")
     progress({"phase": "complete", "percent": 100, "message": "Debug evidence exported"})
     return {"archive": str(bundle.archive), "probes": probes, "included": list(bundle.included)}
 
@@ -1431,17 +1525,23 @@ def _smoke_target_name(services: ServiceContainer, payload: dict[str, Any]) -> s
     requested = _optional_text(payload, "name") or _optional_text(payload, "target")
     if requested:
         try:
-            return validate_chroot_name(requested, field="payload.name")
+            requested = validate_chroot_name(requested, field="payload.name")
         except ValueError as exc:
             raise BridgeProtocolError("INVALID_CHROOT_NAME", str(exc)) from exc
     rows = serialize_value(services.chroots().list())
+    installed: list[str] = []
     if isinstance(rows, list):
         for row in rows:
-            if isinstance(row, dict):
-                name = str(row.get("name") or "").strip()
-                if name:
-                    return name
-    return None
+            if not isinstance(row, dict) or not bool(row.get("installed")):
+                continue
+            name = str(row.get("name") or "").strip()
+            if name:
+                installed.append(name)
+    if requested:
+        if requested not in installed:
+            raise BridgeProtocolError("SMOKE_TARGET_UNAVAILABLE", f"payload.name must identify an installed chroot: {requested}")
+        return requested
+    return installed[0] if installed else None
 
 
 def _smoke_steps(target_name: str | None = None) -> list[dict[str, Any]]:
@@ -1468,22 +1568,25 @@ def _smoke_steps(target_name: str | None = None) -> list[dict[str, Any]]:
 
 def _smoke_plan(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     scope = str(payload.get("scope") or "real-device").strip() or "real-device"
+    if scope != "real-device":
+        raise BridgeProtocolError("INVALID_SMOKE_SCOPE", "payload.scope must be real-device")
     try:
         include_optional = optional_bool(payload, "includeOptional", "include_optional", default=True, field="payload.includeOptional")
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
     target_name = _smoke_target_name(services, payload)
     steps = [step for step in _smoke_steps(target_name) if include_optional or step["required"]]
+    blocking = [] if target_name else [{"code": "no_installed_smoke_target", "message": "Real-device smoke requires at least one installed chroot target."}]
     return {
-        "ok": True,
+        "ok": not blocking,
         "kind": "smoke.plan",
         "scope": scope,
         "stepCount": len(steps),
         "target": target_name,
         "steps": steps,
-        "blocking": [],
+        "blocking": blocking,
         "warnings": ["Smoke probes are read-only except for the operation journal entry created by smoke.run."],
-        "confirm": False,
+        "confirm": not blocking,
     }
 
 
@@ -1529,8 +1632,10 @@ def _run_smoke_step(services: ServiceContainer, step: dict[str, Any]) -> dict[st
             return {**step, "status": "skip", "message": "No registered chroot is available for this workspace query."}
         if step_id == "root_module_discovery":
             module = _module_status(services, {})
-            if not bool(module.get("installed")):
-                return {**step, "status": "fail", "message": "No active chrootctl root module was detected."}
+            if not isinstance(module.get("active"), dict):
+                return {**step, "status": "fail", "message": "No enabled active chrootctl root module was detected."}
+            if not bool(module.get("ready")):
+                return {**step, "status": "fail", "message": "The active chrootctl root module is not dependency-ready."}
         elif step_id == "bridge_capabilities":
             services.system().dashboard(details=True, tail=5)
         elif step_id == "chroots_list":
@@ -1567,7 +1672,10 @@ def _run_smoke_step(services: ServiceContainer, step: dict[str, Any]) -> dict[st
 
 
 def _smoke_run(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
-    steps = _smoke_plan(services, payload)["steps"]
+    plan = _smoke_plan(services, payload)
+    if not plan.get("ok"):
+        raise BridgeProtocolError("SMOKE_PREREQUISITE_FAILED", "Real-device smoke requires an installed chroot target")
+    steps = plan["steps"]
     results: list[dict[str, Any]] = []
     total = max(1, len(steps))
     for index, step in enumerate(steps, start=1):
@@ -1675,15 +1783,33 @@ def _smoke_last_result(services: ServiceContainer, payload: dict[str, Any]) -> A
     return _smoke_result_payload(services, payload)
 
 
-def _write_smoke_result_artifact(services: ServiceContainer, payload: dict[str, Any], suffix: str) -> Path:
+def _write_smoke_result_artifact(services: ServiceContainer, payload: dict[str, Any], suffix: str, *, allow_payload_archive: bool = True) -> Path:
     import json
+    import os
+    import tempfile
 
-    target = Path(_optional_text(payload, "archive") or str(_managed_transfer_archive(f"chrootctl-smoke-{suffix}", "json")))
-    target.parent.mkdir(parents=True, exist_ok=True)
+    artifact_payload = payload if allow_payload_archive else {}
+    target = _managed_artifact_output(artifact_payload, key="archive", default=_managed_transfer_archive(f"chrootctl-smoke-{suffix}", "json"), suffix=".json")
     data = _smoke_result_payload(services, payload)
     if data.get("latest") is None:
         raise BridgeProtocolError("NO_SMOKE_RESULT", "No smoke.run operation has been recorded yet")
-    target.write_text(json.dumps(serialize_value(data), indent=2, sort_keys=True), encoding="utf-8")
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(serialize_value(data), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, target)
+    finally:
+        try:
+            Path(tmp_name).unlink()
+        except FileNotFoundError:
+            pass
+    registered = services.transfer().register_artifact(target, kind="debug-evidence", metadata={"smoke": suffix})
+    if registered is None:
+        raise RuntimeError("smoke result was not registered as a managed artifact")
     return target
 
 
@@ -1709,38 +1835,44 @@ def _smoke_failure_bundle(services: ServiceContainer, payload: dict[str, Any], p
     latest = _smoke_result_payload(services, payload)
     if latest.get("latest") is None:
         raise BridgeProtocolError("NO_SMOKE_RESULT", "No smoke.run operation has been recorded yet")
-    progress({"phase": "smoke-evidence", "percent": 10, "message": "Persisting smoke evidence"})
-    evidence = _write_smoke_result_artifact(services, payload, "failure-evidence")
+    progress({"phase": "smoke-evidence", "percent": 10, "message": "Persisting managed smoke evidence"})
+    evidence = _write_smoke_result_artifact(services, payload, "failure-evidence", allow_payload_archive=False)
     if cancelled():
         raise OperationCancelled("Smoke failure bundle was cancelled")
-    bundle_payload = dict(payload)
-    bundle_payload.setdefault("archive", str(_managed_transfer_archive("chrootctl-smoke-failure-bundle", "tar.gz")))
+    bundle_payload = {"archive": _optional_text(payload, "archive") or str(_managed_transfer_archive("chrootctl-smoke-failure-bundle", "tar.gz"))}
     bundle = _support_bundle(services, bundle_payload, progress, cancelled)
     progress({"phase": "complete", "percent": 100, "message": "Smoke failure support bundle ready"})
     return {"ok": True, "kind": "smoke.failure.bundle", "evidence": str(evidence), "supportBundle": serialize_value(bundle), "latest": latest.get("latest")}
 
+
 def _release_readiness(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     del payload
-    config = services.base_config
-    checks = [
-        {"id": "sdk36", "label": "Android SDK 36", "status": "pass", "detail": "Build remains pinned by Android validators."},
-        {"id": "webui_retired", "label": "WebUI retired", "status": "pass", "detail": "FastAPI/Jinja/Uvicorn entry points are absent from the release path."},
-        {"id": "bridge_allowlist", "label": "Bridge allow-list", "status": "pass", "detail": f"{len(_SPECS)} bridge operations are registered."},
-        {"id": "operation_journal", "label": "Operation journal", "status": "pass" if (config.database_path.parent / "operations").exists() else "warn", "detail": str(config.database_path.parent / "operations")},
-        {"id": "transfer_staging", "label": "Transfer staging", "status": "pass" if _managed_transfer_archive("readiness").parent.exists() else "warn", "detail": str(_managed_transfer_archive("readiness").parent)},
-        {"id": "debug_smoke", "label": "Smoke suite", "status": "pass", "detail": "smoke.plan, smoke.run and smoke.report are available."},
-        {"id": "smoke_handoff", "label": "Smoke handoff", "status": "pass", "detail": "smoke.last_result, smoke.result.export and smoke.failure.bundle are registered."},
-        {"id": "final_release_seal", "label": "Final release seal", "status": "pass", "detail": "final.preflight, final.packaging_audit and final.no_webui_regression are registered."},
-    ]
+    evidence = services.release_readiness().status()
+    module = services.module_runtime().status()
+    checks = list(evidence.get("checks", []))
+    module_status = "pass" if bool(module.get("ready")) else ("warn" if bool(module.get("installed")) else "pending")
+    optional_checks = [{
+        "id": "active_module_runtime",
+        "label": "Active module runtime",
+        "status": module_status,
+        "required": False,
+        "detail": "Active module is dependency-ready." if module_status == "pass" else "No dependency-ready active module is currently proven; pending updates are never runtime evidence.",
+    }]
+    failed = sum(item.get("status") == "fail" for item in checks)
+    pending = sum(item.get("status") in {"pending", "warn"} for item in checks)
+    passed = sum(item.get("status") == "pass" for item in checks)
     return {
-        "ok": not any(item["status"] == "fail" for item in checks),
+        "ok": bool(evidence.get("ready")),
         "kind": "release.readiness",
         "phase": 26,
-        "summary": "Native Android release readiness checks are available.",
+        "summary": "Release readiness is derived from recorded validators/builds; missing evidence remains pending.",
         "checks": checks,
-        "passCount": sum(1 for item in checks if item["status"] == "pass"),
-        "warnCount": sum(1 for item in checks if item["status"] == "warn"),
-        "failCount": sum(1 for item in checks if item["status"] == "fail"),
+        "optionalChecks": optional_checks,
+        "passCount": passed,
+        "warnCount": pending,
+        "failCount": failed,
+        "validationEvidence": serialize_value(evidence),
+        "module": serialize_value(module),
     }
 
 
@@ -1753,21 +1885,45 @@ def _final_audit_tokens() -> dict[str, list[str]]:
 
 
 def _final_no_webui_regression(services: ServiceContainer, payload: dict[str, Any]) -> Any:
-    del services
     del payload
-    return {"ok": True, "kind": "final.no_webui_regression", "checks": [
-        {"id": "web_entry_removed", "status": "pass", "detail": "chrootctl-web entry point is retired."},
-        {"id": "http_stack_removed", "status": "pass", "detail": "FastAPI/Jinja/Uvicorn/python-multipart are not release dependencies."},
-        {"id": "module_webui_denied", "status": "pass", "detail": "Magisk/KSU module validator rejects retired WebUI artifacts."},
-    ]}
+    evidence = services.release_readiness().status()
+    source = services.release_readiness().check(evidence, "source_no_webui")
+    module_zip = services.release_readiness().check(evidence, "module_zip")
+    checks = [
+        {"id": "web_entry_removed", "status": source.get("status", "pending"), "detail": source.get("detail") or "Awaiting retired-WebUI source scan evidence."},
+        {"id": "module_webui_denied", "status": module_zip.get("status", "pending"), "detail": module_zip.get("detail") or "Awaiting deep module ZIP validation evidence."},
+    ]
+    return {"ok": all(item["status"] == "pass" for item in checks), "kind": "final.no_webui_regression", "checks": checks}
 
 
 def _final_packaging_audit(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     del payload
-    return {"ok": True, "kind": "final.packaging_audit", "module": serialize_value(_module_status(services, {})), "artifacts": serialize_value(_artifacts_list(services, {})), "checks": [
-        {"id": "module_denylist", "status": "pass", "detail": "Retired WebUI artifacts are denied by validate_magisk_module."},
-        {"id": "managed_artifacts", "status": "pass", "detail": "Managed transfer artifacts are queryable after WebUI retirement."},
-    ]}
+    evidence = services.release_readiness().status()
+    module_render = services.release_readiness().check(evidence, "module_render")
+    module_zip = services.release_readiness().check(evidence, "module_zip")
+    artifact_state = _artifacts_list(services, {})
+    managed_root_text = str(artifact_state.get("managedRoot") or artifact_state.get("directory") or "").strip() if isinstance(artifact_state, dict) else ""
+    managed_root = Path(managed_root_text) if managed_root_text else None
+    artifact_items = [item for item in artifact_state.get("items", []) if isinstance(item, dict)] if isinstance(artifact_state, dict) else []
+    managed_ok = managed_root is not None and managed_root.is_dir() and not managed_root.is_symlink()
+    if managed_ok:
+        resolved_root = managed_root.resolve()
+        for item in artifact_items:
+            try:
+                artifact_path = Path(str(item.get("path") or ""))
+                if not bool(item.get("managed")) or artifact_path.is_symlink():
+                    managed_ok = False
+                    break
+                artifact_path.resolve(strict=False).relative_to(resolved_root)
+            except (OSError, ValueError):
+                managed_ok = False
+                break
+    checks = [
+        {"id": "module_tree", "status": module_render.get("status", "pending"), "detail": module_render.get("detail") or "Awaiting module tree validator evidence."},
+        {"id": "module_zip", "status": module_zip.get("status", "pending"), "detail": module_zip.get("detail") or "Awaiting final ZIP validator evidence."},
+        {"id": "managed_artifacts", "status": "pass" if managed_ok else "fail", "detail": "Managed artifact registry paths are contained by the managed root." if managed_ok else "Managed artifact root or registry containment is invalid."},
+    ]
+    return {"ok": all(item["status"] == "pass" for item in checks), "kind": "final.packaging_audit", "module": serialize_value(_module_status(services, {})), "artifacts": serialize_value(artifact_state), "checks": checks}
 
 
 def _final_preflight(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -1775,13 +1931,23 @@ def _final_preflight(services: ServiceContainer, payload: dict[str, Any]) -> Any
     release = _release_readiness(services, payload)
     webui = _final_no_webui_regression(services, payload)
     smoke = _smoke_result_payload(services, payload)
+    host_rows = runtime.get("hostDoctor") if isinstance(runtime, dict) else []
+    host_results = [str(item.get("result") or "").upper() for item in host_rows if isinstance(item, dict)] if isinstance(host_rows, list) else []
+    runtime_failures = sum(result == "FAIL" for result in host_results)
+    runtime_warnings = sum(result == "WARN" for result in host_results)
+    runtime_status = "fail" if runtime_failures else ("pending" if runtime_warnings or not host_results else "pass")
+    runtime_detail = (
+        f"Host doctor reports {runtime_failures} failure(s) and {runtime_warnings} warning(s)."
+        if host_results
+        else "Host doctor returned no readiness rows."
+    )
     checks = [
-        {"id": "runtime", "status": "pass", "detail": "Runtime query completed."},
-        {"id": "release_readiness", "status": "pass" if bool(release.get("ok")) else "warn", "detail": str(release.get("summary"))},
-        {"id": "webui_regression", "status": "pass" if bool(webui.get("ok")) else "fail", "detail": "WebUI regression gate completed."},
+        {"id": "runtime", "status": runtime_status, "detail": runtime_detail},
+        {"id": "release_readiness", "status": "pass" if bool(release.get("ok")) else ("fail" if int(release.get("failCount") or 0) else "pending"), "detail": str(release.get("summary"))},
+        {"id": "webui_regression", "status": "pass" if bool(webui.get("ok")) else ("fail" if any(item.get("status") == "fail" for item in webui.get("checks", [])) else "pending"), "detail": "Retired-WebUI regression requires recorded evidence."},
         {
             "id": "smoke_result",
-            "status": "fail" if smoke.get("failed") else ("warn" if smoke.get("latest") is None or int(smoke.get("manualPendingCount") or 0) > 0 else "pass"),
+            "status": "fail" if smoke.get("failed") else ("pending" if smoke.get("latest") is None or int(smoke.get("manualPendingCount") or 0) > 0 else "pass"),
             "detail": (
                 "Latest smoke run failed required checks." if smoke.get("failed")
                 else f"Latest smoke run has {int(smoke.get('manualPendingCount') or 0)} manual check(s) pending." if int(smoke.get("manualPendingCount") or 0) > 0
@@ -1790,7 +1956,7 @@ def _final_preflight(services: ServiceContainer, payload: dict[str, Any]) -> Any
             ),
         },
     ]
-    return {"ok": not any(item["status"] == "fail" for item in checks), "kind": "final.preflight", "runtime": serialize_value(runtime), "release": serialize_value(release), "checks": checks}
+    return {"ok": all(item["status"] == "pass" for item in checks), "kind": "final.preflight", "runtime": serialize_value(runtime), "release": serialize_value(release), "checks": checks}
 
 
 def _final_release_seal(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -1798,7 +1964,7 @@ def _final_release_seal(services: ServiceContainer, payload: dict[str, Any]) -> 
     packaging = _final_packaging_audit(services, payload)
     webui = _final_no_webui_regression(services, payload)
     checks = list(preflight.get("checks", [])) + list(packaging.get("checks", [])) + list(webui.get("checks", []))
-    return {"ok": not any(item.get("status") == "fail" for item in checks), "kind": "final.release_seal", "phase": 28, "summary": "Native Android operational release seal is available.", "checks": checks, "requiredTokens": _final_audit_tokens(), "preflight": serialize_value(preflight), "packaging": serialize_value(packaging), "webuiRegression": serialize_value(webui)}
+    return {"ok": bool(checks) and all(item.get("status") == "pass" for item in checks), "kind": "final.release_seal", "phase": 28, "summary": "Final release seal is evidence-driven; pending checks are not passes.", "checks": checks, "requiredTokens": _final_audit_tokens(), "preflight": serialize_value(preflight), "packaging": serialize_value(packaging), "webuiRegression": serialize_value(webui)}
 
 _SPECS = (
     OperationSpec("system.dashboard", "query", "Return native dashboard state", query_handler=_dashboard),

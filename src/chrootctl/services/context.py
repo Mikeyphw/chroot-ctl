@@ -92,6 +92,16 @@ class ServiceContainer:
 
         return LifecycleService()
 
+    def module_runtime(self) -> "ModuleRuntimeStatusService":
+        from .module_runtime import ModuleRuntimeStatusService
+
+        return ModuleRuntimeStatusService()
+
+    def release_readiness(self) -> "ReleaseReadinessService":
+        from .release_readiness import ReleaseReadinessService
+
+        return ReleaseReadinessService(self)
+
     def catalog(self, kind: str, *, name: str | None = None) -> "CatalogService":
         from .catalog import CatalogService
 

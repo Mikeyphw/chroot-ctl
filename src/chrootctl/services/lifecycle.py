@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import platform
-import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,7 +38,7 @@ class LifecyclePaths:
 
     @property
     def install_log_file(self) -> Path:
-        return self.module_dir / "config/chrootctl/python-detection.txt"
+        return self.module_dir / "config/chrootctl/dependencies.ready.json"
 
     @property
     def dependency_log_file(self) -> Path:
@@ -54,13 +53,14 @@ class LifecycleService:
 
     def status(self) -> dict[str, Any]:
         mode = self.runtime_mode()
+        module = self.module_status()
         return {
-            "running": self.paths.module_dir.exists() or self.paths.module_update_dir.exists(),
+            "running": bool(module.get("active")),
             "state": "android_app_primary",
             "control_file": str(self.paths.control_file),
             "enabled": self.paths.app_control_file.exists(),
             "mode": mode,
-            "module": self.module_status(),
+            "module": module,
             "python": self.python_status(),
             "logs": {
                 "module": str(self.paths.module_log_file),
@@ -71,12 +71,14 @@ class LifecycleService:
         }
 
     def runtime_mode(self) -> dict[str, Any]:
+        from .module_runtime import ModuleRuntimeStatusService
+
         control_accessible = os.access(self.paths.control_dir, os.R_OK | os.X_OK)
-        module_present = self.paths.module_dir.exists() or self.paths.module_update_dir.exists()
-        if control_accessible and module_present:
+        module = ModuleRuntimeStatusService().status()
+        if control_accessible and module.get("active") is not None:
             return {
                 "id": "magisk",
-                "label": "Magisk module",
+                "label": f"{module.get('manager', 'root')} module",
                 "privileged": True,
                 "control_accessible": True,
             }
@@ -88,33 +90,21 @@ class LifecycleService:
         }
 
     def module_status(self) -> dict[str, Any]:
-        module_dir = self.paths.module_dir
-        update_dir = self.paths.module_update_dir
-        prop = self._read_module_prop(module_dir / "module.prop")
-        return {
-            "id": prop.get("id", self.paths.module_id),
-            "name": prop.get("name", "chrootctl"),
-            "version": prop.get("version"),
-            "version_code": prop.get("versionCode"),
-            "path": str(module_dir),
-            "installed": module_dir.exists(),
-            "pending_update": update_dir.exists(),
-            "manager": self._detect_manager(),
-        }
+        from .module_runtime import ModuleRuntimeStatusService
+
+        return ModuleRuntimeStatusService().status()
 
     def python_status(self) -> dict[str, Any]:
-        env = self._read_env_file(self.paths.module_dir / "config/chrootctl/python.env")
-        detection = self._read_key_values(self.paths.module_dir / "config/chrootctl/python-detection.txt")
-        missing = detection.get("missing", "")
+        module = self.module_status()
+        active = module.get("active") if isinstance(module.get("active"), dict) else {}
+        readiness = active.get("dependencyReadiness") if isinstance(active.get("dependencyReadiness"), dict) else {}
         return {
-            "binary": env.get("PYTHON_BIN"),
-            "version": env.get("PYTHON_VERSION"),
-            "executable": env.get("PYTHON_EXECUTABLE"),
-            "prefix": env.get("PYTHON_PREFIX"),
-            "ld_library_path": env.get("PYTHON_LD_LIBRARY_PATH"),
-            "dependencies_ready": not bool(missing and missing != "none"),
-            "missing": missing.split() if missing and missing != "none" else [],
-            "detection_file": str(self.paths.module_dir / "config/chrootctl/python-detection.txt"),
+            "binary": readiness.get("pythonExecutable"),
+            "version": readiness.get("pythonVersion"),
+            "dependencies_ready": bool(readiness.get("ready")),
+            "dependencies": readiness.get("dependencies", []),
+            "reason": readiness.get("reason"),
+            "readiness_file": readiness.get("path"),
         }
 
     @staticmethod

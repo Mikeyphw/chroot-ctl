@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "project": "chrootctl",
   "bridgeProtocolVersion": 1,
   "pythonPackage": {
@@ -8,13 +8,14 @@
   },
   "androidApp": {
     "applicationId": "com.mikeyphw.chrootctl",
-    "minimumSupportedModuleVersionCode": 1
+    "versionName": "0.1.0-phase29",
+    "versionCode": 1,
+    "minimumSupportedModuleVersionCode": 15
   },
   "module": {
-    "id": "chrootctl",
+    "id": "chrootctl-magisk",
+    "version": "1.3.0",
+    "versionCode": 15,
     "minimumSupportedBridgeProtocolVersion": 1
-  },
-  "notes": [
-    "Overlay 01+02 introduces the compatibility manifest scaffold; later module/readiness overlays should populate and enforce generated values."
-  ]
+  }
 }

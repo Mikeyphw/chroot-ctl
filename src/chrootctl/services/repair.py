@@ -31,7 +31,7 @@ class RepairService:
                         "path": str(directory),
                         "expected_path": "",
                         "summary": f"Filesystem path exists without a registry record: {directory}",
-                        "impact": "Registers the existing directory so it shows up in the dashboard and Web UI again.",
+                        "impact": "Registers the existing directory so it shows up in the native dashboard again.",
                         "current_state": "No registry record exists for this directory.",
                         "proposed_state": f"Create a recovered registry record pointing to {directory}.",
                         "diff_lines": [
@@ -289,7 +289,7 @@ class RepairService:
         return self._repair(preview=True)
 
     def apply_registry_repair(self) -> RegistryRepairResult:
-        return self._repair(preview=False)
+        raise RuntimeError("unbound registry repair is disabled; use preview_plan plus apply_registry_repair_plan")
 
     def _repair(self, *, preview: bool) -> RegistryRepairResult:
         registry_rows = {str(row.get("name", "")): row for row in self.services.registry.list()}

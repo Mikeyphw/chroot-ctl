@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import re
 import shutil
+import stat
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +19,10 @@ DEFAULT_MODULE_ID = "chrootctl-magisk"
 DEFAULT_MODULE_NAME = "chrootctl Magisk Module"
 DEFAULT_MODULE_VERSION = "1.3.0"
 DEFAULT_MODULE_VERSION_CODE = 15
+BRIDGE_PROTOCOL_VERSION = 1
+PYTHON_PACKAGE_VERSION = "0.11.0"
+ANDROID_APP_VERSION_NAME = "0.1.0-phase29"
+ANDROID_APP_VERSION_CODE = 1
 ANDROID_PYDANTIC_CORE_INDEX_URL = "https://eutalix.github.io/android-pydantic-core/"
 SUPPORTED_ANDROID_PYDANTIC_CORE_PYTHONS = ("3.9", "3.10", "3.11", "3.12", "3.13")
 
@@ -21,6 +30,7 @@ DEFAULT_PYTHON_DEPENDENCIES = (
     "rich>=13.7.0",
     "PyYAML>=6.0",
     "pydantic>=2.7.0",
+    "pydantic-core>=2.0",
 )
 
 FORBIDDEN_MODULE_PATH_TOKENS = (
@@ -31,6 +41,61 @@ FORBIDDEN_MODULE_PATH_TOKENS = (
     "playwright.config.ts",
     "payload/src/chrootctl/web",
 )
+FORBIDDEN_MODULE_BASENAMES = {
+    ".DS_Store",
+    "Thumbs.db",
+}
+FORBIDDEN_MODULE_SUFFIXES = (
+    ".bak",
+    ".backup",
+    ".orig",
+    ".rej",
+    ".swp",
+    ".swo",
+    "~",
+)
+ALLOWED_MODULE_TOP_LEVEL = {
+    "module.prop",
+    "customize.sh",
+    "post-fs-data.sh",
+    "service.sh",
+    "bin",
+    "system",
+    "payload",
+    "config",
+}
+REQUIRED_EXECUTABLE_PATHS = {
+    "customize.sh",
+    "post-fs-data.sh",
+    "service.sh",
+    "bin/chrootctl-magisk-helper",
+    "bin/chrootctl-python-bootstrap",
+    "system/bin/chrootctl",
+    "system/bin/chrootctl-magisk-helper",
+    "system/bin/chrootctl-python-bootstrap",
+}
+REQUIRED_MODULE_PATHS = {
+    "module.prop",
+    "customize.sh",
+    "post-fs-data.sh",
+    "service.sh",
+    "bin/chrootctl-magisk-helper",
+    "bin/chrootctl-python-bootstrap",
+    "system/bin/chrootctl",
+    "system/bin/chrootctl-magisk-helper",
+    "system/bin/chrootctl-python-bootstrap",
+    "payload/pyproject.toml",
+    "payload/requirements.txt",
+    "config/chrootctl/boot_targets.json",
+    "config/chrootctl/dependency-mode.env",
+    "config/chrootctl/compatibility-manifest.json",
+}
+_ALLOWED_MODULE_DIRS = {
+    "bin", "system", "system/bin", "payload", "payload/src", "payload/src/chrootctl",
+    "config", "config/chrootctl",
+}
+MODULE_MAX_FILE_BYTES = 64 * 1024 * 1024
+MODULE_MAX_TOTAL_BYTES = 256 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +113,6 @@ class MagiskModuleConfig:
     helper_name: str = "chrootctl-magisk-helper"
     state_file: str = "config/chrootctl/boot_targets.json"
     package_source_dir: Path | None = None
-    python_dependencies: tuple[str, ...] = DEFAULT_PYTHON_DEPENDENCIES
-    offline_wheelhouse_dir: Path | None = None
 
     def helper_path(self) -> str:
         return f"bin/{self.helper_name}"
@@ -66,7 +129,7 @@ class MagiskModuleConfig:
 def render_magisk_module(
     output_dir: Path,
     *,
-    services: ServiceContainer,
+    services: ServiceContainer | None,
     startup_targets: tuple[str, ...],
     helper_command: str = "chrootctl",
     module_config: MagiskModuleConfig | None = None,
@@ -75,9 +138,17 @@ def render_magisk_module(
     del helper_command
 
     config = module_config or MagiskModuleConfig()
+    _validate_release_identity_sources(config)
+    output_dir = output_dir.expanduser().resolve()
+    if output_dir.is_symlink():
+        raise ValueError(f"refusing to render module into symlinked output directory: {output_dir}")
     if output_dir.exists():
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+        if not output_dir.is_dir():
+            raise NotADirectoryError(f"module output must be a directory: {output_dir}")
+        if any(output_dir.iterdir()):
+            raise FileExistsError(f"refusing to replace non-empty module output directory: {output_dir}")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=False)
 
     files = {
         Path("module.prop"): _module_prop(config),
@@ -89,10 +160,10 @@ def render_magisk_module(
         Path("system/bin/chrootctl"): _python_entrypoint("chrootctl.cli"),
         Path("system/bin/chrootctl-magisk-helper"): _system_bin_proxy("bin/chrootctl-magisk-helper"),
         Path("system/bin/chrootctl-python-bootstrap"): _system_bin_proxy("bin/chrootctl-python-bootstrap"),
-        Path("payload/requirements.txt"): _requirements_txt(config.python_dependencies),
+        Path("payload/requirements.txt"): _requirements_txt(DEFAULT_PYTHON_DEPENDENCIES),
         Path("config/chrootctl/dependency-mode.env"): _dependency_mode_env(),
+        Path("config/chrootctl/compatibility-manifest.json"): _compatibility_manifest_json(config),
         Path(config.state_path()): _boot_targets_json(startup_targets),
-        Path("wheelhouse/.keep"): "",
     }
     written: list[Path] = []
     for relative_path, content in files.items():
@@ -104,7 +175,6 @@ def render_magisk_module(
         written.append(target)
 
     written.extend(_copy_python_payload(output_dir, config.package_root()))
-    written.extend(_copy_offline_wheelhouse(output_dir, config.offline_wheelhouse_dir))
     return MagiskRenderResult(output_dir=output_dir, files=tuple(written))
 
 
@@ -114,17 +184,33 @@ def resolve_startup_targets(
     selected_names: tuple[str, ...] = (),
     all_installed: bool = False,
 ) -> tuple[str, ...]:
-    if selected_names:
-        return tuple(dict.fromkeys(name.strip() for name in selected_names if name.strip()))
     rows = services.chroots().list()
-    installed_names = tuple(chroot.name for chroot in rows if chroot.installed)
+    installed_names = tuple(sorted(chroot.name for chroot in rows if chroot.installed))
+    if selected_names:
+        selected = tuple(dict.fromkeys(name.strip() for name in selected_names if name.strip()))
+        installed = set(installed_names)
+        unknown = tuple(name for name in selected if name not in installed)
+        if unknown:
+            raise ValueError("module startup targets must be installed chroots: " + ", ".join(unknown))
+        return selected
     if all_installed:
         return installed_names
-    return installed_names[:1]
+    return ()
 
 
 def _is_executable(path: Path, config: MagiskModuleConfig) -> bool:
     return path.suffix == ".sh" or path.name in {config.helper_name, "chrootctl", "chrootctl-python-bootstrap"}
+
+
+def _forbidden_module_relative_path(relative: Path) -> bool:
+    text = relative.as_posix()
+    if relative.name in FORBIDDEN_MODULE_BASENAMES:
+        return True
+    if any(relative.name.endswith(suffix) for suffix in FORBIDDEN_MODULE_SUFFIXES):
+        return True
+    if any(part in {"__pycache__", ".git", ".pytest_cache", ".mypy_cache"} for part in relative.parts):
+        return True
+    return any(token in text for token in FORBIDDEN_MODULE_PATH_TOKENS)
 
 
 def _copy_python_payload(output_dir: Path, package_root: Path) -> list[Path]:
@@ -133,35 +219,82 @@ def _copy_python_payload(output_dir: Path, package_root: Path) -> list[Path]:
     if not source_root.exists():
         raise FileNotFoundError(f"missing chrootctl package source at {source_root}")
     target_root = payload_root / "src" / "chrootctl"
-    shutil.copytree(
-        source_root,
-        target_root,
-        dirs_exist_ok=True,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-    )
+    written: list[Path] = []
+    for source in sorted(source_root.rglob("*")):
+        relative = source.relative_to(source_root)
+        if _forbidden_module_relative_path(Path("payload/src/chrootctl") / relative):
+            continue
+        if source.is_symlink():
+            raise ValueError(f"refusing symlink in module Python payload: {source}")
+        if source.is_dir():
+            continue
+        if not source.is_file():
+            raise ValueError(f"refusing non-regular file in module Python payload: {source}")
+        target = target_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        written.append(target)
     pyproject = package_root.parent / "pyproject.toml"
     if pyproject.exists():
+        if pyproject.is_symlink() or not pyproject.is_file():
+            raise ValueError(f"invalid pyproject source: {pyproject}")
         shutil.copy2(pyproject, payload_root / "pyproject.toml")
-    return [path for path in payload_root.rglob("*") if path.is_file()]
+        written.append(payload_root / "pyproject.toml")
+    return written
 
 
+def _validate_release_identity_sources(config: MagiskModuleConfig) -> None:
+    repo = config.package_root().parent
+    pyproject = repo / "pyproject.toml"
+    if not pyproject.is_file() or pyproject.is_symlink():
+        raise FileNotFoundError(f"missing safe pyproject.toml for module release identity: {pyproject}")
+    pyproject_text = pyproject.read_text(encoding="utf-8")
+    version_match = re.search(r'(?m)^version\s*=\s*"([^"]+)"\s*$', pyproject_text)
+    if version_match is None or version_match.group(1) != PYTHON_PACKAGE_VERSION:
+        raise ValueError("Python package version does not match module compatibility identity")
 
-def _copy_offline_wheelhouse(output_dir: Path, wheelhouse_dir: Path | None) -> list[Path]:
-    if wheelhouse_dir is None:
-        return []
-    source = wheelhouse_dir.expanduser().resolve()
-    if not source.exists():
-        raise FileNotFoundError(f"offline wheelhouse does not exist: {source}")
-    if not source.is_dir():
-        raise NotADirectoryError(f"offline wheelhouse must be a directory: {source}")
-    target = output_dir / "wheelhouse"
-    shutil.copytree(
-        source,
-        target,
-        dirs_exist_ok=True,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-    )
-    return [path for path in target.rglob("*") if path.is_file()]
+    gradle = repo / "android/app/build.gradle.kts"
+    if not gradle.is_file() or gradle.is_symlink():
+        raise FileNotFoundError(f"missing safe Android build identity source: {gradle}")
+    gradle_text = gradle.read_text(encoding="utf-8")
+    name_match = re.search(r'versionName\s*=\s*"([^"]+)"', gradle_text)
+    code_match = re.search(r'versionCode\s*=\s*(\d+)', gradle_text)
+    if name_match is None or name_match.group(1) != ANDROID_APP_VERSION_NAME:
+        raise ValueError("Android versionName does not match module compatibility identity")
+    if code_match is None or int(code_match.group(1)) != ANDROID_APP_VERSION_CODE:
+        raise ValueError("Android versionCode does not match module compatibility identity")
+
+    release_manifest = repo / "docs/release/compatibility-manifest.json"
+    if not release_manifest.is_file() or release_manifest.is_symlink():
+        raise FileNotFoundError(f"missing safe release compatibility manifest: {release_manifest}")
+    payload = json.loads(release_manifest.read_text(encoding="utf-8"))
+    if payload != _compatibility_manifest_payload(config):
+        raise ValueError("release compatibility manifest does not match module/Python/Android identity")
+
+
+def _compatibility_manifest_payload(config: MagiskModuleConfig) -> dict[str, object]:
+    return {
+        "schemaVersion": 2,
+        "project": "chrootctl",
+        "bridgeProtocolVersion": BRIDGE_PROTOCOL_VERSION,
+        "pythonPackage": {"name": "chrootctl", "version": PYTHON_PACKAGE_VERSION},
+        "androidApp": {
+            "applicationId": "com.mikeyphw.chrootctl",
+            "versionName": ANDROID_APP_VERSION_NAME,
+            "versionCode": ANDROID_APP_VERSION_CODE,
+            "minimumSupportedModuleVersionCode": config.version_code,
+        },
+        "module": {
+            "id": config.module_id,
+            "version": config.version,
+            "versionCode": config.version_code,
+            "minimumSupportedBridgeProtocolVersion": BRIDGE_PROTOCOL_VERSION,
+        },
+    }
+
+
+def _compatibility_manifest_json(config: MagiskModuleConfig) -> str:
+    return json.dumps(_compatibility_manifest_payload(config), indent=2, sort_keys=True) + "\n"
 
 
 def _module_prop(config: MagiskModuleConfig) -> str:
@@ -172,7 +305,7 @@ def _module_prop(config: MagiskModuleConfig) -> str:
             f"version={config.version}",
             f"versionCode={config.version_code}",
             "author=chrootctl",
-            "description=Self-contained Magisk/KSU module for boot startup, helper commands, and the chrootctl Android bridge.",
+            "description=chrootctl Magisk/KernelSU runtime; requires a compatible Python 3 environment and verified dependency readiness.",
             "",
         )
     )
@@ -180,8 +313,9 @@ def _module_prop(config: MagiskModuleConfig) -> str:
 
 def _customize_sh() -> str:
     return """#!/system/bin/sh
-set -e
-set +u
+# customize.sh is sourced by the module installer; use abort() for failures so
+# the installer can run its cleanup instead of being terminated by `set -e`.
+set -u
 
 SKIPMOUNT=false
 PROPFILE=true
@@ -189,270 +323,422 @@ POSTFSDATA=true
 LATESTARTSERVICE=true
 
 CONFIG_DIR="$MODPATH/config/chrootctl"
-SITE_PACKAGES="$MODPATH/python/site-packages"
-PAYLOAD_SRC="$MODPATH/payload/src"
-PIP_TMP_DIR="$MODPATH/tmp"
+STATE_ROOT="/data/adb/chrootctl"
+for _state_path in "$STATE_ROOT" "$STATE_ROOT/services" "$STATE_ROOT/run" "$STATE_ROOT/run/services" "$STATE_ROOT/logs" "$STATE_ROOT/logs/services"; do
+  [ ! -L "$_state_path" ] || abort "! refusing symlinked module state path: $_state_path"
+done
+mkdir -p "$CONFIG_DIR" \
+  "$STATE_ROOT/services" "$STATE_ROOT/run/services" "$STATE_ROOT/logs/services" \
+  || abort "! failed to create module state directories"
+for _state_path in "$STATE_ROOT" "$STATE_ROOT/services" "$STATE_ROOT/run" "$STATE_ROOT/run/services" "$STATE_ROOT/logs" "$STATE_ROOT/logs/services"; do
+  [ -d "$_state_path" ] && [ ! -L "$_state_path" ] || abort "! unsafe module state directory: $_state_path"
+done
+chmod 0700 "$STATE_ROOT" "$STATE_ROOT/services" "$STATE_ROOT/run" "$STATE_ROOT/run/services" "$STATE_ROOT/logs" "$STATE_ROOT/logs/services" \
+  || abort "! failed to secure module state directories"
 
-mkdir -p "$CONFIG_DIR" "$SITE_PACKAGES" "$PIP_TMP_DIR" /data/adb/chrootctl/services /data/adb/chrootctl/run/services /data/adb/chrootctl/logs/services
-
-ui_print "- Checking python3"
+ui_print "- Checking compatible Python runtime"
 PYTHON_PATH_BIN="$(command -v python3 2>/dev/null || true)"
 PYTHON_BIN=""
 PYTHON_LD_LIBRARY_PATH=""
 
 python_candidate_runs() {
-  _candidate_bin="$1"
-  _candidate_lib="$2"
-
-  [ -n "$_candidate_bin" ] || return 1
-  [ -x "$_candidate_bin" ] || return 1
-  if [ -n "$_candidate_lib" ] && [ ! -d "$_candidate_lib" ]; then
-    return 1
-  fi
-
-  if [ -n "$_candidate_lib" ]; then
-    LD_LIBRARY_PATH="$_candidate_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
+  _bin="$1"
+  _lib="$2"
+  [ -n "$_bin" ] && [ -x "$_bin" ] || return 1
+  [ -z "$_lib" ] || [ -d "$_lib" ] || return 1
+  if [ -n "$_lib" ]; then
+    LD_LIBRARY_PATH="$_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
   else
-    "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
+    "$_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
   fi
 }
 
 try_python_candidate() {
-  _candidate_bin="$1"
-  [ -n "$_candidate_bin" ] || return 1
-  [ -x "$_candidate_bin" ] || return 1
-
-  _candidate_prefix="$(dirname "$(dirname "$_candidate_bin")")"
-  for _candidate_lib in "" "$_candidate_prefix/lib" /system/lib64 /system/lib /data/data/com.termux/files/usr/lib /data/adb/py2droid/usr/lib; do
-    if python_candidate_runs "$_candidate_bin" "$_candidate_lib"; then
-      PYTHON_BIN="$_candidate_bin"
-      PYTHON_LD_LIBRARY_PATH="$_candidate_lib"
+  _bin="$1"
+  [ -n "$_bin" ] && [ -x "$_bin" ] || return 1
+  _prefix="$(dirname "$(dirname "$_bin")")"
+  for _lib in "" "$_prefix/lib" /system/lib64 /system/lib /data/data/com.termux/files/usr/lib /data/adb/py2droid/usr/lib; do
+    if python_candidate_runs "$_bin" "$_lib"; then
+      PYTHON_BIN="$_bin"
+      PYTHON_LD_LIBRARY_PATH="$_lib"
       return 0
     fi
   done
-
   return 1
 }
 
-select_python_runtime() {
-  for _candidate_bin in "${CHROOTCTL_PYTHON_BIN:-}" /system/bin/python3 "$PYTHON_PATH_BIN" /data/data/com.termux/files/usr/bin/python3 /data/adb/py2droid/usr/bin/python3; do
-    try_python_candidate "$_candidate_bin" && return 0
-  done
-  return 1
-}
+for _bin in "${CHROOTCTL_PYTHON_BIN:-}" /system/bin/python3 "$PYTHON_PATH_BIN" /data/data/com.termux/files/usr/bin/python3 /data/adb/py2droid/usr/bin/python3; do
+  try_python_candidate "$_bin" && break
+done
+[ -n "$PYTHON_BIN" ] || abort "! no runnable Python 3 runtime found"
 
-select_python_runtime || abort "! no runnable python3 found. Checked CHROOTCTL_PYTHON_BIN, /system/bin/python3, PATH python3, Termux, and py2droid."
 if [ -n "$PYTHON_LD_LIBRARY_PATH" ]; then
   export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
+export PYTHONPATH="$MODPATH/payload/src"
 
-PYTHON_VERSION="$("$PYTHON_BIN" - <<'PY'
-import sys
-print(f"{sys.version_info.major}.{sys.version_info.minor}")
-PY
-)"
-PYTHON_FULL_VERSION="$("$PYTHON_BIN" - <<'PY'
-import sys
-print(sys.version.replace("\\n", " "))
-PY
-)"
-PYTHON_PREFIX="$("$PYTHON_BIN" - <<'PY'
-import sys
-print(sys.prefix)
-PY
-)"
-PYTHON_EXECUTABLE="$("$PYTHON_BIN" - <<'PY'
-import sys
-print(sys.executable)
-PY
-)"
-PIP_VERSION="$("$PYTHON_BIN" -m pip --version 2>/dev/null || true)"
-PIP_LOCATION="$("$PYTHON_BIN" - <<'PY'
-try:
-    import pip
-    print(getattr(pip, "__file__", "unavailable"))
-except Exception as exc:
-    print(f"unavailable: {exc}")
-PY
-)"
+ui_print "- Verifying required Python dependency versions"
+if ! "$PYTHON_BIN" - <<'PY'
+from importlib import metadata
 
-ui_print "- Python PATH entry: ${PYTHON_PATH_BIN:-unavailable}"
-ui_print "- Python selected binary: $PYTHON_BIN"
-ui_print "- Python executable: $PYTHON_EXECUTABLE"
-ui_print "- Python runtime used by module: $PYTHON_BIN"
-ui_print "- Python library path: ${PYTHON_LD_LIBRARY_PATH:-default linker path}"
-ui_print "- Python version: $PYTHON_FULL_VERSION"
-ui_print "- Python prefix: $PYTHON_PREFIX"
-ui_print "- pip: ${PIP_VERSION:-unavailable}"
-ui_print "- pip module: $PIP_LOCATION"
-ui_print "- No Python dependencies are installed during Magisk/KSU install"
-ui_print "- Dependencies are checked against the static Python environment at first boot"
+required = {
+    "rich": (13, 7, 0),
+    "PyYAML": (6, 0),
+    "pydantic": (2, 7, 0),
+    "pydantic-core": (2, 0),
+}
 
-export PYTHONPATH="$PAYLOAD_SRC:$SITE_PACKAGES"
-export TMPDIR="$PIP_TMP_DIR"
-export PIP_CACHE_DIR="$PIP_TMP_DIR/pip-cache"
-export PIP_DISABLE_PIP_VERSION_CHECK=1
-export PIP_ROOT_USER_ACTION=ignore
+def version_tuple(value: str) -> tuple[int, ...]:
+    parts=[]
+    for raw in value.replace('-', '.').split('.'):
+        digits=''.join(ch for ch in raw if ch.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
 
-cat >"$CONFIG_DIR/python.env" <<EOF
-PYTHON_PATH_BIN="$PYTHON_PATH_BIN"
-PYTHON_BIN="$PYTHON_BIN"
-PYTHON_LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH"
-PYTHON_VERSION="$PYTHON_VERSION"
-PYTHON_EXECUTABLE="$PYTHON_EXECUTABLE"
-PYTHON_PREFIX="$PYTHON_PREFIX"
-# Runtime paths are intentionally recomputed from the active module directory.
-# Do not persist install-time /data/adb/modules_update paths here.
-EOF
-
-ui_print "- Checking already-installed Python modules"
-set +e
-"$PYTHON_BIN" - "$CONFIG_DIR/python-detection.txt" <<'PY'
-import importlib.util
-import sys
-from pathlib import Path
-
-out = Path(sys.argv[1])
-modules = (
-    "rich",
-    "yaml",
-    "pydantic",
-    "pydantic_core",
-)
-lines = [
-    f"python_executable={sys.executable}",
-    f"python_version={sys.version.replace(chr(10), ' ')}",
-    f"python_prefix={sys.prefix}",
-    "install_phase=static-python-env",
-]
-missing = []
-for name in modules:
+problems=[]
+for dist, minimum in required.items():
     try:
-        spec = importlib.util.find_spec(name)
-    except Exception as exc:
-        spec = None
-        lines.append(f"module.{name}=error {exc}")
-        missing.append(name)
+        installed=metadata.version(dist)
+    except metadata.PackageNotFoundError:
+        problems.append(f"{dist}:missing")
         continue
-    location = getattr(spec, "origin", None) if spec else None
-    status = "found" if spec else "missing"
-    if not spec:
-        missing.append(name)
-    lines.append(f"module.{name}={status} {location or ''}".rstrip())
-lines.append("missing=" + " ".join(missing))
-out.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-if missing:
-    print("missing=" + " ".join(missing))
-else:
-    print("missing=none")
+    if version_tuple(installed) < minimum:
+        problems.append(f"{dist}:{installed}<required")
+try:
+    from pydantic import TypeAdapter  # noqa: F401
+except Exception as exc:
+    problems.append(f"pydantic:incompatible:{type(exc).__name__}")
+if problems:
+    print("; ".join(problems))
+    raise SystemExit(1)
 PY
-DETECTION_STATUS=$?
-set -e
-if [ "$DETECTION_STATUS" -eq 0 ]; then
-  DETECTED_MISSING="$(grep '^missing=' "$CONFIG_DIR/python-detection.txt" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
-  ui_print "- Python module detection saved"
-  ui_print "- Missing Python modules: ${DETECTED_MISSING:-unknown}"
-else
-  ui_print "! Warning: Python module detection failed; first boot will retry"
-  {
-    echo "install_phase=static-python-env"
-    echo "detection=failed"
-  } >"$CONFIG_DIR/python-detection.txt" 2>/dev/null || true
+then
+  abort "! required Python dependencies are missing or incompatible"
 fi
 
-rm -rf "$PIP_TMP_DIR" 2>/dev/null || true
-mkdir -p "$PIP_TMP_DIR" 2>/dev/null || true
+if ! "$PYTHON_BIN" - "$CONFIG_DIR/python.env" "$PYTHON_BIN" "$PYTHON_LD_LIBRARY_PATH" <<'PY'
+from pathlib import Path
+import os, sys, tempfile
+
+path = Path(sys.argv[1])
+values = (
+    sys.argv[2],
+    sys.argv[3],
+    f"{sys.version_info.major}.{sys.version_info.minor}",
+    sys.executable,
+)
+if any("\\n" in value or "\\r" in value for value in values):
+    raise SystemExit("unsafe newline in Python runtime configuration")
+text = (
+    f"PYTHON_BIN={values[0]}\\n"
+    f"PYTHON_LD_LIBRARY_PATH={values[1]}\\n"
+    f"PYTHON_VERSION={values[2]}\\n"
+    f"PYTHON_EXECUTABLE={values[3]}\\n"
+)
+fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(tmp_name, 0o600)
+    os.replace(tmp_name, path)
+finally:
+    try:
+        os.unlink(tmp_name)
+    except FileNotFoundError:
+        pass
+PY
+then
+  abort "! failed to write safe Python runtime configuration"
+fi
 
 ui_print "- Applying module permissions"
-set_perm_recursive "$MODPATH" 0 0 0755 0644 || ui_print "! Warning: set_perm_recursive failed"
-set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl"
-set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl-magisk-helper"
-set_perm "$MODPATH/system/bin/chrootctl-python-bootstrap" 0 0 0755 || ui_print "! Warning: set_perm failed: system/bin/chrootctl-python-bootstrap"
-set_perm "$MODPATH/bin/chrootctl-magisk-helper" 0 0 0755 || ui_print "! Warning: set_perm failed: chrootctl-magisk-helper"
-set_perm "$MODPATH/bin/chrootctl-python-bootstrap" 0 0 0755 || ui_print "! Warning: set_perm failed: chrootctl-python-bootstrap"
+set_perm_recursive "$MODPATH" 0 0 0755 0644 || abort "! failed to set module permissions"
+set_perm_recursive "$CONFIG_DIR" 0 0 0700 0600 || abort "! failed to secure module runtime configuration"
+for _file in \
+  "$MODPATH/customize.sh" \
+  "$MODPATH/post-fs-data.sh" \
+  "$MODPATH/service.sh" \
+  "$MODPATH/system/bin/chrootctl" \
+  "$MODPATH/system/bin/chrootctl-magisk-helper" \
+  "$MODPATH/system/bin/chrootctl-python-bootstrap" \
+  "$MODPATH/bin/chrootctl-magisk-helper" \
+  "$MODPATH/bin/chrootctl-python-bootstrap"; do
+  set_perm "$_file" 0 0 0755 || abort "! failed to set executable permission: $_file"
+done
 
-ui_print "- chrootctl module install configuration complete"
-exit 0
+ui_print "- chrootctl module install checks complete; dependency readiness will be sealed after activation on boot"
 """
+
 
 def _post_fs_data_sh() -> str:
     return """#!/system/bin/sh
+set -eu
 MODDIR=${0%/*}
-
-# Reserved for rare early, blocking setup only.
-# Most chrootctl startup work belongs in service.sh.
+STATE_ROOT=/data/adb/chrootctl
+[ ! -L "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT/logs" ] || { echo "unsafe chrootctl state path" >&2; exit 1; }
+mkdir -p "$STATE_ROOT" "$STATE_ROOT/logs"
+[ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] && [ -d "$STATE_ROOT/logs" ] && [ ! -L "$STATE_ROOT/logs" ] || { echo "unsafe chrootctl state directory" >&2; exit 1; }
+chmod 0700 "$STATE_ROOT" "$STATE_ROOT/logs"
 exit 0
+"""
+
+
+def _identity_lock_sh() -> str:
+    return r"""proc_start_time() {
+  _lock_pid="$1"
+  [ -n "$_lock_pid" ] && [ -r "/proc/$_lock_pid/stat" ] || return 1
+  awk '{print $22}' "/proc/$_lock_pid/stat" 2>/dev/null
+}
+
+current_boot_id() {
+  [ -r /proc/sys/kernel/random/boot_id ] || return 1
+  cat /proc/sys/kernel/random/boot_id
+}
+
+write_lock_owner() {
+  _lock_path="$1"
+  _lock_boot="$(current_boot_id)" || return 1
+  _lock_start="$(proc_start_time "$$")" || return 1
+  printf '%s %s %s\n' "$$" "$_lock_boot" "$_lock_start" >"$_lock_path/owner" || return 1
+  chmod 0600 "$_lock_path/owner" || return 1
+}
+
+acquire_identity_lock() {
+  _lock_path="$1"
+  _lock_parent="$2"
+  case "$_lock_path" in
+    "$_lock_parent"/*) ;;
+    *) return 1 ;;
+  esac
+  [ -d "$_lock_parent" ] && [ ! -L "$_lock_parent" ] || return 1
+  if mkdir "$_lock_path" 2>/dev/null; then
+    chmod 0700 "$_lock_path" || { rmdir "$_lock_path" 2>/dev/null || true; return 1; }
+    write_lock_owner "$_lock_path" || { rm -rf "$_lock_path"; return 1; }
+    return 0
+  fi
+
+  # Give a concurrent owner a chance to publish its identity before deciding
+  # that an inherited lock is stale.
+  sleep 1
+  _owner_pid=""; _owner_boot=""; _owner_start=""
+  if [ -f "$_lock_path/owner" ] && [ ! -L "$_lock_path/owner" ]; then
+    IFS=' ' read -r _owner_pid _owner_boot _owner_start <"$_lock_path/owner" || true
+  fi
+  _current_boot="$(current_boot_id 2>/dev/null || true)"
+  _current_start="$(proc_start_time "$_owner_pid" 2>/dev/null || true)"
+  if [ -n "$_owner_pid" ] && [ -n "$_current_boot" ] && [ "$_owner_boot" = "$_current_boot" ] \
+    && [ -n "$_owner_start" ] && [ "$_owner_start" = "$_current_start" ]; then
+    return 2
+  fi
+
+  [ ! -L "$_lock_path" ] || return 1
+  rm -rf "$_lock_path"
+  mkdir "$_lock_path" 2>/dev/null || return 2
+  chmod 0700 "$_lock_path" || { rm -rf "$_lock_path"; return 1; }
+  write_lock_owner "$_lock_path" || { rm -rf "$_lock_path"; return 1; }
+  return 0
+}
+
+release_identity_lock() {
+  _lock_path="$1"
+  [ -d "$_lock_path" ] && [ ! -L "$_lock_path" ] || return 0
+  _owner_pid=""; _owner_boot=""; _owner_start=""
+  if [ -f "$_lock_path/owner" ] && [ ! -L "$_lock_path/owner" ]; then
+    IFS=' ' read -r _owner_pid _owner_boot _owner_start <"$_lock_path/owner" || true
+  fi
+  _self_boot="$(current_boot_id 2>/dev/null || true)"
+  _self_start="$(proc_start_time "$$" 2>/dev/null || true)"
+  if [ "$_owner_pid" = "$$" ] && [ "$_owner_boot" = "$_self_boot" ] && [ "$_owner_start" = "$_self_start" ]; then
+    rm -rf "$_lock_path"
+  fi
+}
 """
 
 
 def _service_sh(config: MagiskModuleConfig) -> str:
     helper = config.helper_path()
     state_path = config.state_path()
+    lock_helpers = _identity_lock_sh()
     return f"""#!/system/bin/sh
-MODDIR=${{0%/*}}
+set -eu
+RAW_MODDIR=${{0%/*}}
+EXPECTED="/data/adb/modules/{config.module_id}"
+[ -d "$EXPECTED" ] && [ ! -L "$EXPECTED" ] || {{ echo "refusing missing or symlinked active module" >&2; exit 1; }}
+MODDIR="$(cd "$RAW_MODDIR" && pwd -P)"
+[ "$MODDIR" = "$EXPECTED" ] || {{ echo "refusing module service outside active module" >&2; exit 1; }}
+[ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ] || {{ echo "module is disabled or pending removal" >&2; exit 1; }}
 HELPER="$MODDIR/{helper}"
+BOOTSTRAP="$MODDIR/bin/chrootctl-python-bootstrap"
 STATE_FILE="$MODDIR/{state_path}"
-export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
-[ -f "$MODDIR/config/chrootctl/python.env" ] && . "$MODDIR/config/chrootctl/python.env"
+[ -x "$BOOTSTRAP" ] && [ -f "$BOOTSTRAP" ] && [ ! -L "$BOOTSTRAP" ] || {{ echo "dependency bootstrap is missing or unsafe" >&2; exit 1; }}
+[ -x "$HELPER" ] && [ -f "$HELPER" ] && [ ! -L "$HELPER" ] || {{ echo "module helper is missing or unsafe" >&2; exit 1; }}
+[ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || {{ echo "boot target state is missing or unsafe" >&2; exit 1; }}
+STATE_ROOT=/data/adb/chrootctl
+LOG_DIR="$STATE_ROOT/logs"
+LOG_FILE="$LOG_DIR/module-boot.log"
+LOCK_DIR="$STATE_ROOT/run/module-boot.lock"
+[ ! -L "$STATE_ROOT" ] && [ ! -L "$LOG_DIR" ] && [ ! -L "$STATE_ROOT/run" ] && [ ! -L "$LOG_FILE" ] || {{ echo "unsafe module boot state path" >&2; exit 1; }}
+mkdir -p "$LOG_DIR" "$STATE_ROOT/run"
+[ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] && [ -d "$LOG_DIR" ] && [ ! -L "$LOG_DIR" ] && [ -d "$STATE_ROOT/run" ] && [ ! -L "$STATE_ROOT/run" ] || {{ echo "unsafe module boot state directory" >&2; exit 1; }}
+chmod 0700 "$STATE_ROOT" "$LOG_DIR" "$STATE_ROOT/run"
 
-[ -x "$HELPER" ] && [ -f "$STATE_FILE" ] && "$HELPER" boot "$STATE_FILE" "$MODDIR" >/dev/null 2>&1 || true
-"$MODDIR/system/bin/chrootctl" clipboard daemon start >/dev/null 2>&1 || true
-"$MODDIR/system/bin/chrootctl" run --boot >/dev/null 2>&1 || true
+{lock_helpers}
+if acquire_identity_lock "$LOCK_DIR" "$STATE_ROOT/run"; then
+  :
+else
+  _lock_status=$?
+  if [ "$_lock_status" -eq 2 ]; then
+    printf '%s %s\n' "$(date +%s)" "boot orchestration already running" >>"$LOG_FILE"
+    exit 0
+  fi
+  printf '%s %s\n' "$(date +%s)" "failed to acquire safe boot orchestration lock" >>"$LOG_FILE"
+  exit 1
+fi
+trap 'release_identity_lock "$LOCK_DIR"' EXIT INT TERM
 
+run_with_timeout() {{
+  _seconds="$1"
+  shift
+  "$@" >>"$LOG_FILE" 2>&1 &
+  _pid=$!
+  _elapsed=0
+  while kill -0 "$_pid" 2>/dev/null; do
+    if [ "$_elapsed" -ge "$_seconds" ]; then
+      printf '%s timeout: %s\n' "$(date +%s)" "$*" >>"$LOG_FILE"
+      kill -TERM "$_pid" 2>/dev/null || true
+      sleep 2
+      kill -KILL "$_pid" 2>/dev/null || true
+      wait "$_pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 1
+    _elapsed=$((_elapsed + 1))
+  done
+  wait "$_pid"
+}}
 
+printf '%s boot start\n' "$(date +%s)" >>"$LOG_FILE"
+if ! run_with_timeout 45 "$BOOTSTRAP" "$MODDIR"; then
+  printf '%s dependency bootstrap failed; startup targets skipped\n' "$(date +%s)" >>"$LOG_FILE"
+  exit 1
+fi
+if [ -x "$HELPER" ] && [ -f "$STATE_FILE" ]; then
+  if ! run_with_timeout 90 "$HELPER" boot "$STATE_FILE"; then
+    printf '%s startup target boot failed; boot orchestration failed\n' "$(date +%s)" >>"$LOG_FILE"
+    exit 1
+  fi
+fi
+if [ -f "$MODDIR/config/chrootctl/clipboard.enabled" ]; then
+  run_with_timeout 20 "$MODDIR/system/bin/chrootctl" clipboard daemon start || printf '%s clipboard startup failed\n' "$(date +%s)" >>"$LOG_FILE"
+fi
+printf '%s boot complete\n' "$(date +%s)" >>"$LOG_FILE"
 exit 0
 """
 
+
+def _runtime_payload_guard_sh() -> str:
+    return """PAYLOAD_ROOT="$MODDIR/payload/src"
+PAYLOAD_PACKAGE="$PAYLOAD_ROOT/chrootctl"
+DEPENDENCY_MODE_FILE="$MODDIR/config/chrootctl/dependency-mode.env"
+REQUIREMENTS_FILE="$MODDIR/payload/requirements.txt"
+for _dir in "$MODDIR/payload" "$PAYLOAD_ROOT" "$PAYLOAD_PACKAGE"; do
+  [ -d "$_dir" ] && [ ! -L "$_dir" ] || { echo "module Python payload directory is missing or unsafe: $_dir" >&2; exit 1; }
+done
+_resolved_payload="$(cd "$PAYLOAD_ROOT" && pwd -P)" || exit 1
+[ "$_resolved_payload" = "$PAYLOAD_ROOT" ] || { echo "module Python payload path is not canonical" >&2; exit 1; }
+[ -f "$PAYLOAD_PACKAGE/__init__.py" ] && [ ! -L "$PAYLOAD_PACKAGE/__init__.py" ] || { echo "module Python package layout is incomplete or unsafe" >&2; exit 1; }
+[ -f "$DEPENDENCY_MODE_FILE" ] && [ ! -L "$DEPENDENCY_MODE_FILE" ] || { echo "dependency mode contract is missing or unsafe" >&2; exit 1; }
+[ -f "$REQUIREMENTS_FILE" ] && [ ! -L "$REQUIREMENTS_FILE" ] || { echo "dependency requirement contract is missing or unsafe" >&2; exit 1; }
+awk '
+  NR==1 { ok=($0=="DEPENDENCY_MODE=static-python-env") }
+  NR==2 { ok=ok && ($0=="DEPENDENCY_INSTALL_PHASE=none") }
+  NR==3 { ok=ok && ($0=="DEPENDENCY_NETWORK=disabled") }
+  NR==4 { ok=ok && ($0=="DEPENDENCY_REPAIR=disabled") }
+  END { exit !(ok && NR==4) }
+' "$DEPENDENCY_MODE_FILE" || { echo "dependency mode contract does not match this release" >&2; exit 1; }
+awk '
+  NR==1 { ok=($0=="rich>=13.7.0") }
+  NR==2 { ok=ok && ($0=="PyYAML>=6.0") }
+  NR==3 { ok=ok && ($0=="pydantic>=2.7.0") }
+  NR==4 { ok=ok && ($0=="pydantic-core>=2.0") }
+  END { exit !(ok && NR==4) }
+' "$REQUIREMENTS_FILE" || { echo "dependency requirements contract does not match this release" >&2; exit 1; }
+"""
+
+
 def _helper_sh(config: MagiskModuleConfig) -> str:
-    helper = config.helper_path()
+    payload_guard = _runtime_payload_guard_sh()
     return f"""#!/system/bin/sh
 set -eu
-
-COMMAND=${{1:-}}
-STATE_FILE=${{2:-}}
-MODDIR=${{3:-}}
+RAW_MODDIR=${{0%/*}}/..
+EXPECTED="/data/adb/modules/{config.module_id}"
+[ -d "$EXPECTED" ] && [ ! -L "$EXPECTED" ] || {{ echo "refusing missing or symlinked active module" >&2; exit 1; }}
+MODDIR="$(cd "$RAW_MODDIR" && pwd -P)"
+[ "$MODDIR" = "$EXPECTED" ] || {{ echo "refusing helper outside active module: $MODDIR" >&2; exit 1; }}
+[ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ] || {{ echo "module is disabled or pending removal" >&2; exit 1; }}
+{payload_guard}
 CLI="$MODDIR/system/bin/chrootctl"
-export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
-[ -f "$MODDIR/config/chrootctl/python.env" ] && . "$MODDIR/config/chrootctl/python.env"
-if [ -n "${{PYTHON_LD_LIBRARY_PATH:-}}" ]; then
+CONFIG="$MODDIR/config/chrootctl/python.env"
+STATE_FILE=${{2:-}}
+COMMAND=${{1:-}}
+
+[ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || {{ echo "runtime configuration is missing or unsafe" >&2; exit 1; }}
+config_value() {{
+  _key="$1"
+  awk -F= -v key="$_key" '$1 == key {{ sub(/^[^=]*=/, ""); print; exit }}' "$CONFIG"
+}}
+PYTHON_BIN="$(config_value PYTHON_BIN || true)"
+PYTHON_LD_LIBRARY_PATH="$(config_value PYTHON_LD_LIBRARY_PATH || true)"
+[ -n "$PYTHON_BIN" ] && [ -x "$PYTHON_BIN" ] || {{ echo "configured Python runtime unavailable" >&2; exit 1; }}
+if [ -n "$PYTHON_LD_LIBRARY_PATH" ]; then
+  [ -d "$PYTHON_LD_LIBRARY_PATH" ] || {{ echo "configured Python library path is missing" >&2; exit 1; }}
   export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
 fi
-PYTHON_BIN="${{PYTHON_BIN:-python3}}"
-
-[ -x "$CLI" ] || {{
-  echo "missing chrootctl launcher at $CLI" >&2
-  exit 1
-}}
-
-read_boot_targets() {{
-  "$CLI" _magisk-read-boot-targets "$STATE_FILE" 2>/dev/null || "$PYTHON_BIN" - "$STATE_FILE" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-state_path = Path(sys.argv[1])
-payload = json.loads(state_path.read_text(encoding="utf-8"))
-for target in payload.get("startup_targets", []):
-    name = str(target).strip()
-    if name:
-        print(name)
-PY
-}}
+export PYTHONPATH="$MODDIR/payload/src"
+[ -x "$CLI" ] && [ ! -L "$CLI" ] || {{ echo "missing or unsafe chrootctl launcher" >&2; exit 1; }}
 
 case "$COMMAND" in
   boot)
-    read_boot_targets | while IFS= read -r name; do
-      [ -n "$name" ] || continue
-      "$CLI" --name "$name" mount >/dev/null 2>&1 || true
-    done
+    [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || {{ echo "missing or unsafe boot target state" >&2; exit 1; }}
+    "$PYTHON_BIN" - "$STATE_FILE" <<'PY'
+import json, re, sys
+from pathlib import Path
+from chrootctl.bridge.dispatcher import operation_root_for
+from chrootctl.operations import OperationManager
+from chrootctl.services import create_service_container
+
+state_path=Path(sys.argv[1])
+payload=json.loads(state_path.read_text(encoding='utf-8'))
+items=payload.get('startup_targets', [])
+if not isinstance(items, list):
+    raise SystemExit('startup_targets must be a list')
+names=[]
+seen=set()
+for raw in items:
+    name=str(raw).strip()
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{{0,63}}', name):
+        raise SystemExit('invalid startup target: '+repr(name))
+    if name not in seen:
+        seen.add(name)
+        names.append(name)
+services=create_service_container()
+manager=OperationManager(operation_root_for(services))
+manager.recover()
+for name in names:
+    request=dict(protocolVersion=1, requestId='module-boot-'+name, operation='module.boot.start', payload=dict(name=name, source='preview-approved-module-state'))
+    record=manager.create(kind='module.boot.start', title='Module boot start '+name, target_name=name, request=request, retry=None, lock_scope='target')
+    completed=manager.execute(record, lambda progress, cancelled, target=name: services.chroots().start(target, login=False, root_login=False, interactive=False))
+    if completed.state != 'succeeded':
+        raise SystemExit('module boot start failed for '+name+': '+completed.state)
+PY
     ;;
-  mount|unmount|start|restart|status|doctor|logs)
+  status|doctor|logs)
     shift
     exec "$CLI" "$COMMAND" "$@"
-    ;;
-  exec)
-    shift
-    exec "$CLI" exec "$@"
     ;;
   *)
     echo "unsupported helper command: $COMMAND" >&2
@@ -461,27 +747,24 @@ case "$COMMAND" in
 esac
 """
 
+
 def _module_dir_resolver_sh(module_id: str = DEFAULT_MODULE_ID) -> str:
     return f"""resolve_moddir() {{
-  _script_dir="${{0%/*}}"
-  _candidate="$_script_dir/../.."
-  if [ -f "$_candidate/module.prop" ] && grep -q '^id={module_id}$' "$_candidate/module.prop" 2>/dev/null; then
-    cd "$_candidate" 2>/dev/null && pwd
+  _active="/data/adb/modules/{module_id}"
+  if [ -d "$_active" ] && [ ! -L "$_active" ] && [ -f "$_active/module.prop" ] && [ ! -L "$_active/module.prop" ] \\
+    && grep -q '^id={module_id}$' "$_active/module.prop" 2>/dev/null \\
+    && [ ! -e "$_active/disable" ] && [ ! -e "$_active/remove" ]; then
+    _resolved="$(cd "$_active" 2>/dev/null && pwd -P)" || return 1
+    [ "$_resolved" = "$_active" ] || return 1
+    printf '%s\\n' "$_active"
     return 0
   fi
-
-  for _candidate in \
-    "/data/adb/modules/{module_id}" \
-    "/data/adb/modules_update/{module_id}" \
-    "/data/adb/ksu/modules/{module_id}" \
-    "/data/adb/ksu/modules_update/{module_id}"; do
-    if [ -f "$_candidate/module.prop" ] && grep -q '^id={module_id}$' "$_candidate/module.prop" 2>/dev/null; then
-      echo "$_candidate"
-      return 0
+  for _pending in "/data/adb/modules_update/{module_id}" "/data/adb/ksu/modules_update/{module_id}"; do
+    if [ -e "$_pending" ]; then
+      echo "pending chrootctl module update exists at $_pending; reboot activation is required" >&2
     fi
   done
-
-  echo "$_script_dir/../.."
+  return 1
 }}"""
 
 
@@ -496,8 +779,8 @@ MODDIR="$(resolve_moddir)"
 TARGET="$MODDIR/{relative_target}"
 export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
 
-if [ ! -x "$TARGET" ]; then
-  echo "missing module executable: $TARGET" >&2
+if [ ! -x "$TARGET" ] || [ -L "$TARGET" ]; then
+  echo "missing or unsafe module executable: $TARGET" >&2
   exit 1
 fi
 
@@ -507,256 +790,249 @@ exec "$TARGET" "$@"
 
 def _python_entrypoint(module_name: str) -> str:
     resolver = _module_dir_resolver_sh()
+    payload_guard = _runtime_payload_guard_sh()
     return f"""#!/system/bin/sh
-set -e
-set +u
-
+set -eu
 {resolver}
-MODDIR="$(resolve_moddir)"
-SITE_PACKAGES="$MODDIR/python/site-packages"
-PAYLOAD_SRC="$MODDIR/payload/src"
-[ -f "$MODDIR/config/chrootctl/python.env" ] && . "$MODDIR/config/chrootctl/python.env"
-# Always recompute module-local import paths from the active module directory.
-SITE_PACKAGES="$MODDIR/python/site-packages"
-PAYLOAD_SRC="$MODDIR/payload/src"
-PYTHONPATH=""
+MODDIR="$(resolve_moddir)" || {{ echo "no active chrootctl module" >&2; exit 1; }}
+{payload_guard}
+CONFIG="$MODDIR/config/chrootctl/python.env"
+READY="$MODDIR/config/chrootctl/dependencies.ready.json"
+COMPAT="$MODDIR/config/chrootctl/compatibility-manifest.json"
 
-python_candidate_runs() {{
-  _candidate_bin="$1"
-  _candidate_lib="$2"
-  [ -n "$_candidate_bin" ] || return 1
-  [ -x "$_candidate_bin" ] || return 1
-  if [ -n "$_candidate_lib" ] && [ ! -d "$_candidate_lib" ]; then
-    return 1
-  fi
-  if [ -n "$_candidate_lib" ]; then
-    LD_LIBRARY_PATH="$_candidate_lib${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}" "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
-  else
-    "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
-  fi
+[ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || {{ echo "runtime configuration is missing or unsafe" >&2; exit 1; }}
+config_value() {{
+  _key="$1"
+  [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || return 1
+  awk -F= -v key="$_key" '$1 == key {{ sub(/^[^=]*=/, ""); print; exit }}' "$CONFIG"
 }}
-
-try_python_candidate() {{
-  _candidate_bin="$1"
-  [ -n "$_candidate_bin" ] || return 1
-  [ -x "$_candidate_bin" ] || return 1
-  _candidate_prefix="$(dirname "$(dirname "$_candidate_bin")")"
-  for _candidate_lib in "" "$_candidate_prefix/lib" /system/lib64 /system/lib /data/data/com.termux/files/usr/lib /data/adb/py2droid/usr/lib; do
-    if python_candidate_runs "$_candidate_bin" "$_candidate_lib"; then
-      PYTHON_BIN="$_candidate_bin"
-      PYTHON_LD_LIBRARY_PATH="$_candidate_lib"
-      return 0
-    fi
-  done
-  return 1
-}}
-
-select_python_runtime() {{
-  PYTHON_PATH_BIN="$(command -v python3 2>/dev/null || true)"
-  for _candidate_bin in "${{CHROOTCTL_PYTHON_BIN:-}}" /system/bin/python3 "$PYTHON_PATH_BIN" /data/data/com.termux/files/usr/bin/python3 /data/adb/py2droid/usr/bin/python3 "${{PYTHON_BIN:-}}"; do
-    try_python_candidate "$_candidate_bin" && return 0
-  done
-  return 1
-}}
-
-select_python_runtime || {{
-  echo "no runnable python3 found for chrootctl" >&2
-  exit 1
-}}
-if [ -n "${{PYTHON_LD_LIBRARY_PATH:-}}" ]; then
+PYTHON_BIN="$(config_value PYTHON_BIN || true)"
+PYTHON_LD_LIBRARY_PATH="$(config_value PYTHON_LD_LIBRARY_PATH || true)"
+[ -n "$PYTHON_BIN" ] && [ -x "$PYTHON_BIN" ] || {{ echo "configured Python runtime unavailable; run chrootctl-python-bootstrap" >&2; exit 1; }}
+if [ -n "$PYTHON_LD_LIBRARY_PATH" ]; then
+  [ -d "$PYTHON_LD_LIBRARY_PATH" ] || {{ echo "configured Python library path is missing" >&2; exit 1; }}
   export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
 fi
+export PYTHONPATH="$MODDIR/payload/src"
+[ -f "$READY" ] && [ ! -L "$READY" ] && [ -f "$COMPAT" ] && [ ! -L "$COMPAT" ] || {{ echo "dependency readiness is missing or unsafe; run chrootctl-python-bootstrap" >&2; exit 1; }}
+"$PYTHON_BIN" - "$READY" "$COMPAT" "$PYTHON_BIN" "$DEPENDENCY_MODE_FILE" "$REQUIREMENTS_FILE" <<'PY'
+from importlib import metadata
+import hashlib, json, sys
+from pathlib import Path
+from chrootctl.magisk import MagiskModuleConfig, _compatibility_manifest_payload
 
-SITE_PACKAGES="$MODDIR/python/site-packages"
-PAYLOAD_SRC="$MODDIR/payload/src"
-export PYTHONPATH="$PAYLOAD_SRC:$SITE_PACKAGES"
-
-if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
-import chrootctl
+ready_path = Path(sys.argv[1])
+manifest_path = Path(sys.argv[2])
+selected = sys.argv[3]
+mode_path = Path(sys.argv[4])
+requirements_path = Path(sys.argv[5])
+try:
+    ready=json.loads(ready_path.read_text(encoding='utf-8'))
+    manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+except Exception as exc:
+    raise SystemExit(f'invalid dependency readiness/compatibility data: {{type(exc).__name__}}')
+if manifest != _compatibility_manifest_payload(MagiskModuleConfig()):
+    raise SystemExit('compatibility manifest does not match this chrootctl release')
+actual=hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+contract=hashlib.sha256(mode_path.read_bytes()+b'\\0'+requirements_path.read_bytes()).hexdigest()
+if ready.get('schemaVersion') != 1 or ready.get('ready') is not True:
+    raise SystemExit('dependency readiness is not ready')
+if ready.get('dependencyMode') != 'static-python-env':
+    raise SystemExit('dependency readiness mode is incompatible')
+if ready.get('compatibilityManifestSha256') != actual or ready.get('dependencyContractSha256') != contract:
+    raise SystemExit('dependency readiness is stale or incompatible')
+if str(ready.get('pythonExecutable') or '') != selected:
+    raise SystemExit('dependency readiness belongs to a different Python runtime')
+required={{'rich':(13,7,0),'PyYAML':(6,0),'pydantic':(2,7,0),'pydantic-core':(2,0)}}
+def vt(value):
+    out=[]
+    for raw in value.replace('-', '.').split('.'):
+        digits=''.join(ch for ch in raw if ch.isdigit())
+        if not digits: break
+        out.append(int(digits))
+    return tuple(out)
+for dist, minimum in required.items():
+    try: current=metadata.version(dist)
+    except metadata.PackageNotFoundError as exc: raise SystemExit(f'{{dist}} dependency is missing') from exc
+    if vt(current) < minimum: raise SystemExit(f'{{dist}} dependency {{current}} is below the required version')
+try:
+    import chrootctl, rich, yaml, pydantic, pydantic_core  # noqa: F401
+    from pydantic import TypeAdapter  # noqa: F401
+except Exception as exc:
+    raise SystemExit(f'chrootctl runtime imports failed: {{type(exc).__name__}}') from exc
 PY
-then
-  echo "chrootctl package is not importable" >&2
-  echo "MODDIR=$MODDIR" >&2
-  echo "PYTHON_BIN=$PYTHON_BIN" >&2
-  echo "PYTHONPATH=$PYTHONPATH" >&2
-  exit 1
-fi
-
 exec "$PYTHON_BIN" -m {module_name} "$@"
 """
 
+
 def _python_bootstrap_sh() -> str:
-    return """#!/system/bin/sh
-set -e
-set +u
-
-MODDIR=${1:-${0%/*}/..}
+    resolver = _module_dir_resolver_sh()
+    payload_guard = _runtime_payload_guard_sh()
+    lock_helpers = _identity_lock_sh()
+    return f"""#!/system/bin/sh
+set -eu
+{resolver}
+MODDIR="$(resolve_moddir)" || {{ echo "bootstrap requires the active module" >&2; exit 1; }}
+{payload_guard}
 CONFIG_DIR="$MODDIR/config/chrootctl"
-SITE_PACKAGES="$MODDIR/python/site-packages"
-PAYLOAD_SRC="$MODDIR/payload/src"
-DETECTION_FILE="$CONFIG_DIR/python-detection.txt"
-READY_FILE="$CONFIG_DIR/dependencies.ready"
-BOOTSTRAP_LOG="$CONFIG_DIR/dependency-bootstrap.log"
-PIP_TMP_DIR="$MODDIR/tmp"
-
-mkdir -p "$CONFIG_DIR" "$SITE_PACKAGES" "$PIP_TMP_DIR" /data/adb/chrootctl/services /data/adb/chrootctl/run/services /data/adb/chrootctl/logs/services
-
-[ -f "$CONFIG_DIR/python.env" ] && . "$CONFIG_DIR/python.env"
-# Always recompute module-local import paths from the active MODDIR.
-SITE_PACKAGES="$MODDIR/python/site-packages"
-PAYLOAD_SRC="$MODDIR/payload/src"
-DETECTION_FILE="$CONFIG_DIR/python-detection.txt"
-READY_FILE="$CONFIG_DIR/dependencies.ready"
-BOOTSTRAP_LOG="$CONFIG_DIR/dependency-bootstrap.log"
-PIP_TMP_DIR="$MODDIR/tmp"
-
-log() {
-  echo "[chrootctl-python-bootstrap] $1"
-}
-
-python_candidate_runs() {
-  _candidate_bin="$1"
-  _candidate_lib="$2"
-
-  [ -n "$_candidate_bin" ] || return 1
-  [ -x "$_candidate_bin" ] || return 1
-  if [ -n "$_candidate_lib" ] && [ ! -d "$_candidate_lib" ]; then
-    return 1
-  fi
-
-  if [ -n "$_candidate_lib" ]; then
-    LD_LIBRARY_PATH="$_candidate_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
+CONFIG="$CONFIG_DIR/python.env"
+READY="$CONFIG_DIR/dependencies.ready.json"
+COMPAT="$CONFIG_DIR/compatibility-manifest.json"
+LOG="$CONFIG_DIR/dependency-bootstrap.log"
+LOCK="$CONFIG_DIR/bootstrap.lock"
+[ ! -L "$MODDIR/config" ] && [ ! -L "$CONFIG_DIR" ] || {{ echo "unsafe module configuration directory" >&2; exit 1; }}
+mkdir -p "$CONFIG_DIR"
+chmod 0700 "$CONFIG_DIR"
+[ -f "$COMPAT" ] && [ ! -L "$COMPAT" ] || {{ echo "compatibility manifest is missing or unsafe" >&2; exit 1; }}
+[ ! -L "$CONFIG" ] && [ ! -L "$READY" ] && [ ! -L "$LOG" ] || {{ echo "module readiness/configuration path is unsafe" >&2; exit 1; }}
+{lock_helpers}
+if acquire_identity_lock "$LOCK" "$CONFIG_DIR"; then
+  :
+else
+  _lock_status=$?
+  if [ "$_lock_status" -eq 2 ]; then
+    echo "dependency bootstrap already running" >&2
   else
-    "$_candidate_bin" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1
+    echo "failed to acquire safe dependency bootstrap lock" >&2
   fi
-}
-
-try_python_candidate() {
-  _candidate_bin="$1"
-  [ -n "$_candidate_bin" ] || return 1
-  [ -x "$_candidate_bin" ] || return 1
-
-  _candidate_prefix="$(dirname "$(dirname "$_candidate_bin")")"
-  for _candidate_lib in "" "$_candidate_prefix/lib" /system/lib64 /system/lib /data/data/com.termux/files/usr/lib /data/adb/py2droid/usr/lib; do
-    if python_candidate_runs "$_candidate_bin" "$_candidate_lib"; then
-      PYTHON_BIN="$_candidate_bin"
-      PYTHON_LD_LIBRARY_PATH="$_candidate_lib"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-select_python_runtime() {
-  PYTHON_PATH_BIN="$(command -v python3 2>/dev/null || true)"
-  for _candidate_bin in "${CHROOTCTL_PYTHON_BIN:-}" /system/bin/python3 "$PYTHON_PATH_BIN" /data/data/com.termux/files/usr/bin/python3 /data/adb/py2droid/usr/bin/python3 "${PYTHON_BIN:-}"; do
-    try_python_candidate "$_candidate_bin" && return 0
-  done
-  return 1
-}
-
-select_python_runtime || {
-  log "no runnable python3 found"
   exit 1
-}
-if [ -n "${PYTHON_LD_LIBRARY_PATH:-}" ]; then
-  export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
+trap 'release_identity_lock "$LOCK"' EXIT INT TERM
 
-export PYTHONPATH="$PAYLOAD_SRC:$SITE_PACKAGES"
-export TMPDIR="$PIP_TMP_DIR"
-export PIP_DISABLE_PIP_VERSION_CHECK=1
-export PIP_ROOT_USER_ACTION=ignore
+config_value() {{
+  _key="$1"
+  [ -f "$CONFIG" ] || return 1
+  awk -F= -v key="$_key" '$1 == key {{ sub(/^[^=]*=/, ""); print; exit }}' "$CONFIG"
+}}
+configured="$(config_value PYTHON_BIN || true)"
+configured_lib="$(config_value PYTHON_LD_LIBRARY_PATH || true)"
+PYTHON_BIN=""
+PYTHON_LD_LIBRARY_PATH=""
 
-log "using static Python environment: $PYTHON_BIN"
-log "python library path: ${PYTHON_LD_LIBRARY_PATH:-default linker path}"
-cat >"$CONFIG_DIR/python.env" <<EOF
-PYTHON_BIN="$PYTHON_BIN"
-PYTHON_LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH"
-SITE_PACKAGES="$SITE_PACKAGES"
-PAYLOAD_SRC="$PAYLOAD_SRC"
-PYTHONPATH="$PAYLOAD_SRC:$SITE_PACKAGES"
-EOF
+candidate_runs() {{
+  _bin="$1"; _lib="$2"
+  [ -n "$_bin" ] && [ -x "$_bin" ] || return 1
+  [ -z "$_lib" ] || [ -d "$_lib" ] || return 1
+  if [ -n "$_lib" ]; then LD_LIBRARY_PATH="$_lib${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}" "$_bin" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1
+  else "$_bin" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1; fi
+}}
+try_candidate() {{
+  _bin="$1"; [ -n "$_bin" ] && [ -x "$_bin" ] || return 1
+  _prefix="$(dirname "$(dirname "$_bin")")"
+  for _lib in "$configured_lib" "" "$_prefix/lib" /system/lib64 /system/lib /data/data/com.termux/files/usr/lib /data/adb/py2droid/usr/lib; do
+    if candidate_runs "$_bin" "$_lib"; then PYTHON_BIN="$_bin"; PYTHON_LD_LIBRARY_PATH="$_lib"; return 0; fi
+  done
+  return 1
+}}
+path_python="$(command -v python3 2>/dev/null || true)"
+for _bin in "$configured" "${{CHROOTCTL_PYTHON_BIN:-}}" /system/bin/python3 "$path_python" /data/data/com.termux/files/usr/bin/python3 /data/adb/py2droid/usr/bin/python3; do
+  try_candidate "$_bin" && break
+done
+[ -n "$PYTHON_BIN" ] || {{ echo "no runnable Python 3 runtime" >"$LOG"; chmod 0600 "$LOG"; exit 1; }}
+if [ -n "$PYTHON_LD_LIBRARY_PATH" ]; then export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"; fi
+export PYTHONPATH="$MODDIR/payload/src"
 
-validate_static_environment() {
-  "$PYTHON_BIN" - "$DETECTION_FILE" <<'PY'
-import importlib.util
-import sys
+"$PYTHON_BIN" - "$CONFIG" "$READY" "$COMPAT" "$PYTHON_BIN" "$PYTHON_LD_LIBRARY_PATH" "$LOG" "$DEPENDENCY_MODE_FILE" "$REQUIREMENTS_FILE" <<'PY'
+from importlib import metadata
 from pathlib import Path
+import hashlib, json, os, sys, tempfile, time
+config_path = Path(sys.argv[1])
+ready_path = Path(sys.argv[2])
+manifest_path = Path(sys.argv[3])
+py_path = sys.argv[4]
+lib_path = sys.argv[5]
+log_path = Path(sys.argv[6])
+mode_path = Path(sys.argv[7])
+requirements_path = Path(sys.argv[8])
+required={{"rich":(13,7,0),"PyYAML":(6,0),"pydantic":(2,7,0),"pydantic-core":(2,0)}}
+unsafe_runtime_path = any("\\n" in value or "\\r" in value for value in (py_path, lib_path, sys.executable))
 
-out = Path(sys.argv[1])
-required = (
-    ("rich", "rich"),
-    ("yaml", "PyYAML"),
-    ("pydantic", "pydantic"),
-    ("pydantic_core", "pydantic-core"),
-)
-lines = [
-    f"python_executable={sys.executable}",
-    f"python_version={sys.version.replace(chr(10), ' ')}",
-    f"python_prefix={sys.prefix}",
-    "dependency_mode=static-python-env",
-]
-problems = []
-for module_name, package_name in required:
-    try:
-        spec = importlib.util.find_spec(module_name)
-    except Exception as exc:
-        spec = None
-        problems.append(f"{package_name}:find_error:{exc}")
-    location = getattr(spec, "origin", None) if spec else None
-    if spec is None:
-        problems.append(f"{package_name}:missing")
-    lines.append(f"module.{module_name}={'found' if spec else 'missing'} {location or ''}".rstrip())
-
+def vt(value):
+    out=[]
+    for raw in value.replace('-', '.').split('.'):
+        digits=''.join(ch for ch in raw if ch.isdigit())
+        if not digits: break
+        out.append(int(digits))
+    return tuple(out)
+versions={{}}
+problems=[]
+if unsafe_runtime_path:
+    problems.append("python_runtime_path:unsafe_newline")
+for dist, minimum in required.items():
+    try: version=metadata.version(dist)
+    except metadata.PackageNotFoundError:
+        problems.append(f"{{dist}}:missing"); continue
+    versions[dist]=version
+    if vt(version) < minimum: problems.append(f"{{dist}}:{{version}}<required")
 try:
+    import chrootctl  # noqa: F401
+    from chrootctl.magisk import MagiskModuleConfig, _compatibility_manifest_payload
     from pydantic import TypeAdapter  # noqa: F401
 except Exception as exc:
-    problems.append(f"pydantic:incompatible:{exc}")
+    problems.append(f"runtime_import:{{type(exc).__name__}}:{{exc}}")
+try:
+    manifest_payload=json.loads(manifest_path.read_text(encoding='utf-8'))
+except Exception as exc:
+    manifest_payload=None
+    problems.append(f"compatibility_manifest:invalid:{{type(exc).__name__}}")
+if manifest_payload is not None and manifest_payload != _compatibility_manifest_payload(MagiskModuleConfig()):
+    problems.append('compatibility_manifest:identity_mismatch')
+manifest_hash=hashlib.sha256(manifest_path.read_bytes()).hexdigest() if manifest_path.is_file() else ''
+contract_hash=hashlib.sha256(mode_path.read_bytes()+b'\\0'+requirements_path.read_bytes()).hexdigest() if mode_path.is_file() and requirements_path.is_file() else ''
+if not manifest_hash: problems.append('compatibility_manifest:missing')
+if not contract_hash: problems.append('dependency_contract:missing')
+config_text=f"PYTHON_BIN={{py_path}}\\nPYTHON_LD_LIBRARY_PATH={{lib_path}}\\nPYTHON_VERSION={{sys.version_info.major}}.{{sys.version_info.minor}}\\nPYTHON_EXECUTABLE={{sys.executable}}\\n"
 
-if problems:
-    lines.append("dependency_status=broken")
-    lines.extend(f"problem={problem}" for problem in problems)
-else:
-    lines.append("dependency_status=ready")
-
-out.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-if problems:
-    print(" ".join(problems))
-    raise SystemExit(1)
+def atomic_text(path, text, mode=0o600):
+    fd,tmp=tempfile.mkstemp(prefix=f'.{{path.name}}.', dir=str(path.parent))
+    try:
+        with os.fdopen(fd,'w',encoding='utf-8') as handle:
+            handle.write(text); handle.flush(); os.fsync(handle.fileno())
+        os.chmod(tmp,mode); os.replace(tmp,path)
+    finally:
+        try: os.unlink(tmp)
+        except FileNotFoundError: pass
+if not unsafe_runtime_path:
+    atomic_text(config_path, config_text)
+payload={{
+    'schemaVersion':1,
+    'ready':not problems,
+    'generatedAt':int(time.time()),
+    'pythonExecutable':py_path,
+    'pythonVersion':sys.version.replace('\\n',' '),
+    'pythonLibraryPath':lib_path,
+    'dependencyMode':'static-python-env',
+    'dependencies':versions,
+    'compatibilityManifestSha256':manifest_hash,
+    'dependencyContractSha256':contract_hash,
+    'problems':problems,
+}}
+atomic_text(ready_path, json.dumps(payload,sort_keys=True,indent=2)+'\\n')
+stamp=str(int(time.time()))
+entry=stamp+' '+('ready' if not problems else '; '.join(problems))
+try:
+    previous=log_path.read_text(encoding='utf-8').splitlines() if log_path.is_file() and not log_path.is_symlink() else []
+except OSError:
+    previous=[]
+lines=(previous+[entry])[-200:]
+log_text='\\n'.join(lines)+'\\n'
+while len(log_text.encode('utf-8')) > 32768 and len(lines) > 1:
+    lines=lines[1:]
+    log_text='\\n'.join(lines)+'\\n'
+atomic_text(log_path, log_text)
+if problems: raise SystemExit(1)
 PY
-}
-
-if validate_static_environment; then
-  log "static Python environment is ready"
-  date +%s >"$READY_FILE"
-  rm -f "$BOOTSTRAP_LOG" 2>/dev/null || true
-  exit 0
-fi
-
-log "static Python environment is missing required modules"
-{
-  echo "mode=static-python-env"
-  echo "python=$PYTHON_BIN"
-  echo "pythondir=${PYTHON_LD_LIBRARY_PATH:-}"
-  echo "payload=$PAYLOAD_SRC"
-  echo "site_packages=$SITE_PACKAGES"
-  echo "hint=Fix the static Python module environment; chrootctl no longer installs or repairs Python packages."
-  echo "required=rich PyYAML pydantic pydantic-core"
-  grep '^problem=' "$DETECTION_FILE" 2>/dev/null || true
-} >"$BOOTSTRAP_LOG"
-exit 1
+chmod 0600 "$CONFIG" "$READY" "$LOG"
 """
 
 
 def _dependency_mode_env() -> str:
     return "\n".join(
         (
-            'DEPENDENCY_MODE="static-python-env"',
-            'DEPENDENCY_INSTALL_PHASE="none"',
-            'DEPENDENCY_NETWORK="disabled"',
-            'DEPENDENCY_REPAIR="disabled"',
+            "DEPENDENCY_MODE=static-python-env",
+            "DEPENDENCY_INSTALL_PHASE=none",
+            "DEPENDENCY_NETWORK=disabled",
+            "DEPENDENCY_REPAIR=disabled",
             "",
         )
     )
@@ -777,44 +1053,217 @@ def _boot_targets_json(startup_targets: tuple[str, ...]) -> str:
 
 
 
+def _parse_module_prop(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw or raw.startswith("#"):
+            continue
+        if "=" not in raw:
+            raise ValueError(f"invalid module.prop line: {raw!r}")
+        key, value = raw.split("=", 1)
+        if not key or key in values or any(ch in value for ch in "\r\n"):
+            raise ValueError(f"invalid module.prop field: {key!r}")
+        values[key] = value
+    required = {"id", "name", "version", "versionCode", "author", "description"}
+    missing = sorted(required - values.keys())
+    if missing:
+        raise ValueError(f"module.prop missing fields: {', '.join(missing)}")
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9._-]+", values["id"]):
+        raise ValueError("module.prop id has invalid syntax")
+    if values["id"] != DEFAULT_MODULE_ID:
+        raise ValueError(f"unexpected module id: {values['id']}")
+    try:
+        version_code = int(values["versionCode"])
+    except ValueError as exc:
+        raise ValueError("module.prop versionCode must be an integer") from exc
+    if version_code != DEFAULT_MODULE_VERSION_CODE or values["version"] != DEFAULT_MODULE_VERSION:
+        raise ValueError("module.prop version identity does not match build constants")
+    return values
+
+
+def _validate_compatibility_manifest(path: Path, prop: dict[str, str]) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("compatibility manifest must be an object")
+    expected = _compatibility_manifest_payload(MagiskModuleConfig())
+    if payload != expected:
+        raise ValueError("compatibility manifest does not match the exact module/Python/Android release identity")
+    if prop.get("id") != DEFAULT_MODULE_ID or prop.get("version") != DEFAULT_MODULE_VERSION or int(prop.get("versionCode", "-1")) != DEFAULT_MODULE_VERSION_CODE:
+        raise ValueError("module.prop identity does not match compatibility manifest build constants")
+    return payload
+
+
+def _validate_module_relative(relative: Path, *, directory: bool = False) -> None:
+    if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise ValueError(f"invalid module path: {relative}")
+    text = relative.as_posix()
+    if relative.parts[0] not in ALLOWED_MODULE_TOP_LEVEL:
+        raise ValueError(f"module path is outside allow-list: {relative}")
+    if _forbidden_module_relative_path(relative):
+        raise ValueError(f"forbidden module artifact: {relative}")
+    if directory:
+        if text in _ALLOWED_MODULE_DIRS or text.startswith("payload/src/chrootctl/"):
+            return
+        raise ValueError(f"module directory is outside nested allow-list: {relative}")
+    if text in REQUIRED_MODULE_PATHS:
+        return
+    if text.startswith("payload/src/chrootctl/"):
+        return
+    raise ValueError(f"module file is outside nested allow-list: {relative}")
+
+
+def _validate_dependency_contract_text(mode_text: str, requirements_text: str) -> None:
+    if mode_text != _dependency_mode_env():
+        raise ValueError("module dependency mode contract mismatch")
+    if requirements_text != _requirements_txt(DEFAULT_PYTHON_DEPENDENCIES):
+        raise ValueError("module dependency requirements contract mismatch")
+
+
 def validate_magisk_module(output_dir: Path) -> tuple[Path, ...]:
-    required_paths = (
-        Path("module.prop"),
-        Path("customize.sh"),
-        Path("post-fs-data.sh"),
-        Path("service.sh"),
-        Path("bin/chrootctl-magisk-helper"),
-        Path("bin/chrootctl-python-bootstrap"),
-        Path("system/bin/chrootctl"),
-        Path("payload/src/chrootctl"),
-        Path("config/chrootctl/boot_targets.json"),
-        Path("config/chrootctl/dependency-mode.env"),
-        Path("wheelhouse/.keep"),
-    )
+    output_dir = output_dir.expanduser().resolve()
+    if not output_dir.is_dir() or output_dir.is_symlink():
+        raise NotADirectoryError(f"module output must be a real directory: {output_dir}")
+    required_paths = tuple(Path(path) for path in sorted(REQUIRED_MODULE_PATHS)) + (Path("payload/src/chrootctl"),)
     missing = tuple(path for path in required_paths if not (output_dir / path).exists())
     if missing:
-        formatted = ", ".join(str(path) for path in missing)
-        raise FileNotFoundError(f"invalid Magisk module output; missing: {formatted}")
-    forbidden = tuple(
-        path.relative_to(output_dir).as_posix()
-        for path in output_dir.rglob("*")
-        if path.is_file()
-        and any(token in path.relative_to(output_dir).as_posix() for token in FORBIDDEN_MODULE_PATH_TOKENS)
+        raise FileNotFoundError("invalid module output; missing: " + ", ".join(map(str, missing)))
+    total = 0
+    for path in sorted(output_dir.rglob("*")):
+        relative = path.relative_to(output_dir)
+        if path.is_symlink():
+            raise ValueError(f"symlinks are not allowed in module payload: {relative}")
+        _validate_module_relative(relative, directory=path.is_dir())
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f"non-regular module payload entry: {relative}")
+        size = path.stat().st_size
+        if size > MODULE_MAX_FILE_BYTES:
+            raise ValueError(f"module file exceeds size limit: {relative}")
+        total += size
+        if total > MODULE_MAX_TOTAL_BYTES:
+            raise ValueError("module payload exceeds total size limit")
+    prop = _parse_module_prop(output_dir / "module.prop")
+    _validate_compatibility_manifest(output_dir / "config/chrootctl/compatibility-manifest.json", prop)
+    _validate_dependency_contract_text(
+        (output_dir / "config/chrootctl/dependency-mode.env").read_text(encoding="utf-8"),
+        (output_dir / "payload/requirements.txt").read_text(encoding="utf-8"),
     )
-    if forbidden:
-        formatted = ", ".join(sorted(forbidden))
-        raise FileNotFoundError(f"invalid Magisk module output; retired WebUI artifact returned: {formatted}")
+    for relative in REQUIRED_EXECUTABLE_PATHS:
+        path = output_dir / relative
+        if not path.is_file() or path.is_symlink() or path.stat().st_mode & 0o111 == 0:
+            raise PermissionError(f"required module executable lacks execute permission: {relative}")
     return tuple(output_dir / path for path in required_paths)
 
 
-def zip_magisk_module(output_dir: Path, zip_path: Path) -> Path:
-    validate_magisk_module(output_dir)
-    zip_path.parent.mkdir(parents=True, exist_ok=True)
-    if zip_path.exists():
-        zip_path.unlink()
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(output_dir.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(output_dir).as_posix())
-    return zip_path
+def validate_magisk_zip(zip_path: Path) -> tuple[str, ...]:
+    zip_path = zip_path.expanduser().resolve()
+    required = set(REQUIRED_MODULE_PATHS)
+    total = 0
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        infos = archive.infolist()
+        names = [info.filename for info in infos]
+        if len(names) != len(set(names)):
+            raise ValueError("module zip contains duplicate entry names")
+        normalized: set[str] = set()
+        for info in infos:
+            raw = info.filename
+            if raw.startswith(("/", "\\")) or "\\" in raw:
+                raise ValueError(f"invalid zip entry path: {raw}")
+            if "\x00" in raw:
+                raise ValueError("module zip entry contains NUL")
+            relative = Path(raw.rstrip("/"))
+            if not relative.parts:
+                continue
+            canonical = relative.as_posix() + ("/" if info.is_dir() else "")
+            if raw != canonical:
+                raise ValueError(f"module zip entry path is not canonical: {raw}")
+            _validate_module_relative(relative, directory=info.is_dir())
+            if relative.as_posix() in normalized:
+                raise ValueError(f"module zip contains normalized duplicate path: {raw}")
+            normalized.add(relative.as_posix())
+            if info.flag_bits & 0x1:
+                raise ValueError(f"encrypted module zip entries are not allowed: {raw}")
+            if info.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
+                raise ValueError(f"unsupported module zip compression method: {raw}")
+            mode = (info.external_attr >> 16) & 0xFFFF
+            file_type = stat.S_IFMT(mode)
+            if file_type == stat.S_IFLNK:
+                raise ValueError(f"module zip contains symlink: {raw}")
+            if not info.is_dir() and file_type not in {0, stat.S_IFREG}:
+                raise ValueError(f"module zip contains non-regular entry: {raw}")
+            if info.file_size > MODULE_MAX_FILE_BYTES:
+                raise ValueError(f"module zip entry exceeds size limit: {raw}")
+            total += info.file_size
+            if total > MODULE_MAX_TOTAL_BYTES:
+                raise ValueError("module zip exceeds total uncompressed size limit")
+        # Only decompress for CRC verification after central-directory metadata has
+        # passed the per-file and aggregate uncompressed-size bounds.
+        bad_crc = archive.testzip()
+        if bad_crc is not None:
+            raise ValueError(f"module zip CRC validation failed: {bad_crc}")
+        missing = sorted(required - normalized)
+        if missing:
+            raise FileNotFoundError("module zip missing required entries: " + ", ".join(missing))
+        for relative in REQUIRED_EXECUTABLE_PATHS:
+            try:
+                info = archive.getinfo(relative)
+            except KeyError as exc:
+                raise FileNotFoundError(f"module zip missing executable: {relative}") from exc
+            mode = (info.external_attr >> 16) & 0o777
+            if mode & 0o111 == 0:
+                raise PermissionError(f"module zip executable mode missing: {relative}")
+        prop_text = archive.read("module.prop").decode("utf-8")
+        with tempfile.TemporaryDirectory(prefix="chrootctl-module-zip-check-") as tmp:
+            tmpdir = Path(tmp)
+            (tmpdir / "module.prop").write_text(prop_text, encoding="utf-8")
+            prop = _parse_module_prop(tmpdir / "module.prop")
+            compat = json.loads(archive.read("config/chrootctl/compatibility-manifest.json").decode("utf-8"))
+            compat_path = tmpdir / "compat.json"
+            compat_path.write_text(json.dumps(compat), encoding="utf-8")
+            _validate_compatibility_manifest(compat_path, prop)
+            _validate_dependency_contract_text(
+                archive.read("config/chrootctl/dependency-mode.env").decode("utf-8"),
+                archive.read("payload/requirements.txt").decode("utf-8"),
+            )
+    return tuple(names)
 
+
+def zip_magisk_module(output_dir: Path, zip_path: Path) -> Path:
+    output_dir = output_dir.expanduser().resolve()
+    zip_path = zip_path.expanduser().resolve()
+    validate_magisk_module(output_dir)
+    try:
+        zip_path.relative_to(output_dir)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("module zip destination must not be inside module output directory")
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    if zip_path.exists() and (zip_path.is_dir() or zip_path.is_symlink()):
+        raise ValueError(f"refusing unsafe module zip destination: {zip_path}")
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{zip_path.name}.", suffix=".tmp", dir=str(zip_path.parent))
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+            for path in sorted(output_dir.rglob("*")):
+                if not path.is_file():
+                    continue
+                relative = path.relative_to(output_dir).as_posix()
+                info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
+                info.create_system = 3
+                mode = 0o755 if relative in REQUIRED_EXECUTABLE_PATHS else 0o644
+                info.external_attr = (stat.S_IFREG | mode) << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                with path.open("rb") as source:
+                    archive.writestr(info, source.read(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+        validate_magisk_zip(tmp)
+        os.replace(tmp, zip_path)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+    validate_magisk_zip(zip_path)
+    return zip_path

@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
-from chrootctl.magisk import MagiskModuleConfig, render_magisk_module, resolve_startup_targets, zip_magisk_module
+import pytest
+
+from chrootctl.magisk import (
+    MagiskModuleConfig,
+    render_magisk_module,
+    resolve_startup_targets,
+    validate_magisk_module,
+    validate_magisk_zip,
+    zip_magisk_module,
+)
 
 
 class _FakeChroot:
@@ -14,11 +24,7 @@ class _FakeChroot:
 
 class _FakeChrootsService:
     def list(self):
-        return [
-            _FakeChroot("work", True),
-            _FakeChroot("dev", True),
-            _FakeChroot("stale", False),
-        ]
+        return [_FakeChroot("work", True), _FakeChroot("dev", True), _FakeChroot("stale", False)]
 
 
 class _FakeServices:
@@ -32,165 +38,134 @@ def _build_package_source(tmp_path: Path) -> Path:
     chrootctl_dir.mkdir(parents=True)
     (chrootctl_dir / "__init__.py").write_text("", encoding="utf-8")
     (chrootctl_dir / "cli.py").write_text("def main():\n    return None\n", encoding="utf-8")
-    (package_root.parent / "pyproject.toml").write_text(
-        "\n".join(
-            (
-                "[build-system]",
-                'requires = ["setuptools>=68"]',
-                'build-backend = "setuptools.build_meta"',
-                "",
-                "[project]",
-                'name = "chrootctl"',
-                'version = "0.0.0"',
-                "",
-                "[tool.setuptools]",
-                'package-dir = {"" = "src"}',
-                "",
-            )
-        ),
-        encoding="utf-8",
-    )
+    repo_root = package_root.parent
+    (repo_root / "pyproject.toml").write_text('[project]\nname="chrootctl"\nversion="0.11.0"\n', encoding="utf-8")
+    android = repo_root / "android/app"
+    android.mkdir(parents=True)
+    (android / "build.gradle.kts").write_text('android { defaultConfig { versionCode = 1; versionName = "0.1.0-phase29" } }\n', encoding="utf-8")
+    release = repo_root / "docs/release"
+    release.mkdir(parents=True)
+    (release / "compatibility-manifest.json").write_text(json.dumps({
+        "schemaVersion": 2,
+        "project": "chrootctl",
+        "bridgeProtocolVersion": 1,
+        "pythonPackage": {"name": "chrootctl", "version": "0.11.0"},
+        "androidApp": {
+            "applicationId": "com.mikeyphw.chrootctl",
+            "versionName": "0.1.0-phase29",
+            "versionCode": 1,
+            "minimumSupportedModuleVersionCode": 15,
+        },
+        "module": {
+            "id": "chrootctl-magisk",
+            "version": "1.3.0",
+            "versionCode": 15,
+            "minimumSupportedBridgeProtocolVersion": 1,
+        },
+    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return package_root
 
 
-def test_resolve_startup_targets_prefers_selected_names() -> None:
+def test_resolve_startup_targets_requires_installed_selected_names() -> None:
     services = _FakeServices()
-
+    assert resolve_startup_targets(services) == ()
+    assert resolve_startup_targets(services, all_installed=True) == ("dev", "work")
     assert resolve_startup_targets(services, selected_names=("dev", "work", "dev")) == ("dev", "work")
+    with pytest.raises(ValueError, match="installed chroots"):
+        resolve_startup_targets(services, selected_names=("stale",))
 
 
-def test_resolve_startup_targets_can_include_all_installed() -> None:
-    services = _FakeServices()
-
-    assert resolve_startup_targets(services, all_installed=True) == ("work", "dev")
-
-
-def test_render_magisk_module_writes_full_module_files(tmp_path: Path) -> None:
+def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) -> None:
     output_dir = tmp_path / "magisk-module"
-    package_source_dir = _build_package_source(tmp_path)
-
     result = render_magisk_module(
         output_dir,
         services=_FakeServices(),
         startup_targets=("work", "dev"),
-        module_config=MagiskModuleConfig(package_source_dir=package_source_dir),
+        module_config=MagiskModuleConfig(package_source_dir=_build_package_source(tmp_path)),
     )
-
     assert result.output_dir == output_dir
-    assert (output_dir / "service.sh").exists()
-    assert (output_dir / "post-fs-data.sh").exists()
-    assert (output_dir / "customize.sh").exists()
-    assert (output_dir / "system" / "bin" / "chrootctl").exists()
-    assert not (output_dir / "system" / "bin" / "chrootctl-web").exists()
-    assert (output_dir / "system" / "bin" / "chrootctl-magisk-helper").exists()
-    assert (output_dir / "system" / "bin" / "chrootctl-python-bootstrap").exists()
-    assert not (output_dir / "system" / "bin" / "chrootctl-webui-service").exists()
-    assert (output_dir / "bin" / "chrootctl-magisk-helper").exists()
-    assert (output_dir / "bin" / "chrootctl-python-bootstrap").exists()
-    assert not (output_dir / "bin" / "chrootctl-webui-service").exists()
-    assert (output_dir / "payload" / "requirements.txt").exists()
-    assert (output_dir / "payload" / "src" / "chrootctl" / "cli.py").exists()
-    assert not (output_dir / "webroot" / "index.html").exists()
-    assert not (output_dir / "webroot" / "icon.svg").exists()
-    assert (output_dir / "config" / "chrootctl" / "boot_targets.json").exists()
-    assert (output_dir / "config" / "chrootctl" / "dependency-mode.env").exists()
-    assert (output_dir / "wheelhouse" / ".keep").exists()
+    required = validate_magisk_module(output_dir)
+    assert required
+    compat = json.loads((output_dir / "config/chrootctl/compatibility-manifest.json").read_text(encoding="utf-8"))
+    assert compat["schemaVersion"] == 2
+    assert compat["module"]["id"] == "chrootctl-magisk"
+    assert compat["module"]["versionCode"] == 15
 
-    customize_text = (output_dir / "customize.sh").read_text(encoding="utf-8")
-    service_text = (output_dir / "service.sh").read_text(encoding="utf-8")
-    helper_text = (output_dir / "bin" / "chrootctl-magisk-helper").read_text(encoding="utf-8")
-    payload = json.loads((output_dir / "config" / "chrootctl" / "boot_targets.json").read_text(encoding="utf-8"))
-    launcher_text = (output_dir / "system" / "bin" / "chrootctl").read_text(encoding="utf-8")
-    module_prop_text = (output_dir / "module.prop").read_text(encoding="utf-8")
-
-    assert "metamodule=1" not in module_prop_text
-    assert "webuiIcon=webroot/icon.svg" not in module_prop_text
-    assert payload["startup_targets"] == ["work", "dev"]
-    bootstrap_text = (output_dir / "bin" / "chrootctl-python-bootstrap").read_text(encoding="utf-8")
-
-    assert 'PYTHON_PATH_BIN="$(command -v python3 2>/dev/null || true)"' in customize_text
-    assert 'ui_print "- Python runtime used by module: $PYTHON_BIN"' in customize_text
-    assert 'No Python dependencies are installed during Magisk/KSU install' in customize_text
-    assert "pip install" not in customize_text
-    assert "pydantic_core" in customize_text
-    assert "fastapi" not in customize_text
-    assert "uvicorn" not in customize_text
-    dependency_mode_text = (output_dir / "config" / "chrootctl" / "dependency-mode.env").read_text(encoding="utf-8")
-    assert 'static-python-env' in dependency_mode_text
-    assert 'DEPENDENCY_INSTALL_PHASE="none"' in dependency_mode_text
-    assert 'DEPENDENCY_REPAIR="disabled"' in dependency_mode_text
-    assert 'pip install' not in bootstrap_text
-    assert '--extra-index-url' not in bootstrap_text
-    assert '--only-binary' not in bootstrap_text
-    assert 'validate_static_environment' in bootstrap_text
-    assert 'Fix the static Python module environment' in bootstrap_text
-    assert 'TypeAdapter' in bootstrap_text
-    assert '"$MODDIR/system/bin/chrootctl" clipboard daemon start' in service_text
-    assert "WEBUI_SERVICE" not in service_text
-    assert '"$CLI" --name "$name" mount' in helper_text
-    assert 'MODDIR="$(resolve_moddir)"' in launcher_text
-    assert 'PAYLOAD_SRC="$MODDIR/payload/src"' in launcher_text
-    assert 'exec "$PYTHON_BIN" -m chrootctl.cli "$@"' in launcher_text
+    customize = (output_dir / "customize.sh").read_text(encoding="utf-8")
+    service = (output_dir / "service.sh").read_text(encoding="utf-8")
+    helper = (output_dir / "bin/chrootctl-magisk-helper").read_text(encoding="utf-8")
+    launcher = (output_dir / "system/bin/chrootctl").read_text(encoding="utf-8")
+    bootstrap = (output_dir / "bin/chrootctl-python-bootstrap").read_text(encoding="utf-8")
+    assert '. "$MODPATH/config/chrootctl/python.env"' not in customize
+    assert '. "$MODDIR/config/chrootctl/python.env"' not in service
+    assert "dependencies.ready.json" in launcher
+    assert "compatibilityManifestSha256" in bootstrap
+    assert "/data/adb/modules/chrootctl-magisk" in launcher
+    assert "/data/adb/modules_update/chrootctl-magisk" in launcher  # diagnostics only
+    assert 'run --boot' not in service
+    assert 'clipboard.enabled' in service
+    assert 'bootstrap.lock' in bootstrap
+    assert 'mount|unmount|start|restart' not in helper
+    assert '"$CLI" --name "$name" mount' not in helper
+    assert "module.boot.start" in helper
+    assert "OperationManager" in helper
+    assert "refusing module service outside active module" in service
+    assert "pip install" not in customize
+    assert "pip install" not in bootstrap
 
 
+def test_module_validator_rejects_backup_and_symlink_payloads(tmp_path: Path) -> None:
+    output_dir = tmp_path / "module"
+    render_magisk_module(
+        output_dir,
+        services=_FakeServices(),
+        startup_targets=(),
+        module_config=MagiskModuleConfig(package_source_dir=_build_package_source(tmp_path)),
+    )
+    bad = output_dir / "payload/src/chrootctl/secret.py.bak"
+    bad.write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="forbidden"):
+        validate_magisk_module(output_dir)
+    bad.unlink()
+    link = output_dir / "payload/src/chrootctl/link.py"
+    link.symlink_to(output_dir / "payload/src/chrootctl/cli.py")
+    with pytest.raises(ValueError, match="symlink"):
+        validate_magisk_module(output_dir)
 
-def test_zip_magisk_module_writes_flashable_root_entries(tmp_path: Path) -> None:
-    output_dir = tmp_path / "magisk-module"
-    package_source_dir = _build_package_source(tmp_path)
+
+def test_zip_magisk_module_deep_validates_final_zip(tmp_path: Path) -> None:
+    output_dir = tmp_path / "module"
     zip_path = tmp_path / "chrootctl-magisk.zip"
-
     render_magisk_module(
         output_dir,
         services=_FakeServices(),
         startup_targets=("work",),
-        module_config=MagiskModuleConfig(package_source_dir=package_source_dir),
+        module_config=MagiskModuleConfig(package_source_dir=_build_package_source(tmp_path)),
     )
     zip_magisk_module(output_dir, zip_path)
-
-    import zipfile
-
-    with zipfile.ZipFile(zip_path) as archive:
-        names = set(archive.namelist())
-
+    names = set(validate_magisk_zip(zip_path))
     assert "module.prop" in names
-    assert "service.sh" in names
-    assert "webroot/index.html" not in names
-    assert "webroot/icon.svg" not in names
-    assert "bin/chrootctl-python-bootstrap" in names
+    assert "config/chrootctl/compatibility-manifest.json" in names
     assert "system/bin/chrootctl" in names
-    assert "system/bin/chrootctl-magisk-helper" in names
-    assert "system/bin/chrootctl-python-bootstrap" in names
-    assert "system/bin/chrootctl-web" not in names
-    assert "system/bin/chrootctl-webui-service" not in names
-    assert "payload/src/chrootctl/web/routes/ksu.py" not in names
-    assert not any(name.startswith("magisk-module/") for name in names)
+    assert not any(name.endswith((".bak", ".orig", ".rej")) for name in names)
+    with zipfile.ZipFile(zip_path) as archive:
+        info = archive.getinfo("system/bin/chrootctl")
+        mode = (info.external_attr >> 16) & 0o777
+        assert info.date_time == (1980, 1, 1, 0, 0, 0)
+    assert mode & 0o111
 
 
 def test_magisk_render_parser_collects_targets(tmp_path: Path) -> None:
     from chrootctl.parser import build_parser
 
     parser = build_parser()
-    args = parser.parse_args(
-        [
-            "magisk",
-            "render",
-            "--output",
-            str(tmp_path / "module"),
-            "--zip",
-            str(tmp_path / "module.zip"),
-            "--wheelhouse",
-            str(tmp_path / "wheelhouse"),
-            "--all-installed",
-            "--name",
-            "work",
-            "--name",
-            "dev",
-        ]
-    )
-
+    args = parser.parse_args([
+        "magisk", "render", "--output", str(tmp_path / "module"), "--zip", str(tmp_path / "module.zip"),
+        "--all-installed", "--name", "work", "--name", "dev",
+    ])
     assert args.command == "magisk"
     assert args.magisk_command == "render"
     assert args.all_installed is True
-    assert args.zip_path == tmp_path / "module.zip"
-    assert args.wheelhouse_dir == tmp_path / "wheelhouse"
     assert args.magisk_names == ["work", "dev"]
+    with pytest.raises(SystemExit):
+        parser.parse_args(["magisk", "render", "--output", str(tmp_path / "module2"), "--wheelhouse", str(tmp_path / "wheelhouse")])

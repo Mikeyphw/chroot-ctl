@@ -30,7 +30,7 @@ def _handle_render(context: "RuntimeContext") -> None:
             Path(context.args.output),
             services=context.services,
             startup_targets=startup_targets,
-            module_config=MagiskModuleConfig(offline_wheelhouse_dir=getattr(context.args, "wheelhouse_dir", None)),
+            module_config=MagiskModuleConfig(),
         ),
     )
     validate_magisk_module(result.output_dir)

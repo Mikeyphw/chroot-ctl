@@ -50,24 +50,20 @@ def _write_checksum(path: Path) -> Path:
 def _build_magisk(args: argparse.Namespace) -> None:
     script = f"""
 from pathlib import Path
-from chrootctl.magisk import MagiskModuleConfig, render_magisk_module, resolve_startup_targets, validate_magisk_module, zip_magisk_module
-from chrootctl.services import create_service_container
+from chrootctl.magisk import MagiskModuleConfig, render_magisk_module, validate_magisk_module, validate_magisk_zip, zip_magisk_module
 
 out_dir = Path({str(args.output_dir)!r})
 zip_path = Path({str(args.zip_path)!r})
-wheelhouse = Path({str(args.wheelhouse)!r})
-services = create_service_container(None, dry_run=False, verbose=False)
-wheelhouse_dir = wheelhouse if wheelhouse.exists() and any(wheelhouse.glob("*.whl")) else None
-startup_targets = resolve_startup_targets(services, all_installed=True)
 
 render_magisk_module(
     out_dir,
-    services=services,
-    startup_targets=startup_targets,
-    module_config=MagiskModuleConfig(offline_wheelhouse_dir=wheelhouse_dir),
+    services=None,
+    startup_targets=(),
+    module_config=MagiskModuleConfig(),
 )
 validate_magisk_module(out_dir)
 zip_magisk_module(out_dir, zip_path)
+validate_magisk_zip(zip_path)
 print(zip_path)
 """
     _run([args.python, "-c", script], env=_source_env())
@@ -163,7 +159,6 @@ def _release(args: argparse.Namespace) -> None:
         python=args.python,
         output_dir=magisk_dir,
         zip_path=magisk_zip,
-        wheelhouse=args.wheelhouse,
         checksum=True,
     ))
     _build_source_archive(argparse.Namespace(version=version, output=archive_path, checksum=True))
@@ -217,7 +212,6 @@ def build_parser() -> argparse.ArgumentParser:
     build = sub.add_parser("build-magisk", help="Render and zip the Magisk module.")
     build.add_argument("--output-dir", type=Path, default=ROOT / "out", help="Rendered module directory.")
     build.add_argument("--zip-path", type=Path, default=ROOT / "chrootctl-magisk.zip", help="Flashable zip path.")
-    build.add_argument("--wheelhouse", type=Path, default=ROOT / "wheelhouse", help="Optional offline wheelhouse.")
     build.add_argument("--checksum", action="store_true", help="Write a .sha256 file for the ZIP.")
     build.set_defaults(func=_build_magisk)
 
@@ -255,7 +249,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     release = sub.add_parser("release", help="Run lint, typecheck, tests, and build release artifacts with checksums.")
     release.add_argument("--version", default="dev", help="Version label for release artifact names.")
-    release.add_argument("--wheelhouse", type=Path, default=ROOT / "wheelhouse", help="Optional offline wheelhouse.")
     release.add_argument("--source-archive", type=Path, default=None, help="Optional source archive output path.")
     release.set_defaults(func=_release)
 

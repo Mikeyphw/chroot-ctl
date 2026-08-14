@@ -53,8 +53,8 @@ def main() -> int:
         'envelope.optBoolean("ok")',
         'data.optInt("protocolVersion", -1) == BRIDGE_PROTOCOL_VERSION',
         'modules/chrootctl-magisk/system/bin/chrootctl',
-        'modules_update/chrootctl-magisk/system/bin/chrootctl',
-        'ksuRoot',
+        'pendingModuleDirs',
+        'isActiveModuleExecutable',
     ):
         require(token in resolver, f"runtime resolver guard missing: {token}")
 

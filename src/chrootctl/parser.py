@@ -147,13 +147,6 @@ def _add_magisk_commands(subs: argparse._SubParsersAction[argparse.ArgumentParse
     render.add_argument("--output", type=Path, required=True, help="Target directory for the generated Magisk module tree.")
     render.add_argument("--zip", dest="zip_path", type=Path, default=None, help="Also create a flashable Magisk/KSU zip at this path.")
     render.add_argument(
-        "--wheelhouse",
-        dest="wheelhouse_dir",
-        type=Path,
-        default=None,
-        help="Optional directory of offline wheels to bundle for first-boot dependency bootstrap.",
-    )
-    render.add_argument(
         "--all-installed",
         action="store_true",
         help="Include every installed chroot in the boot startup target list.",
@@ -1007,4 +1000,4 @@ def _add_support_commands(subs: argparse._SubParsersAction[argparse.ArgumentPars
         help="Export a sanitized support bundle.",
         description="Bundle logs, doctor output, config, and recent jobs for debugging.",
     )
-    support.add_argument("archive", nargs="?", type=Path, help="Destination tar.gz path. Defaults to ./chrootctl-support-bundle.tar.gz")
+    support.add_argument("archive", nargs="?", type=Path, help="Managed tar.gz artifact path. Defaults to the chrootctl managed transfer directory")

@@ -1,6 +1,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from chrootctl.config import ChrootConfig
 from chrootctl.registry import ChrootRegistry
 from chrootctl.services.context import ServiceContainer
@@ -35,7 +37,13 @@ def test_registry_repair_preview_and_apply(tmp_path: Path):
     preview = services.repair().preview_registry_repair()
     assert "orphan" in preview.missing_records
     assert "broken" in preview.missing_paths
-    applied = services.repair().apply_registry_repair()
+    with pytest.raises(RuntimeError, match="unbound registry repair is disabled"):
+        services.repair().apply_registry_repair()
+    items = services.repair().preview_items()
+    decisions = [{"item_id": str(item["item_id"]), "action": str(item["action"])} for item in items]
+    plan = services.repair().preview_plan(decisions)
+    assert plan["ok"] is True
+    applied = services.repair().apply_registry_repair_plan(decisions)
     assert "orphan" in applied.repaired_records
     assert "broken" in applied.removed_records
     assert services.registry.get("orphan") is not None

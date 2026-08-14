@@ -4,75 +4,78 @@ set -euo pipefail
 MODULE_NAME="${MODULE_NAME:-chrootctl-magisk}"
 OUT_DIR="${OUT_DIR:-./out}"
 ZIP_NAME="${ZIP_NAME:-${MODULE_NAME}.zip}"
-WHEELHOUSE_DIR="${WHEELHOUSE_DIR:-./wheelhouse}"
 
-echo "[1/5] Cleaning old module output..."
-rm -rf "$OUT_DIR" "$ZIP_NAME"
-
-echo "[2/5] Rendering Magisk/KSU module..."
-PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}src" python3 - "$OUT_DIR" "$ZIP_NAME" "$WHEELHOUSE_DIR" <<'PY'
+python3 - "$OUT_DIR" "$ZIP_NAME" <<'PY'
 from pathlib import Path
 import sys
 
-from chrootctl.magisk import MagiskModuleConfig, render_magisk_module, validate_magisk_module, zip_magisk_module
+out_dir = Path(sys.argv[1]).expanduser().resolve()
+zip_path = Path(sys.argv[2]).expanduser().resolve()
+repo = Path.cwd().resolve()
+default_out = (repo / "out").resolve()
+
+if out_dir.exists():
+    if out_dir.is_symlink() or not out_dir.is_dir():
+        raise SystemExit(f"refusing unsafe module output path: {out_dir}")
+    if any(out_dir.iterdir()):
+        if out_dir != default_out:
+            raise SystemExit("refusing to clean a non-empty custom OUT_DIR; remove it explicitly after review")
+        for child in out_dir.iterdir():
+            if child.is_symlink() or child.is_file():
+                child.unlink()
+            elif child.is_dir():
+                import shutil
+                shutil.rmtree(child)
+            else:
+                raise SystemExit(f"refusing unusual output entry: {child}")
+else:
+    out_dir.mkdir(parents=True, exist_ok=False)
+
+try:
+    zip_path.relative_to(out_dir)
+except ValueError:
+    pass
+else:
+    raise SystemExit("ZIP_NAME must not be inside OUT_DIR")
+try:
+    zip_path.relative_to(repo)
+except ValueError as exc:
+    raise SystemExit("ZIP_NAME must stay inside the repository; use manage_source.py for explicit external destinations") from exc
+if zip_path.exists():
+    if zip_path.is_symlink() or zip_path.is_dir():
+        raise SystemExit(f"refusing unsafe ZIP_NAME: {zip_path}")
+    zip_path.unlink()
+PY
+
+echo "[1/4] Rendering Magisk/KernelSU module..."
+PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}src" python3 - "$OUT_DIR" "$ZIP_NAME" <<'PY'
+from pathlib import Path
+import sys
+from chrootctl.magisk import MagiskModuleConfig, render_magisk_module, validate_magisk_module, validate_magisk_zip, zip_magisk_module
 
 out_dir = Path(sys.argv[1])
 zip_path = Path(sys.argv[2])
-wheelhouse_arg = Path(sys.argv[3])
-wheelhouse_dir = wheelhouse_arg if wheelhouse_arg.exists() and any(wheelhouse_arg.glob("*.whl")) else None
-
-render_magisk_module(
-    out_dir,
-    services=None,
-    startup_targets=(),
-    module_config=MagiskModuleConfig(offline_wheelhouse_dir=wheelhouse_dir),
-)
+render_magisk_module(out_dir, services=None, startup_targets=(), module_config=MagiskModuleConfig())
 validate_magisk_module(out_dir)
 zip_magisk_module(out_dir, zip_path)
+validate_magisk_zip(zip_path)
 PY
 
-echo "[3/5] Verifying required module files..."
-required_paths=(
-  "module.prop"
-  "customize.sh"
-  "post-fs-data.sh"
-  "service.sh"
-  "bin/chrootctl-magisk-helper"
-  "bin/chrootctl-python-bootstrap"
-  "system/bin/chrootctl"
-)
-
-for path in "${required_paths[@]}"; do
-  if [[ ! -e "$OUT_DIR/$path" ]]; then
-    echo "ERROR: missing module artifact: $path" >&2
-    exit 1
-  fi
-done
-
-echo "[4/5] Verifying zip root..."
-python3 - "$ZIP_NAME" <<'PY'
+echo "[2/4] Verifying module tree and executable modes..."
+PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}src" python3 - "$OUT_DIR" <<'PY'
+from pathlib import Path
 import sys
-import zipfile
-
-zip_path = sys.argv[1]
-required = {
-    "module.prop",
-    "customize.sh",
-    "post-fs-data.sh",
-    "service.sh",
-    "bin/chrootctl-magisk-helper",
-    "bin/chrootctl-python-bootstrap",
-    "system/bin/chrootctl",
-}
-with zipfile.ZipFile(zip_path) as archive:
-    names = set(archive.namelist())
-missing = sorted(required - names)
-if missing:
-    raise SystemExit(f"zip is missing required root entries: {', '.join(missing)}")
-if any(name.startswith("out/") for name in names):
-    raise SystemExit("zip contains the output directory itself; expected module files at zip root")
+from chrootctl.magisk import validate_magisk_module
+validate_magisk_module(Path(sys.argv[1]))
 PY
 
-echo "[5/5] Done: $ZIP_NAME"
-echo "Flash $ZIP_NAME in Magisk or KernelSU."
-echo "Offline wheelhouse source: ${WHEELHOUSE_DIR} (used only when it contains .whl files)"
+echo "[3/4] Reopening and deeply validating final ZIP..."
+PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}src" python3 - "$ZIP_NAME" <<'PY'
+from pathlib import Path
+import sys
+from chrootctl.magisk import validate_magisk_zip
+validate_magisk_zip(Path(sys.argv[1]))
+PY
+
+echo "[4/4] Done: $ZIP_NAME"
+echo "Flash $ZIP_NAME in Magisk or KernelSU. Pending updates become runtime-active only after reboot activation."

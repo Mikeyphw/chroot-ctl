@@ -23,7 +23,7 @@ _ARTIFACT_TTL_SECONDS: dict[str, int] = {
 }
 
 
-def managed_transfer_root() -> Path:
+def managed_transfer_root(*, create: bool = True) -> Path:
     """Return the single managed transfer/artifact root shared by Python and Android."""
     override = os.environ.get("CHROOTCTL_TRANSFER_DIR")
     if override:
@@ -34,13 +34,14 @@ def managed_transfer_root() -> Path:
             path = android_tmp / "chrootctl-transfer"
         else:
             path = Path(tempfile.gettempdir()) / "chrootctl-transfer"
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def managed_transfer_archive(name: str, suffix: str = "tar.zst") -> Path:
+def managed_transfer_archive(name: str, suffix: str = "tar.zst", *, create_root: bool = True) -> Path:
     safe = "".join(ch if ch.isalnum() or ch in {".", "_", "-"} else "_" for ch in name).strip("._-") or "chroot"
-    return managed_transfer_root() / f"{safe}.{suffix}"
+    return managed_transfer_root(create=create_root) / f"{safe}.{suffix}"
 
 
 def _infer_artifact_kind(path: Path) -> str:

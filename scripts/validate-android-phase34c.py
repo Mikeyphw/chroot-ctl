@@ -32,10 +32,7 @@ def main() -> int:
     require(ignored == ["OldTargetApi"], f"only OldTargetApi may be ignored, got {ignored}")
 
     expected_in_order = [
-        'File(adbRoot, "modules/chrootctl-magisk/system/bin/chrootctl")',
-        'File(adbRoot, "modules_update/chrootctl-magisk/system/bin/chrootctl")',
-        'File(ksuRoot, "modules/chrootctl-magisk/system/bin/chrootctl")',
-        'File(ksuRoot, "modules_update/chrootctl-magisk/system/bin/chrootctl")',
+        'File(activeModuleDir, "system/bin/chrootctl")',
         'File(File.separator, "system/bin/chrootctl")',
         'File(adbRoot, "chrootctl/bin/chrootctl")',
         'File(termuxHome, ".local/bin/chrootctl")',
@@ -65,7 +62,6 @@ def main() -> int:
         "Phase 34C",
         "chrootctl-magisk",
         "/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",
-        "/data/adb/ksu/modules/chrootctl-magisk/system/bin/chrootctl",
         "/system/bin/chrootctl",
         "Termux",
         "protocol-1",
@@ -73,13 +69,26 @@ def main() -> int:
     ):
         require(token in docs, f"Phase 34C docs missing: {token}")
 
+    active_candidates = re.search(
+        r"private val rootModuleExecutableCandidates = listOf\((.*?)\n    \)",
+        resolver,
+        re.DOTALL,
+    )
+    require(active_candidates is not None, "runtime resolver must declare rootModuleExecutableCandidates")
+    if active_candidates is not None:
+        block = active_candidates.group(1)
+        require("activeModuleDir" in block, "active module executable must remain a root-module candidate")
+        require("modules_update" not in block, "pending module updates must never be executable candidates")
+    require('File(adbRoot, "modules_update/chrootctl-magisk")' in resolver, "Magisk pending update must remain diagnostic")
+    require('File(ksuRoot, "modules_update/chrootctl-magisk")' in resolver, "KernelSU pending update must remain diagnostic")
+    require("pendingModuleDirs.filter(File::exists)" in resolver, "pending update diagnostics must remain visible")
+
     for token in (
-        "rootModuleExecutableCandidates",
-        "modules_update/chrootctl-magisk/system/bin/chrootctl",
-        "ksuRoot",
-        "positions == sorted(positions)",
+        "test_phase34c_runtime_resolver_executes_active_module_only",
+        "test_phase34c_invalid_override_falls_back_and_protocol_probe_is_required",
+        "test_phase34c_lint_api36_and_active_only_docs_are_preserved",
     ):
-        require(token in tests, f"Phase 34C tests missing: {token}")
+        require(token in tests, f"Phase 34C tests missing contract: {token}")
 
     kotlin = "\n".join(
         path.read_text(encoding="utf-8", errors="strict")
