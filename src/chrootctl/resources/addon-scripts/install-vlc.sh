@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y vlc
     ;;
   arch)
-    pacman -Sy --noconfirm --needed vlc
+    pacman -Syu --noconfirm --needed vlc
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

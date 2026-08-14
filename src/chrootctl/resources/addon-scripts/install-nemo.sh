@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y nemo nemo-fileroller
     ;;
   arch)
-    pacman -Sy --noconfirm --needed nemo nemo-fileroller
+    pacman -Syu --noconfirm --needed nemo nemo-fileroller
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

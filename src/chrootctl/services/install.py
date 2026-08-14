@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import shutil
 from dataclasses import replace
 from typing import Any
@@ -10,15 +12,18 @@ from ..base_install import ReleaseRef
 from ..installer_factory import build_installer
 from ..models import InstallRequest, InstallWizardDefaults
 from ..user_sync import validate_username
+from ..validation import validate_chroot_name
 from .context import ServiceContainer
 from .install_execution import InstallExecutionService
 
 PROFILE_OPTIONS = ("minimal", "dev", "xfce4", "plasma", "custom")
 DESKTOP_OPTIONS = ("auto", "none", "xfce4", "plasma")
 DISTRO_OPTIONS = ("ubuntu", "arch")
+ARCH_OPTIONS = ("arm64", "amd64")
 COMPATIBILITY_MATRIX = {
     "ubuntu": {
         "releases": ("noble", "jammy"),
+        "arches": ("arm64", "amd64"),
         "profiles": ("minimal", "dev", "xfce4", "plasma", "custom"),
         "desktops": {
             "minimal": ("none",),
@@ -30,6 +35,7 @@ COMPATIBILITY_MATRIX = {
     },
     "arch": {
         "releases": ("rolling",),
+        "arches": ("arm64",),
         "profiles": ("minimal", "dev", "xfce4", "plasma", "custom"),
         "desktops": {
             "minimal": ("none",),
@@ -80,16 +86,17 @@ INSTALL_PRESETS = {
     },
 }
 
+UBUNTU_RELEASE_VERSION_PREFIX = {"jammy": "22.04", "noble": "24.04"}
+
 MIRROR_OPTIONS = {
     "ubuntu": (
-        {"id": "auto", "label": "Auto-select", "url": "", "healthy": True},
-        {"id": "archive.ubuntu.com", "label": "Ubuntu archive", "url": "https://archive.ubuntu.com/ubuntu", "healthy": True},
-        {"id": "ports.ubuntu.com", "label": "Ubuntu ports", "url": "https://ports.ubuntu.com/ubuntu-ports", "healthy": True},
+        {"id": "auto", "label": "Auto-select", "url": "", "healthy": True, "arches": ("arm64", "amd64")},
+        {"id": "archive.ubuntu.com", "label": "Ubuntu archive (amd64)", "url": "https://archive.ubuntu.com/ubuntu", "healthy": True, "arches": ("amd64",)},
+        {"id": "ports.ubuntu.com", "label": "Ubuntu ports (arm64)", "url": "https://ports.ubuntu.com/ubuntu-ports", "healthy": True, "arches": ("arm64",)},
     ),
     "arch": (
-        {"id": "auto", "label": "Auto-select", "url": "", "healthy": True},
-        {"id": "geo.mirror.pkgbuild.com", "label": "Arch Geo mirror", "url": "https://geo.mirror.pkgbuild.com", "healthy": True},
-        {"id": "mirror.rackspace.com", "label": "Rackspace mirror", "url": "https://mirror.rackspace.com/archlinux", "healthy": True},
+        {"id": "auto", "label": "Arch Linux ARM Geo mirror", "url": "", "healthy": True, "arches": ("arm64",)},
+        {"id": "mirror.archlinuxarm.org", "label": "Arch Linux ARM Geo mirror", "url": "https://mirror.archlinuxarm.org", "healthy": True, "arches": ("arm64",)},
     ),
 }
 
@@ -141,9 +148,21 @@ class InstallService:
     def desktops(self) -> tuple[str, ...]:
         return DESKTOP_OPTIONS
 
-    def mirror_options(self, distro: str | None = None) -> list[dict[str, object]]:
+    def mirror_options(self, distro: str | None = None, arch: str | None = None) -> list[dict[str, object]]:
         selected = (distro or DISTRO_OPTIONS[0]).strip() or DISTRO_OPTIONS[0]
-        return [dict(item) for item in MIRROR_OPTIONS.get(selected, MIRROR_OPTIONS[DISTRO_OPTIONS[0]])]
+        if selected not in MIRROR_OPTIONS:
+            raise ValueError(f"unsupported distro: {selected}")
+        target_arch = (arch or "").strip().lower()
+        options: list[dict[str, object]] = []
+        for raw in MIRROR_OPTIONS[selected]:
+            item = dict(raw)
+            supported = tuple(str(value) for value in item.get("arches", ()))
+            if target_arch and supported and target_arch not in supported:
+                continue
+            options.append(item)
+        if target_arch and not options:
+            raise ValueError(f"{selected} has no configured mirrors for target architecture {target_arch}")
+        return options
 
 
     def _resolved_request_username(self, request: InstallRequest) -> str:
@@ -151,14 +170,20 @@ class InstallService:
         if candidate:
             return validate_username(candidate)
         defaults = self.wizard_defaults(name=request.name, distro=request.distro)
-        fallback = (defaults.username or "").strip() or _default_username_hint(self.services, request.name) or "mike"
+        fallback = (defaults.username or "").strip() or _default_username_hint(self.services, request.name)
+        if not fallback:
+            raise ValueError("install username is required; choose a target user")
         return validate_username(fallback)
 
     def storage_status(self, *, name: str | None = None) -> dict[str, Any]:
         config = self.services.config if name is None else self.services.config_for(name)
-        target = Path(config.chroot_root)
-        target.mkdir(parents=True, exist_ok=True)
-        usage = shutil.disk_usage(target)
+        target = Path(config.chroot_root).expanduser()
+        probe = target
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+        if not probe.exists():
+            raise RuntimeError(f"cannot determine storage capacity for {target}")
+        usage = shutil.disk_usage(probe)
         return {
             "path": str(target),
             "free_bytes": int(usage.free),
@@ -168,11 +193,24 @@ class InstallService:
 
     def preview_install(self, request: InstallRequest) -> dict[str, Any]:
         result = self.validate_install_submission(request)
-        distro = request.distro or self.wizard_defaults(name=request.name).distro or DISTRO_OPTIONS[0]
-        mirror_info = _resolve_mirror(self.mirror_options(distro), request.mirror)
+        if not result.get("ok"):
+            return result
+        plan = result.get("plan") or {}
+        resolved_username = str(plan.get("username") or request.username or "")
+        distro = str(plan.get("distro") or request.distro)
+        arch = str(plan.get("arch") or request.arch)
+        mirror_info = _resolve_mirror(self.mirror_options(distro, arch), request.mirror)
         storage = self.storage_status(name=request.name)
         estimate = _install_estimate(request)
         enough_space = storage["free_bytes"] >= estimate["required_bytes"]
+        install_command = [
+            "chrootctl", "install", distro, "--name", request.name, "--username", resolved_username,
+            "--arch", arch, "--phase", request.phase or "extract", "--dry-run",
+        ]
+        if request.release:
+            install_command.extend(["--release", request.release])
+        if request.version:
+            install_command.extend(["--version", request.version])
         preview = {
             "storage": {
                 **storage,
@@ -182,8 +220,8 @@ class InstallService:
             "mirror": mirror_info,
             "dry_run": {
                 "supported": True,
-                "install": f"chrootctl install {request.distro} --username {request.username or '<user>'} --phase extract --dry-run",
-                "export": f"chrootctl --name {request.name or '<name>'} transfer export ./archive.tar.zst --dry-run",
+                "install": shlex.join(install_command),
+                "export": shlex.join(["chrootctl", "--name", request.name, "transfer", "export", "./archive.tar.zst", "--dry-run"]),
                 "import": "chrootctl transfer import ./archive.tar.zst --dry-run",
             },
         }
@@ -217,6 +255,7 @@ class InstallService:
         return {
             "distro": selected,
             "releases": list(matrix["releases"]),
+            "arches": list(matrix["arches"]),
             "profiles": list(matrix["profiles"]),
             "desktops": {key: list(value) for key, value in matrix["desktops"].items()},
         }
@@ -234,6 +273,7 @@ class InstallService:
             distro=request.distro,
             name=request.name,
             username=request.username,
+            arch=request.arch,
             preset=preset_id,
             profile=request.profile or str(preset.get("profile") or "") or None,
             desktop=request.desktop or str(preset.get("desktop") or "") or None,
@@ -306,6 +346,7 @@ class InstallService:
                 "distro": defaults.distro or selected_distro,
                 "name": defaults.name,
                 "username": defaults.username,
+                "arch": getattr(self.services.config_for(name or defaults.name), "target_arch", "arm64"),
                 "preset": defaults.preset or "minimal-server",
                 "profile": defaults.profile or "minimal",
                 "desktop": defaults.desktop or "none",
@@ -313,6 +354,7 @@ class InstallService:
                 "version": defaults.version,
             },
             "distros": [{"id": distro_id, "label": distro_id.title()} for distro_id in self.distros()],
+            "architectures": [{"id": arch, "label": arch} for arch in ARCH_OPTIONS],
             "profiles": self.profile_options(),
             "desktops": self.desktop_options(),
             "presets": self.preset_options(selected_distro),
@@ -331,12 +373,29 @@ class InstallService:
         }
 
     def validate_install_submission(self, request: InstallRequest) -> dict[str, Any]:
-        request = self.apply_preset(request)
         blocking: list[dict[str, Any]] = []
-        users = self.list_target_users(name=request.name)
-        resolved_username = self._resolved_request_username(request)
-        normalized_username = resolved_username
+        users: list[dict[str, str]] = []
+        username_was_explicit = bool((request.username or "").strip())
+        try:
+            request = self.apply_preset(request)
+            validate_chroot_name(request.name, field="install name")
+            if request.distro not in DISTRO_OPTIONS:
+                raise ValueError(f"unsupported distro: {request.distro}")
+            users = self.list_target_users(name=request.name)
+            resolved_username = self._resolved_request_username(request)
+        except ValueError as exc:
+            blocking.append(_map_install_error(str(exc)))
+            return {
+                "ok": False,
+                "blocking": blocking,
+                "warnings": [],
+                "resolved": [],
+                "plan": None,
+                "users": users,
+                "requirements": {"username_required": True, "default_username": ""},
+            }
 
+        normalized_username = resolved_username
         matrix = self.compatibility_matrix(request.distro)
         profile_id = (request.profile or "minimal").strip()
         desktop_id = (request.desktop or "auto").strip()
@@ -360,7 +419,7 @@ class InstallService:
             plan = self.validate_install_request(request)
             if request.preset:
                 plan["preset"] = request.preset
-            mirror_info = _resolve_mirror(self.mirror_options(request.distro), request.mirror)
+            mirror_info = _resolve_mirror(self.mirror_options(request.distro, arch), request.mirror)
             plan["mirror"] = mirror_info["selected_url"] or mirror_info["selection"]
             plan["mirror_fallback_chain"] = mirror_info["fallback_chain"]
         except ValueError as exc:
@@ -380,8 +439,8 @@ class InstallService:
         resolved_desktop = plan.get("desktop")
         if requested_desktop and resolved_desktop and requested_desktop != resolved_desktop:
             resolved.append(f"Desktop changed from {requested_desktop} → {resolved_desktop}.")
-        if not request.username:
-            resolved.append(f"Using default target user {normalized_username}.")
+        if not username_was_explicit:
+            resolved.append(f"Using discovered target user {normalized_username}.")
         if users and normalized_username not in {item["username"] for item in users}:
             resolved.append(f"Target user {normalized_username} will be created during install.")
         elif not users:
@@ -454,6 +513,7 @@ class InstallService:
             "name": request.name,
             "distro": request.distro,
             "username": request.username,
+            "arch": request.arch,
             "profile": profile,
             "requested_desktop": requested_desktop,
             "desktop": resolved_desktop,
@@ -469,14 +529,49 @@ class InstallService:
         }
 
     def validate_install_request(self, request: InstallRequest) -> dict[str, Any]:
+        validate_chroot_name(request.name, field="install name")
         validate_username(request.username)
         if request.distro not in DISTRO_OPTIONS:
             raise ValueError(f"unsupported distro: {request.distro}")
-        if (request.profile or "minimal") not in PROFILE_OPTIONS:
+        matrix = COMPATIBILITY_MATRIX[request.distro]
+        arch = (request.arch or "").strip().lower()
+        if arch not in ARCH_OPTIONS:
+            raise ValueError(f"unsupported target architecture: {arch}")
+        if arch not in set(matrix["arches"]):
+            raise ValueError(f"{request.distro} does not support target architecture {arch}")
+        profile = request.profile or "minimal"
+        if profile not in PROFILE_OPTIONS or profile not in set(matrix["profiles"]):
             raise ValueError(f"unsupported profile: {request.profile}")
         desktop = (request.desktop or "auto").strip() or "auto"
         if desktop not in DESKTOP_OPTIONS:
             raise ValueError(f"unsupported desktop: {desktop}")
+        if request.release and request.release not in set(matrix["releases"]):
+            raise ValueError(f"unsupported {request.distro} release: {request.release}")
+        version = (request.version or "").strip()
+        if version:
+            if request.distro == "ubuntu":
+                if not re.fullmatch(r"\d{2}\.\d{2}(?:\.\d+)?", version):
+                    raise ValueError(f"unsupported ubuntu version: {version}")
+                allowed_prefixes = set(UBUNTU_RELEASE_VERSION_PREFIX.values())
+                if not any(version == prefix or version.startswith(prefix + ".") for prefix in allowed_prefixes):
+                    raise ValueError(f"unsupported ubuntu version: {version}")
+                if request.release:
+                    prefix = UBUNTU_RELEASE_VERSION_PREFIX[request.release]
+                    if version != prefix and not version.startswith(prefix + "."):
+                        raise ValueError(f"ubuntu release {request.release} is incompatible with version {version}")
+            elif request.distro == "arch" and version != "latest":
+                raise ValueError("Arch Linux ARM uses the rolling 'latest' bootstrap version")
+        if request.phase and request.phase not in {"extract", "bootstrap", "desktop", "finalize"}:
+            raise ValueError(f"unsupported install phase: {request.phase}")
+        if request.resume and request.repair:
+            raise ValueError("resume and repair are mutually exclusive install modes")
+        if request.phase and (request.resume or request.repair):
+            raise ValueError("explicit phase cannot be combined with resume/repair")
+        if request.force_phase and request.phase is None:
+            raise ValueError("force_phase requires an explicit phase")
+        if request.force_phase and (request.resume or request.repair):
+            raise ValueError("force_phase cannot be combined with resume/repair")
+        _resolve_mirror(self.mirror_options(request.distro, arch), request.mirror)
         return self.install_feedback_plan(request)
 
     def _execution(self) -> InstallExecutionService:
@@ -680,8 +775,8 @@ def _resolve_mirror(options: list[dict[str, object]], requested: str | None) -> 
     normalized = (requested or "auto").strip() or "auto"
     selected = next((item for item in options if str(item.get("id")) == normalized), None)
     if selected is None:
-        selected = options[0] if options else {"id": "auto", "label": "Auto-select", "url": "", "healthy": True}
-        normalized = str(selected.get("id", "auto"))
+        allowed = ", ".join(str(item.get("id")) for item in options) or "(none)"
+        raise ValueError(f"unknown mirror '{normalized}'; choose one of: {allowed}")
     healthy = [str(item.get("id")) for item in options if bool(item.get("healthy", True)) and str(item.get("id")) != "auto"]
     fallback_chain = healthy or [str(selected.get("id", normalized))]
     return {

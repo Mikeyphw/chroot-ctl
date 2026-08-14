@@ -43,7 +43,7 @@ class ServiceContainer:
             config=config,
             runner=runner,
             controller=ChrootController(config, runner, self.logger),
-            user_sync=UserSyncManager(config, runner, self.logger),
+            user_sync=UserSyncManager(config, runner, self.logger, self.registry),
             chroot_users=ChrootUserManager(config, runner, self.registry, self.logger),
         )
 

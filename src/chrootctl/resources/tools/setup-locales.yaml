@@ -5,3 +5,9 @@ categories:
 - system
 script: setup-locales.sh
 name: setup-locales
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

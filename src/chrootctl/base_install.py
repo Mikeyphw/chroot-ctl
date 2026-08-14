@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-import hashlib
+import os
 import re
 import shlex
+import shutil
+import tempfile
+import time
+import uuid
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -19,6 +23,7 @@ from .models import (
     UpgradeResult,
 )
 from .registry import ChrootRegistry
+from .install_integrity import InstallFetchError
 from .system import SystemRunner, qemu_user_binary_names
 from .user_sync import UserSyncManager, validate_username
 
@@ -115,8 +120,12 @@ class BaseInstaller:
 
     def _mirror_variants(self, url: str) -> list[tuple[str, str]]:
         selected = url.rstrip("/")
-        if self._mirror_base_url and selected.startswith(self._mirror_base_url.rstrip("/")):
-            selected = self._mirror_base_url.rstrip("/")
+        # Package mirrors are not assumed to mirror arbitrary rootfs/release URLs.
+        # If the URL is outside the configured mirror namespace, fetch it once and
+        # rely on that endpoint's own redirect/geo policy.
+        if not self._mirror_base_url or not selected.startswith(self._mirror_base_url.rstrip("/")):
+            return [(self._mirror_label(selected), selected)]
+        selected = self._mirror_base_url.rstrip("/")
         variants: list[tuple[str, str]] = [(self._mirror_label(selected), selected)]
         seen = {selected}
         for item in self._mirror_candidates:
@@ -142,7 +151,7 @@ class BaseInstaller:
             try:
                 self.logger.info("fetching %s via mirror %s", candidate, mirror_id)
                 return self._fetch_text(candidate)
-            except Exception as exc:
+            except InstallFetchError as exc:
                 last_error = exc
                 self.logger.warning("failed to fetch %s via mirror %s: %s", candidate, mirror_id, exc)
         if last_error is not None:
@@ -157,7 +166,7 @@ class BaseInstaller:
                 self.logger.info("downloading %s via mirror %s", candidate, mirror_id)
                 self._download(candidate, target)
                 return candidate
-            except Exception as exc:
+            except InstallFetchError as exc:
                 last_error = exc
                 self.logger.warning("failed to download %s via mirror %s: %s", candidate, mirror_id, exc)
         if last_error is not None:
@@ -192,7 +201,7 @@ class BaseInstaller:
             with urlopen(url, timeout=URL_TIMEOUT_SECONDS) as response:
                 return response.read().decode("utf-8", errors="replace")
         except (URLError, OSError, TimeoutError) as exc:
-            raise RuntimeError(f"failed to fetch {url}: {exc}") from exc
+            raise InstallFetchError(f"failed to fetch {url}: {exc}") from exc
 
     def _validated_username(self, username: str) -> str:
         return validate_username(username)
@@ -200,8 +209,8 @@ class BaseInstaller:
     def _ensure_common_bootstrap_prereqs(self) -> None:
         self.controller.mount()
         self.controller.fix_tty()
-        dns_lines = "\\n".join(f"nameserver {server}" for server in self.config.dns_servers)
-        self._chroot_shell(f'printf "{dns_lines}\\n" > /etc/resolv.conf')
+        dns_lines = "\\n".join(f"nameserver {server}" for server in self.config.dns_servers) + "\\n"
+        self._chroot_shell(f"printf %s {shlex.quote(dns_lines)} > /etc/resolv.conf")
         self._chroot_shell('printf "127.0.0.1 localhost\\n::1 localhost\\n" > /etc/hosts')
 
     def _ensure_android_groups(self) -> None:
@@ -222,42 +231,54 @@ class BaseInstaller:
 
     def _write_sudoers(self, username: str) -> None:
         user = self._validated_username(username)
-        sudoers = self.config.chroot_base / "etc" / "sudoers.d" / user
-        if not self.runner.dry_run:
-            sudoers.parent.mkdir(parents=True, exist_ok=True)
-            sudoers.write_text(f"{user} ALL=(ALL:ALL) ALL\n", encoding="utf-8")
+        sudoers_dir = self.config.chroot_base / "etc" / "sudoers.d"
+        sudoers = sudoers_dir / user
+        if self.runner.dry_run:
+            return
+        sudoers_dir.mkdir(parents=True, exist_ok=True)
+        if sudoers_dir.is_symlink() or not sudoers_dir.is_dir():
+            raise RuntimeError(f"unsafe sudoers directory: {sudoers_dir}")
+        if sudoers.is_symlink():
+            raise RuntimeError(f"refusing sudoers symlink: {sudoers}")
+        fd, raw = tempfile.mkstemp(prefix=f".{user}.", dir=sudoers_dir)
+        temp = Path(raw)
+        try:
+            os.fchmod(fd, 0o440)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(f"{user} ALL=(ALL:ALL) ALL\n")
+                handle.flush(); os.fsync(handle.fileno())
+            rel = "/etc/sudoers.d/" + temp.name
+            result = self._chroot_shell_result(f"visudo -cf {shlex.quote(rel)}")
+            if result.returncode != 0:
+                detail = "\n".join(part for part in (result.stderr.strip(), result.stdout.strip()) if part).strip()
+                raise RuntimeError(detail or f"visudo rejected sudoers rule for {user}")
+            os.replace(temp, sudoers)
             sudoers.chmod(0o440)
+        finally:
+            temp.unlink(missing_ok=True)
 
     def _download(self, url: str, target: Path) -> None:
-        self.runner.run(
-            [
-                "curl",
-                "--fail",
-                "--location",
-                "--connect-timeout",
-                str(URL_TIMEOUT_SECONDS),
-                "--max-time",
-                "1800",
-                "--retry",
-                "3",
-                "--progress-bar",
-                url,
-                "-o",
-                str(target),
-            ],
-            capture_output=False,
-        )
-
-    def _verify_md5(self, file_path: Path, expected_md5: str) -> None:
-        digest = hashlib.md5(usedforsecurity=False)
-        with file_path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-        actual_md5 = digest.hexdigest()
-        if actual_md5 != expected_md5:
-            raise RuntimeError(
-                f"md5 mismatch for {file_path.name}: expected {expected_md5}, got {actual_md5}"
+        try:
+            self.runner.run(
+                [
+                    "curl",
+                    "--fail",
+                    "--location",
+                    "--connect-timeout",
+                    str(URL_TIMEOUT_SECONDS),
+                    "--max-time",
+                    "1800",
+                    "--retry",
+                    "3",
+                    "--progress-bar",
+                    url,
+                    "-o",
+                    str(target),
+                ],
+                capture_output=False,
             )
+        except Exception as exc:
+            raise InstallFetchError(f"failed to download {url}: {exc}") from exc
 
     def phase_index(self, phase: str) -> int:
         return list(PHASES).index(phase) if phase in PHASES else 0
@@ -290,6 +311,8 @@ class BaseInstaller:
         release_name: str | None = None,
         metadata: dict | None = None,
     ) -> None:
+        if self.runner.dry_run:
+            return
         record = self.registry.get(self.config.distro_name) or {}
         merged = dict(record.get("metadata", {}))
         if metadata:
@@ -384,6 +407,156 @@ class BaseInstaller:
         )
         return str(snapshot_path)
 
+    def _new_install_work_dir(self, label: str) -> Path:
+        path = self.config.chroot_base.parent / f".{self.config.distro_name}.{label}-{uuid.uuid4().hex}"
+        if not self.runner.dry_run:
+            path.mkdir(parents=True, mode=0o700)
+        return path
+
+    def _assert_install_target_unmounted(self) -> None:
+        target = str(self.config.chroot_base.resolve(strict=False))
+        for _source, destination in self.runner.mount_table():
+            resolved = str(Path(destination).resolve(strict=False))
+            if resolved == target or resolved.startswith(target + os.sep):
+                raise RuntimeError(f"refusing rootfs replacement while target is mounted: {destination}")
+
+    def _promote_staged_rootfs(self, staged_root: Path) -> None:
+        if self.runner.dry_run:
+            return
+        target = self.config.chroot_base
+        if staged_root.parent != target.parent:
+            raise RuntimeError("install staging must share the target filesystem")
+        self._assert_install_target_unmounted()
+        backup = target.parent / f".{target.name}.preinstall-{uuid.uuid4().hex}"
+        had_existing = target.exists()
+        mutation_id = self.registry.begin_fs_mutation(
+            kind="install.extract", target=self.config.distro_name, source_path=str(staged_root),
+            destination_path=str(target), detail={"backup": str(backup), "had_existing": had_existing},
+        )
+        moved_old = False
+        promoted = False
+        try:
+            if had_existing:
+                os.replace(target, backup)
+                moved_old = True
+                self._best_effort_install_mutation_state(mutation_id, "staged")
+            os.replace(staged_root, target)
+            promoted = True
+            # The registry marker and promoted tree form the authoritative commit.
+            # If the marker cannot be persisted while the backup is still present,
+            # restore the old generation instead of leaving ambiguous state.
+            self._mark_install_fs_commit(mutation_id)
+        except Exception:
+            if promoted and target.exists():
+                os.replace(target, staged_root)
+            if moved_old and backup.exists() and not target.exists():
+                os.replace(backup, target)
+            self._best_effort_install_mutation_state(mutation_id, "failed")
+            raise
+        self._best_effort_install_mutation_state(mutation_id, "committed")
+        if backup.exists():
+            try:
+                shutil.rmtree(backup)
+            except OSError as exc:
+                self._best_effort_install_mutation_state(
+                    mutation_id, "committed", detail={"cleanup_error": str(exc)[:1000], "backup": str(backup)}
+                )
+                return
+        self._best_effort_install_mutation_state(mutation_id, "complete")
+
+    def _mark_install_fs_commit(self, mutation_id: str) -> None:
+        record = self.registry.get(self.config.distro_name) or {}
+        metadata = dict(record.get("metadata", {})) if isinstance(record.get("metadata", {}), dict) else {}
+        metadata["_chrootctl_install_mutation_id"] = mutation_id
+        self.registry.upsert(
+            name=self.config.distro_name, distro=self.distro, path=str(self.config.chroot_base),
+            phase="extract", installed=False,
+            arch=self.arch, release_name=record.get("release_name"), version=record.get("version"), metadata=metadata,
+        )
+
+    def _best_effort_install_mutation_state(self, mutation_id: str, state: str, *, detail: dict[str, Any] | None = None) -> None:
+        try:
+            self.registry.update_fs_mutation(mutation_id, state, detail=detail or {})
+        except Exception as exc:
+            try:
+                self.logger.warning("failed to update install filesystem mutation %s to %s: %s", mutation_id, state, exc)
+            except Exception:
+                pass
+
+    def _install_transaction(self) -> dict[str, Any]:
+        record = self.registry.get(self.config.distro_name) or {}
+        metadata = record.get("metadata", {})
+        value = metadata.get("install_transaction") if isinstance(metadata, dict) else None
+        if isinstance(value, dict) and isinstance(value.get("steps"), dict):
+            version = int(value.get("version", 1)) if str(value.get("version", 1)).isdigit() else 1
+            return {"version": max(version, 2), "steps": dict(value["steps"])}
+        return {"version": 2, "steps": {}}
+
+    def _record_install_step(self, step: str, state: str, *, error: str | None = None) -> None:
+        if self.runner.dry_run:
+            return
+        record = self.registry.get(self.config.distro_name) or {}
+        metadata = dict(record.get("metadata", {})) if isinstance(record.get("metadata", {}), dict) else {}
+        transaction = self._install_transaction()
+        steps = dict(transaction.get("steps", {}))
+        detail: dict[str, Any] = {"state": state, "updated_at": time.time()}
+        context_key = str(getattr(self, "_install_context_key", "") or "")
+        if context_key:
+            detail["context"] = context_key
+        if error:
+            detail["error"] = error[:1000]
+        steps[step] = detail
+        metadata["install_transaction"] = {"version": 2, "steps": steps}
+        self.registry.upsert(
+            name=self.config.distro_name, distro=self.distro, path=str(self.config.chroot_base),
+            phase=str(record.get("phase") or "extract"), installed=bool(record.get("installed", False)),
+            arch=self.arch, release_name=record.get("release_name"), version=record.get("version"), metadata=metadata,
+        )
+
+    def _run_tracked_phase(self, phase: InstallPhase, callback):
+        self._record_install_step(phase, "running")
+        try:
+            result = callback()
+        except Exception as exc:
+            self._record_install_step(phase, "failed", error=str(exc))
+            raise
+        self._record_install_step(phase, "completed")
+        return result
+
+    def _run_install_substep(self, phase: InstallPhase, name: str, callback, *, resumable: bool = True):
+        step = f"{phase}.{name}"
+        existing = self._install_transaction().get("steps", {}).get(step, {})
+        resume_mode = bool(getattr(self, "_install_resume_mode", False))
+        context_key = str(getattr(self, "_install_context_key", "") or "")
+        if resumable and resume_mode and isinstance(existing, dict) and existing.get("state") == "completed":
+            existing_context = str(existing.get("context", "") or "")
+            if not existing_context or existing_context != context_key:
+                raise RuntimeError(f"cannot resume {step}: install request context changed; start a new explicit install/repair plan")
+            return None
+        self._record_install_step(step, "running")
+        try:
+            result = callback()
+        except Exception as exc:
+            self._record_install_step(step, "failed", error=str(exc))
+            raise
+        self._record_install_step(step, "completed")
+        return result
+
+    def _resume_start_phase(self, *, repair: bool) -> InstallPhase:
+        steps = self._install_transaction().get("steps", {})
+        if isinstance(steps, dict) and steps:
+            if repair:
+                for phase in PHASES:
+                    value = steps.get(phase, {})
+                    if isinstance(value, dict) and value.get("state") in {"failed", "running"}:
+                        return phase
+            for phase in PHASES:
+                value = steps.get(phase, {})
+                if not isinstance(value, dict) or value.get("state") != "completed":
+                    return phase
+            return "finalize"
+        return self._recover_phase_if_needed(self.current_phase(), force_phase=False)
+
     def list_versions(self) -> list[ReleaseRef]:
         raise NotImplementedError
 
@@ -435,8 +608,8 @@ class BaseInstaller:
         self._ensure_chroot_execution_supported()
         self.assert_phase_allowed("finalize", force_phase)
         snapshot = self._create_snapshot("finalize")
-        self.user_sync.sync_id(username=username, fix_ownership=True)
-        self._run_post_install_hooks()
+        self._run_install_substep("finalize", "uid-sync", lambda: self.user_sync.sync_id(username=username, fix_ownership=True))
+        self._run_install_substep("finalize", "post-install-hooks", self._run_post_install_hooks)
         self.mark_phase("finalize", installed=True, metadata={"uid_sync": True, "finalize_snapshot": snapshot or ""})
         return InstallFinalizeResult(installed=True, uid_sync=True, snapshot=snapshot or "")
 
@@ -455,44 +628,35 @@ class BaseInstaller:
         profile: str | None = None,
     ) -> list[InstallerResult]:
         results: list[InstallerResult] = []
+        self._install_resume_mode = bool(resume or repair)
         selected_profile = self._selected_profile(profile)
-        if not repair and (auto or resume or phase is None):
-            record = self.registry.get(self.config.distro_name)
-            if record and record.get("installed"):
-                return [InstallAlreadyCompleteResult()]
         selected_desktop = self._selected_desktop(desktop, selected_profile)
-        if repair:
-            current = self.current_phase()
-            current = self._recover_phase_if_needed(current, force_phase=force_phase)
-            if current == "extract":
-                return [self.run_phase_extract(version=version, release=release, force_phase=True)]
-            if current == "bootstrap":
-                return [self.run_phase_bootstrap(username=username, profile=selected_profile, force_phase=True)]
-            if current == "desktop":
-                return [self.run_phase_desktop(desktop=selected_desktop, profile=selected_profile, force_phase=True)]
-            return [self.run_phase_finalize(username=username, force_phase=True)]
-        if auto or resume or phase is None:
-            start_phase = phase or self._default_install_phase()
-            start_phase = self._recover_phase_if_needed(start_phase, force_phase=force_phase)
-            for item in PHASES[PHASES.index(start_phase):]:
-                if item == "extract":
-                    results.append(self.run_phase_extract(version=version, release=release, force_phase=force_phase))
-                elif item == "bootstrap":
-                    results.append(self.run_phase_bootstrap(username=username, profile=selected_profile, force_phase=force_phase))
-                elif item == "desktop":
-                    results.append(self.run_phase_desktop(desktop=selected_desktop, profile=selected_profile, force_phase=force_phase))
-                elif item == "finalize":
-                    results.append(self.run_phase_finalize(username=username, force_phase=force_phase))
-            return results
+        self._install_context_key = "|".join((
+            self.distro, self.arch, self.config.distro_name, username, selected_profile, selected_desktop,
+            version or "", release or "",
+        ))
+        record = self.registry.get(self.config.distro_name)
+        if not repair and (auto or resume or phase is None) and record and record.get("installed"):
+            return [InstallAlreadyCompleteResult()]
 
-        requested = phase or self._default_install_phase()
-        requested = self._recover_phase_if_needed(requested, force_phase=force_phase)
-        if requested == "extract":
-            return [self.run_phase_extract(version=version, release=release, force_phase=force_phase)]
-        if requested == "bootstrap":
-            return [self.run_phase_bootstrap(username=username, profile=selected_profile, force_phase=force_phase)]
-        if requested == "desktop":
-            return [self.run_phase_desktop(desktop=selected_desktop, profile=selected_profile, force_phase=force_phase)]
-        if requested == "finalize":
-            return [self.run_phase_finalize(username=username, force_phase=force_phase)]
-        raise ValueError(f"unsupported phase: {requested}")
+        def run_one(item: InstallPhase):
+            if item == "extract":
+                return self._run_tracked_phase(item, lambda: self.run_phase_extract(version=version, release=release, force_phase=force_phase or repair))
+            if item == "bootstrap":
+                return self._run_tracked_phase(item, lambda: self.run_phase_bootstrap(username=username, profile=selected_profile, force_phase=force_phase or repair))
+            if item == "desktop":
+                return self._run_tracked_phase(item, lambda: self.run_phase_desktop(desktop=selected_desktop, profile=selected_profile, force_phase=force_phase or repair))
+            return self._run_tracked_phase(item, lambda: self.run_phase_finalize(username=username, force_phase=force_phase or repair))
+
+        if auto or resume or repair or phase is None:
+            start_phase = phase if phase and not (resume or repair) else self._resume_start_phase(repair=repair)
+            for item in PHASES[PHASES.index(start_phase):]:
+                value = self._install_transaction().get("steps", {}).get(item, {})
+                if resume and not repair and isinstance(value, dict) and value.get("state") == "completed":
+                    continue
+                results.append(run_one(item))
+            return results
+        requested = phase or "extract"
+        if requested not in PHASES:
+            raise ValueError(f"unsupported phase: {requested}")
+        return [run_one(requested)]

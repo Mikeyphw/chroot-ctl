@@ -740,6 +740,7 @@ class InstallRequest:
     distro: str
     name: str
     username: str
+    arch: str = "arm64"
     preset: str | None = None
     profile: str | None = None
     desktop: str | None = None

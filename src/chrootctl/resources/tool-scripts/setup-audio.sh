@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y pipewire pipewire-pulse wireplumber pavucontrol alsa-utils pulseaudio-utils dbus-user-session
     ;;
   arch)
-    pacman -Sy --noconfirm --needed pipewire pipewire-pulse wireplumber pavucontrol alsa-utils pipewire-alsa pipewire-jack
+    pacman -Syu --noconfirm --needed pipewire pipewire-pulse wireplumber pavucontrol alsa-utils pipewire-alsa pipewire-jack
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

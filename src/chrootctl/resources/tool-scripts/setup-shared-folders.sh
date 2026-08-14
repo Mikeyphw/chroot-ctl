@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y bindfs fuse3
     ;;
   arch)
-    pacman -Sy --noconfirm --needed bindfs fuse3
+    pacman -Syu --noconfirm --needed bindfs fuse3
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

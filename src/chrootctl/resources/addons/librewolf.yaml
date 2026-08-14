@@ -6,3 +6,9 @@ categories:
 - privacy
 script: install-librewolf.sh
 name: librewolf
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

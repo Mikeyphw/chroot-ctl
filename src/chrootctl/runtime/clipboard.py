@@ -50,16 +50,14 @@ def handle_clipboard(context) -> None:
             ("daemon runs as Termux user", payload.get("daemon_termux_user", False)),
             ("clipboard socket", payload["socket_exists"]),
             ("termux-clip wrapper", payload["wrappers"].get("termux-clip", False)),
-            ("xsel wrapper", payload["wrappers"].get("xsel", False)),
-            ("xclip wrapper", payload["wrappers"].get("xclip", False)),
+            ("chrootctl-xsel wrapper", payload["wrappers"].get("chrootctl-xsel", False)),
+            ("chrootctl-xclip wrapper", payload["wrappers"].get("chrootctl-xclip", False)),
             ("setup-clipboard recorded", payload["setup_clipboard_registered"]),
         ]
         for label, ok in checks:
             status = "OK" if ok else "MISSING"
             console.print(f"{status:<7} {label}")
         console.print(f"socket: {payload['socket_path']} -> {payload['chroot_socket_path']}")
-        if payload["auto_adapt_needed"]:
-            console.print("AUTO    existing chroot will auto-apply setup-clipboard on first start/restart/exec")
         return
 
     socket_path = args.socket or Path(chroot_socket_path())

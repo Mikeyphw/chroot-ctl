@@ -5,3 +5,9 @@ categories:
 - desktop
 script: setup-flatpak.sh
 name: setup-flatpak
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

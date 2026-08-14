@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y xrdp xorgxrdp dbus-x11
     ;;
   arch)
-    pacman -Sy --noconfirm --needed xrdp xorgxrdp
+    pacman -Syu --noconfirm --needed xrdp xorgxrdp
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

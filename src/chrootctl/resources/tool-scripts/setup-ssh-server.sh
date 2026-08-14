@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y openssh-server
     ;;
   arch)
-    pacman -Sy --noconfirm --needed openssh
+    pacman -Syu --noconfirm --needed openssh
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

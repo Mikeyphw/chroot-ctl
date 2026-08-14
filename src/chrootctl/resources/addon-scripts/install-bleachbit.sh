@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y bleachbit
     ;;
   arch)
-    pacman -Sy --noconfirm --needed bleachbit
+    pacman -Syu --noconfirm --needed bleachbit
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

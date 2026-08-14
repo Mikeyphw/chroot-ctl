@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import configparser
+import fcntl
+import json
 import os
 import shlex
 import signal
+import tempfile
+import threading
+import stat
+import uuid
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +21,9 @@ from typing import TYPE_CHECKING, Any
 
 from ..config import ChrootConfig
 from ..controller import ChrootController
+from ..services.chroots import validate_chroot_name
+from ..user_sync import validate_username
+from ..system import ProcessIdentity, capture_process_identity, process_identity_matches, signal_process_identity
 from .common import console, emit_panel, emit_table
 
 if TYPE_CHECKING:
@@ -112,77 +122,82 @@ class ServiceRunner:
             )
         return rows
 
+
     def start(self, unit_name: str, *, chroot: str | None = None, foreground: bool = False) -> dict[str, Any]:
         unit = self.catalog.get(unit_name)
         chroot_name = self._bound_chroot(unit, requested=chroot)
-        return self._start_unit(unit, chroot=chroot_name, foreground=foreground)
+        with _service_lock(self.context.config.service_state_dir, chroot_name, dry_run=self.context.runner.dry_run):
+            return self._start_unit(unit, chroot=chroot_name, foreground=foreground)
 
     def restart(self, unit_name: str, *, chroot: str | None = None) -> dict[str, Any]:
-        stop_result = self.stop(unit_name, chroot=chroot)
-        start_result = self.start(unit_name, chroot=chroot)
-        return {"stopped": stop_result, "started": start_result}
+        unit = self.catalog.get(unit_name)
+        chroot_name = self._bound_chroot(unit, requested=chroot)
+        with _service_lock(self.context.config.service_state_dir, chroot_name, dry_run=self.context.runner.dry_run):
+            stop_result = self._stop_unit(unit, chroot_name)
+            start_result = self._start_unit(unit, chroot=chroot_name, foreground=False)
+            return {"stopped": stop_result, "started": start_result}
 
     def stop(self, unit_name: str, *, chroot: str | None = None) -> dict[str, Any]:
         unit = self.catalog.get(unit_name)
         chroot_name = self._bound_chroot(unit, requested=chroot)
+        with _service_lock(self.context.config.service_state_dir, chroot_name, dry_run=self.context.runner.dry_run):
+            return self._stop_unit(unit, chroot_name)
+
+    def _stop_unit(self, unit: ServiceUnit, chroot_name: str) -> dict[str, Any]:
         pid_file = self._pid_file(chroot_name, unit.name)
+        identity_file = self._identity_file(chroot_name, unit.name)
         log_file = self._log_file(chroot_name, unit.name)
         pid = _read_pid(pid_file)
-        stop_command = unit.exec_stop
-        if stop_command:
-            cfg = self.context.config.for_chroot(chroot_name)
-            controller = ChrootController(cfg, self.context.runner, self.context.logger)
-            _append_journal(log_file, f"ExecStop: {stop_command}")
-            controller.exec(root=unit.runs_as_root(), command=stop_command, x11=unit.x11, username=unit.user)
+        identity = _read_process_identity(identity_file)
         if pid is None:
             _append_journal(log_file, "stop requested; no pid file")
             return {"service": unit.name, "chroot": chroot_name, "status": "stopped", "detail": "no pid file", "log_file": str(log_file)}
-        if not _pid_running(pid):
-            _unlink(pid_file)
-            _append_journal(log_file, f"removed stale pid {pid}")
-            return {"service": unit.name, "chroot": chroot_name, "status": "stopped", "detail": f"stale pid {pid}", "log_file": str(log_file)}
-        try:
-            _append_journal(log_file, f"sending SIGTERM to process group {pid}")
-            os.killpg(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        except PermissionError as exc:
-            raise PermissionError(f"cannot stop service {unit.name} pid {pid}: {exc}") from exc
+        if identity is None or identity.pid != pid or not process_identity_matches(identity):
+            _unlink(pid_file); _unlink(identity_file)
+            _append_journal(log_file, f"refused stop hooks/signals for stale or unverified pid {pid}")
+            return {"service": unit.name, "chroot": chroot_name, "status": "stopped", "detail": f"stale/unverified pid {pid}", "log_file": str(log_file)}
+
+        if unit.exec_stop:
+            cfg = self.context.config.for_chroot(chroot_name)
+            controller = ChrootController(cfg, self.context.runner, self.context.logger)
+            _append_journal(log_file, f"ExecStop: {unit.exec_stop}")
+            controller.exec(root=unit.runs_as_root(), command=unit.exec_stop, x11=unit.x11, username=unit.user)
+        if not process_identity_matches(identity):
+            _unlink(pid_file); _unlink(identity_file)
+            return {"service": unit.name, "chroot": chroot_name, "status": "stopped", "pid": pid, "log_file": str(log_file)}
+        signal_process_identity(identity, signal.SIGTERM)
         for _ in range(20):
-            if not _pid_running(pid):
-                _unlink(pid_file)
+            if not process_identity_matches(identity):
+                _unlink(pid_file); _unlink(identity_file)
                 _append_journal(log_file, f"stopped pid {pid}")
                 return {"service": unit.name, "chroot": chroot_name, "status": "stopped", "pid": pid, "log_file": str(log_file)}
             time.sleep(0.1)
-        try:
-            _append_journal(log_file, f"sending SIGKILL to process group {pid}")
-            os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        _unlink(pid_file)
-        _append_journal(log_file, f"killed pid {pid}")
-        return {"service": unit.name, "chroot": chroot_name, "status": "killed", "pid": pid, "log_file": str(log_file)}
+        signal_process_identity(identity, signal.SIGKILL)
+        for _ in range(20):
+            if not process_identity_matches(identity):
+                _unlink(pid_file); _unlink(identity_file)
+                _append_journal(log_file, f"killed verified pid {pid}")
+                return {"service": unit.name, "chroot": chroot_name, "status": "killed", "pid": pid, "log_file": str(log_file)}
+            time.sleep(0.1)
+        _append_journal(log_file, f"SIGKILL sent to verified pid {pid}, but process identity still exists; retaining control state")
+        return {
+            "service": unit.name, "chroot": chroot_name, "status": "kill-pending", "pid": pid,
+            "detail": "verified process still exists after SIGKILL; control state retained", "log_file": str(log_file),
+        }
 
     def status(self, unit_name: str, *, chroot: str | None = None) -> dict[str, Any]:
         unit = self.catalog.get(unit_name)
         chroot_name = self._bound_chroot(unit, requested=chroot)
         pid_file = self._pid_file(chroot_name, unit.name)
+        identity_file = self._identity_file(chroot_name, unit.name)
         pid = _read_pid(pid_file)
-        base = {
-            "service": unit.name,
-            "chroot": chroot_name,
-            "enabled": self.is_enabled(unit),
-            "wanted_by": unit.wanted_by,
-            "after": unit.after,
-            "requires": unit.requires,
-            "pid_file": str(pid_file),
-            "log_file": str(self._log_file(chroot_name, unit.name)),
-        }
+        identity = _read_process_identity(identity_file)
+        base = {"service": unit.name, "chroot": chroot_name, "enabled": self.is_enabled(unit), "wanted_by": unit.wanted_by, "after": unit.after, "requires": unit.requires, "restart": unit.restart, "pid_file": str(pid_file), "log_file": str(self._log_file(chroot_name, unit.name))}
         if pid is None:
             return {**base, "status": "stopped"}
-        if _pid_running(pid):
+        if identity is not None and identity.pid == pid and process_identity_matches(identity):
             return {**base, "status": "running", "pid": pid}
-        return {**base, "status": "stale", "pid": pid}
+        return {**base, "status": "stale", "pid": pid, "detail": "PID identity missing or no longer matches"}
 
     def logs(self, unit_name: str, *, chroot: str | None = None, tail: int | None = None) -> dict[str, Any]:
         unit = self.catalog.get(unit_name)
@@ -234,7 +249,7 @@ class ServiceRunner:
             if parallel and len(layer) > 1:
                 with ThreadPoolExecutor(max_workers=len(layer)) as executor:
                     future_map = {
-                        executor.submit(self._start_unit, graph[name], chroot=graph[name].chroot, foreground=False): name
+                        executor.submit(self.start, graph[name].name, chroot=graph[name].chroot, foreground=False): name
                         for name in layer
                     }
                     for future in as_completed(future_map):
@@ -250,7 +265,7 @@ class ServiceRunner:
                 for name in layer:
                     unit = graph[name]
                     try:
-                        row = self._start_unit(unit, chroot=unit.chroot, foreground=False)
+                        row = self.start(unit.name, chroot=unit.chroot, foreground=False)
                     except Exception as exc:
                         row = {"service": name, "chroot": unit.chroot, "status": "failed", "error": str(exc)}
                     row["target"] = target
@@ -277,6 +292,7 @@ class ServiceRunner:
                 add_with_requires(unit)
         return selected
 
+
     def _start_unit(self, unit: ServiceUnit, *, chroot: str, foreground: bool) -> dict[str, Any]:
         if not unit.exec_start.strip():
             raise RuntimeError(f"service {unit.name} is missing Service.ExecStart")
@@ -286,8 +302,12 @@ class ServiceRunner:
                 return {"service": unit.name, "chroot": chroot, "status": "already-running", "pid": current.get("pid"), "log_file": current.get("log_file")}
         cfg = self.context.config.for_chroot(chroot)
         controller = ChrootController(cfg, self.context.runner, self.context.logger)
-        controller.mount()
-        controller.fix_tty()
+        mount_result = controller.mount()
+        if getattr(mount_result, "failed", 0):
+            raise RuntimeError(f"cannot start {unit.name}: chroot mount failed: {'; '.join(getattr(mount_result, 'errors', []))}")
+        tty_result = controller.fix_tty()
+        if getattr(tty_result, "failed", 0):
+            raise RuntimeError(f"cannot start {unit.name}: tty/device preparation failed: {'; '.join(getattr(tty_result, 'errors', []))}")
         if unit.x11:
             controller._prepare_x11_host()
         log_file = self._log_file(chroot, unit.name)
@@ -296,42 +316,74 @@ class ServiceRunner:
         _append_journal(log_file, f"starting {unit.name}.service in chroot={chroot} user={service_user}")
         _append_journal(log_file, f"ExecStart: {unit.exec_start}")
         _append_journal(log_file, f"ServiceScript: {script_path}")
+        argv, env = controller.service_invocation(root=unit.runs_as_root(), command=str(script_path), x11=unit.x11, username=unit.user)
         if foreground:
-            argv, env = controller.service_invocation(root=unit.runs_as_root(), command=str(script_path), x11=unit.x11, username=unit.user)
             result = self.context.runner.run(argv, check=False, env=env, chroot_env=True, capture_output=False)
             code = result.returncode
             _append_journal(log_file, f"foreground process exited returncode={code}")
             return {"service": unit.name, "chroot": chroot, "status": "exited", "returncode": code, "log_file": str(log_file)}
-        argv, env = controller.service_invocation(root=unit.runs_as_root(), command=str(script_path), x11=unit.x11, username=unit.user)
         pid = self.context.runner.spawn(argv, env=env, chroot_env=True, stdout_path=log_file)
+        if self.context.runner.dry_run:
+            return {"service": unit.name, "chroot": chroot, "status": "started", "pid": pid, "log_file": str(log_file)}
+        identity = capture_process_identity(pid)
+        if identity is None or identity.start_time_ticks is None or not identity.boot_id:
+            try: os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError: pass
+            raise RuntimeError(f"cannot persist strong process identity for service {unit.name}")
         pid_file = self._pid_file(chroot, unit.name)
-        if not self.context.runner.dry_run:
-            pid_file.parent.mkdir(parents=True, exist_ok=True)
-            pid_file.write_text(f"{pid}\n", encoding="utf-8")
-        _append_journal(log_file, f"spawned pid={pid}")
+        identity_file = self._identity_file(chroot, unit.name)
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_text(pid_file, f"{pid}\n", mode=0o600)
+        _atomic_text(identity_file, json.dumps(identity.to_dict(), sort_keys=True) + "\n", mode=0o600)
+        _append_journal(log_file, f"spawned verified pid={pid}")
         return {"service": unit.name, "chroot": chroot, "status": "started", "pid": pid, "pid_file": str(pid_file), "log_file": str(log_file)}
 
     def _write_service_script(self, cfg: ChrootConfig, chroot: str, unit: ServiceUnit, *, service_user: str) -> str:
-        script_dir = cfg.chroot_base / "tmp" / "chrootctl-services"
-        script_name = f"{_safe_name(chroot)}-{_safe_name(unit.name)}.sh"
-        script_path = script_dir / script_name
-        chroot_script_path = f"/tmp/chrootctl-services/{script_name}"
+        script_root = cfg.chroot_base / "run" / "chrootctl" / "services"
+        token = f"{_safe_name(chroot)}-{_safe_name(unit.name)}-{uuid.uuid4().hex}"
         if self.context.runner.dry_run:
-            return chroot_script_path
-        script_dir.mkdir(parents=True, exist_ok=True)
-        script_path.write_text(_service_script_text(unit, service_user=service_user), encoding="utf-8")
-        script_path.chmod(0o755)
-        return chroot_script_path
+            return f"/run/chrootctl/services/{token}/run.sh"
+        # The shared directory is root-owned and searchable but not listable. Each
+        # randomized invocation directory is then restricted to root + the exact
+        # chroot user's primary group, keeping generated scripts root-owned while
+        # still executable by a non-root service account.
+        _prepare_service_root(script_root)
+        service_gid = 0 if service_user == "root" else _chroot_user_gid(cfg, service_user)
+        invocation_dir = script_root / token
+        invocation_dir.mkdir(mode=0o700)
+        if invocation_dir.is_symlink():
+            raise RuntimeError(f"refusing symlink service invocation directory: {invocation_dir}")
+        os.chown(invocation_dir, 0, service_gid)
+        invocation_dir.chmod(0o700 if service_user == "root" else 0o710)
+        script_path = invocation_dir / "run.sh"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(script_path, flags, 0o500 if service_user == "root" else 0o550)
+        try:
+            os.fchown(fd, 0, service_gid)
+            os.fchmod(fd, 0o500 if service_user == "root" else 0o550)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(_service_script_text(unit, service_user=service_user))
+                handle.flush(); os.fsync(handle.fileno())
+        except Exception:
+            script_path.unlink(missing_ok=True)
+            try: invocation_dir.rmdir()
+            except OSError: pass
+            raise
+        return f"/run/chrootctl/services/{token}/run.sh"
 
     def _bound_chroot(self, unit: ServiceUnit, *, requested: str | None) -> str:
-        if not unit.chroot:
-            raise RuntimeError(f"service {unit.name} is not bound to a chroot; add [Service] Chroot=<name>")
-        if requested and requested != unit.chroot:
-            raise RuntimeError(f"service {unit.name} is bound to chroot {unit.chroot}; requested {requested}")
-        return unit.chroot
+        bound = validate_chroot_name(unit.chroot, field=f"service {unit.name} Chroot")
+        if requested is not None:
+            requested = validate_chroot_name(requested, field="requested chroot")
+        if requested and requested != bound:
+            raise RuntimeError(f"service {unit.name} is bound to chroot {bound}; requested {requested}")
+        return bound
 
     def _pid_file(self, chroot: str, unit_name: str) -> Path:
         return self.context.config.service_state_dir / f"{_safe_name(chroot)}-{_safe_name(unit_name)}.pid"
+
+    def _identity_file(self, chroot: str, unit_name: str) -> Path:
+        return self.context.config.service_state_dir / f"{_safe_name(chroot)}-{_safe_name(unit_name)}.identity.json"
 
     def _log_file(self, chroot: str, unit_name: str) -> Path:
         return self.context.config.service_log_dir / f"{_safe_name(chroot)}-{_safe_name(unit_name)}.journal"
@@ -410,6 +462,13 @@ def load_service_unit(path: Path) -> ServiceUnit:
     if not chroot:
         raise RuntimeError(f"{path}: [Service] Chroot is required; services are bound to one chroot")
     user = _get(service, "User", None)
+    _validate_unit_policy(path, parser)
+    chroot = validate_chroot_name(chroot, field=f"{path} Service.Chroot")
+    if user:
+        user = validate_username(user)
+    restart = (_get(service, "Restart", "no") or "no").lower()
+    if restart not in {"no", "on-failure", "always"}:
+        raise RuntimeError(f"{path}: unsupported Restart={restart}; expected no, on-failure, or always")
     return ServiceUnit(
         name=name,
         path=path,
@@ -422,7 +481,7 @@ def load_service_unit(path: Path) -> ServiceUnit:
         working_directory=_get(service, "WorkingDirectory", None),
         environment=_parse_environment(_joined_repeated_values(path, "Service", "Environment", fallback=_get(service, "Environment", ""))),
         x11=_get_bool(service, "X11", False),
-        restart=_get(service, "Restart", "no") or "no",
+        restart=restart,
         install_enabled=_get_bool(install, "Enabled", False),
         wanted_by=_parse_words(_get(install, "WantedBy", "")),
         after=tuple(_normalize_unit_name(item) for item in _parse_words(_get(unit, "After", ""))),
@@ -469,15 +528,141 @@ def _service_script_text(unit: ServiceUnit, *, service_user: str) -> str:
                 f"cd {quoted_workdir}",
             ]
         )
-    lines.extend(
-        [
-            "echo \"[chrootctl-service] exec cwd=$(pwd 2>/dev/null || true) home=${HOME:-}\"",
-            "echo '[chrootctl-service] ===== exec ====='",
-            f"exec {unit.exec_start}",
-            "",
-        ]
-    )
+    lines.extend([
+        "echo \"[chrootctl-service] exec cwd=$(pwd 2>/dev/null || true) home=${HOME:-}\"",
+        "echo '[chrootctl-service] ===== exec ====='",
+    ])
+    if unit.restart == "no":
+        lines.append(f"exec {unit.exec_start}")
+    else:
+        lines.extend([
+            "while :; do",
+            "  set +e",
+            f"  {unit.exec_start}",
+            "  rc=$?",
+            "  set -e",
+            f"  [ {shlex.quote(unit.restart)} = always ] || [ \"$rc\" -ne 0 ] || exit 0",
+            "  echo \"[chrootctl-service] restart policy retry after rc=$rc\"",
+            "  sleep 1",
+            "done",
+        ])
+    lines.append("")
     return "\n".join(lines)
+
+
+
+_SERVICE_LOCK_GUARD = threading.Lock()
+_SERVICE_LOCKS: dict[str, threading.RLock] = {}
+
+@contextmanager
+def _service_lock(state_dir: Path, chroot: str, *, dry_run: bool = False):
+    key = _safe_name(chroot)
+    with _SERVICE_LOCK_GUARD:
+        local_lock = _SERVICE_LOCKS.setdefault(key, threading.RLock())
+    with local_lock:
+        if dry_run:
+            yield
+            return
+        lock_dir = state_dir / "locks"
+        lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if lock_dir.is_symlink() or not lock_dir.is_dir():
+            raise RuntimeError(f"unsafe service lock directory: {lock_dir}")
+        lock_dir.chmod(0o700)
+        lock_path = lock_dir / f"{key}.lock"
+        flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(lock_path, flags, 0o600)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise RuntimeError(f"unsafe service lock file: {lock_path}")
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+def _prepare_service_root(path: Path) -> None:
+    current = path
+    parents = []
+    while current != current.parent and not current.exists():
+        parents.append(current); current = current.parent
+    if current.is_symlink():
+        raise RuntimeError(f"refusing symlink in service script path: {current}")
+    for item in reversed(parents):
+        item.mkdir(mode=0o700)
+    control_root = path.parent
+    for candidate in (control_root, path):
+        if candidate.is_symlink() or not candidate.is_dir():
+            raise RuntimeError(f"invalid service script directory: {candidate}")
+        if candidate.stat().st_uid not in {0, os.geteuid()}:
+            raise RuntimeError(f"service script directory has untrusted owner: {candidate}")
+        try:
+            os.chown(candidate, 0, 0)
+        except PermissionError:
+            if os.geteuid() == 0:
+                raise
+        # Searchable by the target service account, but directory contents are
+        # not listable. The randomized invocation directory applies the exact
+        # target group's tighter 0710 boundary.
+        candidate.chmod(0o711)
+
+def _chroot_user_gid(cfg: ChrootConfig, username: str) -> int:
+    passwd = cfg.chroot_base / "etc" / "passwd"
+    if passwd.is_symlink():
+        raise RuntimeError(f"refusing symlink passwd file: {passwd}")
+    try:
+        lines = passwd.read_text(encoding="utf-8", errors="strict").splitlines()
+    except OSError as exc:
+        raise RuntimeError(f"cannot resolve service user {username}: {exc}") from exc
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split(":")
+        if len(fields) >= 4 and fields[0] == username:
+            try:
+                gid = int(fields[3])
+            except ValueError as exc:
+                raise RuntimeError(f"invalid primary gid for service user {username}") from exc
+            if gid < 0:
+                raise RuntimeError(f"invalid primary gid for service user {username}")
+            return gid
+    raise RuntimeError(f"service user does not exist in chroot passwd: {username}")
+
+def _atomic_text(path: Path, text: str, *, mode: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RuntimeError(f"refusing symlink state path: {path}")
+    fd, raw = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temp = Path(raw)
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text); handle.flush(); os.fsync(handle.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+def _read_process_identity(path: Path) -> ProcessIdentity | None:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    return ProcessIdentity.from_dict(raw) if isinstance(raw, dict) else None
+
+def _validate_unit_policy(path: Path, parser: configparser.ConfigParser) -> None:
+    allowed = {
+        "Unit": {"Description", "After", "Requires"},
+        "Service": {"Chroot", "User", "Root", "ExecStart", "ExecStop", "WorkingDirectory", "Environment", "X11", "Restart"},
+        "Install": {"Enabled", "WantedBy"},
+    }
+    for section in parser.sections():
+        if section not in allowed:
+            raise RuntimeError(f"{path}: unsupported section [{section}]")
+        for key in parser[section]:
+            if key not in allowed[section]:
+                raise RuntimeError(f"{path}: unsupported {section}.{key}")
 
 
 def _dependency_layers(graph: dict[str, ServiceUnit]) -> list[list[str]]:
@@ -556,7 +741,12 @@ def _get_bool(section: configparser.SectionProxy | dict[str, str], key: str, def
     value = _get(section, key, None)
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"invalid boolean value for {key}: {value!r}")
 
 
 def _parse_environment(raw: str | None) -> dict[str, str]:

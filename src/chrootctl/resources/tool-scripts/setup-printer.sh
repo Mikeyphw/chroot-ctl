@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y cups cups-client cups-bsd printer-driver-gutenprint avahi-daemon
     ;;
   arch)
-    pacman -Sy --noconfirm --needed cups gutenprint avahi nss-mdns system-config-printer
+    pacman -Syu --noconfirm --needed cups gutenprint avahi nss-mdns system-config-printer
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

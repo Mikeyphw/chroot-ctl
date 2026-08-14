@@ -5,3 +5,11 @@ categories:
 - desktop
 script: setup-rdp-server.sh
 name: setup-rdp-server
+version: '1'
+risks:
+- network-exposure
+- package-mutation
+- service-mutation
+rollback: manual
+requires:
+- bash

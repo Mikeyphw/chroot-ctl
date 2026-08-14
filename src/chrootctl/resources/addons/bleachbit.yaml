@@ -5,3 +5,9 @@ categories:
 - system
 script: install-bleachbit.sh
 name: bleachbit
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

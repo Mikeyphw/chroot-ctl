@@ -41,8 +41,7 @@ WIZARD_STEPS = ("distro", "name", "release", "profile", "desktop", "username", "
 
 
 
-DEFAULT_INSTALL_USERNAME = "mike"
-AUTO_POST_FINALIZE_TOOLS: tuple[str, ...] = ("setup-clipboard",)
+AUTO_POST_FINALIZE_TOOLS: tuple[str, ...] = ()
 
 
 INSTALL_PRESETS: dict[str, dict[str, object]] = {
@@ -79,13 +78,13 @@ def _preset_values(preset: str | None) -> dict[str, object]:
     return dict(INSTALL_PRESETS.get(preset, {}))
 
 
-def _resolve_install_username(context, *, explicit_username: str | None) -> str:
+def _resolve_install_username(context, *, explicit_username: str | None, chroot_name: str | None = None) -> str:
     if explicit_username:
         return validate_username(explicit_username)
-    config_username = getattr(context.config, "username", None)
-    if config_username:
-        return validate_username(config_username)
-    return DEFAULT_INSTALL_USERNAME
+    hint = _default_username_hint(context, chroot_name=chroot_name)
+    if hint:
+        return validate_username(hint)
+    raise RuntimeError("install requires --username when no unambiguous target user can be discovered")
 
 
 @dataclass(slots=True)
@@ -156,7 +155,7 @@ def handle_install(context) -> None:
         select_flag=args.select_addons,
         non_interactive=non_interactive,
     )
-    username = _resolve_install_username(context, explicit_username=args.username)
+    username = _resolve_install_username(context, explicit_username=args.username, chroot_name=target_name)
     install_config = context.config.with_overrides(distro_name=target_name, username=username, target_arch=getattr(args, "arch", None) or context.config.target_arch)
     installer = _build_installer(context, distro=args.distro, config=install_config)
     results = progress_call(
@@ -304,10 +303,13 @@ def _run_install_wizard(context) -> InstallWizardSelection:
         emit_panel(context, "Install Wizard", _wizard_summary(context, state))
         action = _choose_wizard_review_action()
         if action == WIZARD_INSTALL:
+            final_username = state.username or _default_username_hint(context, chroot_name=state.name)
+            if not final_username:
+                raise RuntimeError("install username is required before leaving the wizard")
             return InstallWizardSelection(
                 distro=state.distro or "ubuntu",
                 name=state.name or state.distro or "ubuntu",
-                username=state.username or _default_username_hint(context, chroot_name=state.name) or "user",
+                username=validate_username(final_username),
                 profile=state.profile,
                 desktop=state.desktop,
                 release=state.release,
@@ -853,7 +855,7 @@ def _build_controller(context, config):
 
 
 def _build_user_sync(context, config):
-    return UserSyncManager(config, context.runner, context.logger)
+    return UserSyncManager(config, context.runner, context.logger, context.registry)
 
 
 def _install_next_steps(context, distro_name: str, username: str, results) -> dict[str, str]:

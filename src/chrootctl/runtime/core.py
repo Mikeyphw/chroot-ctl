@@ -77,7 +77,7 @@ def execute_cli(
         runner=runner,
         registry=registry,
         controller=ChrootController(config, runner, logger),
-        user_sync=UserSyncManager(config, runner, logger),
+        user_sync=UserSyncManager(config, runner, logger, registry),
         chroot_users=ChrootUserManager(config, runner, registry, logger),
         services=services,
     )

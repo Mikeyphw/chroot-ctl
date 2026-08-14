@@ -50,14 +50,16 @@ class InstallExecutionService:
         distro: str,
         name: str,
         username: str,
+        arch: str,
         mirror_selection: str,
         base_url: str | None,
         mirror_candidates: list[dict[str, object]],
     ):
         runtime = self.services.runtime_for(name, username=username)
+        runtime_config = runtime.config.with_overrides(target_arch=arch)
         installer = self._build_installer_fn(
             distro,
-            config=runtime.config,
+            config=runtime_config,
             runner=runtime.runner,
             controller=runtime.controller,
             registry=self.services.registry,
@@ -103,12 +105,12 @@ class InstallExecutionService:
         self,
         request: InstallRequest,
         *,
-        progress: Callable[[str], None] | None = None,
+        progress: Callable[[Any], None] | None = None,
     ) -> InstallRunResult:
         request = self._apply_preset(request)
         request = replace(request, username=self._resolve_username(request))
         plan = self._validate_install_request(request)
-        mirror_options = self._mirror_options(request.distro)
+        mirror_options = self._mirror_options(request.distro, request.arch)
         mirror_info = self._resolve_mirror(mirror_options, request.mirror)
         plan["mirror"] = mirror_info["selected_url"] or mirror_info["selection"]
         plan["mirror_fallback_chain"] = mirror_info["fallback_chain"]
@@ -167,41 +169,20 @@ class InstallExecutionService:
                     })
             return results
 
-        last_error: Exception | None = None
-        for attempt_index, attempt in enumerate(install_attempts, start=1):
-            installer = self._build_installer_for_attempt(
-                distro=request.distro,
-                name=request.name,
-                username=request.username,
-                mirror_selection=str(attempt["selection"] or "auto"),
-                base_url=str(attempt["base_url"]) if attempt["base_url"] else None,
-                mirror_candidates=mirror_options,
-            )
-            try:
-                phase_results = _run_attempt(installer, str(attempt["label"] or "auto"))
-                plan["mirror_retry_count"] = attempt_index - 1
-                break
-            except Exception as exc:
-                last_error = exc
-                mirror_attempt_errors.append({
-                    "attempt": str(attempt["label"] or "auto"),
-                    "message": str(exc),
-                })
-                if progress is not None and attempt_index < len(install_attempts):
-                    progress({
-                        "phase": "mirror-retry",
-                        "message": f"Mirror {attempt['label']} failed; retrying with next mirror",
-                        "percent": 14,
-                        "plan": plan,
-                        "current_step": 2,
-                        "total_steps": plan["total_steps"],
-                    })
-                continue
-        else:
-            message = "Install failed across all mirror attempts."
-            if mirror_attempt_errors:
-                message = f"{message} Last error: {mirror_attempt_errors[-1]['message']}"
-            raise RuntimeError(message) from last_error
+        # Rootfs verification and package-source fallback happen inside the installer.
+        # A bootstrap/desktop/finalize failure must never replay earlier phases.
+        attempt = install_attempts[0]
+        installer = self._build_installer_for_attempt(
+            distro=request.distro,
+            name=request.name,
+            username=request.username,
+            arch=request.arch,
+            mirror_selection=str(attempt["selection"] or "auto"),
+            base_url=str(attempt["base_url"]) if attempt["base_url"] else None,
+            mirror_candidates=mirror_options,
+        )
+        phase_results = _run_attempt(installer, str(attempt["label"] or "auto"))
+        plan["mirror_retry_count"] = 0
 
         tool_results = []
         addon_results = []
@@ -246,7 +227,7 @@ class InstallExecutionService:
         name: str,
         *,
         username: str | None = None,
-        progress: Callable[[str], None] | None = None,
+        progress: Callable[[Any], None] | None = None,
     ) -> UpgradeResult:
         record = self.services.registry.get(name)
         if record is None:
@@ -265,10 +246,10 @@ class InstallExecutionService:
             logger=self.services.logger,
         )
         if progress is not None:
-            progress("Upgrading chroot")
+            progress({"phase": "upgrade", "percent": 25, "message": "Upgrading chroot"})
         result = installer.upgrade()
         if progress is not None:
-            progress("Upgrade completed")
+            progress({"phase": "upgrade", "percent": 95, "message": "Upgrade completed"})
         return UpgradeResult(
             status=result.status,
             snapshot=result.snapshot,

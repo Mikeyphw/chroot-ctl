@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y nautilus
     ;;
   arch)
-    pacman -Sy --noconfirm --needed nautilus
+    pacman -Syu --noconfirm --needed nautilus
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

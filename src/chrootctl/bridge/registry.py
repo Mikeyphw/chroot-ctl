@@ -69,9 +69,12 @@ def _required_snapshot(payload: dict[str, Any]) -> str:
 
 def _install_request(payload: dict[str, Any]) -> InstallRequest:
     distro = str(payload.get("distro") or "ubuntu").strip() or "ubuntu"
+    raw_username = str(payload.get("username") or "").strip()
+    if not raw_username:
+        raise BridgeProtocolError("MISSING_INSTALL_USERNAME", "payload.username is required")
     try:
         name = validate_chroot_name(str(payload.get("name") or distro).strip() or distro, field="payload.name")
-        username = validate_username(str(payload.get("username") or "mike").strip() or "mike", field="payload.username")
+        username = validate_username(raw_username, field="payload.username")
         tools = tuple(validate_catalog_name(item, field="payload.tools item") for item in strict_string_list(payload.get("tools", []), field="payload.tools"))
         addons = tuple(validate_catalog_name(item, field="payload.addons item") for item in strict_string_list(payload.get("addons", []), field="payload.addons"))
         force_phase = optional_bool(payload, "forcePhase", "force_phase", default=False, field="payload.forcePhase")
@@ -83,6 +86,7 @@ def _install_request(payload: dict[str, Any]) -> InstallRequest:
         distro=distro,
         name=name,
         username=username,
+        arch=(_optional_text(payload, "arch") or "arm64").lower(),
         preset=_optional_text(payload, "preset"),
         profile=_optional_text(payload, "profile"),
         desktop=_optional_text(payload, "desktop"),
@@ -821,6 +825,10 @@ def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
         "distros": list(getattr(entry, "distros", ())),
         "categories": list(getattr(entry, "categories", ())),
         "script": getattr(entry, "script", ""),
+        "version": getattr(entry, "version", "1"),
+        "risks": list(getattr(entry, "risks", ())),
+        "rollback": getattr(entry, "rollback", "manual"),
+        "requires": list(getattr(entry, "requires_commands", ())),
         "scriptSha256": hashlib.sha256(script_text.encode("utf-8")).hexdigest(),
     }
 
@@ -892,6 +900,12 @@ def _catalog_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any
         entries.append(_catalog_entry_payload(entry))
         if target_distro and not entry.matches_distro(target_distro):
             blocking.append({"code": "unsupported_distro", "message": f"{entry.name} does not support {target_distro}."})
+        missing_commands = catalog.preflight_entry(entry)
+        if missing_commands:
+            blocking.append({"code": "missing_commands", "message": f"{entry.name} requires: {', '.join(missing_commands)}"})
+        risks = list(getattr(entry, "risks", ()))
+        if risks:
+            warnings.append(f"{entry.name} risk: {', '.join(risks)}")
     if not bool(detail.installed):
         blocking.append({"code": "chroot_not_installed", "message": f"{target} is not marked installed."})
     if kind == "addon":
@@ -904,7 +918,7 @@ def _catalog_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any
         "entries": entries,
         "blocking": blocking,
         "warnings": warnings,
-        "confirm": bool(blocking) is False and len(names) > 1,
+        "confirm": bool(blocking) is False and (len(names) > 1 or bool(warnings)),
     }
 
 
@@ -921,8 +935,14 @@ def _catalog_apply(services: ServiceContainer, payload: dict[str, Any], progress
     if cancelled():
         raise OperationCancelled("Catalog apply was cancelled")
 
-    def _progress(message: str) -> None:
-        progress({"phase": "catalog", "percent": 50, "message": message})
+    def _progress(event: Any) -> None:
+        if isinstance(event, dict):
+            payload_event = dict(event)
+            payload_event.setdefault("phase", "catalog")
+            payload_event.setdefault("percent", 50)
+            progress(payload_event)
+        else:
+            progress({"phase": "catalog", "percent": 50, "message": str(event)})
         if cancelled():
             raise OperationCancelled("Catalog apply was cancelled")
 
@@ -1888,8 +1908,8 @@ _PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "chroots.get": frozenset({"name"}),
     "storage.status": frozenset({"name"}),
     "install.form": frozenset({"name", "distro"}),
-    "install.preview": frozenset({"distro", "name", "username", "preset", "profile", "desktop", "release", "version", "mirror", "phase", "forcePhase", "force_phase", "resume", "repair", "tools", "addons"}),
-    "install.run": frozenset({"distro", "name", "username", "preset", "profile", "desktop", "release", "version", "mirror", "phase", "forcePhase", "force_phase", "resume", "repair", "tools", "addons"}),
+    "install.preview": frozenset({"distro", "name", "username", "arch", "preset", "profile", "desktop", "release", "version", "mirror", "phase", "forcePhase", "force_phase", "resume", "repair", "tools", "addons"}),
+    "install.run": frozenset({"distro", "name", "username", "arch", "preset", "profile", "desktop", "release", "version", "mirror", "phase", "forcePhase", "force_phase", "resume", "repair", "tools", "addons"}),
     "chroots.lifecycle.preview": frozenset({"name", "action"}),
     "chroots.remove.preview": frozenset({"name"}),
     "chroots.export": frozenset({"name", "archive"}),

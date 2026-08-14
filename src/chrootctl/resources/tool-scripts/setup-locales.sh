@@ -16,7 +16,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     update-locale LANG="$locale_name"
     ;;
   arch)
-    pacman -Sy --noconfirm --needed glibc tzdata
+    pacman -Syu --noconfirm --needed glibc tzdata
     if ! grep -q "^${locale_name} UTF-8$" /etc/locale.gen; then
       printf '\n%s UTF-8\n' "$locale_name" >> /etc/locale.gen
     fi

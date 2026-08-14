@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y tigervnc-standalone-server tigervnc-common xauth dbus-x11 xterm
     ;;
   arch)
-    pacman -Sy --noconfirm --needed tigervnc xorg-xauth dbus xterm
+    pacman -Syu --noconfirm --needed tigervnc xorg-xauth dbus xterm
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

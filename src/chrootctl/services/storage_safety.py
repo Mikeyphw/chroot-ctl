@@ -151,6 +151,11 @@ def recover_pending_fs_mutations(services) -> list[dict[str, Any]]:
                 snapshot_name = str(detail.get("snapshot") or "")
                 if snapshot_name:
                     stage = _single_recovery_candidate(destination.parent, f".partial-{glob.escape(snapshot_name)}-*", label="snapshot stage")
+            elif kind == "install.extract" and target:
+                if source is None:
+                    source = _single_recovery_candidate(root, f".chrootctl-install-rootfs-*", label="install stage")
+                if backup is None and destination is not None:
+                    backup = _single_recovery_candidate(destination.parent, f".{glob.escape(destination.name)}.preinstall-*", label="install backup")
             recovered_state = "blocked"
             recovery_detail: dict[str, Any] = {"recovered_from": state}
 
@@ -220,6 +225,36 @@ def recover_pending_fs_mutations(services) -> list[dict[str, Any]]:
                         if quarantined is not None:
                             recovery_detail.setdefault("quarantine", []).append(str(quarantined))
                     quarantined_stage = _quarantine_recovery_path(root, stage, mutation_id=mutation_id, label="import stage")
+                    if quarantined_stage is not None:
+                        recovery_detail.setdefault("quarantine", []).append(str(quarantined_stage))
+                    recovered_state = "rolled_back"
+
+
+            elif kind == "install.extract":
+                record = registry.get(target)
+                metadata = record.get("metadata", {}) if isinstance(record, dict) else {}
+                committed = isinstance(metadata, dict) and metadata.get("_chrootctl_install_mutation_id") == mutation_id
+                if committed and destination is not None and destination.exists():
+                    for candidate, label in ((source, "install stage"), (backup, "install backup")):
+                        quarantined = _quarantine_recovery_path(root, candidate, mutation_id=mutation_id, label=label)
+                        if quarantined is not None:
+                            recovery_detail.setdefault("quarantine", []).append(str(quarantined))
+                    recovered_state = "complete"
+                else:
+                    # Without the durable registry marker, prefer the previous
+                    # generation and preserve any promoted/staged candidate in
+                    # quarantine for manual inspection rather than deleting it.
+                    if backup is not None and backup.exists() and destination is not None:
+                        if destination.exists():
+                            quarantined = _quarantine_recovery_path(root, destination, mutation_id=mutation_id, label="uncommitted install")
+                            if quarantined is not None:
+                                recovery_detail.setdefault("quarantine", []).append(str(quarantined))
+                        os.replace(backup, destination)
+                    elif not bool(detail.get("had_existing")) and destination is not None and destination.exists():
+                        quarantined = _quarantine_recovery_path(root, destination, mutation_id=mutation_id, label="uncommitted install")
+                        if quarantined is not None:
+                            recovery_detail.setdefault("quarantine", []).append(str(quarantined))
+                    quarantined_stage = _quarantine_recovery_path(root, source, mutation_id=mutation_id, label="install stage")
                     if quarantined_stage is not None:
                         recovery_detail.setdefault("quarantine", []).append(str(quarantined_stage))
                     recovered_state = "rolled_back"

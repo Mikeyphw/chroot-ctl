@@ -109,7 +109,8 @@ data class ToolCapabilityGroup(
 data class InstallDraft(
     val distro: String = "ubuntu",
     val name: String = "ubuntu",
-    val username: String = "mike",
+    val username: String = "",
+    val arch: String = "arm64",
     val preset: String = "minimal-server",
     val profile: String = "minimal",
     val desktop: String = "none",
@@ -120,12 +121,13 @@ data class InstallDraft(
 
 data class InstallFormSummary(
     val distros: List<String> = emptyList(),
+    val architectures: List<String> = emptyList(),
     val presets: List<String> = emptyList(),
     val profiles: List<String> = emptyList(),
     val desktops: List<String> = emptyList(),
     val mirrors: List<String> = emptyList(),
     val defaultName: String = "ubuntu",
-    val defaultUsername: String = "mike",
+    val defaultUsername: String = "",
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
 )

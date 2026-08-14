@@ -5,3 +5,9 @@ categories:
 - package-management
 script: setup-dev-basics.sh
 name: setup-dev-basics
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

@@ -169,6 +169,13 @@ private fun ConfigureInstallStep(
                 valid = validation.usernameValid,
                 error = stringResource(R.string.install_username_error),
             )
+            Text("Target architecture", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+            ActionFlowRow {
+                phase32Choices(form.architectures, draft.arch, listOf("arm64", "amd64")).forEach { arch ->
+                    ChoiceButton(arch, selected = arch == draft.arch, onClick = { onDraftChange(draft.copy(arch = arch)) })
+                }
+            }
+            if (!validation.archValid) Text("This distribution/architecture combination is not supported.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.install_profile_choices), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
             ActionFlowRow {
                 phase32Choices(form.profiles, draft.profile, listOf("minimal", "developer", "desktop")).forEach { profile ->

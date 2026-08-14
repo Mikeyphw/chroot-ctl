@@ -15,7 +15,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     fi
     ;;
   arch)
-    pacman -Sy --noconfirm --needed wine-staging winetricks
+    pacman -Syu --noconfirm --needed wine-staging winetricks
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

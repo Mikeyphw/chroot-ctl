@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y openssh-client ca-certificates
     ;;
   arch)
-    pacman -Sy --noconfirm --needed openssh ca-certificates
+    pacman -Syu --noconfirm --needed openssh ca-certificates
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2
@@ -27,7 +27,9 @@ chmod 700 "$user_home/.ssh"
 
 key_path="$user_home/.ssh/id_ed25519"
 if [ ! -f "$key_path" ]; then
-  ssh-keygen -t ed25519 -N "" -C "${user_name}@${CHROOTCTL_NAME}" -f "$key_path"
+  echo "no SSH private key exists at $key_path" >&2
+  echo "create one explicitly with a passphrase before applying setup-github-ssh" >&2
+  exit 2
 fi
 
 known_hosts="$user_home/.ssh/known_hosts"

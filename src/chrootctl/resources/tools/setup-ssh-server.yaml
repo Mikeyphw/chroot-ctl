@@ -6,3 +6,11 @@ categories:
 - networking
 script: setup-ssh-server.sh
 name: setup-ssh-server
+version: '1'
+risks:
+- network-exposure
+- package-mutation
+- service-mutation
+rollback: manual
+requires:
+- bash

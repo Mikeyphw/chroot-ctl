@@ -5,3 +5,9 @@ categories:
 - desktop
 script: install-cinnamon.sh
 name: cinnamon
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

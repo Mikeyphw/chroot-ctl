@@ -5,3 +5,10 @@ categories:
 - system
 script: setup-sudo-user.sh
 name: setup-sudo-user
+version: '1'
+risks:
+- package-mutation
+- privilege-policy
+rollback: manual
+requires:
+- bash

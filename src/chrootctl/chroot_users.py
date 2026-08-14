@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shlex
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,23 +91,32 @@ class ChrootUserManager:
         self._require_installed()
         user = validate_username(username)
         shell_path = self._validate_shell(shell)
+        existing = next((item for item in self.list_users() if item.username == user), None)
+        if existing is not None:
+            return ChrootUserCreateResult(username=user, shell=existing.shell, sudo=self._has_sudo_access(user), created=False)
         quoted_user = shlex.quote(user)
         quoted_shell = shlex.quote(shell_path)
         self._chroot_sh(f"getent group {quoted_user} >/dev/null || groupadd {quoted_user}")
-        self._chroot_sh(
-            f"id -u {quoted_user} >/dev/null 2>&1 || useradd -m -s {quoted_shell} -g {quoted_user} {quoted_user}"
-        )
+        self._chroot_sh(f"useradd -m -s {quoted_shell} -g {quoted_user} {quoted_user}")
         if sudo:
             self.set_sudo(user, enabled=True)
-        return ChrootUserCreateResult(username=user, shell=shell_path, sudo=sudo, created=True)
+        created = any(item.username == user for item in self.list_users())
+        if not created and not self.runner.dry_run:
+            raise RuntimeError(f"useradd completed but {user} is not present in /etc/passwd")
+        return ChrootUserCreateResult(username=user, shell=shell_path, sudo=sudo, created=created or self.runner.dry_run)
 
     def remove_user(self, username: str, *, delete_home: bool) -> ChrootUserRemoveResult:
         self._require_installed()
         user = validate_username(username)
+        if not any(item.username == user for item in self.list_users()):
+            return ChrootUserRemoveResult(username=user, home_deleted=False, removed=False)
         flag = "-r " if delete_home else ""
-        self._chroot_sh(f"id -u {shlex.quote(user)} >/dev/null 2>&1 && userdel {flag}{shlex.quote(user)} || true")
+        self._chroot_sh(f"userdel {flag}{shlex.quote(user)}")
         self._remove_sudoers(user)
-        return ChrootUserRemoveResult(username=user, home_deleted=delete_home, removed=True)
+        removed = not any(item.username == user for item in self.list_users())
+        if not removed and not self.runner.dry_run:
+            raise RuntimeError(f"userdel completed but {user} is still present in /etc/passwd")
+        return ChrootUserRemoveResult(username=user, home_deleted=delete_home and removed, removed=removed or self.runner.dry_run)
 
     def set_password(self, username: str) -> ChrootUserPasswordResult:
         self._require_installed()
@@ -178,10 +189,27 @@ class ChrootUserManager:
 
     def _write_sudoers(self, username: str) -> None:
         sudoers = self._sudoers_path(username)
-        if not self.runner.dry_run:
-            sudoers.parent.mkdir(parents=True, exist_ok=True)
-            sudoers.write_text(self._sudoers_rule(username) + "\n", encoding="utf-8")
+        if self.runner.dry_run:
+            return
+        sudoers.parent.mkdir(parents=True, exist_ok=True)
+        if sudoers.is_symlink():
+            raise RuntimeError(f"refusing sudoers symlink: {sudoers}")
+        fd, temp_name = tempfile.mkstemp(prefix=f".{sudoers.name}.", dir=sudoers.parent)
+        temp_path = Path(temp_name)
+        try:
+            os.fchmod(fd, 0o440)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(self._sudoers_rule(username) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            relative = "/etc/sudoers.d/" + temp_path.name
+            result = self.runner.run(["busybox", "chroot", str(self.config.chroot_base), "visudo", "-cf", relative], check=False, chroot_env=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"visudo rejected sudoers rule for {username}: {result.stderr.strip()}")
+            os.replace(temp_path, sudoers)
             sudoers.chmod(0o440)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _remove_sudoers(self, username: str) -> None:
         sudoers = self._sudoers_path(username)
@@ -193,7 +221,7 @@ class ChrootUserManager:
 
     def _has_sudo_access(self, username: str) -> bool:
         sudoers = self._sudoers_path(username)
-        if not sudoers.is_file():
+        if not sudoers.is_file() or sudoers.is_symlink():
             return False
         try:
             lines = [
@@ -203,4 +231,22 @@ class ChrootUserManager:
             ]
         except OSError:
             return False
-        return self._sudoers_rule(username) in lines
+        if self._sudoers_rule(username) not in lines:
+            return False
+        if self.runner.dry_run:
+            return True
+        result = self.runner.run(
+            ["busybox", "chroot", str(self.config.chroot_base), "sudo", "-l", "-U", username],
+            check=False, chroot_env=True,
+        )
+        return result.returncode == 0
+
+
+def _validate_password_value(password: str) -> str:
+    if not isinstance(password, str) or not password:
+        raise ValueError("password must not be empty")
+    if len(password) > 4096:
+        raise ValueError("password is too long")
+    if any(char in password for char in ("\x00", "\n", "\r", ":")):
+        raise ValueError("password contains a value that cannot be passed safely to chpasswd")
+    return password

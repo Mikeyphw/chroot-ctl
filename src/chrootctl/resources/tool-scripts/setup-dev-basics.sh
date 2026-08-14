@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y git curl wget ca-certificates build-essential pkg-config openssh-client
     ;;
   arch)
-    pacman -Sy --noconfirm --needed git curl wget ca-certificates base-devel pkgconf openssh
+    pacman -Syu --noconfirm --needed git curl wget ca-certificates base-devel pkgconf openssh
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

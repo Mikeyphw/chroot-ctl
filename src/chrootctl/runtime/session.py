@@ -7,8 +7,6 @@ from rich.panel import Panel
 from rich.text import Text
 
 from ..output import result_panel
-from ..catalog import ManifestCatalog
-from .catalog import apply_catalog_entries
 from .common import console, emit_panel, emit_table, follow_logs, progress_call, read_logs
 
 if TYPE_CHECKING:
@@ -125,68 +123,8 @@ def handle_logs(context: RuntimeContext) -> None:
 
 
 
-def _clipboard_wrapper_paths(config) -> dict[str, Path]:
-    return {
-        "termux-clip": config.chroot_base / "usr" / "local" / "bin" / "termux-clip",
-        "xsel": config.chroot_base / "usr" / "local" / "bin" / "xsel",
-        "xclip": config.chroot_base / "usr" / "local" / "bin" / "xclip",
-    }
-
-
-def _metadata_names(raw: object) -> list[str]:
-    if not isinstance(raw, str):
-        return []
-    return [name for name in (item.strip() for item in raw.split(",")) if name]
-
-
-def _record_clipboard_tool(context, record: dict[str, Any]) -> None:
-    metadata = dict(record.get("metadata", {}))
-    tools = _metadata_names(metadata.get("tools", ""))
-    if "setup-clipboard" not in tools:
-        tools.append("setup-clipboard")
-    metadata["tools"] = ",".join(tools)
-    context.registry.upsert(
-        name=str(record["name"]),
-        distro=str(record["distro"]),
-        path=str(record["path"]),
-        phase=str(record["phase"]),
-        installed=bool(record["installed"]),
-        arch=str(record["arch"]) if record.get("arch") is not None else None,
-        release_name=str(record["release_name"]) if record.get("release_name") is not None else None,
-        version=str(record["version"]) if record.get("version") is not None else None,
-        metadata=metadata,
-    )
-
-
-def _ensure_existing_chroot_clipboard_tools(context) -> None:
-    registry = getattr(context, "registry", None)
-    if registry is None:
-        return
-    record = registry.get(context.config.distro_name)
-    if record is None or not bool(record.get("installed")):
-        return
-    metadata = record.get("metadata", {})
-    applied_tools = _metadata_names(metadata.get("tools", "")) if isinstance(metadata, dict) else []
-    if "setup-clipboard" in applied_tools:
-        return
-    wrappers = _clipboard_wrapper_paths(context.config)
-    if all(path.exists() for path in wrappers.values()):
-        _record_clipboard_tool(context, record)
-        return
-    progress_call(
-        "Adapting existing chroot clipboard tools",
-        lambda: apply_catalog_entries(
-            catalog=ManifestCatalog("tool", config=context.config),
-            names=["setup-clipboard"],
-            config=context.config,
-            runner=context.runner,
-            registry=context.registry,
-            logger=context.logger,
-        ),
-    )
 
 def handle_start(context: RuntimeContext) -> None:
-    _ensure_existing_chroot_clipboard_tools(context)
     context.controller.start_interactive(
         login=context.args.login,
         root_login=context.args.root_login,
@@ -195,7 +133,6 @@ def handle_start(context: RuntimeContext) -> None:
 
 
 def handle_restart(context: RuntimeContext) -> None:
-    _ensure_existing_chroot_clipboard_tools(context)
     context.controller.restart_interactive(
         login=context.args.login,
         root_login=context.args.root_login,
@@ -204,7 +141,6 @@ def handle_restart(context: RuntimeContext) -> None:
 
 
 def handle_exec(context: RuntimeContext) -> None:
-    _ensure_existing_chroot_clipboard_tools(context)
     argv = context.args.argv[1:] if context.args.argv and context.args.argv[0] == "--" else context.args.argv
     code = context.controller.exec(
         root=context.args.root,

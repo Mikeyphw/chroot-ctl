@@ -5,3 +5,9 @@ categories:
 - desktop-utility
 script: install-ulauncher.sh
 name: ulauncher
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

@@ -819,6 +819,7 @@ private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
     .put("distro", distro)
     .put("name", name)
     .put("username", username)
+    .put("arch", arch)
     .put("preset", preset)
     .put("profile", profile)
     .put("desktop", desktop)
@@ -830,12 +831,13 @@ private fun JSONObject.toInstallFormSummary(): InstallFormSummary {
     val defaults = optJSONObject("defaults") ?: JSONObject()
     return InstallFormSummary(
         distros = optJSONArray("distros").labelsFromObjects(),
+        architectures = optJSONArray("architectures").labelsFromObjects(),
         presets = optJSONArray("presets").labelsFromObjects(),
         profiles = optJSONArray("profiles").labelsFromObjects(),
         desktops = optJSONArray("desktops").labelsFromObjects(),
         mirrors = optJSONArray("mirrors").labelsFromObjects(),
         defaultName = defaults.optString("name", "ubuntu"),
-        defaultUsername = defaults.optString("username", "mike"),
+        defaultUsername = defaults.optString("username", ""),
     )
 }
 

@@ -910,8 +910,10 @@ def _validate_install_args(parser: argparse.ArgumentParser, args: argparse.Names
         parser.error("install requires DISTRO unless --wizard is used")
     if args.force_phase and args.phase is None:
         parser.error("--force-phase requires --phase")
-    if args.resume and args.phase is not None:
-        parser.error("--resume cannot be used with --phase")
+    if args.resume and args.repair:
+        parser.error("--resume and --repair are mutually exclusive")
+    if (args.resume or args.repair) and args.phase is not None:
+        parser.error("--resume/--repair cannot be used with --phase")
     if args.wizard and args.list_versions:
         parser.error("--wizard cannot be combined with --list-versions")
     if args.list_versions:

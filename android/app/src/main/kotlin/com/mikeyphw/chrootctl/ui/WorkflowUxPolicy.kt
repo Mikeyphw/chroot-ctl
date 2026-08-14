@@ -14,8 +14,9 @@ data class InstallDraftValidation(
     val distroValid: Boolean,
     val nameValid: Boolean,
     val usernameValid: Boolean,
+    val archValid: Boolean,
 ) {
-    val valid: Boolean get() = distroValid && nameValid && usernameValid
+    val valid: Boolean get() = distroValid && nameValid && usernameValid && archValid
 }
 
 fun selectedChrootListFilter(name: String): ChrootListFilter = ChrootListFilter.entries
@@ -48,6 +49,7 @@ fun validateInstallDraft(draft: InstallDraft): InstallDraftValidation = InstallD
     distroValid = draft.distro.trim().isNotEmpty(),
     nameValid = draft.name.matches(CHROOT_NAME_PATTERN),
     usernameValid = draft.username.matches(USERNAME_PATTERN),
+    archValid = draft.arch in setOf("arm64", "amd64") && !(draft.distro == "arch" && draft.arch != "arm64"),
 )
 
 private val CHROOT_NAME_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")

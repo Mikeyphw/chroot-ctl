@@ -11,7 +11,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     group_name="sudo"
     ;;
   arch)
-    pacman -Sy --noconfirm --needed sudo
+    pacman -Syu --noconfirm --needed sudo
     group_name="wheel"
     ;;
   *)
@@ -23,21 +23,24 @@ esac
 if ! getent group "$group_name" >/dev/null 2>&1; then
   groupadd "$group_name"
 fi
-
 if ! id "$user_name" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "$user_name"
 fi
-
 usermod -aG "$group_name" "$user_name"
-mkdir -p /etc/sudoers.d
-case "$group_name" in
-  sudo)
-    printf '%%%s ALL=(ALL:ALL) ALL\n' "$group_name" >/etc/sudoers.d/90-chrootctl-user
-    ;;
-  wheel)
-    printf '%%%s ALL=(ALL:ALL) ALL\n' "$group_name" >/etc/sudoers.d/90-chrootctl-user
-    ;;
-esac
-chmod 440 /etc/sudoers.d/90-chrootctl-user
+
+sudoers_dir=/etc/sudoers.d
+sudoers_path="$sudoers_dir/90-chrootctl-user"
+mkdir -p "$sudoers_dir"
+[ ! -L "$sudoers_dir" ] || { echo "refusing symlink sudoers directory" >&2; exit 1; }
+[ ! -L "$sudoers_path" ] || { echo "refusing sudoers symlink: $sudoers_path" >&2; exit 1; }
+tmp="$(mktemp "$sudoers_dir/.90-chrootctl-user.XXXXXX")"
+cleanup() { rm -f "$tmp"; }
+trap cleanup EXIT HUP INT TERM
+chmod 440 "$tmp"
+printf '%%%s ALL=(ALL:ALL) ALL\n' "$group_name" >"$tmp"
+visudo -cf "$tmp" >/dev/null
+mv -f "$tmp" "$sudoers_path"
+chmod 440 "$sudoers_path"
+trap - EXIT HUP INT TERM
 
 echo "User ${user_name} is ready for sudo through group ${group_name}."

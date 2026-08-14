@@ -6,3 +6,10 @@ categories:
 - git
 script: setup-github-ssh.sh
 name: setup-github-ssh
+version: '1'
+risks:
+- credential-management
+- package-mutation
+rollback: manual
+requires:
+- bash

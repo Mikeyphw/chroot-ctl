@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 from importlib.resources import files
 import os
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -31,6 +32,10 @@ class ManifestEntry:
     categories: tuple[str, ...]
     script: str
     script_text: str
+    version: str = "1"
+    risks: tuple[str, ...] = ()
+    rollback: str = "manual"
+    requires_commands: tuple[str, ...] = ()
 
     def matches_distro(self, distro: str) -> bool:
         return distro in self.distros
@@ -110,28 +115,33 @@ class ManifestCatalog:
                 f"{self.kind} '{name}' does not support distro '{target_distro}'"
             )
 
-        if self.kind == "tool" and entry.name == "sync-uid":
-            UserSyncManager(config, runner, logger).sync_id(username=config.username, fix_ownership=True)
-        else:
-            self._run_script(entry, config=config, runner=runner, target_distro=target_distro)
+        script_sha256 = hashlib.sha256(entry.script_text.encode("utf-8")).hexdigest()
+        self._record_apply_state(registry, record, entry, state="running", script_sha256=script_sha256)
+        try:
+            if self.kind == "tool" and entry.name == "sync-uid":
+                UserSyncManager(config, runner, logger, registry).sync_id(username=config.username, fix_ownership=True)
+            else:
+                self._run_script(entry, config=config, runner=runner, target_distro=target_distro)
+        except Exception as exc:
+            latest = registry.get(config.distro_name) or record
+            self._record_apply_state(registry, latest, entry, state="failed", script_sha256=script_sha256, error=str(exc))
+            raise
 
-        metadata = dict(record.get("metadata", {}))
+        latest = registry.get(config.distro_name) or record
+        metadata = dict(latest.get("metadata", {}))
         key = f"{self.kind}s"
         existing = _metadata_list(metadata.get(key))
         if name not in existing:
             existing.append(name)
         metadata[key] = ",".join(existing)
         registry.upsert(
-            name=str(record["name"]),
-            distro=str(record["distro"]),
-            path=str(record["path"]),
-            phase=str(record["phase"]),
-            installed=bool(record["installed"]),
-            arch=str(record["arch"]) if record.get("arch") is not None else None,
-            release_name=str(record["release_name"]) if record.get("release_name") is not None else None,
-            version=str(record["version"]) if record.get("version") is not None else None,
-            metadata=metadata,
+            name=str(latest["name"]), distro=str(latest["distro"]), path=str(latest["path"]), phase=str(latest["phase"]),
+            installed=bool(latest["installed"]), arch=str(latest["arch"]) if latest.get("arch") is not None else None,
+            release_name=str(latest["release_name"]) if latest.get("release_name") is not None else None,
+            version=str(latest["version"]) if latest.get("version") is not None else None, metadata=metadata,
         )
+        latest = registry.get(config.distro_name) or latest
+        self._record_apply_state(registry, latest, entry, state="completed", script_sha256=script_sha256)
         logger.info("applied %s %s to %s", self.kind, name, config.distro_name)
         return CatalogApplyResult(
             kind=self.kind,
@@ -140,6 +150,18 @@ class ManifestCatalog:
             categories=entry.categories,
             applied=True,
         )
+
+    def _record_apply_state(self, registry: ChrootRegistry, record: dict, entry: ManifestEntry, *, state: str, script_sha256: str, error: str | None = None) -> None:
+        metadata = dict(record.get("metadata", {})) if isinstance(record.get("metadata", {}), dict) else {}
+        catalog_state = dict(metadata.get("catalog_state", {})) if isinstance(metadata.get("catalog_state", {}), dict) else {}
+        kind_state = dict(catalog_state.get(self.kind, {})) if isinstance(catalog_state.get(self.kind, {}), dict) else {}
+        row = {"state": state, "version": entry.version, "script_sha256": script_sha256, "risks": list(entry.risks), "rollback": entry.rollback, "updated_at": time.time()}
+        if error:
+            row["error"] = error[:1000]
+        kind_state[entry.name] = row
+        catalog_state[self.kind] = kind_state
+        metadata["catalog_state"] = catalog_state
+        registry.upsert(name=str(record["name"]), distro=str(record["distro"]), path=str(record["path"]), phase=str(record["phase"]), installed=bool(record["installed"]), arch=str(record["arch"]) if record.get("arch") is not None else None, release_name=str(record["release_name"]) if record.get("release_name") is not None else None, version=str(record["version"]) if record.get("version") is not None else None, metadata=metadata)
 
     def _run_script(
         self,
@@ -229,6 +251,12 @@ class ManifestCatalog:
         distros = tuple(sorted(_normalize_manifest_distros(raw.get("distro"), filename=filename)))
         categories = tuple(sorted(_normalize_manifest_categories(raw.get("categories"), filename=filename)))
         resolved_script_text = script_text(script, filename=filename)
+        version = str(raw.get("version") or "1").strip() or "1"
+        risks = tuple(sorted(_normalize_string_list(raw.get("risks"), filename=filename, field="risks")))
+        rollback = str(raw.get("rollback") or "manual").strip().lower()
+        if rollback not in {"manual", "idempotent", "none"}:
+            raise ValueError(f"manifest {filename} has invalid rollback policy: {rollback}")
+        requires_commands = tuple(sorted(_normalize_string_list(raw.get("requires"), filename=filename, field="requires")))
         if external:
             expected_sha256 = str(raw.get("sha256") or "").strip().lower()
             if len(expected_sha256) != 64 or any(char not in "0123456789abcdef" for char in expected_sha256):
@@ -244,6 +272,10 @@ class ManifestCatalog:
             categories=categories,
             script=script,
             script_text=resolved_script_text,
+            version=version,
+            risks=risks,
+            rollback=rollback,
+            requires_commands=requires_commands,
         )
 
     @property
@@ -353,6 +385,18 @@ def _normalize_category_name(value: str, *, filename: str) -> str:
     if any(ch not in allowed for ch in category):
         raise ValueError(f"manifest {filename} has invalid category: {value!r}")
     return category
+
+
+def _normalize_string_list(raw: object, *, filename: str, field: str) -> set[str]:
+    if raw is None:
+        return set()
+    if not isinstance(raw, list) or not all(isinstance(item, str) and item.strip() for item in raw):
+        raise ValueError(f"manifest {filename} {field} must be a list of non-empty strings")
+    values = {item.strip().lower().replace("_", "-") for item in raw}
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789-._")
+    if any(any(ch not in allowed for ch in value) for value in values):
+        raise ValueError(f"manifest {filename} has invalid {field}")
+    return values
 
 
 def _metadata_list(value: object) -> list[str]:

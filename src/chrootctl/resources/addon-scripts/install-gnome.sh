@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y gnome-shell gnome-session gnome-terminal nautilus file-roller gdm3 dbus-x11
     ;;
   arch)
-    pacman -Sy --noconfirm --needed gnome gnome-tweaks gdm
+    pacman -Syu --noconfirm --needed gnome gnome-tweaks gdm
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y xclip xsel wl-clipboard python3
     ;;
   arch)
-    pacman -Sy --noconfirm --needed xclip xsel wl-clipboard python
+    pacman -Syu --noconfirm --needed xclip xsel wl-clipboard python
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2
@@ -28,18 +28,27 @@ import socket
 import sys
 
 SOCKET_PATH = "/tmp/chrootctl/clipboard.sock"
+TOKEN_PATH = "/tmp/chrootctl/clipboard.token"
+TIMEOUT_SECONDS = 5.0
 
 
 def request(payload: dict[str, object]) -> dict[str, object]:
+    payload = dict(payload)
+    payload["token"] = open(TOKEN_PATH, "r", encoding="utf-8").read().strip()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(TIMEOUT_SECONDS)
         client.connect(SOCKET_PATH)
         client.sendall(json.dumps(payload).encode("utf-8"))
         client.shutdown(socket.SHUT_WR)
         chunks: list[bytes] = []
+        total = 0
         while True:
             chunk = client.recv(65536)
             if not chunk:
                 break
+            total += len(chunk)
+            if total > 1024 * 1024:
+                raise RuntimeError("clipboard response exceeds 1 MiB")
             chunks.append(chunk)
     response = json.loads(b"".join(chunks).decode("utf-8"))
     if not isinstance(response, dict):
@@ -74,30 +83,31 @@ if __name__ == "__main__":
     raise SystemExit(main())
 EOF
 
-cat >/usr/local/bin/xsel <<'EOF'
+cat >/usr/local/bin/chrootctl-xsel <<'EOF'
 #!/bin/sh
 set -eu
 
 mode="set"
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --clipboard|-b|--primary|--secondary|-p)
+    --clipboard|-b|--primary|-p|--secondary|-s)
       shift
       ;;
     --input|-i)
-      mode="set"
-      shift
+      mode="set"; shift
       ;;
     --output|-o)
-      mode="get"
-      shift
+      mode="get"; shift
       ;;
     --clear|-c)
       printf '' | exec /usr/local/bin/termux-clip
       ;;
     --)
-      shift
-      break
+      shift; break
+      ;;
+    -*)
+      echo "chrootctl-xsel: unsupported option: $1" >&2
+      exit 2
       ;;
     *)
       break
@@ -112,34 +122,32 @@ fi
 exec /usr/local/bin/termux-clip "$@"
 EOF
 
-cat >/usr/local/bin/xclip <<'EOF'
+cat >/usr/local/bin/chrootctl-xclip <<'EOF'
 #!/bin/sh
 set -eu
 
 mode="set"
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -selection|--selection)
+    -selection|--selection|-display|--display|-loops|--loops|-target|--target)
+      [ "$#" -ge 2 ] || { echo "chrootctl-xclip: $1 requires a value" >&2; exit 2; }
       shift 2
       ;;
-    clipboard|primary|secondary)
-      shift
+    -i|-in|--input)
+      mode="set"; shift
       ;;
-    -i|--input)
-      mode="set"
-      shift
+    -o|-out|--output)
+      mode="get"; shift
       ;;
-    -o|--output)
-      mode="get"
+    -quiet|-silent|-verbose|-rmlastnl|-noutf8|-filter)
       shift
-      ;;
-    -quiet|-silent|-verbose|-loops|-display|-rmlastnl|-noutf8)
-      shift
-      [ "$#" -gt 0 ] && [ "${1#-}" != "$1" ] || true
       ;;
     --)
-      shift
-      break
+      shift; break
+      ;;
+    -*)
+      echo "chrootctl-xclip: unsupported option: $1" >&2
+      exit 2
       ;;
     *)
       break
@@ -154,7 +162,7 @@ fi
 exec /usr/local/bin/termux-clip "$@"
 EOF
 
-chmod 0755 /usr/local/bin/termux-clip /usr/local/bin/xsel /usr/local/bin/xclip
+chmod 0755 /usr/local/bin/termux-clip /usr/local/bin/chrootctl-xsel /usr/local/bin/chrootctl-xclip
 
-echo "Clipboard helpers installed for X11/Wayland plus Termux host clipboard wrappers."
+echo "Clipboard helpers installed. Use termux-clip, chrootctl-xsel, or chrootctl-xclip for the host bridge; system xsel/xclip are left untouched."
 echo "Requires a running host daemon at /tmp/chrootctl/clipboard.sock."
