@@ -124,9 +124,19 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val logsPane = MutableStateFlow(LogsPane())
     private val usersPane = MutableStateFlow(UsersPane())
     private val servicesPane = MutableStateFlow(ServicesPane())
+    private var installPreviewRequestPayload: String? = null
+    private var lifecyclePreviewRequestKey: String? = null
+    private var snapshotPreviewRequestKey: String? = null
+    private var userPreviewRequestPayload: String? = null
+    private var servicePreviewRequestPayload: String? = null
     private val catalogPane = MutableStateFlow(CatalogPane())
+    private var catalogRefreshRequestPayload: String? = null
+    private var catalogPreviewRequestPayload: String? = null
     private val packagePane = MutableStateFlow(PackagePane())
     private val transferPane = MutableStateFlow(TransferPane())
+    private var transferImportPreviewRequestPayload: String? = null
+    private var transferExportPreviewRequestPayload: String? = null
+    private var artifactCleanupPreviewRequestPayload: String? = null
     private val systemSupportPane = MutableStateFlow(SystemSupportPane())
     private val debugPane = MutableStateFlow(DebugPane())
 
@@ -270,6 +280,12 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), MainUiState())
 
     init {
+        viewModelScope.launch {
+            repository.chroots.collect { rows ->
+                val selected = selectedChrootName.value ?: return@collect
+                if (rows.none { it.name == selected && !it.stale }) clearSelectedChroot(selected)
+            }
+        }
         refresh()
         refreshInstallForm()
         refreshCatalog("tool")
@@ -296,7 +312,9 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     }
 
     fun selectChroot(name: String) {
+        if (selectedChrootName.value != name) clearTargetScopedState()
         selectedChrootName.value = name
+        lifecyclePreview.value = null
         refreshChrootDetail(name)
         refreshCapabilityGatedChrootRooms(name, availableWorkspaceOperations.value)
     }
@@ -312,6 +330,31 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         if (workspaceTabSupported(ChrootWorkspaceTab.Users, operations)) refreshUsers(name)
         if (workspaceTabSupported(ChrootWorkspaceTab.Services, operations)) refreshServices(name)
     }
+
+    private fun clearSelectedChroot(expected: String? = null) {
+        if (expected != null && selectedChrootName.value != expected) return
+        selectedChrootName.value = null
+        clearTargetScopedState()
+    }
+
+    private fun clearTargetScopedState() {
+        lifecyclePreviewRequestKey = null
+        snapshotPreviewRequestKey = null
+        lifecyclePreview.value = null
+        snapshotPane.value = SnapshotPane()
+        storagePane.value = StoragePane()
+        logsPane.value = LogsPane()
+        userPreviewRequestPayload = null
+        servicePreviewRequestPayload = null
+        catalogRefreshRequestPayload = null
+        catalogPreviewRequestPayload = null
+        usersPane.value = UsersPane()
+        servicesPane.value = ServicesPane()
+        packagePane.value = PackagePane()
+        catalogPane.value = catalogPane.value.copy(targetName = null, preview = null)
+    }
+
+    private fun isCurrentTarget(name: String): Boolean = selectedChrootName.value == name
 
     fun selectOperation(operationId: String) {
         selectedOperationId.value = operationId
@@ -340,8 +383,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         viewModelScope.launch {
             chrootDetailRefresh.value = RefreshState.Refreshing
             repository.refreshChrootDetail(name)
-                .onSuccess { chrootDetailRefresh.value = RefreshState.Idle }
-                .onFailure { error -> chrootDetailRefresh.value = RefreshState.Failed(error.message ?: error.javaClass.simpleName) }
+                .onSuccess { if (isCurrentTarget(name)) chrootDetailRefresh.value = RefreshState.Idle }
+                .onFailure { error -> if (isCurrentTarget(name)) chrootDetailRefresh.value = RefreshState.Failed(error.message ?: error.javaClass.simpleName) }
         }
     }
 
@@ -356,7 +399,13 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
 
     fun updateInstallDraft(draft: InstallDraft) {
+        installPreviewRequestPayload = null
         installDraft.value = draft
+        installPreview.value = null
+    }
+
+    fun clearInstallPreview() {
+        installPreviewRequestPayload = null
         installPreview.value = null
     }
 
@@ -375,10 +424,22 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     }
 
     fun previewInstall() {
+        val draft = installDraft.value
+        val requestPayload = draft.toJsonPayload().toString()
+        installPreviewRequestPayload = requestPayload
+        installPreview.value = null
         viewModelScope.launch {
-            repository.previewInstall(installDraft.value)
-                .onSuccess { preview -> installPreview.value = preview }
-                .onFailure { error -> installPreview.value = errorPreview("Install preview", error) }
+            repository.previewInstall(draft)
+                .onSuccess { preview ->
+                    if (installPreviewRequestPayload == requestPayload && installDraft.value.toJsonPayload().toString() == requestPayload) {
+                        installPreview.value = preview
+                    }
+                }
+                .onFailure { error ->
+                    if (installPreviewRequestPayload == requestPayload && installDraft.value.toJsonPayload().toString() == requestPayload) {
+                        installPreview.value = errorPreview("Install preview", error)
+                    }
+                }
         }
     }
 
@@ -398,24 +459,38 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .toString()
 
     fun previewLifecycle(name: String, action: String) {
+        val requestKey = "$name\u001f${action.trim().lowercase()}"
+        lifecyclePreviewRequestKey = requestKey
         viewModelScope.launch {
+            lifecyclePreview.value = null
             repository.previewLifecycle(name, action)
-                .onSuccess { preview -> lifecyclePreview.value = preview }
-                .onFailure { error -> lifecyclePreview.value = errorPreview("Lifecycle preview", error) }
+                .onSuccess { preview ->
+                    if (lifecyclePreviewRequestKey == requestKey && isCurrentTarget(name)) lifecyclePreview.value = preview
+                }
+                .onFailure { error ->
+                    if (lifecyclePreviewRequestKey == requestKey && isCurrentTarget(name)) lifecyclePreview.value = errorPreview("Lifecycle preview", error)
+                }
         }
+    }
+
+    fun clearLifecyclePreview() {
+        lifecyclePreviewRequestKey = null
+        lifecyclePreview.value = null
     }
 
     fun refreshSnapshots(name: String) {
         viewModelScope.launch {
             snapshotPane.value = snapshotPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
             repository.refreshSnapshots(name)
-                .onSuccess { rows -> snapshotPane.value = SnapshotPane(targetName = name, snapshots = rows) }
+                .onSuccess { rows -> if (isCurrentTarget(name) && snapshotPane.value.targetName == name) snapshotPane.value = SnapshotPane(targetName = name, snapshots = rows) }
                 .onFailure { error ->
-                    snapshotPane.value = snapshotPane.value.copy(
-                        targetName = name,
-                        refreshing = false,
-                        errorMessage = error.message ?: error.javaClass.simpleName,
-                    )
+                    if (isCurrentTarget(name) && snapshotPane.value.targetName == name) {
+                        snapshotPane.value = snapshotPane.value.copy(
+                            targetName = name,
+                            refreshing = false,
+                            errorMessage = error.message ?: error.javaClass.simpleName,
+                        )
+                    }
                 }
         }
     }
@@ -424,13 +499,15 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         viewModelScope.launch {
             storagePane.value = storagePane.value.copy(targetName = name, refreshing = true, errorMessage = null)
             repository.refreshStorage(name)
-                .onSuccess { summary -> storagePane.value = StoragePane(targetName = name, summary = summary) }
+                .onSuccess { summary -> if (isCurrentTarget(name) && storagePane.value.targetName == name) storagePane.value = StoragePane(targetName = name, summary = summary) }
                 .onFailure { error ->
-                    storagePane.value = storagePane.value.copy(
-                        targetName = name,
-                        refreshing = false,
-                        errorMessage = error.message ?: error.javaClass.simpleName,
-                    )
+                    if (isCurrentTarget(name) && storagePane.value.targetName == name) {
+                        storagePane.value = storagePane.value.copy(
+                            targetName = name,
+                            refreshing = false,
+                            errorMessage = error.message ?: error.javaClass.simpleName,
+                        )
+                    }
                 }
         }
     }
@@ -446,66 +523,91 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             )
             repository.refreshLogs(name, normalizedLevel)
                 .onSuccess { (logFile, entries) ->
-                    logsPane.value = LogsPane(
-                        targetName = name,
-                        logFile = logFile,
-                        level = normalizedLevel.orEmpty(),
-                        entries = entries,
-                    )
+                    if (isCurrentTarget(name) && logsPane.value.targetName == name && logsPane.value.level == normalizedLevel.orEmpty()) {
+                        logsPane.value = LogsPane(
+                            targetName = name,
+                            logFile = logFile,
+                            level = normalizedLevel.orEmpty(),
+                            entries = entries,
+                        )
+                    }
                 }
                 .onFailure { error ->
-                    logsPane.value = logsPane.value.copy(
-                        targetName = name,
-                        refreshing = false,
-                        errorMessage = error.message ?: error.javaClass.simpleName,
-                    )
+                    if (isCurrentTarget(name) && logsPane.value.targetName == name) {
+                        logsPane.value = logsPane.value.copy(
+                            targetName = name,
+                            refreshing = false,
+                            errorMessage = error.message ?: error.javaClass.simpleName,
+                        )
+                    }
                 }
         }
     }
 
     fun previewSnapshotCreate(name: String, snapshot: String) {
+        val requestKey = "$name\u001fcreate\u001f$snapshot"
+        snapshotPreviewRequestKey = requestKey
         viewModelScope.launch {
+            if (!isCurrentTarget(name)) return@launch
+            snapshotPane.value = snapshotPane.value.copy(preview = null, previewAction = "", previewSnapshot = "")
             repository.previewSnapshotCreate(name, snapshot)
                 .onSuccess { preview ->
-                    snapshotPane.value = snapshotPane.value.copy(
-                        targetName = name,
-                        preview = preview,
-                        previewAction = "create",
-                        previewSnapshot = snapshot,
-                    )
+                    if (snapshotPreviewRequestKey == requestKey && isCurrentTarget(name) && snapshotPane.value.targetName == name) {
+                        snapshotPane.value = snapshotPane.value.copy(
+                            targetName = name,
+                            preview = preview,
+                            previewAction = "create",
+                            previewSnapshot = snapshot,
+                        )
+                    }
                 }
                 .onFailure { error ->
-                    snapshotPane.value = snapshotPane.value.copy(
-                        targetName = name,
-                        preview = errorPreview("Snapshot preview", error),
-                        previewAction = "create",
-                        previewSnapshot = snapshot,
-                    )
+                    if (snapshotPreviewRequestKey == requestKey && isCurrentTarget(name) && snapshotPane.value.targetName == name) {
+                        snapshotPane.value = snapshotPane.value.copy(
+                            targetName = name,
+                            preview = errorPreview("Snapshot preview", error),
+                            previewAction = "create",
+                            previewSnapshot = snapshot,
+                        )
+                    }
                 }
         }
     }
 
     fun previewSnapshotAction(name: String, snapshot: String, action: String) {
         val normalizedAction = action.trim().lowercase()
+        val requestKey = "$name\u001f$normalizedAction\u001f$snapshot"
+        snapshotPreviewRequestKey = requestKey
         viewModelScope.launch {
+            if (!isCurrentTarget(name)) return@launch
+            snapshotPane.value = snapshotPane.value.copy(preview = null, previewAction = "", previewSnapshot = "")
             repository.previewSnapshotAction(name, snapshot, normalizedAction)
                 .onSuccess { preview ->
-                    snapshotPane.value = snapshotPane.value.copy(
-                        targetName = name,
-                        preview = preview,
-                        previewAction = normalizedAction,
-                        previewSnapshot = snapshot,
-                    )
+                    if (snapshotPreviewRequestKey == requestKey && isCurrentTarget(name) && snapshotPane.value.targetName == name) {
+                        snapshotPane.value = snapshotPane.value.copy(
+                            targetName = name,
+                            preview = preview,
+                            previewAction = normalizedAction,
+                            previewSnapshot = snapshot,
+                        )
+                    }
                 }
                 .onFailure { error ->
-                    snapshotPane.value = snapshotPane.value.copy(
-                        targetName = name,
-                        preview = errorPreview("Snapshot preview", error),
-                        previewAction = normalizedAction,
-                        previewSnapshot = snapshot,
-                    )
+                    if (snapshotPreviewRequestKey == requestKey && isCurrentTarget(name) && snapshotPane.value.targetName == name) {
+                        snapshotPane.value = snapshotPane.value.copy(
+                            targetName = name,
+                            preview = errorPreview("Snapshot preview", error),
+                            previewAction = normalizedAction,
+                            previewSnapshot = snapshot,
+                        )
+                    }
                 }
         }
+    }
+
+    fun clearSnapshotPreview() {
+        snapshotPreviewRequestKey = null
+        snapshotPane.value = snapshotPane.value.copy(preview = null, previewAction = "", previewSnapshot = "")
     }
 
     fun snapshotCreatePayloadJson(name: String, snapshot: String): String = JSONObject()
@@ -531,23 +633,42 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         viewModelScope.launch {
             usersPane.value = usersPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
             repository.refreshUsers(name)
-                .onSuccess { rows -> usersPane.value = UsersPane(targetName = name, users = rows) }
+                .onSuccess { rows -> if (isCurrentTarget(name) && usersPane.value.targetName == name) usersPane.value = UsersPane(targetName = name, users = rows) }
                 .onFailure { error ->
-                    usersPane.value = usersPane.value.copy(
-                        targetName = name,
-                        refreshing = false,
-                        errorMessage = error.message ?: error.javaClass.simpleName,
-                    )
+                    if (isCurrentTarget(name) && usersPane.value.targetName == name) {
+                        usersPane.value = usersPane.value.copy(
+                            targetName = name,
+                            refreshing = false,
+                            errorMessage = error.message ?: error.javaClass.simpleName,
+                        )
+                    }
                 }
         }
     }
 
+    fun clearUserPreview() {
+        userPreviewRequestPayload = null
+        usersPane.value = usersPane.value.copy(preview = null)
+    }
+
     fun previewUserAction(payloadJson: String) {
+        userPreviewRequestPayload = payloadJson
         viewModelScope.launch {
             val payload = JSONObject(payloadJson)
+            val name = payload.optString("name")
+            if (!isCurrentTarget(name) || usersPane.value.targetName != name) return@launch
+            usersPane.value = usersPane.value.copy(preview = null)
             repository.previewUserAction(payload)
-                .onSuccess { preview -> usersPane.value = usersPane.value.copy(targetName = payload.optString("name"), preview = preview) }
-                .onFailure { error -> usersPane.value = usersPane.value.copy(preview = errorPreview("User preview", error)) }
+                .onSuccess { preview ->
+                    if (userPreviewRequestPayload == payloadJson && isCurrentTarget(name) && usersPane.value.targetName == name) {
+                        usersPane.value = usersPane.value.copy(preview = preview)
+                    }
+                }
+                .onFailure { error ->
+                    if (userPreviewRequestPayload == payloadJson && isCurrentTarget(name) && usersPane.value.targetName == name) {
+                        usersPane.value = usersPane.value.copy(preview = errorPreview("User preview", error))
+                    }
+                }
         }
     }
 
@@ -611,13 +732,15 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         viewModelScope.launch {
             servicesPane.value = servicesPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
             repository.refreshServices(name)
-                .onSuccess { rows -> servicesPane.value = ServicesPane(targetName = name, services = rows) }
+                .onSuccess { rows -> if (isCurrentTarget(name) && servicesPane.value.targetName == name) servicesPane.value = ServicesPane(targetName = name, services = rows) }
                 .onFailure { error ->
-                    servicesPane.value = servicesPane.value.copy(
-                        targetName = name,
-                        refreshing = false,
-                        errorMessage = error.message ?: error.javaClass.simpleName,
-                    )
+                    if (isCurrentTarget(name) && servicesPane.value.targetName == name) {
+                        servicesPane.value = servicesPane.value.copy(
+                            targetName = name,
+                            refreshing = false,
+                            errorMessage = error.message ?: error.javaClass.simpleName,
+                        )
+                    }
                 }
         }
     }
@@ -627,31 +750,52 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             servicesPane.value = servicesPane.value.copy(targetName = name, refreshing = true, errorMessage = null)
             repository.refreshServiceDetail(name, service)
                 .onSuccess { row ->
-                    val merged = servicesPane.value.services.map { existing -> if (existing.service == row.service) row else existing }
-                    servicesPane.value = servicesPane.value.copy(
-                        targetName = name,
-                        services = if (merged.any { it.service == row.service }) merged else servicesPane.value.services + row,
-                        selectedService = row,
-                        refreshing = false,
-                        errorMessage = null,
-                    )
+                    if (isCurrentTarget(name) && servicesPane.value.targetName == name) {
+                        val merged = servicesPane.value.services.map { existing -> if (existing.service == row.service) row else existing }
+                        servicesPane.value = servicesPane.value.copy(
+                            targetName = name,
+                            services = if (merged.any { it.service == row.service }) merged else servicesPane.value.services + row,
+                            selectedService = row,
+                            refreshing = false,
+                            errorMessage = null,
+                        )
+                    }
                 }
                 .onFailure { error ->
-                    servicesPane.value = servicesPane.value.copy(
-                        targetName = name,
-                        refreshing = false,
-                        errorMessage = error.message ?: error.javaClass.simpleName,
-                    )
+                    if (isCurrentTarget(name) && servicesPane.value.targetName == name) {
+                        servicesPane.value = servicesPane.value.copy(
+                            targetName = name,
+                            refreshing = false,
+                            errorMessage = error.message ?: error.javaClass.simpleName,
+                        )
+                    }
                 }
         }
     }
 
+    fun clearServicePreview() {
+        servicePreviewRequestPayload = null
+        servicesPane.value = servicesPane.value.copy(preview = null)
+    }
+
     fun previewServiceAction(payloadJson: String) {
+        servicePreviewRequestPayload = payloadJson
         viewModelScope.launch {
             val payload = JSONObject(payloadJson)
+            val name = payload.optString("name")
+            if (!isCurrentTarget(name) || servicesPane.value.targetName != name) return@launch
+            servicesPane.value = servicesPane.value.copy(preview = null)
             repository.previewServiceAction(payload)
-                .onSuccess { preview -> servicesPane.value = servicesPane.value.copy(targetName = payload.optString("name"), preview = preview) }
-                .onFailure { error -> servicesPane.value = servicesPane.value.copy(preview = errorPreview("Service preview", error)) }
+                .onSuccess { preview ->
+                    if (servicePreviewRequestPayload == payloadJson && isCurrentTarget(name) && servicesPane.value.targetName == name) {
+                        servicesPane.value = servicesPane.value.copy(preview = preview)
+                    }
+                }
+                .onFailure { error ->
+                    if (servicePreviewRequestPayload == payloadJson && isCurrentTarget(name) && servicesPane.value.targetName == name) {
+                        servicesPane.value = servicesPane.value.copy(preview = errorPreview("Service preview", error))
+                    }
+                }
         }
     }
 
@@ -669,38 +813,53 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
 
     fun refreshCatalog(kind: String = catalogPane.value.kind) {
+        val request = catalogPane.value.copy(kind = kind)
+        val requestPayload = catalogRefreshIdentity(request)
+        catalogRefreshRequestPayload = requestPayload
         viewModelScope.launch {
-            val current = catalogPane.value.copy(kind = kind, refreshing = true, errorMessage = null)
-            catalogPane.value = current
-            repository.refreshCatalog(kind, current.targetName, current.query, current.category)
+            catalogPane.value = catalogPane.value.copy(kind = kind, refreshing = true, errorMessage = null)
+            repository.refreshCatalog(kind, request.targetName, request.query, request.category)
                 .onSuccess { (entries, categories) ->
-                    val selected = current.entries.filter { it.selected }.map { it.name }.toSet()
-                    catalogPane.value = current.copy(
-                        entries = entries.map { entry -> entry.copy(selected = entry.name in selected) },
-                        categories = categories,
-                        refreshing = false,
-                        errorMessage = null,
-                    )
+                    if (catalogRefreshRequestPayload == requestPayload && catalogRefreshIdentity(catalogPane.value) == requestPayload) {
+                        val latest = catalogPane.value
+                        val selected = latest.entries.filter { it.selected }.map { it.name }.toSet()
+                        catalogPane.value = latest.copy(
+                            entries = entries.map { entry -> entry.copy(selected = entry.name in selected) },
+                            categories = categories,
+                            refreshing = false,
+                            errorMessage = null,
+                        )
+                    }
                 }
-                .onFailure { error -> catalogPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+                .onFailure { error ->
+                    if (catalogRefreshRequestPayload == requestPayload && catalogRefreshIdentity(catalogPane.value) == requestPayload) {
+                        catalogPane.value = catalogPane.value.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName)
+                    }
+                }
         }
     }
 
     fun setCatalogTarget(name: String) {
-        catalogPane.value = catalogPane.value.copy(targetName = name)
+        catalogRefreshRequestPayload = null
+        catalogPreviewRequestPayload = null
+        catalogPane.value = catalogPane.value.copy(targetName = name, preview = null, entries = emptyList())
         refreshCatalog()
     }
 
     fun setCatalogQuery(query: String) {
-        catalogPane.value = catalogPane.value.copy(query = query)
+        catalogPreviewRequestPayload = null
+        catalogPane.value = catalogPane.value.copy(query = query, preview = null, refreshing = false)
     }
 
     fun setCatalogCategory(category: String) {
-        catalogPane.value = catalogPane.value.copy(category = category)
+        catalogRefreshRequestPayload = null
+        catalogPreviewRequestPayload = null
+        catalogPane.value = catalogPane.value.copy(category = category, preview = null)
         refreshCatalog()
     }
 
     fun toggleCatalogEntry(entryName: String) {
+        catalogPreviewRequestPayload = null
         catalogPane.value = catalogPane.value.copy(
             entries = catalogPane.value.entries.map { entry -> if (entry.name == entryName) entry.copy(selected = !entry.selected) else entry },
             preview = null,
@@ -708,14 +867,29 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     }
 
     fun previewCatalogApply() {
+        val request = catalogPane.value
+        val requestPayload = catalogPreviewIdentity(request)
+        catalogPreviewRequestPayload = requestPayload
         viewModelScope.launch {
-            val current = catalogPane.value
-            val target = current.targetName.orEmpty()
-            val names = current.entries.filter { it.selected }.map { it.name }
-            repository.previewCatalog(current.kind, target, names)
-                .onSuccess { preview -> catalogPane.value = current.copy(preview = preview) }
-                .onFailure { error -> catalogPane.value = current.copy(preview = errorPreview("Catalog preview", error)) }
+            val target = request.targetName.orEmpty()
+            val names = request.entries.filter { it.selected }.map { it.name }
+            repository.previewCatalog(request.kind, target, names)
+                .onSuccess { preview ->
+                    if (catalogPreviewRequestPayload == requestPayload && catalogPreviewIdentity(catalogPane.value) == requestPayload) {
+                        catalogPane.value = catalogPane.value.copy(preview = preview)
+                    }
+                }
+                .onFailure { error ->
+                    if (catalogPreviewRequestPayload == requestPayload && catalogPreviewIdentity(catalogPane.value) == requestPayload) {
+                        catalogPane.value = catalogPane.value.copy(preview = errorPreview("Catalog preview", error))
+                    }
+                }
         }
+    }
+
+    fun clearCatalogPreview() {
+        catalogPreviewRequestPayload = null
+        catalogPane.value = catalogPane.value.copy(preview = null)
     }
 
     fun catalogApplyPayloadJson(): String {
@@ -752,48 +926,88 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     }
 
     fun updateTransferImportArchive(path: String) {
-        transferPane.value = transferPane.value.copy(importArchive = path, errorMessage = null)
+        transferImportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(importArchive = path, importInspection = null, refreshing = false, errorMessage = null)
     }
 
     fun updateTransferImportTarget(name: String) {
-        transferPane.value = transferPane.value.copy(importTargetName = name)
+        transferImportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(importTargetName = name, importInspection = null, refreshing = false, errorMessage = null)
+    }
+
+    fun updateTransferImportPassword(password: String) {
+        transferImportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(importPassword = password, importInspection = null, refreshing = false, errorMessage = null)
     }
 
     fun updateTransferExportTarget(name: String) {
-        transferPane.value = transferPane.value.copy(exportTargetName = name)
+        transferExportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(exportTargetName = name, exportPreview = null, refreshing = false, errorMessage = null)
     }
 
     fun updateTransferExportArchive(path: String) {
-        transferPane.value = transferPane.value.copy(exportArchive = path)
+        transferExportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(exportArchive = path, exportPreview = null, refreshing = false, errorMessage = null)
     }
 
     fun inspectTransferImport() {
+        val request = transferPane.value
+        val requestPayload = transferImportPreviewIdentity(request)
+        transferImportPreviewRequestPayload = requestPayload
         viewModelScope.launch {
-            val current = transferPane.value.copy(refreshing = true, errorMessage = null)
-            transferPane.value = current
-            repository.inspectTransferImport(current.importArchive, current.importTargetName, current.conflict)
-                .onSuccess { preview -> transferPane.value = current.copy(importInspection = preview, refreshing = false, errorMessage = null) }
-                .onFailure { error -> transferPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+            transferPane.value = transferPane.value.copy(refreshing = true, errorMessage = null)
+            repository.inspectTransferImport(request.importArchive, request.importTargetName, request.conflict, request.importPassword)
+                .onSuccess { preview ->
+                    if (transferImportPreviewRequestPayload == requestPayload && transferImportPreviewIdentity(transferPane.value) == requestPayload) {
+                        transferPane.value = transferPane.value.copy(importInspection = preview, refreshing = false, errorMessage = null)
+                    }
+                }
+                .onFailure { error ->
+                    if (transferImportPreviewRequestPayload == requestPayload && transferImportPreviewIdentity(transferPane.value) == requestPayload) {
+                        transferPane.value = transferPane.value.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName)
+                    }
+                }
         }
     }
 
     fun previewTransferExport() {
+        val request = transferPane.value
+        val requestPayload = transferExportPreviewIdentity(request)
+        transferExportPreviewRequestPayload = requestPayload
         viewModelScope.launch {
-            val current = transferPane.value.copy(refreshing = true, errorMessage = null)
-            transferPane.value = current
-            repository.previewTransferExport(current.exportTargetName, current.exportArchive)
-                .onSuccess { preview -> transferPane.value = current.copy(exportPreview = preview, refreshing = false, errorMessage = null) }
-                .onFailure { error -> transferPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+            transferPane.value = transferPane.value.copy(refreshing = true, errorMessage = null)
+            repository.previewTransferExport(request.exportTargetName, request.exportArchive)
+                .onSuccess { preview ->
+                    if (transferExportPreviewRequestPayload == requestPayload && transferExportPreviewIdentity(transferPane.value) == requestPayload) {
+                        transferPane.value = transferPane.value.copy(exportPreview = preview, refreshing = false, errorMessage = null)
+                    }
+                }
+                .onFailure { error ->
+                    if (transferExportPreviewRequestPayload == requestPayload && transferExportPreviewIdentity(transferPane.value) == requestPayload) {
+                        transferPane.value = transferPane.value.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName)
+                    }
+                }
         }
     }
 
+    fun clearTransferImportPreview() {
+        transferImportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(importInspection = null)
+    }
+
+    fun clearTransferExportPreview() {
+        transferExportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(exportPreview = null)
+    }
+
     fun refreshTransferArtifacts() {
+        artifactCleanupPreviewRequestPayload = null
         viewModelScope.launch {
             val current = transferPane.value.copy(refreshing = true, errorMessage = null)
             transferPane.value = current
             repository.refreshTransferArtifacts()
-                .onSuccess { artifacts -> transferPane.value = current.copy(artifacts = artifacts, refreshing = false, errorMessage = null) }
-                .onFailure { error -> transferPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
+                .onSuccess { artifacts -> transferPane.value = transferPane.value.copy(artifacts = artifacts, artifactCleanupPreview = null, refreshing = false, errorMessage = null) }
+                .onFailure { error -> transferPane.value = transferPane.value.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
         }
     }
 
@@ -801,6 +1015,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         val current = transferPane.value
         val payload = JSONObject().put("archive", current.importArchive).put("conflict", current.conflict)
         current.importTargetName.takeIf(String::isNotBlank)?.let { payload.put("name", it) }
+        current.importPassword.takeIf(String::isNotBlank)?.let { payload.put("password", it) }
         return payload.withPreviewContract(current.importInspection, "transfer.import").toString()
     }
 
@@ -811,11 +1026,30 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .toString()
 
     fun previewArtifactCleanup(path: String? = null, deleteAll: Boolean = true) {
+        val requestPayload = JSONObject()
+            .put("deleteAll", deleteAll)
+            .apply { path?.takeIf(String::isNotBlank)?.let { put("path", it) } }
+            .toString()
+        artifactCleanupPreviewRequestPayload = requestPayload
+        transferPane.value = transferPane.value.copy(artifactCleanupPreview = null)
         viewModelScope.launch {
             repository.previewArtifactCleanup(deleteAll = deleteAll, path = path)
-                .onSuccess { preview -> transferPane.value = transferPane.value.copy(artifactCleanupPreview = preview) }
-                .onFailure { error -> transferPane.value = transferPane.value.copy(artifactCleanupPreview = errorPreview("Artifact cleanup preview", error)) }
+                .onSuccess { preview ->
+                    if (artifactCleanupPreviewRequestPayload == requestPayload) {
+                        transferPane.value = transferPane.value.copy(artifactCleanupPreview = preview)
+                    }
+                }
+                .onFailure { error ->
+                    if (artifactCleanupPreviewRequestPayload == requestPayload) {
+                        transferPane.value = transferPane.value.copy(artifactCleanupPreview = errorPreview("Artifact cleanup preview", error))
+                    }
+                }
         }
+    }
+
+    fun clearArtifactCleanupPreview() {
+        artifactCleanupPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(artifactCleanupPreview = null)
     }
 
     fun artifactCleanupPayloadJson(path: String? = null, deleteAll: Boolean = false): String {
@@ -992,6 +1226,31 @@ private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
     .put("release", release.takeIf(String::isNotBlank) ?: JSONObject.NULL)
     .put("version", version.takeIf(String::isNotBlank) ?: JSONObject.NULL)
     .put("mirror", mirror)
+
+private fun transferImportPreviewIdentity(pane: TransferPane): String = JSONObject()
+    .put("archive", pane.importArchive)
+    .put("name", pane.importTargetName)
+    .put("conflict", pane.conflict)
+    .put("password", pane.importPassword)
+    .toString()
+
+private fun transferExportPreviewIdentity(pane: TransferPane): String = JSONObject()
+    .put("name", pane.exportTargetName)
+    .put("archive", pane.exportArchive)
+    .toString()
+
+private fun catalogRefreshIdentity(pane: CatalogPane): String = JSONObject()
+    .put("kind", pane.kind)
+    .put("name", pane.targetName.orEmpty())
+    .put("query", pane.query)
+    .put("category", pane.category)
+    .toString()
+
+private fun catalogPreviewIdentity(pane: CatalogPane): String = JSONObject()
+    .put("kind", pane.kind)
+    .put("name", pane.targetName.orEmpty())
+    .put("names", JSONArray(pane.entries.filter { it.selected }.map { it.name }.sorted()))
+    .toString()
 
 private fun JSONObject.withPreviewContract(preview: PreviewSummary?, operation: String): JSONObject {
     if (preview == null || preview.actionOperation != operation) return this

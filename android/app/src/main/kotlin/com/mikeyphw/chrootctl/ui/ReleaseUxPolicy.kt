@@ -22,13 +22,7 @@ object ReleaseUxPolicy {
         ReleaseSmokeProfile("desktop-width", minWidthDp = 1180, maxWidthDp = null, minHeightDp = 720, navigationType = PrimaryNavigationType.Rail),
     )
 
-    val releaseRoutes: List<AppDestination> = listOf(
-        AppDestination.Home,
-        AppDestination.Chroots,
-        AppDestination.Install,
-        AppDestination.Activity,
-        AppDestination.Tools,
-    )
+    val releaseRoutes: List<AppDestination> = AppDestination.entries.toList()
 
     val accessibilitySealChecks: List<String> = listOf(
         "minimum-48dp-touch-targets",

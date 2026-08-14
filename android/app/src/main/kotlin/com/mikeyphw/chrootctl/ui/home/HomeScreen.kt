@@ -63,6 +63,7 @@ fun HomeScreen(
     onOpenInstall: () -> Unit,
     onOpenActivity: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    notificationsEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(ChrootSpacing.md)) {
@@ -91,6 +92,7 @@ fun HomeScreen(
                 onOpenInstall = onOpenInstall,
                 onOpenActivity = onOpenActivity,
                 onRequestNotificationPermission = onRequestNotificationPermission,
+                notificationsEnabled = notificationsEnabled,
             )
         }
     }
@@ -123,6 +125,7 @@ private fun HomeReady(
     onOpenInstall: () -> Unit,
     onOpenActivity: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    notificationsEnabled: Boolean,
 ) {
     if (refreshState is RefreshState.Failed) {
         val copy = backendIssueCopy(classifyBackendIssue(refreshState.message))
@@ -177,26 +180,28 @@ private fun HomeReady(
     RecentActivityCard(operations = operations, onOpenActivity = onOpenActivity)
     ReleaseReadinessCard(snapshot)
 
-    AppCard {
-        Text(
-            stringResource(R.string.notifications_permission_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.semantics { heading() },
-        )
-        Text(
-            stringResource(R.string.notifications_permission_body),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        ActionFlowRow {
-            OutlinedButton(
-                onClick = onStartRefreshOperation,
-                modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
-            ) { Text(stringResource(R.string.action_run_refresh_operation)) }
-            OutlinedButton(
-                onClick = onRequestNotificationPermission,
-                modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
-            ) { Text(stringResource(R.string.notifications_permission_action)) }
+    if (!notificationsEnabled) {
+        AppCard {
+            Text(
+                stringResource(R.string.notifications_permission_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                stringResource(R.string.notifications_permission_body),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ActionFlowRow {
+                OutlinedButton(
+                    onClick = onStartRefreshOperation,
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) { Text(stringResource(R.string.action_run_refresh_operation)) }
+                OutlinedButton(
+                    onClick = onRequestNotificationPermission,
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) { Text(stringResource(R.string.notifications_permission_action)) }
+            }
         }
     }
 }

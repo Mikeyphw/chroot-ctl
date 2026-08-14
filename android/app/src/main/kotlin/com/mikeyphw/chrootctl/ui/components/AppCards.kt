@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -166,7 +165,7 @@ fun ChipRow(labels: List<String>, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(ChrootSpacing.xs),
         verticalArrangement = Arrangement.spacedBy(ChrootSpacing.xs),
     ) {
-        labels.forEach { label -> AssistChip(onClick = {}, label = { Text(label) }) }
+        labels.forEach { label -> StatusPill(label = label, tone = StatusTone.Neutral) }
     }
 }
 

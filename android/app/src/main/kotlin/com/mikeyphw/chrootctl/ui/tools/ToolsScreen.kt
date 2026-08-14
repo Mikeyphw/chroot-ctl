@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.chrootctl.R
 import com.mikeyphw.chrootctl.model.CatalogEntrySummary
@@ -41,6 +42,7 @@ import com.mikeyphw.chrootctl.model.SystemRowSummary
 import com.mikeyphw.chrootctl.model.SystemSupportPane
 import com.mikeyphw.chrootctl.model.ToolCapabilityGroup
 import com.mikeyphw.chrootctl.model.TransferPane
+import com.mikeyphw.chrootctl.model.approvesOperation
 import com.mikeyphw.chrootctl.ui.ChrootLayout
 import com.mikeyphw.chrootctl.ui.ToolsWorkspace
 import com.mikeyphw.chrootctl.ui.components.ChipRow
@@ -70,6 +72,7 @@ fun ToolsScreen(
     onComparePackages: () -> Unit,
     onUpdateTransferImportArchive: (String) -> Unit,
     onUpdateTransferImportTarget: (String) -> Unit,
+    onUpdateTransferImportPassword: (String) -> Unit,
     onUpdateTransferExportTarget: (String) -> Unit,
     onUpdateTransferExportArchive: (String) -> Unit,
     onInspectTransferImport: () -> Unit,
@@ -130,6 +133,7 @@ fun ToolsScreen(
                 pane = transferPane,
                 onUpdateImportArchive = onUpdateTransferImportArchive,
                 onUpdateImportTarget = onUpdateTransferImportTarget,
+                onUpdateImportPassword = onUpdateTransferImportPassword,
                 onUpdateExportTarget = onUpdateTransferExportTarget,
                 onUpdateExportArchive = onUpdateTransferExportArchive,
                 onInspectImport = onInspectTransferImport,
@@ -216,7 +220,7 @@ private fun CatalogCard(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { onRefreshCatalog(pane.kind) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.catalog_search_action)) }
                 Button(onClick = onPreview, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.preview_action)) }
-                Button(onClick = onApply, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.preview?.ok == true) { Text(stringResource(R.string.apply_action)) }
+                Button(onClick = onApply, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.preview.approvesOperation("catalog.apply")) { Text(stringResource(R.string.apply_action)) }
             }
             if (pane.categories.isNotEmpty()) {
                 ChipRow(listOf(stringResource(R.string.catalog_all_categories)) + pane.categories)
@@ -287,6 +291,7 @@ private fun TransferCard(
     pane: TransferPane,
     onUpdateImportArchive: (String) -> Unit,
     onUpdateImportTarget: (String) -> Unit,
+    onUpdateImportPassword: (String) -> Unit,
     onUpdateExportTarget: (String) -> Unit,
     onUpdateExportArchive: (String) -> Unit,
     onInspectImport: () -> Unit,
@@ -306,10 +311,18 @@ private fun TransferCard(
             if (names.isNotBlank()) Text(stringResource(R.string.catalog_available_chroots, names), color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(value = pane.importArchive, onValueChange = onUpdateImportArchive, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_import_archive_label)) })
             OutlinedTextField(value = pane.importTargetName, onValueChange = onUpdateImportTarget, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_import_target_label)) })
+            OutlinedTextField(
+                value = pane.importPassword,
+                onValueChange = onUpdateImportPassword,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.transfer_import_password_label)) },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+            )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onPickImportArchive, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_pick_archive_action)) }
                 Button(onClick = onInspectImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_inspect_action)) }
-                Button(onClick = onStartImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.importInspection?.ok == true) { Text(stringResource(R.string.transfer_import_action)) }
+                Button(onClick = onStartImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.importInspection.approvesOperation("transfer.import")) { Text(stringResource(R.string.transfer_import_action)) }
             }
             pane.importInspection?.let { PreviewBlock(it) }
             OutlinedTextField(value = pane.exportTargetName, onValueChange = onUpdateExportTarget, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_export_target_label)) })
@@ -317,7 +330,7 @@ private fun TransferCard(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onCreateExportDocument, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_create_document_action)) }
                 Button(onClick = onPreviewExport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_preview_export_action)) }
-                Button(onClick = onStartExport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.exportPreview?.ok == true) { Text(stringResource(R.string.transfer_export_action)) }
+                Button(onClick = onStartExport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.exportPreview.approvesOperation("transfer.export")) { Text(stringResource(R.string.transfer_export_action)) }
             }
             pane.exportPreview?.let { PreviewBlock(it) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -325,7 +338,18 @@ private fun TransferCard(
                 Button(onClick = onCleanupAllArtifacts, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_cleanup_artifacts_action)) }
             }
             pane.artifactCleanupPreview?.let { PreviewBlock(it) }
-            pane.artifacts.take(8).forEach { artifact -> Text(stringResource(R.string.transfer_artifact_row, artifact.name, artifact.sizeBytes, artifact.modifiedAt), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            pane.artifacts.take(8).forEach { artifact ->
+                Text(
+                    stringResource(
+                        R.string.transfer_artifact_row,
+                        artifact.name,
+                        artifact.kind,
+                        artifact.sizeBytes,
+                        artifact.expiresAt.ifBlank { stringResource(R.string.transfer_artifact_no_expiry) },
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }

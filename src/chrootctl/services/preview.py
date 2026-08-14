@@ -18,8 +18,8 @@ class PreviewService:
     def export(self, *, name: str, archive: str | None = None) -> dict[str, Any]:
         return self.services.chroots().export_preview(name.strip(), archive=Path(archive).expanduser() if archive else None)
 
-    def import_(self, *, archive: str, name: str | None = None, conflict: str = "rename") -> dict[str, Any]:
-        return self.services.chroots().import_preview(Path(archive).expanduser(), name=name, conflict=conflict)
+    def import_(self, *, archive: str, name: str | None = None, conflict: str = "rename", password: str | None = None) -> dict[str, Any]:
+        return self.services.chroots().import_preview(Path(archive).expanduser(), name=name, conflict=conflict, password=password)
 
     def delete(self, *, name: str) -> dict[str, Any]:
         return self.services.chroots().delete_preview(name.strip())

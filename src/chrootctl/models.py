@@ -177,6 +177,7 @@ class ChrootArchiveInspection:
     installed: bool
     metadata: dict[str, str] = field(default_factory=dict)
     size_bytes: int = 0
+    extracted_size_bytes: int = 0
     created_at: str = ""
     checksum: str | None = None
     checksum_path: Path | None = None
@@ -199,6 +200,7 @@ class ChrootArchiveInspection:
             "installed": display_value(self.installed),
             "metadata": display_value(self.metadata),
             "size_bytes": display_value(self.size_bytes),
+            "extracted_size_bytes": display_value(self.extracted_size_bytes),
             "created_at": self.created_at,
             "checksum": display_value(self.checksum),
             "checksum_path": display_value(self.checksum_path),
@@ -575,18 +577,21 @@ class ChrootRecord:
     name: str
     distro: str
     path: str
+    arch: str
     release_name: str
     version: str
     phase: str
     installed: bool
     created_at: str
     updated_at: str
+    metadata: dict[str, str] = field(default_factory=dict)
 
     def to_display_dict(self) -> dict[str, str]:
-        return {
+        data = {
             "name": self.name,
             "distro": self.distro,
             "path": self.path,
+            "arch": self.arch,
             "release_name": self.release_name,
             "version": self.version,
             "phase": self.phase,
@@ -594,6 +599,9 @@ class ChrootRecord:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+        for key, value in self.metadata.items():
+            data[f"metadata.{key}"] = value
+        return data
 
 
 @dataclass(frozen=True, slots=True)

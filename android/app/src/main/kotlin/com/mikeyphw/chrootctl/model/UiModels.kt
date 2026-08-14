@@ -144,6 +144,13 @@ data class PreviewSummary(
     val expiresAt: Double = 0.0,
 )
 
+fun PreviewSummary?.approvesOperation(operation: String): Boolean =
+    this?.ok == true &&
+        actionOperation == operation &&
+        previewId.isNotBlank() &&
+        payloadHash.isNotBlank() &&
+        resourceRevision.isNotBlank()
+
 data class SnapshotSummary(
     val name: String,
     val chrootName: String,
@@ -286,15 +293,19 @@ data class PackagePane(
 )
 
 data class TransferArtifactSummary(
+    val artifactId: String,
     val name: String,
     val path: String,
+    val kind: String,
     val sizeBytes: Long,
     val modifiedAt: String,
+    val expiresAt: String,
 )
 
 data class TransferPane(
     val importArchive: String = "",
     val importTargetName: String = "",
+    val importPassword: String = "",
     val exportTargetName: String = "",
     val exportArchive: String = "",
     val conflict: String = "rename",

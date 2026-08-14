@@ -117,4 +117,9 @@ def create_service_container(config_path=None, *, dry_run: bool = False, verbose
     base_config = ChrootConfig.load(config_path)
     registry = ChrootRegistry(base_config.database_path)
     logger = configure_logging(base_config.log_file, verbose=verbose)
-    return ServiceContainer(base_config=base_config, registry=registry, logger=logger, dry_run=dry_run)
+    container = ServiceContainer(base_config=base_config, registry=registry, logger=logger, dry_run=dry_run)
+    if not dry_run:
+        from .storage_safety import recover_pending_fs_mutations
+
+        recover_pending_fs_mutations(container)
+    return container

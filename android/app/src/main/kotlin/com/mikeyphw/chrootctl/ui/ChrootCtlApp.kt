@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mikeyphw.chrootctl.R
 import com.mikeyphw.chrootctl.model.Loadable
+import com.mikeyphw.chrootctl.model.approvesOperation
 import com.mikeyphw.chrootctl.ui.activity.ActivityScreen
 import com.mikeyphw.chrootctl.ui.chroots.ChrootsScreen
 import com.mikeyphw.chrootctl.ui.components.AdaptiveNavigationShell
@@ -39,16 +41,19 @@ fun ChrootCtlApp(
     onPickImportArchive: () -> Unit,
     onCreateExportDocument: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    notificationsEnabled: Boolean,
     openOperationId: String? = null,
+    openOperationNonce: Long = 0L,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var destinationName by rememberSaveable { mutableStateOf(AppDestination.Home.name) }
     val destination = AppDestination.entries.firstOrNull { it.name == destinationName } ?: AppDestination.Home
+    val destinationStateHolder = rememberSaveableStateHolder()
     fun navigate(item: AppDestination) {
         destinationName = item.name
     }
 
-    LaunchedEffect(openOperationId) {
+    LaunchedEffect(openOperationId, openOperationNonce) {
         openOperationId?.takeIf(String::isNotBlank)?.let { operationId ->
             viewModel.selectOperation(operationId)
             viewModel.refreshSelectedOperation()
@@ -61,6 +66,7 @@ fun ChrootCtlApp(
             destination = destination,
             onDestinationSelected = ::navigate,
         ) { shellModifier ->
+            destinationStateHolder.SaveableStateProvider(destination.name) {
             AppContent(
                 destination = destination,
                 state = uiState,
@@ -70,6 +76,7 @@ fun ChrootCtlApp(
                 openInstall = { navigate(AppDestination.Install) },
                 openActivity = { navigate(AppDestination.Activity) },
                 requestNotificationPermission = onRequestNotificationPermission,
+                notificationsEnabled = notificationsEnabled,
                 selectChroot = viewModel::selectChroot,
                 refreshSelectedChroot = viewModel::refreshSelectedChroot,
                 selectOperation = viewModel::selectOperation,
@@ -87,47 +94,96 @@ fun ChrootCtlApp(
                 updateInstallDraft = viewModel::updateInstallDraft,
                 refreshInstallForm = viewModel::refreshInstallForm,
                 previewInstall = viewModel::previewInstall,
-                startInstall = { onStartBridgeOperation("install.run", viewModel.installPayloadJson()) },
+                startInstall = {
+                    val payload = viewModel.installPayloadJson()
+                    viewModel.clearInstallPreview()
+                    onStartBridgeOperation("install.run", payload)
+                },
                 previewLifecycle = viewModel::previewLifecycle,
-                startLifecycle = { name, operation -> onStartBridgeOperation(operation, viewModel.lifecyclePayloadJson(name, operation.substringAfterLast('.'))) },
-                executeRemove = { name, confirmation -> onStartBridgeOperation("chroots.remove.execute", viewModel.removePayloadJson(name, confirmation)) },
+                startLifecycle = { name, operation ->
+                    val payload = viewModel.lifecyclePayloadJson(name, operation.substringAfterLast('.'))
+                    viewModel.clearLifecyclePreview()
+                    onStartBridgeOperation(operation, payload)
+                },
+                executeRemove = { name, confirmation ->
+                    val payload = viewModel.removePayloadJson(name, confirmation)
+                    viewModel.clearLifecyclePreview()
+                    onStartBridgeOperation("chroots.remove.execute", payload)
+                },
                 refreshSnapshots = viewModel::refreshSnapshots,
                 refreshStorage = viewModel::refreshStorage,
                 refreshLogs = viewModel::refreshLogs,
                 previewSnapshotCreate = viewModel::previewSnapshotCreate,
-                startSnapshotCreate = { name, snapshot -> onStartBridgeOperation("snapshots.create", viewModel.snapshotCreatePayloadJson(name, snapshot)) },
+                startSnapshotCreate = { name, snapshot ->
+                    val payload = viewModel.snapshotCreatePayloadJson(name, snapshot)
+                    viewModel.clearSnapshotPreview()
+                    onStartBridgeOperation("snapshots.create", payload)
+                },
                 previewSnapshotAction = viewModel::previewSnapshotAction,
-                startSnapshotRestore = { name, snapshot, confirmation -> onStartBridgeOperation("snapshots.restore", viewModel.snapshotRestorePayloadJson(name, snapshot, confirmation)) },
-                startSnapshotExport = { name, snapshot -> onStartBridgeOperation("snapshots.export", viewModel.snapshotExportPayloadJson(name, snapshot)) },
+                startSnapshotRestore = { name, snapshot, confirmation ->
+                    val payload = viewModel.snapshotRestorePayloadJson(name, snapshot, confirmation)
+                    viewModel.clearSnapshotPreview()
+                    onStartBridgeOperation("snapshots.restore", payload)
+                },
+                startSnapshotExport = { name, snapshot ->
+                    val payload = viewModel.snapshotExportPayloadJson(name, snapshot)
+                    viewModel.clearSnapshotPreview()
+                    onStartBridgeOperation("snapshots.export", payload)
+                },
                 refreshUsers = viewModel::refreshUsers,
                 previewUserPayload = viewModel::previewUserAction,
-                startUserOperation = { operation, payload -> onStartBridgeOperation(operation, viewModel.userOperationPayloadJson(operation, payload)) },
+                clearUserPreview = viewModel::clearUserPreview,
+                startUserOperation = { operation, payload ->
+                    val boundPayload = viewModel.userOperationPayloadJson(operation, payload)
+                    viewModel.clearUserPreview()
+                    onStartBridgeOperation(operation, boundPayload)
+                },
                 refreshServices = viewModel::refreshServices,
                 refreshServiceDetail = viewModel::refreshServiceDetail,
                 previewServicePayload = viewModel::previewServiceAction,
-                startServiceOperation = { operation, payload -> onStartBridgeOperation(operation, viewModel.serviceOperationPayloadJson(operation, payload)) },
+                clearServicePreview = viewModel::clearServicePreview,
+                startServiceOperation = { operation, payload ->
+                    val boundPayload = viewModel.serviceOperationPayloadJson(operation, payload)
+                    viewModel.clearServicePreview()
+                    onStartBridgeOperation(operation, boundPayload)
+                },
                 refreshCatalog = viewModel::refreshCatalog,
                 setCatalogTarget = viewModel::setCatalogTarget,
                 setCatalogQuery = viewModel::setCatalogQuery,
                 setCatalogCategory = viewModel::setCatalogCategory,
                 toggleCatalogEntry = viewModel::toggleCatalogEntry,
                 previewCatalogApply = viewModel::previewCatalogApply,
-                startCatalogApply = { onStartBridgeOperation("catalog.apply", viewModel.catalogApplyPayloadJson()) },
+                startCatalogApply = {
+                    val payload = viewModel.catalogApplyPayloadJson()
+                    viewModel.clearCatalogPreview()
+                    onStartBridgeOperation("catalog.apply", payload)
+                },
                 refreshPackageInventory = viewModel::refreshPackageInventory,
                 updatePackageCompare = viewModel::updatePackageCompare,
                 comparePackages = viewModel::comparePackages,
                 updateTransferImportArchive = viewModel::updateTransferImportArchive,
                 updateTransferImportTarget = viewModel::updateTransferImportTarget,
+                updateTransferImportPassword = viewModel::updateTransferImportPassword,
                 updateTransferExportTarget = viewModel::updateTransferExportTarget,
                 updateTransferExportArchive = viewModel::updateTransferExportArchive,
                 inspectTransferImport = viewModel::inspectTransferImport,
                 previewTransferExport = viewModel::previewTransferExport,
                 refreshTransferArtifacts = viewModel::refreshTransferArtifacts,
-                startTransferImport = { onStartBridgeOperation("transfer.import", viewModel.transferImportPayloadJson()) },
-                startTransferExport = { onStartBridgeOperation("transfer.export", viewModel.transferExportPayloadJson()) },
+                startTransferImport = {
+                    val payload = viewModel.transferImportPayloadJson()
+                    viewModel.clearTransferImportPreview()
+                    onStartBridgeOperation("transfer.import", payload)
+                },
+                startTransferExport = {
+                    val payload = viewModel.transferExportPayloadJson()
+                    viewModel.clearTransferExportPreview()
+                    onStartBridgeOperation("transfer.export", payload)
+                },
                 cleanupAllArtifacts = {
-                    if (uiState.transferPane.artifactCleanupPreview?.ok == true) {
-                        onStartBridgeOperation("artifacts.cleanup", viewModel.artifactCleanupPayloadJson(deleteAll = true))
+                    if (uiState.transferPane.artifactCleanupPreview.approvesOperation("artifacts.cleanup")) {
+                        val payload = viewModel.artifactCleanupPayloadJson(deleteAll = true)
+                        viewModel.clearArtifactCleanupPreview()
+                        onStartBridgeOperation("artifacts.cleanup", payload)
                     } else {
                         viewModel.previewArtifactCleanup(deleteAll = true)
                     }
@@ -155,6 +211,7 @@ fun ChrootCtlApp(
                 createSmokeFailureBundle = { onStartBridgeOperation("smoke.failure.bundle", viewModel.smokeFailureBundlePayloadJson()) },
                 modifier = shellModifier,
             )
+            }
         }
     }
 }
@@ -169,6 +226,7 @@ private fun AppContent(
     openInstall: () -> Unit,
     openActivity: () -> Unit,
     requestNotificationPermission: () -> Unit,
+    notificationsEnabled: Boolean,
     selectChroot: (String) -> Unit,
     refreshSelectedChroot: () -> Unit,
     selectOperation: (String) -> Unit,
@@ -194,10 +252,12 @@ private fun AppContent(
     startSnapshotExport: (String, String) -> Unit,
     refreshUsers: (String) -> Unit,
     previewUserPayload: (String) -> Unit,
+    clearUserPreview: () -> Unit,
     startUserOperation: (String, String) -> Unit,
     refreshServices: (String) -> Unit,
     refreshServiceDetail: (String, String) -> Unit,
     previewServicePayload: (String) -> Unit,
+    clearServicePreview: () -> Unit,
     startServiceOperation: (String, String) -> Unit,
     refreshCatalog: (String) -> Unit,
     setCatalogTarget: (String) -> Unit,
@@ -211,6 +271,7 @@ private fun AppContent(
     comparePackages: () -> Unit,
     updateTransferImportArchive: (String) -> Unit,
     updateTransferImportTarget: (String) -> Unit,
+    updateTransferImportPassword: (String) -> Unit,
     updateTransferExportTarget: (String) -> Unit,
     updateTransferExportArchive: (String) -> Unit,
     inspectTransferImport: () -> Unit,
@@ -264,11 +325,15 @@ private fun AppContent(
             } else {
                 null
             }
-            val headerTone = when {
-                state.refreshState is RefreshState.Failed -> StatusTone.Warning
-                state.refreshState is RefreshState.Refreshing -> StatusTone.Accent
-                homeReady -> StatusTone.Success
-                else -> StatusTone.Neutral
+            val headerTone = if (destination == AppDestination.Home) {
+                when {
+                    state.refreshState is RefreshState.Failed -> StatusTone.Warning
+                    state.refreshState is RefreshState.Refreshing -> StatusTone.Accent
+                    homeReady -> StatusTone.Success
+                    else -> StatusTone.Neutral
+                }
+            } else {
+                StatusTone.Neutral
             }
             PageHeader(
                 title = currentPaneTitle,
@@ -288,6 +353,7 @@ private fun AppContent(
                     onOpenInstall = openInstall,
                     onOpenActivity = openActivity,
                     onRequestNotificationPermission = requestNotificationPermission,
+                    notificationsEnabled = notificationsEnabled,
                 )
                 AppDestination.Chroots -> ChrootsScreen(
                     chroots = state.chroots,
@@ -320,10 +386,12 @@ private fun AppContent(
                     onStartSnapshotExport = startSnapshotExport,
                     onRefreshUsers = refreshUsers,
                     onPreviewUserPayload = previewUserPayload,
+                    onClearUserPreview = clearUserPreview,
                     onStartUserOperation = startUserOperation,
                     onRefreshServices = refreshServices,
                     onRefreshServiceDetail = refreshServiceDetail,
                     onPreviewServicePayload = previewServicePayload,
+                    onClearServicePreview = clearServicePreview,
                     onStartServiceOperation = startServiceOperation,
                     onRefreshSystemSupport = refreshSystemSupport,
                     onPreviewSupportBundle = previewSupportBundle,
@@ -374,6 +442,7 @@ private fun AppContent(
                     onComparePackages = comparePackages,
                     onUpdateTransferImportArchive = updateTransferImportArchive,
                     onUpdateTransferImportTarget = updateTransferImportTarget,
+                    onUpdateTransferImportPassword = updateTransferImportPassword,
                     onUpdateTransferExportTarget = updateTransferExportTarget,
                     onUpdateTransferExportArchive = updateTransferExportArchive,
                     onInspectTransferImport = inspectTransferImport,

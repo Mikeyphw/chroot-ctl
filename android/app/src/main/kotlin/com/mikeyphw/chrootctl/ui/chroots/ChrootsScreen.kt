@@ -39,6 +39,7 @@ import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.LogsPane
 import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.PreviewSummary
+import com.mikeyphw.chrootctl.model.approvesOperation
 import com.mikeyphw.chrootctl.model.SnapshotPane
 import com.mikeyphw.chrootctl.model.SnapshotSummary
 import com.mikeyphw.chrootctl.model.StoragePane
@@ -130,10 +131,12 @@ fun ChrootsScreen(
     onStartSnapshotExport: (String, String) -> Unit,
     onRefreshUsers: (String) -> Unit,
     onPreviewUserPayload: (String) -> Unit,
+    onClearUserPreview: () -> Unit,
     onStartUserOperation: (String, String) -> Unit,
     onRefreshServices: (String) -> Unit,
     onRefreshServiceDetail: (String, String) -> Unit,
     onPreviewServicePayload: (String) -> Unit,
+    onClearServicePreview: () -> Unit,
     onStartServiceOperation: (String, String) -> Unit,
     onRefreshSystemSupport: () -> Unit,
     onPreviewSupportBundle: () -> Unit,
@@ -198,10 +201,12 @@ fun ChrootsScreen(
             onStartSnapshotExport = onStartSnapshotExport,
             onRefreshUsers = onRefreshUsers,
             onPreviewUserPayload = onPreviewUserPayload,
+            onClearUserPreview = onClearUserPreview,
             onStartUserOperation = onStartUserOperation,
             onRefreshServices = onRefreshServices,
             onRefreshServiceDetail = onRefreshServiceDetail,
             onPreviewServicePayload = onPreviewServicePayload,
+            onClearServicePreview = onClearServicePreview,
             onStartServiceOperation = onStartServiceOperation,
             onRefreshSystemSupport = onRefreshSystemSupport,
             onPreviewSupportBundle = onPreviewSupportBundle,
@@ -226,7 +231,6 @@ fun ChrootsScreen(
                 onSelect(name)
             },
             onPreviewLifecycle = onPreviewLifecycle,
-            onStartLifecycle = onStartLifecycle,
             onPreviewSnapshotCreate = onPreviewSnapshotCreate,
             modifier = modifier,
         )
@@ -243,7 +247,6 @@ private fun ChrootWorkspaceLauncher(
     onFilterChange: (ChrootListFilter) -> Unit,
     onOpenWorkspace: (String) -> Unit,
     onPreviewLifecycle: (String, String) -> Unit,
-    onStartLifecycle: (String, String) -> Unit,
     onPreviewSnapshotCreate: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -280,7 +283,6 @@ private fun ChrootWorkspaceLauncher(
                     selected = false,
                     onSelect = { onOpenWorkspace(chroot.name) },
                     onPreviewLifecycle = onPreviewLifecycle,
-                    onStartLifecycle = onStartLifecycle,
                     onPreviewSnapshotCreate = { name ->
                         onPreviewSnapshotCreate(name, "snapshot-${System.currentTimeMillis() / 1000}")
                     },
@@ -311,7 +313,6 @@ private fun Phase32ChrootCard(
     selected: Boolean,
     onSelect: () -> Unit,
     onPreviewLifecycle: (String, String) -> Unit,
-    onStartLifecycle: (String, String) -> Unit,
     onPreviewSnapshotCreate: (String) -> Unit,
 ) {
     val running = isRunningChrootStatus(chroot.status) || chroot.mountState?.let(::isRunningChrootStatus) == true
@@ -348,18 +349,12 @@ private fun Phase32ChrootCard(
                     Text(stringResource(R.string.action_open_workspace))
                 }
                 if (running) {
-                    OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    OutlinedButton(onClick = { onSelect(); onPreviewLifecycle(chroot.name, "restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                         Text(stringResource(R.string.action_preview_restart))
                     }
-                    Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
-                        Text(stringResource(R.string.action_restart_chroot))
-                    }
                 } else {
-                    OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    OutlinedButton(onClick = { onSelect(); onPreviewLifecycle(chroot.name, "start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                         Text(stringResource(R.string.action_preview_start))
-                    }
-                    Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
-                        Text(stringResource(R.string.action_start_chroot))
                     }
                 }
                 OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
@@ -402,10 +397,12 @@ private fun ChrootWorkspaceScreen(
     onStartSnapshotExport: (String, String) -> Unit,
     onRefreshUsers: (String) -> Unit,
     onPreviewUserPayload: (String) -> Unit,
+    onClearUserPreview: () -> Unit,
     onStartUserOperation: (String, String) -> Unit,
     onRefreshServices: (String) -> Unit,
     onRefreshServiceDetail: (String, String) -> Unit,
     onPreviewServicePayload: (String) -> Unit,
+    onClearServicePreview: () -> Unit,
     onStartServiceOperation: (String, String) -> Unit,
     onRefreshSystemSupport: () -> Unit,
     onPreviewSupportBundle: () -> Unit,
@@ -452,7 +449,21 @@ private fun ChrootWorkspaceScreen(
                 body = stringResource(R.string.chroot_workspace_degraded_body),
             )
         }
-        when (effectiveTab) {
+        if (chroot.stale) {
+            StatusCard(
+                title = stringResource(R.string.status_cached_data),
+                body = stringResource(R.string.storage_stale_warning),
+                footer = {
+                    Button(
+                        onClick = onRefreshDetail,
+                        enabled = !refreshing,
+                        modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                    ) {
+                        Text(if (refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_detail))
+                    }
+                },
+            )
+        } else when (effectiveTab) {
             ChrootWorkspaceTab.Overview -> WorkspaceOverviewTab(
                 chroot = chroot,
                 checks = checks,
@@ -475,6 +486,7 @@ private fun ChrootWorkspaceScreen(
                 onRefreshServices = onRefreshServices,
                 onRefreshServiceDetail = onRefreshServiceDetail,
                 onPreviewServicePayload = onPreviewServicePayload,
+                onClearServicePreview = onClearServicePreview,
                 onStartServiceOperation = onStartServiceOperation,
             )
             ChrootWorkspaceTab.Users -> UsersPanel(
@@ -482,6 +494,7 @@ private fun ChrootWorkspaceScreen(
                 pane = usersPane,
                 onRefreshUsers = onRefreshUsers,
                 onPreviewUserPayload = onPreviewUserPayload,
+                onClearUserPreview = onClearUserPreview,
                 onStartUserOperation = onStartUserOperation,
             )
             ChrootWorkspaceTab.Snapshots -> SnapshotPanel(
@@ -611,16 +624,37 @@ private fun WorkspaceOverviewTab(
                             Text(if (refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_detail))
                         }
                         if (isRunningChrootStatus(chroot.status) || chroot.mountState?.let(::isRunningChrootStatus) == true) {
-                            Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                            OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                                Text(stringResource(R.string.action_preview_restart))
+                            }
+                            Button(
+                                onClick = { onStartLifecycle(chroot.name, "chroots.restart") },
+                                enabled = lifecyclePreview.approvesOperation("chroots.restart"),
+                                modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                            ) {
                                 Text(stringResource(R.string.action_restart_chroot))
                             }
                         } else {
-                            Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                            OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                                Text(stringResource(R.string.action_preview_start))
+                            }
+                            Button(
+                                onClick = { onStartLifecycle(chroot.name, "chroots.start") },
+                                enabled = lifecyclePreview.approvesOperation("chroots.start"),
+                                modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                            ) {
                                 Text(stringResource(R.string.action_start_chroot))
                             }
                         }
                         OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                             Text(stringResource(R.string.action_preview_upgrade))
+                        }
+                        Button(
+                            onClick = { onStartLifecycle(chroot.name, "chroots.upgrade") },
+                            enabled = lifecyclePreview.approvesOperation("chroots.upgrade"),
+                            modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                        ) {
+                            Text(stringResource(R.string.action_upgrade_chroot))
                         }
                         OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name, "snapshot-${System.currentTimeMillis() / 1000}") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                             Text(stringResource(R.string.action_preview_snapshot))
@@ -876,11 +910,11 @@ private fun LifecyclePanel(
             Text(stringResource(R.string.lifecycle_actions_title), fontWeight = FontWeight.SemiBold)
             ActionFlowRow {
                 OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_preview_start)) }
-                Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_start_chroot)) }
+                Button(onClick = { onStartLifecycle(chroot.name, "chroots.start") }, enabled = preview.approvesOperation("chroots.start"), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_start_chroot)) }
                 OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_preview_restart)) }
-                Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_restart_chroot)) }
+                Button(onClick = { onStartLifecycle(chroot.name, "chroots.restart") }, enabled = preview.approvesOperation("chroots.restart"), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_restart_chroot)) }
                 OutlinedButton(onClick = { onPreviewLifecycle(chroot.name, "upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_preview_upgrade)) }
-                Button(onClick = { onStartLifecycle(chroot.name, "chroots.upgrade") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_upgrade_chroot)) }
+                Button(onClick = { onStartLifecycle(chroot.name, "chroots.upgrade") }, enabled = preview.approvesOperation("chroots.upgrade"), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_upgrade_chroot)) }
             }
             Text(stringResource(R.string.lifecycle_remove_safety_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             ActionFlowRow {
@@ -895,7 +929,7 @@ private fun LifecyclePanel(
             )
             Button(
                 onClick = { onExecuteRemove(chroot.name, removeConfirmation) },
-                enabled = removeConfirmation == chroot.name,
+                enabled = removeConfirmation == chroot.name && preview.approvesOperation("chroots.remove.execute"),
                 modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
             ) {
                 Text(stringResource(R.string.action_remove_chroot))
@@ -1025,7 +1059,12 @@ private fun SnapshotActionReviewSheet(
             previewSnapshot = previewSnapshot,
         )
     }
-    val executeEnabled = activePreview?.ok == true &&
+    val actionOperation = when (action) {
+        SnapshotWorkspaceAction.Create -> "snapshots.create"
+        SnapshotWorkspaceAction.Restore -> "snapshots.restore"
+        SnapshotWorkspaceAction.Export -> "snapshots.export"
+    }
+    val executeEnabled = activePreview.approvesOperation(actionOperation) &&
         (action != SnapshotWorkspaceAction.Restore || restoreConfirmation == chroot.name)
     val actionLabel = when (action) {
         SnapshotWorkspaceAction.Create -> stringResource(R.string.action_create_snapshot)
@@ -1326,6 +1365,7 @@ private fun UsersPanel(
     pane: UsersPane,
     onRefreshUsers: (String) -> Unit,
     onPreviewUserPayload: (String) -> Unit,
+    onClearUserPreview: () -> Unit,
     onStartUserOperation: (String, String) -> Unit,
 ) {
     var filterName by rememberSaveable(chroot.name) { mutableStateOf(UserWorkspaceFilter.Managed.name) }
@@ -1362,7 +1402,7 @@ private fun UsersPanel(
                     Text(if (pane.refreshing) stringResource(R.string.action_refreshing) else stringResource(R.string.action_refresh_users))
                 }
                 OutlinedButton(
-                    onClick = { reviewUserToken = ADD_USER_REVIEW_TOKEN },
+                    onClick = { onClearUserPreview(); reviewUserToken = ADD_USER_REVIEW_TOKEN },
                     modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
                 ) {
                     Text(stringResource(R.string.action_review_add_user))
@@ -1380,8 +1420,10 @@ private fun UsersPanel(
                 UserActionReviewSheet(
                     chroot = chroot.name,
                     user = reviewUser,
-                    onCancel = { reviewUserToken = "" },
+                    preview = pane.preview,
+                    onCancel = { reviewUserToken = ""; onClearUserPreview() },
                     onPreviewUserPayload = onPreviewUserPayload,
+                    onClearUserPreview = onClearUserPreview,
                     onStartUserOperation = onStartUserOperation,
                 )
             }
@@ -1394,7 +1436,7 @@ private fun UsersPanel(
                 paneState == WorkspacePaneState.Ready -> visibleUsers.forEach { user ->
                     FocusedUserRow(
                         user = user,
-                        onReviewUserActions = { reviewUserToken = userReviewToken(user.username) },
+                        onReviewUserActions = { onClearUserPreview(); reviewUserToken = userReviewToken(user.username) },
                     )
                 }
             }
@@ -1474,8 +1516,10 @@ private fun FocusedUserRow(
 private fun UserActionReviewSheet(
     chroot: String,
     user: UserSummary?,
+    preview: PreviewSummary?,
     onCancel: () -> Unit,
     onPreviewUserPayload: (String) -> Unit,
+    onClearUserPreview: () -> Unit,
     onStartUserOperation: (String, String) -> Unit,
 ) {
     val existingUser = user != null
@@ -1542,26 +1586,26 @@ private fun UserActionReviewSheet(
                             action = item,
                             selected = item == action,
                             user = currentUser,
-                            onSelect = { actionName = it.name },
+                            onSelect = { onClearUserPreview(); actionName = it.name },
                         )
                     }
                 }
             }
             when (action) {
                 UserWorkspaceAction.Add -> {
-                    OutlinedTextField(value = draftUsername, onValueChange = { draftUsername = it }, label = { Text(stringResource(R.string.user_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = draftShell, onValueChange = { draftShell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedButton(onClick = { draftSudo = !draftSudo }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    OutlinedTextField(value = draftUsername, onValueChange = { onClearUserPreview(); draftUsername = it }, label = { Text(stringResource(R.string.user_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = draftShell, onValueChange = { onClearUserPreview(); draftShell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = { onClearUserPreview(); draftSudo = !draftSudo }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                         Text(if (draftSudo) stringResource(R.string.user_add_sudo_enabled) else stringResource(R.string.user_add_sudo_disabled))
                     }
                 }
-                UserWorkspaceAction.SetShell -> OutlinedTextField(value = draftShell, onValueChange = { draftShell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                UserWorkspaceAction.SetShell -> OutlinedTextField(value = draftShell, onValueChange = { onClearUserPreview(); draftShell = it }, label = { Text(stringResource(R.string.user_shell_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 UserWorkspaceAction.SetPassword -> {
-                    OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_exact_label, username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.user_password_label)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = confirmPassword, onValueChange = { confirmPassword = it }, label = { Text(stringResource(R.string.user_confirm_password_label)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = confirmation, onValueChange = { onClearUserPreview(); confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_exact_label, username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = password, onValueChange = { onClearUserPreview(); password = it }, label = { Text(stringResource(R.string.user_password_label)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = confirmPassword, onValueChange = { onClearUserPreview(); confirmPassword = it }, label = { Text(stringResource(R.string.user_confirm_password_label)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 }
-                UserWorkspaceAction.Remove -> OutlinedTextField(value = confirmation, onValueChange = { confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_exact_label, username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                UserWorkspaceAction.Remove -> OutlinedTextField(value = confirmation, onValueChange = { onClearUserPreview(); confirmation = it }, label = { Text(stringResource(R.string.user_confirmation_exact_label, username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 UserWorkspaceAction.SyncUidGid,
                 UserWorkspaceAction.ToggleSudo -> Unit
             }
@@ -1576,7 +1620,7 @@ private fun UserActionReviewSheet(
                 }
                 Button(
                     onClick = { onStartUserOperation(operation, payload) },
-                    enabled = canSubmit,
+                    enabled = canSubmit && preview.approvesOperation(operation),
                     modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
                 ) {
                     Text(userActionExecuteLabel(action, user))
@@ -1656,6 +1700,7 @@ private fun ServicesPanel(
     onRefreshServices: (String) -> Unit,
     onRefreshServiceDetail: (String, String) -> Unit,
     onPreviewServicePayload: (String) -> Unit,
+    onClearServicePreview: () -> Unit,
     onStartServiceOperation: (String, String) -> Unit,
 ) {
     var filterName by rememberSaveable(chroot.name) { mutableStateOf(ServiceWorkspaceFilter.All.name) }
@@ -1704,7 +1749,8 @@ private fun ServicesPanel(
                 ServiceActionReviewSheet(
                     service = service,
                     action = reviewAction.action,
-                    onCancel = { pendingActionToken = "" },
+                    preview = pane.preview,
+                    onCancel = { pendingActionToken = ""; onClearServicePreview() },
                     onPreviewServicePayload = onPreviewServicePayload,
                     onStartServiceOperation = onStartServiceOperation,
                 )
@@ -1726,6 +1772,7 @@ private fun ServicesPanel(
                         service = service,
                         onRefreshServiceDetail = onRefreshServiceDetail,
                         onSelectServiceAction = { selected, action ->
+                            onClearServicePreview()
                             pendingActionToken = serviceActionToken(selected, action)
                         },
                     )
@@ -1810,6 +1857,7 @@ private fun FocusedServiceRow(
 private fun ServiceActionReviewSheet(
     service: ServiceUnitSummary,
     action: String,
+    preview: PreviewSummary?,
     onCancel: () -> Unit,
     onPreviewServicePayload: (String) -> Unit,
     onStartServiceOperation: (String, String) -> Unit,
@@ -1833,7 +1881,7 @@ private fun ServiceActionReviewSheet(
                 OutlinedButton(onClick = { onPreviewServicePayload(payload) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                     Text(stringResource(R.string.action_preview_command))
                 }
-                Button(onClick = { onStartServiceOperation(operation, payload) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                Button(onClick = { onStartServiceOperation(operation, payload) }, enabled = preview.approvesOperation(operation), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                     Text(serviceActionLabel(action))
                 }
                 TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {

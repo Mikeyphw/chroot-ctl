@@ -395,6 +395,37 @@ class ChrootController:
                 argv = ["chroot", str(self.config.chroot_base), "/bin/su", "-", exec_user]
         return argv, self._session_env(root=use_root_login, x11=x11)
 
+    @staticmethod
+    def _require_operation_result(label: str, result: OperationResult) -> None:
+        if result.failed:
+            detail = "; ".join(result.errors) or f"{result.failed} operation(s) failed"
+            raise RuntimeError(f"{label} failed: {detail}")
+
+    def prepare(self, *, x11: bool = False) -> int:
+        """Prepare a chroot for use without launching an interactive shell.
+
+        This is the lifecycle primitive used by Android/bridge operations.  CLI
+        session commands continue through start_interactive().
+        """
+        self.runner.require_root()
+        self._require_operation_result("mount", self.mount())
+        self._require_operation_result("tty preparation", self.fix_tty())
+        if x11:
+            self._prepare_x11_host()
+        return 0
+
+    def _require_restart_unmounted(self) -> None:
+        result = self.unmount()
+        self._require_operation_result("unmount", result)
+        still_mounted = [row for row in self.status(verbose=False) if str(row.get("mounted", "")).lower() == "yes"]
+        if still_mounted:
+            targets = ", ".join(str(row.get("target", "")) for row in still_mounted)
+            raise RuntimeError(f"restart aborted because mounts remain active: {targets}")
+
+    def restart_prepare(self, *, x11: bool = False) -> int:
+        self._require_restart_unmounted()
+        return self.prepare(x11=x11)
+
     def start_interactive(
         self,
         *,
@@ -402,13 +433,19 @@ class ChrootController:
         root_login: bool,
         x11: bool = False,
     ) -> "NoReturn":
-        self.runner.require_root()
-        self.mount()
-        self.fix_tty()
-        if x11:
-            self._prepare_x11_host()
+        self.prepare(x11=x11)
         argv, env = self._start_argv(login=login, root_login=root_login, x11=x11)
         self.runner.exec(argv, env=env, chroot_env=True)
+
+    def restart_interactive(
+        self,
+        *,
+        login: bool,
+        root_login: bool,
+        x11: bool = False,
+    ) -> "NoReturn":
+        self._require_restart_unmounted()
+        self.start_interactive(login=login, root_login=root_login, x11=x11)
 
     def restart(
         self,
@@ -417,7 +454,7 @@ class ChrootController:
         root_login: bool,
         x11: bool = False,
     ) -> int:
-        self.unmount()
+        self._require_restart_unmounted()
         return self.start(
             login=login,
             root_login=root_login,
@@ -431,11 +468,7 @@ class ChrootController:
         root_login: bool,
         x11: bool = False,
     ) -> int:
-        self.runner.require_root()
-        self.mount()
-        self.fix_tty()
-        if x11:
-            self._prepare_x11_host()
+        self.prepare(x11=x11)
         argv, env = self._start_argv(login=login, root_login=root_login, x11=x11)
         result = self.runner.run(
             argv,

@@ -117,10 +117,4 @@ fun AdaptiveNavigationShell(
     }
 }
 
-private val primaryDestinations = listOf(
-    AppDestination.Home,
-    AppDestination.Chroots,
-    AppDestination.Install,
-    AppDestination.Activity,
-    AppDestination.Tools,
-)
+private val primaryDestinations: List<AppDestination> = AppDestination.entries.toList()

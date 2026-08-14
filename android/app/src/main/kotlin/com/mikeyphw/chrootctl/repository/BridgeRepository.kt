@@ -40,12 +40,14 @@ import com.mikeyphw.chrootctl.protocol.BridgeRequest
 import com.mikeyphw.chrootctl.protocol.RootBridgeInfo
 import com.mikeyphw.chrootctl.root.RootServiceClient
 import android.os.ParcelFileDescriptor
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 
 class BridgeRepository(
     private val rootClient: RootServiceClient,
@@ -110,11 +112,18 @@ class BridgeRepository(
             lastRefreshAt = now,
             stale = false,
         )
-        database.chrootDao().replaceSnapshot(chrootEntities)
-        operationEntities.forEach { operation -> database.operationDao().upsert(operation) }
-        database.checkDao().replaceScope("home", state.extractChecks(now, "home"))
-        database.homeSnapshotDao().upsert(snapshot)
+        database.withTransaction {
+            database.chrootDao().replaceSnapshot(chrootEntities)
+            operationEntities.forEach { operation -> database.operationDao().persistOperation(operation) }
+            database.checkDao().replaceScope("home", state.extractChecks(now, "home"))
+            database.homeSnapshotDao().upsert(snapshot)
+        }
         snapshot.toHomeSnapshot(chrootEntities, operationEntities)
+    }.onFailure {
+        database.withTransaction {
+            database.chrootDao().markAllStale()
+            database.homeSnapshotDao().markStale()
+        }
     }
 
     suspend fun refreshChrootDetail(name: String): Result<Unit> = runCatching {
@@ -143,10 +152,13 @@ class BridgeRepository(
 
     private suspend fun persistOperationEnvelope(operationId: String, raw: String) {
         val data = BridgeEnvelope.fromJson(raw).requireData()
-        database.operationDao().upsert(data.toOperationEntity(System.currentTimeMillis(), stale = false))
-        data.optJSONArray("progressEvents")?.toJsonObjects()?.forEach { event ->
-            database.operationDao().append(event.toOperationEventEntity(operationId))
-        }
+        val events = data.optJSONArray("progressEvents")?.toJsonObjects()?.map { event ->
+            event.toOperationEventEntity(operationId)
+        }.orEmpty()
+        database.operationDao().persistOperation(
+            data.toOperationEntity(System.currentTimeMillis(), stale = false),
+            events,
+        )
     }
 
     suspend fun startSystemRefresh(onEvent: suspend (JSONObject) -> Unit): Result<String?> = runCatching {
@@ -171,9 +183,11 @@ class BridgeRepository(
 
     suspend fun recordOperationEvent(event: JSONObject) {
         val operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: return
-        database.operationDao().append(event.toOperationEventEntity(operationId))
         val existing = database.operationDao().findById(operationId)
-        database.operationDao().upsert(event.toOperationEntity(existing))
+        database.operationDao().persistOperation(
+            event.toOperationEntity(existing),
+            listOf(event.toOperationEventEntity(operationId)),
+        )
     }
 
 
@@ -329,9 +343,10 @@ class BridgeRepository(
         data.toPackageCompareSummary()
     }
 
-    suspend fun inspectTransferImport(archive: String, name: String = "", conflict: String = "rename"): Result<PreviewSummary> = runCatching {
+    suspend fun inspectTransferImport(archive: String, name: String = "", conflict: String = "rename", password: String = ""): Result<PreviewSummary> = runCatching {
         val payload = JSONObject().put("archive", archive).put("conflict", conflict)
         if (name.isNotBlank()) payload.put("name", name)
+        if (password.isNotBlank()) payload.put("password", password)
         val data = BridgeEnvelope.fromJson(
             rootClient.preview(BridgeRequest("transfer.import_preview", payload).toJson()),
         ).requireData()
@@ -666,7 +681,22 @@ private fun JSONObject.toOperationEventEntity(operationId: String): OperationEve
         else -> System.currentTimeMillis()
     }
     val payload = optJSONObject("payload") ?: this
+    val sequence = optLong("sequence", -1L)
+    val stableTimestamp = timestampValue?.toString().orEmpty()
+    val eventKey = if (sequence >= 0L) {
+        "$operationId:$sequence"
+    } else {
+        // Legacy/recovery events may not carry a backend sequence. Build the
+        // fallback identity only from wire data; never include the local receive
+        // clock or reconnecting to the same event would create a duplicate row.
+        val stableInput = "$operationId\u001f${optString("type", "operation_event")}\u001f$stableTimestamp\u001f${payload}"
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(stableInput.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+        "$operationId:legacy:$digest"
+    }
     return OperationEventEntity(
+        eventKey = eventKey,
         operationId = operationId,
         type = optString("type", "operation_event"),
         timestamp = timestamp,
@@ -917,10 +947,13 @@ private fun JSONObject.toTransferInspectionSummary(): PreviewSummary {
 }
 
 private fun JSONObject.toTransferArtifactSummary(): TransferArtifactSummary = TransferArtifactSummary(
+    artifactId = firstString("artifactId", "artifact_id"),
     name = firstString("name"),
     path = firstString("path"),
+    kind = firstString("kind"),
     sizeBytes = optLong("size_bytes", optLong("sizeBytes", 0L)),
     modifiedAt = firstString("modified_at", "modifiedAt"),
+    expiresAt = firstString("expiresAt", "expires_at"),
 )
 
 private fun JSONObject.toRuntimeRows(): List<SystemRowSummary> = rowsFromJson(

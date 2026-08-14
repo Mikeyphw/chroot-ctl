@@ -7,6 +7,7 @@ from typing import Any
 from ..models import ChrootDetails, ChrootRecord, ChrootRemovalResult, ChrootRenameResult, PackageDiffResult, SessionActionResult
 from ..validation import validate_chroot_name
 from .context import ServiceContainer
+from .storage_safety import require_archive_outside_source, require_contained
 from .chroot_archives import (
     export_chroot,
     import_chroot,
@@ -57,9 +58,26 @@ class ChrootService:
             metadata=normalized_metadata,
         )
 
-    def start(self, name: str, *, login: bool = True, root_login: bool = False) -> SessionActionResult:
+    def _require_runnable_record(self, name: str) -> tuple[dict[str, Any], Path]:
+        record = self.services.registry.get(name)
+        if record is None:
+            raise RuntimeError(f"unknown chroot: {name}")
+        if not bool(record.get("installed")):
+            raise RuntimeError(f"chroot is not installed and cannot be started: {name}")
+        config = self.services.config_for(name)
+        rootfs = require_contained(
+            config.chroot_root,
+            Path(str(record.get("path") or config.chroot_base)),
+            label="registered chroot path",
+        )
+        if not rootfs.is_dir():
+            raise RuntimeError(f"registered chroot path is missing or not a directory: {rootfs}")
+        return record, rootfs
+
+    def start(self, name: str, *, login: bool = True, root_login: bool = False, interactive: bool = True) -> SessionActionResult:
+        self._require_runnable_record(name)
         runtime = self.services.runtime_for(name)
-        code = runtime.controller.start(login=login, root_login=root_login)
+        code = runtime.controller.start(login=login, root_login=root_login) if interactive else runtime.controller.prepare()
         return SessionActionResult(
             action="start",
             target=name,
@@ -67,9 +85,10 @@ class ChrootService:
             next_steps=(f"chrootctl --name {name} logs --all",),
         )
 
-    def restart(self, name: str, *, login: bool = True, root_login: bool = False) -> SessionActionResult:
+    def restart(self, name: str, *, login: bool = True, root_login: bool = False, interactive: bool = True) -> SessionActionResult:
+        self._require_runnable_record(name)
         runtime = self.services.runtime_for(name)
-        code = runtime.controller.restart(login=login, root_login=root_login)
+        code = runtime.controller.restart(login=login, root_login=root_login) if interactive else runtime.controller.restart_prepare()
         return SessionActionResult(
             action="restart",
             target=name,
@@ -82,7 +101,8 @@ class ChrootService:
         return remove_chroot(runtime.config, self.services.registry, runtime.runner, self.services.logger, name)
 
     def rename(self, old_name: str, new_name: str) -> ChrootRenameResult:
-        return rename_chroot(self.services.base_config, self.services.registry, old_name, new_name)
+        runtime = self.services.runtime_for(old_name)
+        return rename_chroot(self.services.base_config, self.services.registry, runtime.runner, self.services.logger, old_name, new_name)
 
     def export(self, name: str, *, archive: Path | None = None, password: str | None = None):
         runtime = self.services.runtime_for(name)
@@ -112,18 +132,26 @@ class ChrootService:
         return result
 
     def inspect_archive(self, archive: Path, *, password: str | None = None):
-        return inspect_chroot_archive(archive, registry=self.services.registry, password=password)
+        runtime = self.services.runtime_for(None)
+        return inspect_chroot_archive(archive, registry=self.services.registry, password=password, runner=runtime.runner)
 
     def validate_imported(self, name: str) -> dict[str, Any]:
         record = self.services.registry.get(name)
         if record is None:
             raise RuntimeError(f"unknown chroot: {name}")
-        target = Path(str(record.get("path", self.services.config_for(name).chroot_base)))
+        target = self._registered_rootfs(name)
         return validate_imported_chroot(target, arch=str(record.get("arch", "")))
 
+    def _registered_rootfs(self, name: str) -> Path:
+        record = self.services.registry.get(name)
+        if record is None:
+            raise RuntimeError(f"unknown chroot: {name}")
+        config = self.services.config_for(name)
+        return require_contained(config.chroot_root, Path(str(record.get("path") or config.chroot_base)), label="registered chroot path")
+
     def package_diff(self, left: str, right: str) -> PackageDiffResult:
-        left_pkgs = _package_inventory(self.services.config_for(left).chroot_base)
-        right_pkgs = _package_inventory(self.services.config_for(right).chroot_base)
+        left_pkgs = _package_inventory(self._registered_rootfs(left))
+        right_pkgs = _package_inventory(self._registered_rootfs(right))
         return PackageDiffResult(
             left=left,
             right=right,
@@ -140,7 +168,7 @@ class ChrootService:
             raise RuntimeError(f"unknown chroot: {name}")
         config = self.services.config_for(name)
         runtime = self.services.runtime_for(name)
-        rootfs = Path(str(record.get("path") or config.chroot_base)).expanduser()
+        rootfs = require_contained(config.chroot_root, Path(str(record.get("path") or config.chroot_base)), label="registered chroot path")
         cache_path = rootfs / "var" / "cache"
         probe = rootfs if rootfs.exists() else config.chroot_root.expanduser()
         while not probe.exists() and probe != probe.parent:
@@ -169,50 +197,77 @@ class ChrootService:
         record = self.services.registry.get(name)
         if record is None:
             raise RuntimeError(f"unknown chroot: {name}")
-        source_path = Path(str(record.get("path", self.services.config_for(name).chroot_base)))
+        config = self.services.config_for(name)
+        source_path = require_contained(config.chroot_root, Path(str(record.get("path") or config.chroot_base)), label="registered chroot path")
         size_bytes = _directory_size(source_path)
-        target_archive = (archive or Path(f"./{name}.tar.zst")).expanduser()
-        free_bytes = shutil.disk_usage(target_archive.parent if target_archive.parent.exists() else Path.cwd()).free
+        target_archive = (archive or Path(f"./{name}.tar.zst")).expanduser().resolve(strict=False)
+        blocking: list[dict[str, str]] = []
+        runtime = self.services.runtime_for(name)
+        mounted = [row for row in runtime.controller.status(verbose=True) if str(row.get("mounted", "")).lower() == "yes"]
+        if mounted:
+            blocking.append({"code": "chroot_mounted", "message": "Export requires the chroot to be fully unmounted."})
+        try:
+            require_archive_outside_source(source_path, target_archive)
+        except RuntimeError as exc:
+            blocking.append({"code": "archive_inside_source", "message": str(exc)})
+        probe = target_archive.parent
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+        free_bytes = shutil.disk_usage(probe).free
+        enough_space = free_bytes >= size_bytes
+        if not enough_space:
+            blocking.append({"code": "insufficient_space", "message": "The export destination does not have enough free space."})
         return {
-            "ok": free_bytes >= size_bytes,
+            "ok": not blocking,
             "kind": "export",
             "name": name,
             "archive": str(target_archive),
             "size_bytes": size_bytes,
             "required_bytes": size_bytes,
             "free_bytes": int(free_bytes),
-            "enough_space": free_bytes >= size_bytes,
+            "enough_space": enough_space,
+            "blocking": blocking,
+            "warnings": [],
         }
 
-    def import_preview(self, archive: Path, *, name: str | None = None, conflict: str = "rename") -> dict[str, Any]:
-        inspection = self.inspect_archive(archive)
-        selected_name = (name or inspection.suggested_name or inspection.source_name).strip()
+    def import_preview(self, archive: Path, *, name: str | None = None, conflict: str = "rename", password: str | None = None) -> dict[str, Any]:
+        if conflict not in {"rename", "overwrite"}:
+            raise RuntimeError(f"unsupported conflict strategy: {conflict}")
+        inspection = self.inspect_archive(archive, password=password)
+        selected_name = validate_chroot_name((name or inspection.suggested_name or inspection.source_name).strip())
         config = self.services.config_for(selected_name)
         free_bytes = shutil.disk_usage(config.chroot_root).free
-        required = max(int(inspection.size_bytes), 1)
+        extracted_bytes = max(int(inspection.extracted_size_bytes or inspection.size_bytes), 1)
+        required = extracted_bytes * 2 + 64 * 1024 * 1024
+        target_exists = self.services.registry.get(selected_name) is not None or config.chroot_base.exists()
         final_name = selected_name
-        if inspection.target_exists and conflict == "rename":
-            final_name = _next_available_name(selected_name, self.services.registry, config)
+        if target_exists and conflict == "rename":
+            final_name = _next_available_name(selected_name, self.services.registry, self.services.base_config)
+        enough_space = free_bytes >= required
+        blocking = [] if enough_space else [{"code": "insufficient_space", "message": "The chroot storage root does not have enough free space for staged extraction."}]
         return {
-            "ok": free_bytes >= required,
+            "ok": not blocking,
             "kind": "import",
             "archive": str(archive),
             "requested_name": selected_name,
             "final_name": final_name,
             "conflict": conflict,
-            "target_exists": inspection.target_exists,
+            "target_exists": target_exists,
             "size_bytes": inspection.size_bytes,
+            "extracted_size_bytes": inspection.extracted_size_bytes,
             "required_bytes": required,
             "free_bytes": int(free_bytes),
-            "enough_space": free_bytes >= required,
+            "enough_space": enough_space,
             "checksum_verified": inspection.checksum_verified,
+            "blocking": blocking,
+            "warnings": ["Overwrite keeps the current chroot as a rollback backup until the staged generation is committed."] if target_exists and conflict == "overwrite" else [],
         }
 
     def delete_preview(self, name: str) -> dict[str, Any]:
         record = self.services.registry.get(name)
         if record is None:
             raise RuntimeError(f"unknown chroot: {name}")
-        target = Path(str(record.get("path", self.services.config_for(name).chroot_base)))
+        target = self._registered_rootfs(name)
         size_bytes = _directory_size(target)
         return {
             "ok": True,

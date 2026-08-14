@@ -196,8 +196,7 @@ def handle_start(context: RuntimeContext) -> None:
 
 def handle_restart(context: RuntimeContext) -> None:
     _ensure_existing_chroot_clipboard_tools(context)
-    context.controller.unmount()
-    context.controller.start_interactive(
+    context.controller.restart_interactive(
         login=context.args.login,
         root_login=context.args.root_login,
         x11=getattr(context.args, "x11", False),

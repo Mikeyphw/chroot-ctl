@@ -28,6 +28,7 @@ import com.mikeyphw.chrootctl.R
 import com.mikeyphw.chrootctl.model.InstallDraft
 import com.mikeyphw.chrootctl.model.InstallFormSummary
 import com.mikeyphw.chrootctl.model.PreviewSummary
+import com.mikeyphw.chrootctl.model.approvesOperation
 import com.mikeyphw.chrootctl.ui.ChrootLayout
 import com.mikeyphw.chrootctl.ui.ChrootSpacing
 import com.mikeyphw.chrootctl.ui.InstallDraftValidation
@@ -305,7 +306,7 @@ private fun PreviewCard(summary: PreviewSummary, onStartInstall: () -> Unit, onO
             Text(stringResource(R.string.install_foreground_handoff_body), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             LinearProgressIndicator(progress = { if (summary.ok) 1f else 0.35f }, modifier = Modifier.fillMaxWidth())
             ActionFlowRow {
-                Button(onClick = onStartInstall, enabled = summary.ok, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.install_start_action)) }
+                Button(onClick = onStartInstall, enabled = summary.approvesOperation("install.run"), modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.install_start_action)) }
                 OutlinedButton(onClick = onOpenActivity, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.action_open_activity)) }
             }
         }

@@ -1,5 +1,6 @@
 package com.mikeyphw.chrootctl.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -28,10 +29,15 @@ data class OperationEntity(
 
 @Entity(
     tableName = "operation_events",
-    indices = [Index("operationId"), Index("timestamp")],
+    indices = [
+        Index("operationId"),
+        Index("timestamp"),
+        Index(value = ["eventKey"], unique = true),
+    ],
 )
 data class OperationEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "''") val eventKey: String,
     val operationId: String,
     val type: String,
     val timestamp: Long,

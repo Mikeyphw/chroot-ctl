@@ -15,6 +15,12 @@ interface ChrootDao {
     @Query("UPDATE chroots SET stale = 1")
     suspend fun markAllStale()
 
+    @Query("DELETE FROM chroots")
+    suspend fun deleteAll()
+
+    @Query("DELETE FROM chroots WHERE name NOT IN (:names)")
+    suspend fun deleteMissing(names: List<String>)
+
     @Query("SELECT * FROM chroots ORDER BY name COLLATE NOCASE ASC")
     fun observeAll(): Flow<List<ChrootEntity>>
 
@@ -23,8 +29,12 @@ interface ChrootDao {
 
     @Transaction
     suspend fun replaceSnapshot(chroots: List<ChrootEntity>) {
-        markAllStale()
+        if (chroots.isEmpty()) {
+            deleteAll()
+            return
+        }
         upsertAll(chroots)
+        deleteMissing(chroots.map { it.name })
     }
 }
 
@@ -36,10 +46,36 @@ interface CheckDao {
     @Query("DELETE FROM checks WHERE scope = :scope")
     suspend fun deleteScope(scope: String)
 
-    @Query("SELECT * FROM checks ORDER BY severity DESC, title COLLATE NOCASE ASC")
+    @Query("""
+        SELECT * FROM checks
+        ORDER BY CASE LOWER(severity)
+            WHEN 'critical' THEN 5
+            WHEN 'error' THEN 4
+            WHEN 'high' THEN 4
+            WHEN 'warning' THEN 3
+            WHEN 'warn' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'info' THEN 1
+            WHEN 'low' THEN 1
+            ELSE 0
+        END DESC, title COLLATE NOCASE ASC
+    """)
     fun observeAll(): Flow<List<CheckResultEntity>>
 
-    @Query("SELECT * FROM checks WHERE scope = :scope ORDER BY severity DESC, title COLLATE NOCASE ASC")
+    @Query("""
+        SELECT * FROM checks WHERE scope = :scope
+        ORDER BY CASE LOWER(severity)
+            WHEN 'critical' THEN 5
+            WHEN 'error' THEN 4
+            WHEN 'high' THEN 4
+            WHEN 'warning' THEN 3
+            WHEN 'warn' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'info' THEN 1
+            WHEN 'low' THEN 1
+            ELSE 0
+        END DESC, title COLLATE NOCASE ASC
+    """)
     fun observeScope(scope: String): Flow<List<CheckResultEntity>>
 
     @Transaction
@@ -53,6 +89,9 @@ interface CheckDao {
 interface HomeSnapshotDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(snapshot: HomeSnapshotEntity)
+
+    @Query("UPDATE home_snapshots SET stale = 1 WHERE id = :id")
+    suspend fun markStale(id: String = HOME_SNAPSHOT_ID)
 
     @Query("SELECT * FROM home_snapshots WHERE id = :id LIMIT 1")
     fun observe(id: String = HOME_SNAPSHOT_ID): Flow<HomeSnapshotEntity?>

@@ -196,31 +196,39 @@ def _snapshot_preview(services: ServiceContainer, payload: dict[str, Any]) -> An
     snapshot = _optional_text(payload, "snapshot") or _optional_text(payload, "snapshotName")
     archive = _optional_text(payload, "archive")
     existing = services.snapshots().list(chroot_name=name, limit=100)
+    mounted = [
+        row for row in services.runtime_for(name).controller.status(verbose=True)
+        if str(row.get("mounted", "")).lower() == "yes"
+    ]
+    mount_blocking = [{"code": "chroot_mounted", "message": "Snapshot create/restore requires the chroot to be fully unmounted."}] if mounted else []
     if action == "create":
         try:
             requested = validate_snapshot_name(snapshot or "snapshot", field="payload.snapshot")
         except ValueError as exc:
             raise BridgeProtocolError("INVALID_SNAPSHOT_NAME", str(exc)) from exc
         conflict = any(str(getattr(item, "name", "")) == requested for item in existing)
+        blocking = ([{"code": "snapshot_exists", "message": f"Snapshot already exists: {requested}"}] if conflict else []) + mount_blocking
         return {
-            "ok": not conflict,
+            "ok": not blocking,
             "kind": "snapshot.create",
             "name": name,
             "snapshot": requested,
             "existingCount": len(existing),
-            "blocking": [{"code": "snapshot_exists", "message": f"Snapshot already exists: {requested}"}] if conflict else [],
+            "blocking": blocking,
             "warnings": [],
             "confirm": False,
         }
     if action == "restore":
         requested = _required_snapshot({**payload, "snapshot": snapshot}) if snapshot else _required_snapshot(payload)
+        exists = any(str(getattr(item, "name", "")) == requested for item in existing)
+        blocking = ([] if exists else [{"code": "snapshot_missing", "message": f"Snapshot does not exist: {requested}"}]) + mount_blocking
         return {
-            "ok": True,
+            "ok": not blocking,
             "kind": "snapshot.restore",
             "name": name,
             "snapshot": requested,
             "destructive": True,
-            "blocking": [],
+            "blocking": blocking,
             "warnings": ["Restore replaces the current chroot files with the selected snapshot."],
             "confirm": True,
         }
@@ -372,11 +380,11 @@ def _start_chroot(
     if cancelled():
         raise OperationCancelled("Start was cancelled")
     try:
-        login = optional_bool(payload, "login", default=True, field="payload.login")
+        login = optional_bool(payload, "login", default=False, field="payload.login")
         root_login = optional_bool(payload, "rootLogin", "root_login", default=False, field="payload.rootLogin")
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
-    result = services.chroots().start(name, login=login, root_login=root_login)
+    result = services.chroots().start(name, login=login, root_login=root_login, interactive=False)
     progress({"phase": "complete", "percent": 100, "message": f"Started {name}"})
     return result
 
@@ -392,11 +400,11 @@ def _restart_chroot(
     if cancelled():
         raise OperationCancelled("Restart was cancelled")
     try:
-        login = optional_bool(payload, "login", default=True, field="payload.login")
+        login = optional_bool(payload, "login", default=False, field="payload.login")
         root_login = optional_bool(payload, "rootLogin", "root_login", default=False, field="payload.rootLogin")
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
-    result = services.chroots().restart(name, login=login, root_login=root_login)
+    result = services.chroots().restart(name, login=login, root_login=root_login, interactive=False)
     progress({"phase": "complete", "percent": 100, "message": f"Restarted {name}"})
     return result
 
@@ -925,9 +933,15 @@ def _catalog_apply(services: ServiceContainer, payload: dict[str, Any], progress
 
 def _packages_inventory(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     from ..services.chroot_archives import _package_inventory
+    from ..services.storage_safety import require_contained
 
     name = _required_name(payload)
-    packages = sorted(_package_inventory(services.config_for(name).chroot_base))
+    record = services.registry.get(name)
+    if record is None:
+        raise BridgeProtocolError("UNKNOWN_CHROOT", f"unknown chroot: {name}")
+    config = services.config_for(name)
+    rootfs = require_contained(config.chroot_root, Path(str(record.get("path") or config.chroot_base)), label="registered chroot path")
+    packages = sorted(_package_inventory(rootfs))
     try:
         limit = optional_bounded_int(payload, "limit", default=500, minimum=0, maximum=5000)
     except ValueError as exc:
@@ -968,7 +982,7 @@ def _transfer_inspect_import(services: ServiceContainer, payload: dict[str, Any]
     archive = _optional_text(payload, "archive") or _optional_text(payload, "path")
     if not archive:
         raise BridgeProtocolError("MISSING_ARCHIVE", "payload.archive is required")
-    return services.transfer().inspect(archive)
+    return services.transfer().inspect(archive, password=_optional_text(payload, "password"))
 
 
 def _transfer_import_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
@@ -979,6 +993,7 @@ def _transfer_import_preview(services: ServiceContainer, payload: dict[str, Any]
         archive=archive,
         name=_optional_text(payload, "name"),
         conflict=_optional_text(payload, "conflict") or "rename",
+        password=_optional_text(payload, "password"),
     )
 
 
@@ -999,13 +1014,19 @@ def _artifacts_cleanup_preview(services: ServiceContainer, payload: dict[str, An
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
     requested_path = _optional_text(payload, "path")
+    artifact_id = _optional_text(payload, "artifactId") or _optional_text(payload, "artifact_id")
     state = services.transfer().temp_state()
     items = [item for item in state.get("items", []) if isinstance(item, dict)]
-    selected = items if delete_all else [item for item in items if requested_path and str(item.get("path") or "") == requested_path]
+    selected = items if delete_all else [
+        item for item in items
+        if (artifact_id and str(item.get("artifactId") or item.get("artifact_id") or "") == artifact_id)
+        or (not artifact_id and requested_path and str(item.get("path") or "") == requested_path)
+    ]
     return {
         "ok": bool(selected),
         "kind": "artifacts.cleanup",
         "deleteAll": delete_all,
+        "artifactId": artifact_id,
         "path": requested_path,
         "selectedCount": len(selected),
         "selectedBytes": sum(int(item.get("size_bytes", item.get("sizeBytes", 0)) or 0) for item in selected),
@@ -1025,6 +1046,7 @@ def _transfer_import(services: ServiceContainer, payload: dict[str, Any], progre
         archive=archive,
         name=_optional_text(payload, "name"),
         conflict=_optional_text(payload, "conflict") or "rename",
+        password=_optional_text(payload, "password"),
     )
     if not bool(preview.get("ok", False)):
         raise BridgeProtocolError("TRANSFER_IMPORT_BLOCKED", "Transfer import preview reported blocking issues")
@@ -1066,7 +1088,11 @@ def _artifacts_cleanup(services: ServiceContainer, payload: dict[str, Any], prog
         delete_all = optional_bool(payload, "deleteAll", "delete_all", default=False, field="payload.deleteAll")
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
-    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=delete_all)
+    result = services.transfer().delete_temp(
+        artifact_id=_optional_text(payload, "artifactId") or _optional_text(payload, "artifact_id"),
+        path=_optional_text(payload, "path"),
+        delete_all=delete_all,
+    )
     progress({"phase": "complete", "percent": 100, "message": "Transfer artifact cleanup complete"})
     return result
 
@@ -1307,6 +1333,7 @@ def _support_bundle(services: ServiceContainer, payload: dict[str, Any], progres
     if cancelled():
         raise OperationCancelled("Support bundle export was cancelled")
     result = services.support().export_bundle(archive=archive, jobs=None)
+    services.transfer().register_artifact(result.archive, kind="support-bundle")
     progress({"phase": "complete", "percent": 100, "message": "Support bundle exported"})
     return result
 
@@ -1334,6 +1361,7 @@ def _module_build(services: ServiceContainer, payload: dict[str, Any], progress:
             raise OperationCancelled("Module build was cancelled")
         progress({"phase": "zip", "percent": 85, "message": "Creating module zip"})
         zip_path = zip_magisk_module(result.output_dir, archive)
+    services.transfer().register_artifact(zip_path, kind="module-archive", metadata={"startupTargets": list(targets)})
     progress({"phase": "complete", "percent": 100, "message": "Module zip created"})
     return {"archive": str(zip_path), "startupTargets": list(targets), "bytes": zip_path.stat().st_size}
 
@@ -1358,7 +1386,11 @@ def _cleanup_temp(services: ServiceContainer, payload: dict[str, Any], progress:
         delete_all = optional_bool(payload, "deleteAll", "delete_all", default=True, field="payload.deleteAll")
     except ValueError as exc:
         raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
-    result = services.transfer().delete_temp(path=_optional_text(payload, "path"), delete_all=delete_all)
+    result = services.transfer().delete_temp(
+        artifact_id=_optional_text(payload, "artifactId") or _optional_text(payload, "artifact_id"),
+        path=_optional_text(payload, "path"),
+        delete_all=delete_all,
+    )
     progress({"phase": "complete", "percent": 100, "message": "Temporary cleanup complete"})
     return result
 
@@ -1370,6 +1402,7 @@ def _debug_export(services: ServiceContainer, payload: dict[str, Any], progress:
     if cancelled():
         raise OperationCancelled("Debug export was cancelled")
     bundle = services.support().export_bundle(archive=archive, jobs=None)
+    services.transfer().register_artifact(bundle.archive, kind="debug-evidence")
     progress({"phase": "complete", "percent": 100, "message": "Debug evidence exported"})
     return {"archive": str(bundle.archive), "probes": probes, "included": list(bundle.included)}
 
@@ -1906,8 +1939,8 @@ _PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "transfer.export": frozenset({"name", "archive", "password"}),
     "transfer.artifact_root": frozenset(),
     "artifacts.list": frozenset(),
-    "artifacts.cleanup_preview": frozenset({"path", "deleteAll", "delete_all"}),
-    "artifacts.cleanup": frozenset({"path", "deleteAll", "delete_all"}),
+    "artifacts.cleanup_preview": frozenset({"artifactId", "artifact_id", "path", "deleteAll", "delete_all"}),
+    "artifacts.cleanup": frozenset({"artifactId", "artifact_id", "path", "deleteAll", "delete_all"}),
     "system.runtime": frozenset(),
     "system.module_status": frozenset(),
     "support.preview": frozenset({"archive"}),
@@ -1916,8 +1949,8 @@ _PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "system.module_build": frozenset({"startupTargets", "allInstalled", "all_installed", "archive"}),
     "repair.preview": frozenset({"decisions"}),
     "repair.apply": frozenset({"decisions"}),
-    "cleanup.temp_preview": frozenset({"path", "deleteAll", "delete_all"}),
-    "cleanup.temp": frozenset({"path", "deleteAll", "delete_all"}),
+    "cleanup.temp_preview": frozenset({"artifactId", "artifact_id", "path", "deleteAll", "delete_all"}),
+    "cleanup.temp": frozenset({"artifactId", "artifact_id", "path", "deleteAll", "delete_all"}),
     "debug.probes": frozenset({"group"}),
     "debug.timeline": frozenset({"limit"}),
     "debug.export": frozenset({"archive", "group", "limit"}),

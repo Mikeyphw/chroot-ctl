@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
@@ -101,11 +102,29 @@ class ChrootRootService : RootService() {
             val request = JSONObject(requestJson)
             val payload = request.optJSONObject("payload") ?: JSONObject()
             val filename = safeFileName(payload.optString("filename", "import.tar.zst"))
-            val target = transferDirectory().resolve(filename)
-            ParcelFileDescriptor.AutoCloseInputStream(input).use { source ->
-                FileOutputStream(target).use { destination -> source.copyTo(destination) }
+            val stagingId = UUID.randomUUID().toString().replace("-", "")
+            val directory = transferDirectory()
+            val target = directory.resolve("$stagingId-$filename")
+            val partial = directory.resolve(".$stagingId-$filename.partial")
+            try {
+                ParcelFileDescriptor.AutoCloseInputStream(input).use { source ->
+                    FileOutputStream(partial).use { destination ->
+                        source.copyTo(destination)
+                        destination.fd.sync()
+                    }
+                }
+                check(partial.renameTo(target)) { "Unable to atomically publish staged import" }
+            } finally {
+                partial.delete()
             }
-            envelope(request.optString("requestId", "unknown"), JSONObject().put("path", target.path).put("archive", target.path).put("filename", target.name))
+            envelope(
+                request.optString("requestId", "unknown"),
+                JSONObject()
+                    .put("stagingId", stagingId)
+                    .put("path", target.path)
+                    .put("archive", target.path)
+                    .put("filename", target.name),
+            )
         }.getOrElse { error -> failure("TRANSFER_STAGE_FAILED", error.message ?: error.javaClass.simpleName) }
 
         override fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String = runCatching {
