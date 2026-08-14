@@ -137,6 +137,11 @@ data class PreviewSummary(
     val blocking: List<String>,
     val warnings: List<String>,
     val rawJson: String,
+    val previewId: String = "",
+    val payloadHash: String = "",
+    val resourceRevision: String = "",
+    val actionOperation: String = "",
+    val expiresAt: Double = 0.0,
 )
 
 data class SnapshotSummary(
@@ -296,6 +301,7 @@ data class TransferPane(
     val artifacts: List<TransferArtifactSummary> = emptyList(),
     val importInspection: PreviewSummary? = null,
     val exportPreview: PreviewSummary? = null,
+    val artifactCleanupPreview: PreviewSummary? = null,
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
 )

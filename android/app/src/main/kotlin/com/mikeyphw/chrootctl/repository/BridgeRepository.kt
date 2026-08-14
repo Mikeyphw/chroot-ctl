@@ -134,7 +134,14 @@ class BridgeRepository(
     }
 
     suspend fun refreshOperationDetail(operationId: String): Result<Unit> = runCatching {
-        val raw = rootClient.operationState(operationId)
+        persistOperationEnvelope(operationId, rootClient.operationState(operationId))
+    }
+
+    suspend fun reconcileOperation(operationId: String): Result<Unit> = runCatching {
+        persistOperationEnvelope(operationId, rootClient.reconcileOperation(operationId))
+    }
+
+    private suspend fun persistOperationEnvelope(operationId: String, raw: String) {
         val data = BridgeEnvelope.fromJson(raw).requireData()
         database.operationDao().upsert(data.toOperationEntity(System.currentTimeMillis(), stale = false))
         data.optJSONArray("progressEvents")?.toJsonObjects()?.forEach { event ->
@@ -322,11 +329,13 @@ class BridgeRepository(
         data.toPackageCompareSummary()
     }
 
-    suspend fun inspectTransferImport(archive: String): Result<PreviewSummary> = runCatching {
+    suspend fun inspectTransferImport(archive: String, name: String = "", conflict: String = "rename"): Result<PreviewSummary> = runCatching {
+        val payload = JSONObject().put("archive", archive).put("conflict", conflict)
+        if (name.isNotBlank()) payload.put("name", name)
         val data = BridgeEnvelope.fromJson(
-            rootClient.query(BridgeRequest("transfer.inspect_import", JSONObject().put("archive", archive)).toJson()),
+            rootClient.preview(BridgeRequest("transfer.import_preview", payload).toJson()),
         ).requireData()
-        data.toTransferInspectionSummary()
+        data.toPreviewSummary("Import preview")
     }
 
     suspend fun previewTransferExport(name: String, archive: String): Result<PreviewSummary> = runCatching {
@@ -339,6 +348,13 @@ class BridgeRepository(
     suspend fun refreshTransferArtifacts(): Result<List<TransferArtifactSummary>> = runCatching {
         val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("artifacts.list").toJson())).requireData()
         data.optJSONArray("items").toJsonObjects().map { item -> item.toTransferArtifactSummary() }
+    }
+
+    suspend fun previewArtifactCleanup(deleteAll: Boolean = true, path: String? = null): Result<PreviewSummary> = runCatching {
+        val payload = JSONObject().put("deleteAll", deleteAll)
+        path?.takeIf(String::isNotBlank)?.let { payload.put("path", it) }
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("artifacts.cleanup_preview", payload).toJson())).requireData()
+        data.toPreviewSummary("Artifact cleanup preview")
     }
 
 
@@ -379,7 +395,7 @@ class BridgeRepository(
     }
 
     suspend fun previewTempCleanup(): Result<PreviewSummary> = runCatching {
-        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("cleanup.temp_preview").toJson())).requireData()
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("cleanup.temp_preview", JSONObject().put("deleteAll", true)).toJson())).requireData()
         data.toPreviewSummary("Temporary cleanup preview")
     }
 
@@ -391,7 +407,8 @@ class BridgeRepository(
 
 
     suspend fun previewSmokePlan(): Result<PreviewSummary> = runCatching {
-        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("smoke.plan").toJson())).requireData()
+        val payload = JSONObject().put("scope", "real-device").put("includeOptional", true)
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("smoke.preview", payload).toJson())).requireData()
         data.toPreviewSummary("Real-device smoke plan")
     }
 
@@ -408,10 +425,11 @@ class BridgeRepository(
     suspend fun startBridgeOperation(
         operation: String,
         payload: JSONObject,
+        requestId: String? = null,
         onEvent: suspend (JSONObject) -> Unit,
     ): Result<String?> = runCatching {
         var operationId: String? = null
-        val request = BridgeRequest(operation, payload).toJson()
+        val request = BridgeRequest(operation, payload, requestId = requestId ?: java.util.UUID.randomUUID().toString()).toJson()
         val started = rootClient.streamOperation(request) { line ->
             val event = JSONObject(line)
             recordOperationEvent(event)
@@ -422,6 +440,15 @@ class BridgeRepository(
         check(startEnvelope.optBoolean("ok")) { startEnvelope.optJSONObject("error")?.optString("message") ?: "Operation did not start" }
         refreshHome()
         operationId
+    }
+
+    suspend fun findOperationIdByRequestId(requestId: String): Result<String?> = runCatching {
+        val rows = BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("operations.list", JSONObject().put("limit", 1000)).toJson()),
+        ).requireArray().toJsonObjects()
+        rows.firstOrNull { row ->
+            row.optJSONObject("request")?.optString("requestId") == requestId
+        }?.optString("operationId")?.takeIf(String::isNotBlank)
     }
 
     fun capabilityGroups(capabilities: BridgeCapabilities): List<ToolCapabilityGroup> {
@@ -795,6 +822,11 @@ private fun JSONObject.toPreviewSummary(title: String): PreviewSummary {
         blocking = blocking,
         warnings = warnings,
         rawJson = toString(),
+        previewId = optString("previewId"),
+        payloadHash = optString("payloadHash"),
+        resourceRevision = optString("resourceRevision"),
+        actionOperation = optString("actionOperation"),
+        expiresAt = optDouble("expiresAt", 0.0),
     )
 }
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import logging
 import os
 import subprocess
@@ -17,33 +18,67 @@ class CompletedProcess:
         self.stderr = stderr
 
 
+def _install_fake_popen(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> dict[str, object]:
+    captured: dict[str, object] = {}
+
+    class CapturingStdin(io.BytesIO):
+        def close(self) -> None:
+            captured["input"] = self.getvalue().decode("utf-8", errors="replace")
+            super().close()
+
+    class FakePopen:
+        def __init__(self, args, **kwargs) -> None:
+            captured["args"] = list(args)
+            captured.update(kwargs)
+            self.pid = os.getpid()
+            self.returncode = returncode
+            self.stdin = CapturingStdin() if kwargs.get("stdin") == subprocess.PIPE else None
+            out = kwargs.get("stdout")
+            err = kwargs.get("stderr")
+            if hasattr(out, "write"):
+                out.write(stdout.encode("utf-8"))
+                out.flush()
+            if hasattr(err, "write"):
+                err.write(stderr.encode("utf-8"))
+                err.flush()
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, *args, **kwargs):
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.returncode = -15
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    return captured
+
+
 def test_run_merges_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_env: dict[str, str] = {}
-
-    def fake_run(args, **kwargs):
-        nonlocal captured_env
-        captured_env = kwargs["env"]
-        return CompletedProcess(0)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    captured = _install_fake_popen(monkeypatch)
     monkeypatch.setenv("KEEP_ME", "present")
     runner = SystemRunner(logging.getLogger("test"))
 
     runner.run(["true"], env={"ADD_ME": "value"})
 
+    captured_env = captured["env"]
+    assert isinstance(captured_env, dict)
     assert captured_env["KEEP_ME"] == "present"
     assert captured_env["ADD_ME"] == "value"
 
 
 def test_run_filters_termux_variables_for_chroot_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_env: dict[str, str] = {}
-
-    def fake_run(args, **kwargs):
-        nonlocal captured_env
-        captured_env = kwargs["env"]
-        return CompletedProcess(0)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    captured = _install_fake_popen(monkeypatch)
     monkeypatch.setenv("LD_PRELOAD", "/data/data/com.termux/files/usr/lib/libtermux-exec.so")
     monkeypatch.setenv("LD_LIBRARY_PATH", "/data/data/com.termux/files/usr/lib")
     monkeypatch.setenv("PREFIX", "/data/data/com.termux/files/usr")
@@ -53,6 +88,8 @@ def test_run_filters_termux_variables_for_chroot_env(monkeypatch: pytest.MonkeyP
 
     runner.run(["busybox", "chroot", "/tmp/rootfs", "/bin/bash"], chroot_env=True)
 
+    captured_env = captured["env"]
+    assert isinstance(captured_env, dict)
     assert "LD_PRELOAD" not in captured_env
     assert "LD_LIBRARY_PATH" not in captured_env
     assert "PREFIX" not in captured_env
@@ -70,10 +107,7 @@ def test_run_filters_termux_variables_for_chroot_env(monkeypatch: pytest.MonkeyP
 
 
 def test_run_raises_with_fallback_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(args, **kwargs):
-        return CompletedProcess(4, stdout="", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    _install_fake_popen(monkeypatch, returncode=4)
     runner = SystemRunner(logging.getLogger("test"))
 
     with pytest.raises(RuntimeError, match="command failed: false"):
@@ -81,19 +115,12 @@ def test_run_raises_with_fallback_message(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_run_passes_input_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_input = None
-
-    def fake_run(args, **kwargs):
-        nonlocal captured_input
-        captured_input = kwargs["input"]
-        return CompletedProcess(0, stdout="ok", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    captured = _install_fake_popen(monkeypatch, stdout="ok")
     runner = SystemRunner(logging.getLogger("test"))
 
     result = runner.run(["python3", "-"], input_text="print('ok')")
 
-    assert captured_input == "print('ok')"
+    assert captured["input"] == "print('ok')"
     assert result.stdout == "ok"
 
 

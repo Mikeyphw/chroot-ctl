@@ -3,6 +3,7 @@ package com.mikeyphw.chrootctl.root
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.util.Collections
@@ -13,13 +14,14 @@ internal data class BridgeProcessResult(
     val output: String,
     val errorOutput: String = "",
     val timedOut: Boolean = false,
+    val truncated: Boolean = false,
 )
 
 internal class BridgeProcess(private val runtime: BridgeRuntime) {
     fun invoke(arguments: List<String>, requestJson: String? = null, timeoutSeconds: Long = 30): BridgeProcessResult {
         val process = start(arguments)
-        val stdout = ByteArrayOutputStream()
-        val stderr = ByteArrayOutputStream()
+        val stdout = BoundedOutputStream(MAX_CAPTURE_BYTES)
+        val stderr = BoundedOutputStream(MAX_CAPTURE_BYTES)
         val drainFailures = drainFailureBuffer()
         val stdoutReader = drain(process.inputStream, stdout, "chrootctl-bridge-stdout", drainFailures)
         val stderrReader = drain(process.errorStream, stderr, "chrootctl-bridge-stderr", drainFailures)
@@ -27,30 +29,39 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
             if (requestJson != null) writer.write(requestJson)
         }
         val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
-        if (!finished) {
-            process.destroy()
-            if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly()
-        }
+        if (!finished) terminate(process)
         stdoutReader.join(READER_JOIN_TIMEOUT_MS)
         stderrReader.join(READER_JOIN_TIMEOUT_MS)
         return BridgeProcessResult(
             exitCode = if (finished) process.exitValue() else -1,
-            output = String(stdout.toByteArray(), StandardCharsets.UTF_8),
+            output = stdout.asString(),
             errorOutput = bridgeErrorOutput(stderr, drainFailures),
             timedOut = !finished,
+            truncated = stdout.truncated || stderr.truncated,
         )
     }
 
-    fun stream(arguments: List<String>, requestJson: String, output: OutputStream): Int {
+    fun stream(
+        arguments: List<String>,
+        requestJson: String,
+        output: OutputStream,
+        timeoutSeconds: Long = STREAM_TIMEOUT_SECONDS,
+    ): Int {
         val process = start(arguments)
-        val stderr = ByteArrayOutputStream()
+        val stderr = BoundedOutputStream(MAX_CAPTURE_BYTES)
         val drainFailures = drainFailureBuffer()
         val stderrReader = drain(process.errorStream, stderr, "chrootctl-bridge-stream-stderr", drainFailures)
+        val stdoutReader = drainStreaming(process.inputStream, output, "chrootctl-bridge-stream-stdout", drainFailures)
         process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer -> writer.write(requestJson) }
-        process.inputStream.use { input -> output.use { target -> input.copyTo(target, DEFAULT_BUFFER_SIZE) } }
-        val exitCode = process.waitFor()
+        val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+        if (!finished) {
+            drainFailures += "chrootctl-bridge-stream timed out after ${timeoutSeconds}s"
+            terminate(process)
+        }
+        stdoutReader.join(READER_JOIN_TIMEOUT_MS)
         stderrReader.join(READER_JOIN_TIMEOUT_MS)
-        return exitCode
+        runCatching { output.flush() }
+        return if (finished) process.exitValue() else -1
     }
 
     private fun start(arguments: List<String>): Process {
@@ -77,21 +88,29 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
             .start()
     }
 
+    private fun terminate(process: Process) {
+        process.destroy()
+        if (!process.waitFor(TERMINATE_GRACE_SECONDS, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            process.waitFor(TERMINATE_GRACE_SECONDS, TimeUnit.SECONDS)
+        }
+    }
+
     private fun drainFailureBuffer(): MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
 
-    private fun bridgeErrorOutput(stderr: ByteArrayOutputStream, drainFailures: List<String>): String {
-        val bridgeStderr = String(stderr.toByteArray(), StandardCharsets.UTF_8)
-        if (drainFailures.isEmpty()) return bridgeStderr
+    private fun bridgeErrorOutput(stderr: BoundedOutputStream, drainFailures: List<String>): String {
+        val bridgeStderr = stderr.asString()
+        val truncation = if (stderr.truncated) "android-stream-drain: stderr capture truncated at $MAX_CAPTURE_BYTES bytes" else ""
         val drainDiagnostics = drainFailures.joinToString(separator = "\n") { failure ->
             "android-stream-drain: $failure"
         }
-        return listOf(bridgeStderr, drainDiagnostics)
+        return listOf(bridgeStderr, truncation, drainDiagnostics)
             .filter { it.isNotBlank() }
             .joinToString(separator = "\n")
     }
 
     private fun drain(
-        input: java.io.InputStream,
+        input: InputStream,
         output: OutputStream,
         name: String,
         failures: MutableList<String>,
@@ -109,6 +128,40 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
         start()
     }
 
+    private fun drainStreaming(
+        input: InputStream,
+        output: OutputStream,
+        name: String,
+        failures: MutableList<String>,
+    ): Thread = Thread({
+        input.use { source ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var target: OutputStream = output
+            while (true) {
+                val count = try {
+                    source.read(buffer)
+                } catch (error: Throwable) {
+                    failures += drainFailureMessage(name, error)
+                    break
+                }
+                if (count < 0) break
+                try {
+                    target.write(buffer, 0, count)
+                    target.flush()
+                } catch (error: Throwable) {
+                    failures += drainFailureMessage(name, error)
+                    target = DiscardingOutputStream
+                }
+            }
+        }
+    }, name).apply {
+        isDaemon = true
+        uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { thread, error ->
+            failures += drainFailureMessage(thread.name, error)
+        }
+        start()
+    }
+
     private fun drainFailureMessage(name: String, error: Throwable): String {
         val message = when (error) {
             is IOException -> error.message ?: error.javaClass.simpleName
@@ -117,7 +170,34 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
         return "$name closed without crashing the root service: $message"
     }
 
+    private class BoundedOutputStream(private val limit: Int) : OutputStream() {
+        private val buffer = ByteArrayOutputStream(minOf(limit, 64 * 1024))
+        var truncated: Boolean = false
+            private set
+
+        override fun write(value: Int) {
+            if (buffer.size() < limit) buffer.write(value) else truncated = true
+        }
+
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            val remaining = (limit - buffer.size()).coerceAtLeast(0)
+            val accepted = minOf(length, remaining)
+            if (accepted > 0) buffer.write(bytes, offset, accepted)
+            if (accepted < length) truncated = true
+        }
+
+        fun asString(): String = String(buffer.toByteArray(), StandardCharsets.UTF_8)
+    }
+
+    private object DiscardingOutputStream : OutputStream() {
+        override fun write(value: Int) = Unit
+        override fun write(bytes: ByteArray, offset: Int, length: Int) = Unit
+    }
+
     private companion object {
+        const val MAX_CAPTURE_BYTES = 512 * 1024
         const val READER_JOIN_TIMEOUT_MS = 2_000L
+        const val TERMINATE_GRACE_SECONDS = 2L
+        const val STREAM_TIMEOUT_SECONDS = 6 * 60 * 60L
     }
 }

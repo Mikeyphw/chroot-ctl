@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import subprocess
 from pathlib import Path
@@ -208,11 +209,14 @@ def test_sync_uid_tool_uses_user_sync_manager(tmp_path: Path, monkeypatch) -> No
     assert registry.get("ubuntu")["metadata"]["tools"] == "sync-uid"
 
 
-def test_external_tool_catalog_loads_and_overrides_builtin(tmp_path: Path) -> None:
+def test_external_tool_catalog_rejects_builtin_override(tmp_path: Path) -> None:
     manifest_dir = tmp_path / "tools"
     script_dir = tmp_path / "tool-scripts"
     manifest_dir.mkdir()
     script_dir.mkdir()
+    script_text = "echo external\n"
+    script_sha = hashlib.sha256(script_text.encode("utf-8")).hexdigest()
+    (script_dir / "custom-remove-snapd.sh").write_text(script_text, encoding="utf-8")
     (manifest_dir / "remove-snapd.yaml").write_text(
         "\n".join(
             [
@@ -220,18 +224,15 @@ def test_external_tool_catalog_loads_and_overrides_builtin(tmp_path: Path) -> No
                 "description: Custom remove snapd",
                 "distro: ubuntu",
                 "script: custom-remove-snapd.sh",
+                f"sha256: {script_sha}",
             ]
         ),
         encoding="utf-8",
     )
-    (script_dir / "custom-remove-snapd.sh").write_text("echo external\n", encoding="utf-8")
 
     config = ChrootConfig(tool_manifest_dirs=(manifest_dir,), tool_script_dirs=(script_dir,))
-    entry = ManifestCatalog("tool", config=config).get_entry("remove-snapd")
-
-    assert entry.description == "Custom remove snapd"
-    assert entry.script == "custom-remove-snapd.sh"
-    assert "external" in entry.script_text
+    with pytest.raises(ValueError, match="attempts to override existing catalog entry"):
+        ManifestCatalog("tool", config=config).list_entries()
 
 
 def test_external_python_tool_catalog_loads(tmp_path: Path) -> None:
@@ -239,6 +240,9 @@ def test_external_python_tool_catalog_loads(tmp_path: Path) -> None:
     script_dir = tmp_path / "tool-scripts"
     manifest_dir.mkdir()
     script_dir.mkdir()
+    script_text = "print('external')\n"
+    script_sha = hashlib.sha256(script_text.encode("utf-8")).hexdigest()
+    (script_dir / "python-tool.py").write_text(script_text, encoding="utf-8")
     (manifest_dir / "python-tool.yaml").write_text(
         "\n".join(
             [
@@ -246,11 +250,11 @@ def test_external_python_tool_catalog_loads(tmp_path: Path) -> None:
                 "description: Python tool",
                 "distro: ubuntu",
                 "script: python-tool.py",
+                f"sha256: {script_sha}",
             ]
         ),
         encoding="utf-8",
     )
-    (script_dir / "python-tool.py").write_text("print('external')\n", encoding="utf-8")
 
     config = ChrootConfig(tool_manifest_dirs=(manifest_dir,), tool_script_dirs=(script_dir,))
     entry = ManifestCatalog("tool", config=config).get_entry("python-tool")
@@ -360,22 +364,25 @@ def test_manifest_categories_are_normalized_and_filterable() -> None:
     assert {"remove-snapd", "setup-dev-basics", "setup-flatpak"} <= package_tools
 
 
-def test_external_categories_override_and_catalog_categories(tmp_path: Path) -> None:
+def test_external_categories_are_normalized_and_added_to_catalog(tmp_path: Path) -> None:
     manifests = tmp_path / "tools"
     scripts = tmp_path / "tool-scripts"
     manifests.mkdir()
     scripts.mkdir()
 
-    (scripts / "remove-snapd.sh").write_text("echo external\n", encoding="utf-8")
-    (manifests / "remove-snapd.yaml").write_text(
-        """
-name: remove-snapd
-description: External override
+    script_text = "echo external\n"
+    script_sha = hashlib.sha256(script_text.encode("utf-8")).hexdigest()
+    (scripts / "external-cleanup.sh").write_text(script_text, encoding="utf-8")
+    (manifests / "external-cleanup.yaml").write_text(
+        f"""
+name: external-cleanup
+description: External cleanup
 distro: ubuntu
 categories:
   - Cleanup
   - package management
-script: remove-snapd.sh
+script: external-cleanup.sh
+sha256: {script_sha}
 """.strip(),
         encoding="utf-8",
     )
@@ -385,14 +392,44 @@ script: remove-snapd.sh
         tool_script_dirs=(scripts,),
     )
     catalog = ManifestCatalog("tool", config=config)
-    entry = catalog.get_entry("remove-snapd")
+    entry = catalog.get_entry("external-cleanup")
 
-    assert entry.description == "External override"
+    assert entry.description == "External cleanup"
     assert entry.categories == ("cleanup", "package-management")
     categories = catalog.categories()
     assert "cleanup" in categories
     assert "package-management" in categories
     assert "system" in categories
+
+
+def test_external_manifest_requires_script_hash(tmp_path: Path) -> None:
+    manifests = tmp_path / "tools"
+    scripts = tmp_path / "tool-scripts"
+    manifests.mkdir()
+    scripts.mkdir()
+    (scripts / "external.sh").write_text("echo external\n", encoding="utf-8")
+    (manifests / "external.yaml").write_text(
+        "name: external\ndescription: External\ndistro: ubuntu\nscript: external.sh\n",
+        encoding="utf-8",
+    )
+    config = ChrootConfig(tool_manifest_dirs=(manifests,), tool_script_dirs=(scripts,))
+    with pytest.raises(ValueError, match="must declare a lowercase sha256"):
+        ManifestCatalog("tool", config=config).list_entries()
+
+
+def test_external_manifest_rejects_script_hash_mismatch(tmp_path: Path) -> None:
+    manifests = tmp_path / "tools"
+    scripts = tmp_path / "tool-scripts"
+    manifests.mkdir()
+    scripts.mkdir()
+    (scripts / "external.sh").write_text("echo changed\n", encoding="utf-8")
+    (manifests / "external.yaml").write_text(
+        "name: external\ndescription: External\ndistro: ubuntu\nscript: external.sh\nsha256: " + ("0" * 64) + "\n",
+        encoding="utf-8",
+    )
+    config = ChrootConfig(tool_manifest_dirs=(manifests,), tool_script_dirs=(scripts,))
+    with pytest.raises(ValueError, match="script sha256 mismatch"):
+        ManifestCatalog("tool", config=config).list_entries()
 
 
 def test_catalog_categories_are_sorted_and_unique() -> None:

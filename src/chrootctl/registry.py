@@ -97,6 +97,48 @@ class ChrootRegistry:
                 (name, distro, path, arch, release_name, version, phase, int(installed), payload),
             )
 
+    def apply_chroot_mutations(self, mutations: list[dict[str, Any]]) -> None:
+        """Apply a preflighted set of chroot registry mutations in one SQLite transaction."""
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for mutation in mutations:
+                action = str(mutation.get("action") or "")
+                name = str(mutation.get("name") or "")
+                if not name:
+                    raise ValueError("registry mutation requires name")
+                if action == "delete":
+                    conn.execute("DELETE FROM chroots WHERE name = ?", (name,))
+                    continue
+                if action != "upsert":
+                    raise ValueError(f"unsupported registry mutation action: {action}")
+                payload = json.dumps(mutation.get("metadata") or {}, sort_keys=True)
+                conn.execute(
+                    """
+                    INSERT INTO chroots (name, distro, path, arch, release_name, version, phase, installed, metadata_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(name) DO UPDATE SET
+                        distro=excluded.distro,
+                        path=excluded.path,
+                        arch=excluded.arch,
+                        release_name=excluded.release_name,
+                        version=excluded.version,
+                        phase=excluded.phase,
+                        installed=excluded.installed,
+                        metadata_json=excluded.metadata_json
+                    """,
+                    (
+                        name,
+                        str(mutation.get("distro") or "unknown"),
+                        str(mutation.get("path") or ""),
+                        mutation.get("arch"),
+                        mutation.get("release_name"),
+                        mutation.get("version"),
+                        str(mutation.get("phase") or "registered"),
+                        int(bool(mutation.get("installed"))),
+                        payload,
+                    ),
+                )
+
     def get(self, name: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM chroots WHERE name = ?", (name,)).fetchone()

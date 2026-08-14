@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..models import RegistryRepairResult
+from ..validation import validate_chroot_name
 from .context import ServiceContainer
 
 
@@ -104,12 +105,19 @@ class RepairService:
         for decision in decisions:
             item_id = str(decision.get("item_id", "")).strip()
             item = preview_items.get(item_id)
-            if not item:
-                continue
-            action = str(decision.get("action", "")).strip() or str(item.get("action", "skip"))
+            if item is None:
+                raise RuntimeError(f"repair decision is stale or unknown: {item_id}")
+            action = str(decision.get("action", "")).strip()
+            allowed_action = {
+                "missing-record": "register",
+                "mismatched-path": "fix-path",
+                "missing-path": "remove-record",
+            }.get(str(item.get("kind", "")))
             if action == "skip":
                 summary["skip_count"] += 1
                 continue
+            if allowed_action is None or action != allowed_action:
+                raise RuntimeError(f"repair action {action!r} is not valid for {item.get('kind')!r}")
             summary["selected_count"] += 1
             if action == "register":
                 summary["register_count"] += 1
@@ -148,51 +156,80 @@ class RepairService:
         missing_records: list[str] = []
         missing_paths: list[str] = []
         mismatched_paths: list[str] = []
+        mutations: list[dict[str, object]] = []
         preview_items = {str(item["item_id"]): item for item in self.preview_items()}
+
+        # Preflight the full plan before the first database write so a stale/invalid
+        # candidate cannot leave a partially applied repair set.
         for decision in decisions:
             item_id = str(decision.get("item_id", "")).strip()
-            action = str(decision.get("action", "")).strip() or str(preview_items.get(item_id, {}).get("action", ""))
             item = preview_items.get(item_id)
-            if not item or action == "skip":
+            if item is None:
+                raise RuntimeError(f"repair decision is stale or unknown: {item_id}")
+            action = str(decision.get("action", "")).strip() or str(item.get("action", ""))
+            if action == "skip":
                 continue
             name = str(item["name"])
-            if item["kind"] == "missing-record":
+            kind = str(item["kind"])
+            allowed_action = {
+                "missing-record": "register",
+                "mismatched-path": "fix-path",
+                "missing-path": "remove-record",
+            }.get(kind)
+            if allowed_action is None or action != allowed_action:
+                raise RuntimeError(f"repair action {action!r} is not valid for {kind!r}")
+
+            if kind == "missing-record":
                 missing_records.append(name)
-                if action == "register":
-                    directory = Path(str(item["path"]))
-                    self.services.registry.upsert(
-                        name=name,
-                        distro="unknown",
-                        path=str(directory),
-                        phase="registered",
-                        installed=False,
-                        arch="",
-                        release_name="",
-                        version="",
-                        metadata={"recovered": "yes", "repair_source": "filesystem-scan"},
-                    )
-                    repaired_records.append(name)
-            elif item["kind"] == "mismatched-path":
+                directory = self._validated_candidate(name, Path(str(item["path"])))
+                mutations.append(
+                    {
+                        "action": "upsert",
+                        "name": name,
+                        "distro": "unknown",
+                        "path": str(directory),
+                        "phase": "registered",
+                        "installed": False,
+                        "arch": "",
+                        "release_name": "",
+                        "version": "",
+                        "metadata": {"recovered": "yes", "repair_source": "filesystem-scan"},
+                    }
+                )
+                repaired_records.append(name)
+            elif kind == "mismatched-path":
                 mismatched_paths.append(name)
-                if action == "fix-path":
-                    record = self.services.registry.get(name) or {}
-                    self.services.registry.upsert(
-                        name=name,
-                        distro=str(record.get("distro", "unknown")),
-                        path=str(item["path"]),
-                        phase=str(record.get("phase", "registered")),
-                        installed=bool(record.get("installed")),
-                        arch=str(record.get("arch", "")),
-                        release_name=str(record.get("release_name", "")),
-                        version=str(record.get("version", "")),
-                        metadata=record.get("metadata") if isinstance(record.get("metadata"), dict) else {},
-                    )
-                    repaired_records.append(name)
-            elif item["kind"] == "missing-path":
+                directory = self._validated_candidate(name, Path(str(item["path"])))
+                record = self.services.registry.get(name)
+                if record is None:
+                    raise RuntimeError(f"registry record disappeared after preview: {name}")
+                mutations.append(
+                    {
+                        "action": "upsert",
+                        "name": name,
+                        "distro": str(record.get("distro", "unknown")),
+                        "path": str(directory),
+                        "phase": str(record.get("phase", "registered")),
+                        "installed": bool(record.get("installed")),
+                        "arch": str(record.get("arch", "")),
+                        "release_name": str(record.get("release_name", "")),
+                        "version": str(record.get("version", "")),
+                        "metadata": record.get("metadata") if isinstance(record.get("metadata"), dict) else {},
+                    }
+                )
+                repaired_records.append(name)
+            elif kind == "missing-path":
                 missing_paths.append(name)
-                if action == "remove-record":
-                    self.services.registry.delete(name)
-                    removed_records.append(name)
+                record = self.services.registry.get(name)
+                if record is None:
+                    raise RuntimeError(f"registry record disappeared after preview: {name}")
+                record_path = Path(str(record.get("path", ""))).expanduser()
+                if record_path.exists():
+                    raise RuntimeError(f"repair decision is stale because the missing path now exists: {record_path}")
+                mutations.append({"action": "delete", "name": name})
+                removed_records.append(name)
+
+        self.services.registry.apply_chroot_mutations(mutations)
         result = RegistryRepairResult(
             scanned_paths=len(self._candidate_dirs()),
             missing_records=tuple(missing_records),
@@ -216,18 +253,37 @@ class RepairService:
         if not root.exists():
             return []
         items: list[Path] = []
+        resolved_root = root.resolve()
         for child in sorted(root.iterdir()):
             name = child.name
-            if not child.is_dir():
+            if child.is_symlink() or not child.is_dir():
                 continue
-            if name.startswith("."):
+            if name.startswith(".") or name in {"tmp", "cache", "logs"}:
                 continue
-            if name in {"tmp", "cache", "logs"}:
+            try:
+                validate_chroot_name(name, field="repair candidate")
+                resolved = child.resolve(strict=True)
+                resolved.relative_to(resolved_root)
+            except (OSError, ValueError):
                 continue
-            if child == root / ".snapshots":
+            if resolved != child.absolute():
                 continue
             items.append(child)
         return items
+
+    def _validated_candidate(self, name: str, directory: Path) -> Path:
+        validate_chroot_name(name, field="repair candidate")
+        root = self.services.base_config.chroot_root.resolve()
+        if directory.is_symlink() or not directory.is_dir():
+            raise RuntimeError(f"repair candidate is no longer a regular directory: {directory}")
+        resolved = directory.resolve(strict=True)
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise RuntimeError(f"repair candidate escaped the configured chroot root: {directory}") from exc
+        if resolved.name != name:
+            raise RuntimeError(f"repair candidate name changed after preview: {name}")
+        return resolved
 
     def preview_registry_repair(self) -> RegistryRepairResult:
         return self._repair(preview=True)

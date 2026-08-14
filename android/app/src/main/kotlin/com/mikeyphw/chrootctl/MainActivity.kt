@@ -1,5 +1,6 @@
 package com.mikeyphw.chrootctl
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -10,14 +11,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import com.mikeyphw.chrootctl.operations.ChrootOperationService
+import com.mikeyphw.chrootctl.operations.OperationNotificationController
 import com.mikeyphw.chrootctl.ui.ChrootCtlApp
 import com.mikeyphw.chrootctl.ui.MainViewModel
 import com.mikeyphw.chrootctl.ui.MainViewModelFactory
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val notificationOperationId = mutableStateOf<String?>(null)
+
     private val viewModel: MainViewModel by viewModels {
         val app = application as ChrootCtlApplication
         MainViewModelFactory(app.container.bridgeRepository)
@@ -38,6 +43,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        notificationOperationId.value = intent?.getStringExtra(OperationNotificationController.EXTRA_OPEN_OPERATION_ID)
         enableEdgeToEdge()
         setContent {
             ChrootCtlApp(
@@ -60,8 +66,16 @@ class MainActivity : ComponentActivity() {
                     createExportDocument.launch(defaultExportFileName())
                 },
                 onRequestNotificationPermission = ::requestNotificationPermission,
+                openOperationId = notificationOperationId.value,
             )
         }
+    }
+
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        notificationOperationId.value = intent.getStringExtra(OperationNotificationController.EXTRA_OPEN_OPERATION_ID)
     }
 
     private fun requestNotificationPermission() {

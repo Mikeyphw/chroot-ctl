@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,12 +39,21 @@ fun ChrootCtlApp(
     onPickImportArchive: () -> Unit,
     onCreateExportDocument: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    openOperationId: String? = null,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var destinationName by rememberSaveable { mutableStateOf(AppDestination.Home.name) }
     val destination = AppDestination.entries.firstOrNull { it.name == destinationName } ?: AppDestination.Home
     fun navigate(item: AppDestination) {
         destinationName = item.name
+    }
+
+    LaunchedEffect(openOperationId) {
+        openOperationId?.takeIf(String::isNotBlank)?.let { operationId ->
+            viewModel.selectOperation(operationId)
+            viewModel.refreshSelectedOperation()
+            navigate(AppDestination.Activity)
+        }
     }
 
     ChrootCtlTheme {
@@ -91,11 +101,11 @@ fun ChrootCtlApp(
                 startSnapshotExport = { name, snapshot -> onStartBridgeOperation("snapshots.export", viewModel.snapshotExportPayloadJson(name, snapshot)) },
                 refreshUsers = viewModel::refreshUsers,
                 previewUserPayload = viewModel::previewUserAction,
-                startUserOperation = onStartBridgeOperation,
+                startUserOperation = { operation, payload -> onStartBridgeOperation(operation, viewModel.userOperationPayloadJson(operation, payload)) },
                 refreshServices = viewModel::refreshServices,
                 refreshServiceDetail = viewModel::refreshServiceDetail,
                 previewServicePayload = viewModel::previewServiceAction,
-                startServiceOperation = onStartBridgeOperation,
+                startServiceOperation = { operation, payload -> onStartBridgeOperation(operation, viewModel.serviceOperationPayloadJson(operation, payload)) },
                 refreshCatalog = viewModel::refreshCatalog,
                 setCatalogTarget = viewModel::setCatalogTarget,
                 setCatalogQuery = viewModel::setCatalogQuery,
@@ -115,7 +125,13 @@ fun ChrootCtlApp(
                 refreshTransferArtifacts = viewModel::refreshTransferArtifacts,
                 startTransferImport = { onStartBridgeOperation("transfer.import", viewModel.transferImportPayloadJson()) },
                 startTransferExport = { onStartBridgeOperation("transfer.export", viewModel.transferExportPayloadJson()) },
-                cleanupAllArtifacts = { onStartBridgeOperation("artifacts.cleanup", viewModel.artifactCleanupPayloadJson(deleteAll = true)) },
+                cleanupAllArtifacts = {
+                    if (uiState.transferPane.artifactCleanupPreview?.ok == true) {
+                        onStartBridgeOperation("artifacts.cleanup", viewModel.artifactCleanupPayloadJson(deleteAll = true))
+                    } else {
+                        viewModel.previewArtifactCleanup(deleteAll = true)
+                    }
+                },
                 pickImportArchive = onPickImportArchive,
                 createExportDocument = onCreateExportDocument,
                 refreshSystemSupport = viewModel::refreshSystemSupport,

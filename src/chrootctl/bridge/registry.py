@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from typing import Any, Callable
 
@@ -804,6 +805,7 @@ def _payload_names(payload: dict[str, Any]) -> list[str]:
 
 
 def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
+    script_text = str(getattr(entry, "script_text", ""))
     return {
         "kind": getattr(entry, "kind", "tool"),
         "name": getattr(entry, "name", ""),
@@ -811,6 +813,7 @@ def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
         "distros": list(getattr(entry, "distros", ())),
         "categories": list(getattr(entry, "categories", ())),
         "script": getattr(entry, "script", ""),
+        "scriptSha256": hashlib.sha256(script_text.encode("utf-8")).hexdigest(),
     }
 
 
@@ -990,6 +993,29 @@ def _artifacts_list(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     return services.transfer().temp_state()
 
 
+def _artifacts_cleanup_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
+    try:
+        delete_all = optional_bool(payload, "deleteAll", "delete_all", default=False, field="payload.deleteAll")
+    except ValueError as exc:
+        raise BridgeProtocolError("INVALID_BOOLEAN", str(exc)) from exc
+    requested_path = _optional_text(payload, "path")
+    state = services.transfer().temp_state()
+    items = [item for item in state.get("items", []) if isinstance(item, dict)]
+    selected = items if delete_all else [item for item in items if requested_path and str(item.get("path") or "") == requested_path]
+    return {
+        "ok": bool(selected),
+        "kind": "artifacts.cleanup",
+        "deleteAll": delete_all,
+        "path": requested_path,
+        "selectedCount": len(selected),
+        "selectedBytes": sum(int(item.get("size_bytes", item.get("sizeBytes", 0)) or 0) for item in selected),
+        "managedRoot": state.get("managedRoot"),
+        "blocking": [] if selected else [{"code": "no_matching_artifacts", "message": "No managed artifacts match this cleanup request."}],
+        "warnings": ["Cleanup permanently removes the selected managed transfer artifacts."],
+        "confirm": bool(selected),
+    }
+
+
 def _transfer_import(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
     archive = _optional_text(payload, "archive") or _optional_text(payload, "path")
     if not archive:
@@ -1166,10 +1192,31 @@ def _support_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any
     }
 
 
+def _strict_repair_decisions(raw_decisions: Any, *, required: bool) -> list[dict[str, str]]:
+    if raw_decisions is None and not required:
+        return []
+    if not isinstance(raw_decisions, list):
+        raise BridgeProtocolError("REPAIR_DECISIONS_REQUIRED", "Registry repair decisions must be an explicit list")
+    decisions: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_decisions):
+        if not isinstance(raw, dict):
+            raise BridgeProtocolError("INVALID_REPAIR_DECISION", f"Repair decision {index} must be an object")
+        item_id = str(raw.get("item_id") or raw.get("itemId") or "").strip()
+        action = str(raw.get("action") or "").strip()
+        if not item_id or not action:
+            raise BridgeProtocolError("INVALID_REPAIR_DECISION", f"Repair decision {index} requires item_id and action")
+        if item_id in seen:
+            raise BridgeProtocolError("DUPLICATE_REPAIR_DECISION", f"Duplicate repair decision: {item_id}")
+        seen.add(item_id)
+        decisions.append({"item_id": item_id, "action": action})
+    return decisions
+
+
 def _repair_preview(services: ServiceContainer, payload: dict[str, Any]) -> Any:
     raw_decisions = payload.get("decisions")
-    if isinstance(raw_decisions, list):
-        decisions = [dict(item) for item in raw_decisions if isinstance(item, dict)]
+    if raw_decisions is not None:
+        decisions = _strict_repair_decisions(raw_decisions, required=False)
         plan = services.repair().preview_plan(decisions)
     else:
         items = services.repair().preview_items()
@@ -1292,10 +1339,7 @@ def _module_build(services: ServiceContainer, payload: dict[str, Any], progress:
 
 
 def _repair_apply(services: ServiceContainer, payload: dict[str, Any], progress: Callable[[Any], None], cancelled: Callable[[], bool]) -> Any:
-    raw_decisions = payload.get("decisions")
-    if not isinstance(raw_decisions, list):
-        raise BridgeProtocolError("REPAIR_DECISIONS_REQUIRED", "Registry repair requires explicit item decisions from the caller")
-    decisions = [dict(item) for item in raw_decisions if isinstance(item, dict)]
+    decisions = _strict_repair_decisions(payload.get("decisions"), required=True)
     if not decisions:
         raise BridgeProtocolError("REPAIR_DECISIONS_EMPTY", "Select at least one registry repair decision before applying")
     progress({"phase": "repair", "percent": 15, "message": "Applying selected registry repair decisions"})
@@ -1742,6 +1786,7 @@ _SPECS = (
     OperationSpec("packages.compare", "query", "Compare package inventories between chroots", query_handler=_packages_compare),
     OperationSpec("transfer.inspect_import", "query", "Inspect a staged import archive", query_handler=_transfer_inspect_import),
     OperationSpec("artifacts.list", "query", "List managed transfer artifacts", query_handler=_artifacts_list),
+    OperationSpec("artifacts.cleanup_preview", "preview", "Preview managed transfer artifact cleanup", destructive=True, preview_handler=_artifacts_cleanup_preview),
     OperationSpec("transfer.artifact_root", "query", "Return the managed transfer artifact root shared by Python and Android", query_handler=_transfer_artifact_root),
     OperationSpec("catalog.preview", "preview", "Preview applying tools or add-ons", preview_handler=_catalog_preview),
     OperationSpec("transfer.import_preview", "preview", "Preview importing a staged archive", preview_handler=_transfer_import_preview),
@@ -1756,6 +1801,7 @@ _SPECS = (
     OperationSpec("debug.probes", "query", "Run chroot debug workbench probes", query_handler=_debug_probes),
     OperationSpec("debug.timeline", "query", "Return debug audit timeline", query_handler=_debug_timeline),
     OperationSpec("smoke.plan", "query", "Return real-device smoke suite plan", query_handler=_smoke_plan),
+    OperationSpec("smoke.preview", "preview", "Preview the real-device smoke suite before execution", preview_handler=_smoke_plan),
     OperationSpec("smoke.report", "query", "Return latest real-device smoke operation report", query_handler=_smoke_report),
     OperationSpec("smoke.last_result", "query", "Return latest smoke result and support handoff guidance", query_handler=_smoke_last_result),
     OperationSpec("release.readiness", "query", "Return native release readiness checklist", query_handler=_release_readiness),
@@ -1826,12 +1872,12 @@ _PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "users.list": frozenset({"name"}),
     "users.get": frozenset({"name", "username"}),
     "users.preview": frozenset({"name", "username", "action", "shell", "sudo", "deleteHome", "fixOwnership", "enabled"}),
-    "users.add": frozenset({"name", "username", "shell", "sudo"}),
-    "users.remove": frozenset({"name", "username", "confirmation", "confirmUsername", "deleteHome"}),
-    "users.sync_uid_gid": frozenset({"name", "username", "fixOwnership"}),
-    "users.set_shell": frozenset({"name", "username", "shell"}),
-    "users.set_sudo": frozenset({"name", "username", "enabled", "sudo"}),
-    "users.set_password": frozenset({"name", "username", "password", "confirmPassword", "confirmation", "confirmUsername"}),
+    "users.add": frozenset({"name", "username", "shell", "sudo", "action"}),
+    "users.remove": frozenset({"name", "username", "confirmation", "confirmUsername", "deleteHome", "action"}),
+    "users.sync_uid_gid": frozenset({"name", "username", "fixOwnership", "action"}),
+    "users.set_shell": frozenset({"name", "username", "shell", "action"}),
+    "users.set_sudo": frozenset({"name", "username", "enabled", "sudo", "action"}),
+    "users.set_password": frozenset({"name", "username", "password", "confirmPassword", "confirmation", "confirmUsername", "action"}),
     "services.list": frozenset({"name"}),
     "services.get": frozenset({"name", "chroot", "service", "serviceName", "unit", "tail"}),
     "services.journal": frozenset({"name", "chroot", "service", "serviceName", "unit", "tail"}),
@@ -1860,6 +1906,7 @@ _PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "transfer.export": frozenset({"name", "archive", "password"}),
     "transfer.artifact_root": frozenset(),
     "artifacts.list": frozenset(),
+    "artifacts.cleanup_preview": frozenset({"path", "deleteAll", "delete_all"}),
     "artifacts.cleanup": frozenset({"path", "deleteAll", "delete_all"}),
     "system.runtime": frozenset(),
     "system.module_status": frozenset(),
@@ -1875,6 +1922,7 @@ _PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "debug.timeline": frozenset({"limit"}),
     "debug.export": frozenset({"archive", "group", "limit"}),
     "smoke.plan": frozenset({"name", "target", "scope", "includeOptional", "include_optional"}),
+    "smoke.preview": frozenset({"name", "target", "scope", "includeOptional", "include_optional"}),
     "smoke.report": frozenset({"name", "target", "limit"}),
     "smoke.run": frozenset({"name", "target", "scope", "includeOptional", "include_optional"}),
     "smoke.last_result": frozenset({"limit"}),
@@ -1902,10 +1950,14 @@ def resolve_spec(request: BridgeRequest, expected_mode: str) -> OperationSpec:
     return spec
 
 
+_PREVIEW_CONTRACT_FIELDS = frozenset({"previewId", "payloadHash", "resourceRevision"})
+
+
 def _validate_payload_fields(operation: str, payload: dict[str, Any]) -> None:
     allowed = _PAYLOAD_FIELDS.get(operation)
     if allowed is None:
         return
+    allowed = allowed | _PREVIEW_CONTRACT_FIELDS
     unknown = sorted(key for key in payload.keys() if key not in allowed)
     if unknown:
         raise BridgeProtocolError("UNKNOWN_PAYLOAD_FIELD", f"Unsupported field(s) for {operation}", details={"fields": unknown})

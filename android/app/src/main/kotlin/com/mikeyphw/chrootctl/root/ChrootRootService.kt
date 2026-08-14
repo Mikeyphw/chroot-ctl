@@ -93,6 +93,8 @@ class ChrootRootService : RootService() {
 
         override fun operationState(operationId: String): String = invokeBridge(listOf("operation", operationId))
 
+        override fun reconcileOperation(operationId: String): String = invokeBridge(listOf("reconcile", operationId))
+
         override fun cancelOperation(operationId: String): String = invokeBridge(listOf("cancel", operationId))
 
         override fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String = runCatching {

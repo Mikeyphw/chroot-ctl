@@ -10,10 +10,16 @@ from typing import Any, Callable
 
 from ..bridge.protocol import serialize_value
 from ..bridge.redaction import redact_value
+from ..system import (
+    ProcessIdentity,
+    capture_process_identity,
+    operation_process_scope,
+    signal_process_identity,
+)
 from .journal import OperationJournal
 from .locking import OperationBlocked, OperationLock, lock_key_for
 from .models import OperationRecord, TERMINAL_STATES
-from .recovery import recover_stale_operations
+from .recovery import reconcile_operation, recover_stale_operations
 
 ProgressCallback = Callable[[Any], None]
 OperationRunner = Callable[[ProgressCallback, Callable[[], bool]], Any]
@@ -25,9 +31,17 @@ class OperationCancelled(RuntimeError):
 
 
 class OperationManager:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, recover: bool = False) -> None:
         self.journal = OperationJournal(root)
-        recover_stale_operations(self.journal)
+        if recover:
+            self.recover()
+
+    def recover(self) -> list[str]:
+        return recover_stale_operations(self.journal)
+
+    def reconcile(self, operation_id: str) -> OperationRecord:
+        reconcile_operation(self.journal, operation_id)
+        return self.get(operation_id)
 
     def create(
         self,
@@ -40,6 +54,7 @@ class OperationManager:
         log_path: Path | None = None,
         lock_scope: str = "none",
         operation_id: str | None = None,
+        parent_operation_id: str | None = None,
     ) -> OperationRecord:
         identifier = operation_id or uuid.uuid4().hex[:16]
         lock_key = lock_key_for(lock_scope, target_name)
@@ -48,8 +63,9 @@ class OperationManager:
             kind=kind,
             title=title,
             target_name=target_name,
-            request=redact_value(dict(request or {})),
-            retry=redact_value(dict(retry)) if retry is not None else None,
+            parent_operation_id=parent_operation_id,
+            request=_redacted_mapping(request),
+            retry=_redacted_mapping(retry) if retry is not None else None,
             log_path=str(log_path) if log_path is not None else None,
             lock_key=lock_key,
         )
@@ -60,13 +76,21 @@ class OperationManager:
 
     def execute(self, record: OperationRecord, runner: OperationRunner, *, emit: EventEmitter | None = None) -> OperationRecord:
         lock = OperationLock(self.journal.locks_dir, record.lock_key, record.operation_id) if record.lock_key else nullcontext()
+
+        def cancelled() -> bool:
+            return self.journal.cancellation_requested(record.operation_id)
+
+        def register_process(identity: ProcessIdentity) -> None:
+            serialized = identity.to_dict()
+            if serialized not in record.child_processes:
+                record.child_processes = (record.child_processes + [serialized])[-64:]
+                self.journal.save(record)
+                self._event(record, "operation_process_started", serialized, emit)
+
         try:
             with lock:
                 self._set_running(record)
                 self._event(record, "operation_started", {"state": record.state}, emit)
-
-                def cancelled() -> bool:
-                    return self.journal.cancellation_requested(record.operation_id)
 
                 def progress(update: Any) -> None:
                     if cancelled():
@@ -77,7 +101,9 @@ class OperationManager:
                     record.progress_text = text
                     record.phase = str(detail.get("phase")) if detail.get("phase") is not None else record.phase
                     record.progress_percent = _coerce_percent(percent)
-                    event = {str(key): serialize_value(item) for key, item in detail.items()}
+                    serialized = {str(key): serialize_value(item) for key, item in detail.items()}
+                    redacted = redact_value(serialized)
+                    event = dict(redacted) if isinstance(redacted, dict) else {"message": str(redacted)}
                     event.setdefault("message", text)
                     event["timestamp"] = time.time()
                     record.progress_detail = event
@@ -87,14 +113,15 @@ class OperationManager:
 
                 if cancelled():
                     raise OperationCancelled("Cancellation requested")
-                result = runner(progress, cancelled)
+                with operation_process_scope(register=register_process, cancelled=cancelled):
+                    result = runner(progress, cancelled)
                 if cancelled():
                     raise OperationCancelled("Cancellation requested")
                 record.state = "succeeded"
                 record.finished_at = time.time()
                 record.progress_text = "Completed"
                 record.progress_percent = 100
-                record.result_payload = serialize_value(result)
+                record.result_payload = _redacted_value(serialize_value(result))
                 record.next_steps = _extract_next_steps(result)
                 self.journal.save(record)
                 self._event(record, "operation_succeeded", {"result": record.result_payload}, emit)
@@ -113,15 +140,10 @@ class OperationManager:
             self._event(record, "operation_blocked", {"message": record.error}, emit)
             return record
         except OperationCancelled as exc:
-            record.state = "cancelled"
-            record.finished_at = time.time()
-            record.progress_text = "Cancelled"
-            record.error_code = "CANCELLED"
-            record.error = str(exc)
-            self.journal.save(record)
-            self._event(record, "operation_cancelled", {"message": record.error}, emit)
-            return record
+            return self._finish_cancelled(record, str(exc), emit)
         except Exception as exc:
+            if self.journal.cancellation_requested(record.operation_id):
+                return self._finish_cancelled(record, "Cancellation requested", emit)
             record.state = "failed"
             record.finished_at = time.time()
             record.progress_text = "Failed"
@@ -131,7 +153,8 @@ class OperationManager:
             self._event(record, "operation_failed", {"code": record.error_code, "message": record.error}, emit)
             return record
         finally:
-            self.journal.clear_cancel(record.operation_id)
+            if record.state in TERMINAL_STATES:
+                self.journal.clear_cancel(record.operation_id)
 
     def get(self, operation_id: str, *, event_limit: int = 200) -> OperationRecord:
         record = self.journal.load(operation_id)
@@ -150,32 +173,75 @@ class OperationManager:
         record.progress_text = "Cancelling"
         self.journal.save(record)
         self._event(record, "operation_cancelling", {})
-        pgid = record.process_group_id
-        if pgid and record.pid != os.getpid():
+
+        signalled = False
+        for raw_identity in reversed(record.child_processes):
+            identity = ProcessIdentity.from_dict(raw_identity)
+            if identity is not None:
+                signalled = signal_process_identity(identity, signal.SIGTERM) or signalled
+
+        host_identity = _record_identity(record)
+        if host_identity is not None and host_identity.pid != os.getpid():
             try:
-                os.killpg(pgid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
+                current_group = os.getpgrp()
+            except OSError:
+                current_group = os.getpid()
+            if host_identity.process_group_id != current_group:
+                signalled = signal_process_identity(host_identity, signal.SIGTERM) or signalled
+
+        if not signalled and host_identity is not None:
+            from ..system import process_identity_matches
+
+            if not process_identity_matches(host_identity):
+                return self._finish_cancelled(record, "Cancellation requested after the operation process exited", None)
         return record
 
     def _set_running(self, record: OperationRecord) -> None:
         record.state = "running"
         record.started_at = time.time()
         record.progress_text = "Starting"
-        record.pid = os.getpid()
-        record.process_group_id = _current_process_group()
+        identity = capture_process_identity(os.getpid())
+        if identity is not None:
+            record.pid = identity.pid
+            record.process_group_id = identity.process_group_id
+            record.process_start_time = identity.start_time_ticks
+            record.process_boot_id = identity.boot_id
+        else:
+            record.pid = os.getpid()
+            record.process_group_id = _current_process_group()
         self.journal.save(record)
 
+    def _finish_cancelled(self, record: OperationRecord, message: str, emit: EventEmitter | None) -> OperationRecord:
+        record.state = "cancelled"
+        record.finished_at = time.time()
+        record.progress_text = "Cancelled"
+        record.error_code = "CANCELLED"
+        record.error = message
+        self.journal.save(record)
+        self._event(record, "operation_cancelled", {"message": record.error}, emit)
+        return record
+
     def _event(self, record: OperationRecord, event_type: str, payload: dict[str, Any], emit: EventEmitter | None = None) -> None:
+        record.event_sequence += 1
         event = {
+            "schemaVersion": record.schema_version,
+            "sequence": record.event_sequence,
             "type": event_type,
             "operationId": record.operation_id,
             "timestamp": time.time(),
-            "payload": redact_value(serialize_value(payload)),
+            "payload": _redacted_value(serialize_value(payload)),
         }
+        self.journal.save(record)
         self.journal.append_event(record.operation_id, event)
         if emit is not None:
-            emit(event)
+            try:
+                emit(event)
+            except (BrokenPipeError, ConnectionError, OSError):
+                return
+            except Exception:
+                # Event delivery is observational. Journal state is authoritative and
+                # an observer bug must never rewrite a successful operation as failed.
+                return
 
 
 def detach_process_group() -> int:
@@ -191,6 +257,17 @@ def _current_process_group() -> int:
         return os.getpgrp()
     except OSError:
         return os.getpid()
+
+
+def _record_identity(record: OperationRecord) -> ProcessIdentity | None:
+    if record.pid is None or record.process_group_id is None:
+        return None
+    return ProcessIdentity(
+        pid=record.pid,
+        process_group_id=record.process_group_id,
+        start_time_ticks=record.process_start_time,
+        boot_id=record.process_boot_id,
+    )
 
 
 def _coerce_percent(value: Any) -> int | None:
@@ -209,3 +286,12 @@ def _extract_next_steps(value: Any) -> tuple[str, ...]:
     if isinstance(value, dict) and isinstance(value.get("next_steps"), (list, tuple)):
         return tuple(str(item) for item in value["next_steps"])
     return ()
+
+
+def _redacted_mapping(value: dict[str, Any] | None) -> dict[str, Any]:
+    redacted = redact_value(dict(value or {}))
+    return dict(redacted) if isinstance(redacted, dict) else {}
+
+
+def _redacted_value(value: Any) -> Any:
+    return redact_value(value)

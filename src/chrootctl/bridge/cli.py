@@ -30,6 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     operation.add_argument("operation_id")
     cancel = sub.add_parser("cancel", help="Request cancellation of a persistent operation.")
     cancel.add_argument("operation_id")
+    reconcile = sub.add_parser("reconcile", help="Explicitly reconcile a persistent operation after transport/process loss.")
+    reconcile.add_argument("operation_id")
     return parser
 
 
@@ -74,6 +76,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0 if response.ok else 2
         if args.command == "cancel":
             response = dispatcher.cancel(args.operation_id)
+            _write_json(response.to_dict())
+            return 0 if response.ok else 2
+        if args.command == "reconcile":
+            response = dispatcher.reconcile(args.operation_id)
             _write_json(response.to_dict())
             return 0 if response.ok else 2
     except BridgeProtocolError as exc:

@@ -382,16 +382,19 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
-    fun installPayloadJson(): String = installDraft.value.toJsonPayload().toString()
+    fun installPayloadJson(): String = installDraft.value.toJsonPayload()
+        .withPreviewContract(installPreview.value, "install.run")
+        .toString()
 
     fun lifecyclePayloadJson(name: String, action: String): String = JSONObject()
         .put("name", name)
-        .put("action", action)
+        .withPreviewContract(lifecyclePreview.value, "chroots.$action")
         .toString()
 
     fun removePayloadJson(name: String, confirmation: String): String = JSONObject()
         .put("name", name)
         .put("confirmation", confirmation)
+        .withPreviewContract(lifecyclePreview.value, "chroots.remove.execute")
         .toString()
 
     fun previewLifecycle(name: String, action: String) {
@@ -508,17 +511,20 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     fun snapshotCreatePayloadJson(name: String, snapshot: String): String = JSONObject()
         .put("name", name)
         .put("snapshot", snapshot)
+        .withPreviewContract(snapshotPane.value.preview, "snapshots.create")
         .toString()
 
     fun snapshotRestorePayloadJson(name: String, snapshot: String, confirmation: String): String = JSONObject()
         .put("name", name)
         .put("snapshot", snapshot)
         .put("confirmation", confirmation)
+        .withPreviewContract(snapshotPane.value.preview, "snapshots.restore")
         .toString()
 
     fun snapshotExportPayloadJson(name: String, snapshot: String): String = JSONObject()
         .put("name", name)
         .put("snapshot", snapshot)
+        .withPreviewContract(snapshotPane.value.preview, "snapshots.export")
         .toString()
 
     fun refreshUsers(name: String) {
@@ -551,6 +557,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("action", "add")
         .put("shell", shell)
         .put("sudo", sudo)
+        .withPreviewContract(usersPane.value.preview, "users.add")
         .toString()
 
     fun userRemovePayloadJson(name: String, username: String, confirmation: String, deleteHome: Boolean): String = JSONObject()
@@ -559,6 +566,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("action", "remove")
         .put("confirmation", confirmation)
         .put("deleteHome", deleteHome)
+        .withPreviewContract(usersPane.value.preview, "users.remove")
         .toString()
 
     fun userSyncPayloadJson(name: String, username: String): String = JSONObject()
@@ -566,6 +574,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("username", username)
         .put("action", "sync_uid_gid")
         .put("fixOwnership", true)
+        .withPreviewContract(usersPane.value.preview, "users.sync_uid_gid")
         .toString()
 
     fun userShellPayloadJson(name: String, username: String, shell: String): String = JSONObject()
@@ -573,6 +582,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("username", username)
         .put("action", "set_shell")
         .put("shell", shell)
+        .withPreviewContract(usersPane.value.preview, "users.set_shell")
         .toString()
 
     fun userSudoPayloadJson(name: String, username: String, enabled: Boolean): String = JSONObject()
@@ -580,6 +590,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("username", username)
         .put("action", "set_sudo")
         .put("enabled", enabled)
+        .withPreviewContract(usersPane.value.preview, "users.set_sudo")
         .toString()
 
     fun userPasswordPayloadJson(name: String, username: String, password: String, confirmPassword: String, confirmation: String): String = JSONObject()
@@ -589,6 +600,11 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("password", password)
         .put("confirmPassword", confirmPassword)
         .put("confirmation", confirmation)
+        .withPreviewContract(usersPane.value.preview, "users.set_password")
+        .toString()
+
+    fun userOperationPayloadJson(operation: String, payloadJson: String): String = JSONObject(payloadJson)
+        .withPreviewContract(usersPane.value.preview, operation)
         .toString()
 
     fun refreshServices(name: String) {
@@ -643,6 +659,11 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .put("name", name)
         .put("service", service)
         .put("action", action)
+        .withPreviewContract(servicesPane.value.preview, "services.$action")
+        .toString()
+
+    fun serviceOperationPayloadJson(operation: String, payloadJson: String): String = JSONObject(payloadJson)
+        .withPreviewContract(servicesPane.value.preview, operation)
         .toString()
 
 
@@ -703,6 +724,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             .put("kind", current.kind)
             .put("name", current.targetName.orEmpty())
             .put("names", org.json.JSONArray(current.entries.filter { it.selected }.map { it.name }))
+            .withPreviewContract(current.preview, "catalog.apply")
             .toString()
     }
 
@@ -749,7 +771,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         viewModelScope.launch {
             val current = transferPane.value.copy(refreshing = true, errorMessage = null)
             transferPane.value = current
-            repository.inspectTransferImport(current.importArchive)
+            repository.inspectTransferImport(current.importArchive, current.importTargetName, current.conflict)
                 .onSuccess { preview -> transferPane.value = current.copy(importInspection = preview, refreshing = false, errorMessage = null) }
                 .onFailure { error -> transferPane.value = current.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName) }
         }
@@ -775,21 +797,32 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
-    fun transferImportPayloadJson(): String = JSONObject()
-        .put("archive", transferPane.value.importArchive)
-        .put("name", transferPane.value.importTargetName.takeIf(String::isNotBlank) ?: JSONObject.NULL)
-        .put("conflict", transferPane.value.conflict)
-        .toString()
+    fun transferImportPayloadJson(): String {
+        val current = transferPane.value
+        val payload = JSONObject().put("archive", current.importArchive).put("conflict", current.conflict)
+        current.importTargetName.takeIf(String::isNotBlank)?.let { payload.put("name", it) }
+        return payload.withPreviewContract(current.importInspection, "transfer.import").toString()
+    }
 
     fun transferExportPayloadJson(): String = JSONObject()
         .put("name", transferPane.value.exportTargetName)
         .put("archive", transferPane.value.exportArchive.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+        .withPreviewContract(transferPane.value.exportPreview, "transfer.export")
         .toString()
 
-    fun artifactCleanupPayloadJson(path: String? = null, deleteAll: Boolean = false): String = JSONObject()
-        .put("path", path ?: JSONObject.NULL)
-        .put("deleteAll", deleteAll)
-        .toString()
+    fun previewArtifactCleanup(path: String? = null, deleteAll: Boolean = true) {
+        viewModelScope.launch {
+            repository.previewArtifactCleanup(deleteAll = deleteAll, path = path)
+                .onSuccess { preview -> transferPane.value = transferPane.value.copy(artifactCleanupPreview = preview) }
+                .onFailure { error -> transferPane.value = transferPane.value.copy(artifactCleanupPreview = errorPreview("Artifact cleanup preview", error)) }
+        }
+    }
+
+    fun artifactCleanupPayloadJson(path: String? = null, deleteAll: Boolean = false): String {
+        val payload = JSONObject().put("deleteAll", deleteAll)
+        path?.takeIf(String::isNotBlank)?.let { payload.put("path", it) }
+        return payload.withPreviewContract(transferPane.value.artifactCleanupPreview, "artifacts.cleanup").toString()
+    }
 
 
 
@@ -868,22 +901,23 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
-    fun supportBundlePayloadJson(): String {
-        val payload = JSONObject()
-        val archive = systemSupportPane.value.supportPreview?.rawJson
-            ?.let { raw -> runCatching { JSONObject(raw).optString("archive") }.getOrNull() }
-            ?.takeIf(String::isNotBlank)
-        if (archive != null) payload.put("archive", archive)
-        return payload.toString()
-    }
+    fun supportBundlePayloadJson(): String = JSONObject()
+        .withPreviewContract(systemSupportPane.value.supportPreview, "support.bundle")
+        .toString()
 
-    fun moduleBuildPayloadJson(): String = JSONObject().toString()
+    fun moduleBuildPayloadJson(): String = JSONObject()
+        .withPreviewContract(systemSupportPane.value.moduleBuildPreview, "system.module_build")
+        .toString()
 
     fun repairApplyPayloadJson(): String = JSONObject()
         .put("decisions", repairDecisionsJson(systemSupportPane.value))
+        .withPreviewContract(systemSupportPane.value.repairPreview, "repair.apply")
         .toString()
 
-    fun cleanupTempPayloadJson(): String = JSONObject().put("deleteAll", true).toString()
+    fun cleanupTempPayloadJson(): String = JSONObject()
+        .put("deleteAll", true)
+        .withPreviewContract(systemSupportPane.value.cleanupPreview, "cleanup.temp")
+        .toString()
 
     fun debugExportPayloadJson(): String = JSONObject().put("group", debugPane.value.selectedGroup).toString()
 
@@ -899,6 +933,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     fun smokeRunPayloadJson(): String = JSONObject()
         .put("scope", "real-device")
         .put("includeOptional", true)
+        .withPreviewContract(debugPane.value.smokePlan, "smoke.run")
         .toString()
 
     fun refreshSmokeReport() {
@@ -957,6 +992,15 @@ private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
     .put("release", release.takeIf(String::isNotBlank) ?: JSONObject.NULL)
     .put("version", version.takeIf(String::isNotBlank) ?: JSONObject.NULL)
     .put("mirror", mirror)
+
+private fun JSONObject.withPreviewContract(preview: PreviewSummary?, operation: String): JSONObject {
+    if (preview == null || preview.actionOperation != operation) return this
+    if (preview.previewId.isBlank() || preview.payloadHash.isBlank() || preview.resourceRevision.isBlank()) return this
+    put("previewId", preview.previewId)
+    put("payloadHash", preview.payloadHash)
+    put("resourceRevision", preview.resourceRevision)
+    return this
+}
 
 private fun errorPreview(title: String, error: Throwable): PreviewSummary = PreviewSummary(
     title = title,

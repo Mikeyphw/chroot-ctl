@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from importlib.resources import files
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -188,6 +190,7 @@ class ManifestCatalog:
                     filename=path.name,
                     manifest_text=path.read_text(encoding="utf-8"),
                     script_text=self._load_builtin_script_text,
+                    external=False,
                 )
                 entries_by_name[entry.name] = entry
 
@@ -197,17 +200,24 @@ class ManifestCatalog:
             if not manifest_dir.is_dir():
                 raise ValueError(f"{self.kind} manifest directory is not a directory: {manifest_dir}")
             for path in sorted(manifest_dir.iterdir(), key=lambda item: item.name):
-                if path.is_file() and path.suffix in {".yaml", ".yml"}:
-                    entry = self._load_manifest_text(
-                        filename=str(path),
-                        manifest_text=path.read_text(encoding="utf-8"),
-                        script_text=self._load_external_script_text,
+                if path.suffix not in {".yaml", ".yml"}:
+                    continue
+                _validate_external_file(path, label=f"{self.kind} manifest")
+                entry = self._load_manifest_text(
+                    filename=str(path),
+                    manifest_text=path.read_text(encoding="utf-8"),
+                    script_text=self._load_external_script_text,
+                    external=True,
+                )
+                if entry.name in entries_by_name:
+                    raise ValueError(
+                        f"external {self.kind} manifest {path} attempts to override existing catalog entry '{entry.name}'"
                     )
-                    entries_by_name[entry.name] = entry
+                entries_by_name[entry.name] = entry
 
         return list(entries_by_name.values())
 
-    def _load_manifest_text(self, *, filename: str, manifest_text: str, script_text) -> ManifestEntry:
+    def _load_manifest_text(self, *, filename: str, manifest_text: str, script_text, external: bool = False) -> ManifestEntry:
         raw = yaml.safe_load(manifest_text)
         if not isinstance(raw, dict):
             raise ValueError(f"manifest {filename} must be a mapping")
@@ -219,6 +229,13 @@ class ManifestCatalog:
         distros = tuple(sorted(_normalize_manifest_distros(raw.get("distro"), filename=filename)))
         categories = tuple(sorted(_normalize_manifest_categories(raw.get("categories"), filename=filename)))
         resolved_script_text = script_text(script, filename=filename)
+        if external:
+            expected_sha256 = str(raw.get("sha256") or "").strip().lower()
+            if len(expected_sha256) != 64 or any(char not in "0123456789abcdef" for char in expected_sha256):
+                raise ValueError(f"external manifest {filename} must declare a lowercase sha256 for its script")
+            actual_sha256 = hashlib.sha256(resolved_script_text.encode("utf-8")).hexdigest()
+            if actual_sha256 != expected_sha256:
+                raise ValueError(f"external manifest {filename} script sha256 mismatch")
         return ManifestEntry(
             kind=self.kind,
             name=name,
@@ -254,7 +271,8 @@ class ManifestCatalog:
             if not script_dir.is_dir():
                 raise ValueError(f"{self.kind} script directory is not a directory: {script_dir}")
             candidate = script_dir / script
-            if candidate.is_file():
+            if candidate.exists() or candidate.is_symlink():
+                _validate_external_file(candidate, label=f"{self.kind} script")
                 return candidate.read_text(encoding="utf-8")
         raise ValueError(f"manifest {filename} references missing external script: {script}")
 
@@ -267,6 +285,19 @@ def _validate_name(value: object, *, field: str, filename: str) -> str:
     if any(ch not in allowed for ch in name):
         raise ValueError(f"manifest {filename} has invalid {field}: {name}")
     return name
+
+
+def _validate_external_file(path: Path, *, label: str) -> None:
+    if path.is_symlink():
+        raise ValueError(f"{label} must not be a symlink: {path}")
+    if not path.is_file():
+        raise ValueError(f"{label} is not a regular file: {path}")
+    info = path.stat()
+    allowed_owners = {os.geteuid(), 0}
+    if info.st_uid not in allowed_owners:
+        raise ValueError(f"{label} has untrusted owner uid {info.st_uid}: {path}")
+    if info.st_mode & 0o022:
+        raise ValueError(f"{label} must not be group/world writable: {path}")
 
 
 def _validate_script_name(value: object, *, filename: str) -> str:

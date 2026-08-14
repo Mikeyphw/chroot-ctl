@@ -34,26 +34,29 @@ class OperationNotificationController(private val context: Context) {
         } else {
             0
         }
-        ServiceCompat.startForeground(
-            service,
-            NOTIFICATION_ID,
-            notification,
-            serviceType,
-        )
+        ServiceCompat.startForeground(service, NOTIFICATION_ID, notification, serviceType)
     }
 
     @android.annotation.SuppressLint("MissingPermission")
     fun update(event: JSONObject, fallbackOperationId: String?) {
         val operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: fallbackOperationId
         val payload = event.optJSONObject("payload") ?: JSONObject()
-        val title = when (event.optString("type")) {
+        val type = event.optString("type")
+        val terminal = isTerminal(type)
+        val title = when (type) {
             "operation_succeeded" -> context.getString(R.string.operation_notification_done_title)
-            "operation_failed" -> context.getString(R.string.operation_notification_failed_title)
+            "operation_failed", "operation_blocked", "operation_interrupted", "bridge_stream_interrupted" -> context.getString(R.string.operation_notification_failed_title)
             "operation_cancelled" -> context.getString(R.string.operation_notification_cancelled_title)
             else -> context.getString(R.string.operation_notification_running_title)
         }
-        val body = payload.optString("message").ifBlank { event.optString("type", context.getString(R.string.operation_notification_body)) }
-        val notification = build(title, body, operationId, payload.optInt("percent", -1).takeIf { it >= 0 })
+        val body = payload.optString("message").ifBlank { type.ifBlank { context.getString(R.string.operation_notification_body) } }
+        val notification = build(
+            title = title,
+            body = body,
+            operationId = operationId,
+            percent = payload.optInt("percent", -1).takeIf { it >= 0 },
+            terminal = terminal,
+        )
         runCatching { NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification) }
     }
 
@@ -62,37 +65,54 @@ class OperationNotificationController(private val context: Context) {
         body: String = context.getString(R.string.operation_notification_body),
         operationId: String? = null,
         percent: Int? = null,
+        terminal: Boolean = false,
     ): Notification {
         val openIntent = PendingIntent.getActivity(
             context,
             0,
-            Intent(context, MainActivity::class.java),
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(EXTRA_OPEN_OPERATION_ID, operationId),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val cancelIntent = PendingIntent.getService(
-            context,
-            1,
-            ChrootOperationService.cancelIntent(context, operationId),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(openIntent)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
+            .setOngoing(!terminal)
+            .setAutoCancel(terminal)
+            .setOnlyAlertOnce(!terminal)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .apply {
-                if (percent == null) setProgress(0, 0, true) else setProgress(100, percent, false)
-                addAction(0, context.getString(R.string.action_cancel_operation), cancelIntent)
-            }
-            .build()
+
+        if (!terminal) {
+            val cancelIntent = PendingIntent.getService(
+                context,
+                1,
+                ChrootOperationService.cancelIntent(context, operationId),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            if (percent == null) builder.setProgress(0, 0, true) else builder.setProgress(100, percent, false)
+            builder.addAction(0, context.getString(R.string.action_cancel_operation), cancelIntent)
+        } else {
+            builder.setProgress(0, 0, false)
+        }
+        return builder.build()
     }
+
+    private fun isTerminal(type: String): Boolean = type in setOf(
+        "operation_succeeded",
+        "operation_failed",
+        "operation_cancelled",
+        "operation_blocked",
+        "operation_interrupted",
+        "bridge_stream_interrupted",
+    )
 
     companion object {
         const val CHANNEL_ID = "chrootctl_operations"
         const val NOTIFICATION_ID = 4001
+        const val EXTRA_OPEN_OPERATION_ID = "com.mikeyphw.chrootctl.extra.OPEN_OPERATION_ID"
     }
 }

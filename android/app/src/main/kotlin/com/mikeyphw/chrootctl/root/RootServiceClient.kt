@@ -46,6 +46,7 @@ class RootServiceClient(private val context: Context) {
     suspend fun query(requestJson: String): String = call("Query", BinderReplayPolicy.SAFE_READ_ONLY) { it.query(requestJson) }
     suspend fun preview(requestJson: String): String = call("Preview", BinderReplayPolicy.SAFE_READ_ONLY) { it.preview(requestJson) }
     suspend fun operationState(operationId: String): String = call("Operation status", BinderReplayPolicy.SAFE_READ_ONLY) { it.operationState(operationId) }
+    suspend fun reconcileOperation(operationId: String): String = call("Reconcile operation", BinderReplayPolicy.NEVER) { it.reconcileOperation(operationId) }
     suspend fun cancelOperation(operationId: String): String = call("Cancel operation", BinderReplayPolicy.NEVER) { it.cancelOperation(operationId) }
     suspend fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String =
         call("Import transfer", BinderReplayPolicy.NEVER, TRANSFER_TIMEOUT_MS) { it.transferFromDescriptor(requestJson, input) }
@@ -68,16 +69,85 @@ class RootServiceClient(private val context: Context) {
             readSide.close()
             return started
         }
+        var operationId: String? = null
+        var terminalEventSeen = false
         withContext(Dispatchers.IO) {
             ParcelFileDescriptor.AutoCloseInputStream(readSide).bufferedReader().use { reader ->
                 while (true) {
                     val line = reader.readLine() ?: break
-                    if (line.isNotBlank()) onEvent(line)
+                    if (line.isBlank()) continue
+                    runCatching { JSONObject(line) }.getOrNull()?.let { event ->
+                        operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: operationId
+                        terminalEventSeen = terminalEventSeen || isTerminalEvent(event.optString("type"))
+                    }
+                    onEvent(line)
+                }
+            }
+        }
+        if (!terminalEventSeen) {
+            val knownOperationId = operationId
+            if (knownOperationId.isNullOrBlank()) {
+                onEvent(
+                    JSONObject()
+                        .put("type", "bridge_stream_interrupted")
+                        .put("operationId", "")
+                        .put("payload", JSONObject().put("message", "Operation stream ended before an operation id or terminal event was received."))
+                        .toString(),
+                )
+            } else {
+                val stateEnvelope = runCatching { operationState(knownOperationId) }.getOrNull()
+                val reconciled = stateEnvelope?.let(::terminalEventFromOperationState)
+                if (reconciled != null) {
+                    onEvent(reconciled.toString())
+                } else {
+                    onEvent(
+                        JSONObject()
+                            .put("type", "bridge_stream_interrupted")
+                            .put("operationId", knownOperationId)
+                            .put("payload", JSONObject().put("message", "Operation stream ended before a terminal event; refresh Activity to reconcile state."))
+                            .toString(),
+                    )
                 }
             }
         }
         return started
     }
+
+    private fun terminalEventFromOperationState(envelopeJson: String): JSONObject? {
+        val envelope = runCatching { JSONObject(envelopeJson) }.getOrNull() ?: return null
+        if (!envelope.optBoolean("ok")) return null
+        val data = envelope.optJSONObject("data") ?: return null
+        val state = data.optString("state")
+        val type = when (state) {
+            "succeeded" -> "operation_succeeded"
+            "failed" -> "operation_failed"
+            "cancelled" -> "operation_cancelled"
+            "blocked" -> "operation_blocked"
+            "interrupted" -> "operation_interrupted"
+            else -> return null
+        }
+        return JSONObject()
+            .put("schemaVersion", data.optInt("schemaVersion", 1))
+            .put("type", type)
+            .put("operationId", data.optString("operationId"))
+            .put("sequence", data.optInt("eventSequence", 0))
+            .put("reconciled", true)
+            .put(
+                "payload",
+                JSONObject()
+                    .put("state", state)
+                    .put("message", data.optString("error").ifBlank { data.optString("progressText", state) })
+                    .put("result", data.opt("resultPayload")),
+            )
+    }
+
+    private fun isTerminalEvent(type: String): Boolean = type in setOf(
+        "operation_succeeded",
+        "operation_failed",
+        "operation_cancelled",
+        "operation_blocked",
+        "operation_interrupted",
+    )
 
     fun close() {
         val connection = clearConnection("The Android client closed the privileged service connection")

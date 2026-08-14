@@ -324,6 +324,7 @@ private fun TransferCard(
                 Button(onClick = onRefreshArtifacts, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_refresh_artifacts_action)) }
                 Button(onClick = onCleanupAllArtifacts, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_cleanup_artifacts_action)) }
             }
+            pane.artifactCleanupPreview?.let { PreviewBlock(it) }
             pane.artifacts.take(8).forEach { artifact -> Text(stringResource(R.string.transfer_artifact_row, artifact.name, artifact.sizeBytes, artifact.modifiedAt), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
