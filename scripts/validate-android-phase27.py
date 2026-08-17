@@ -17,14 +17,14 @@ def main() -> int:
     models = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/model/UiModels.kt")
     strings = read("android/app/src/main/res/values/strings.xml")
     docs = read("docs/android/PHASE_27_SMOKE_RESULT_HANDOFF.md")
-    err(errors, 'compileSdk = 36' not in build, "compileSdk must remain 36")
+    err(errors, 'compileSdk = 37' not in build, "compileSdk must be 37")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
     err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(27, 30)), "versionName must advance to phase27")
     for token in ("smoke.last_result", "smoke.result.persist", "smoke.result.export", "smoke.failure.bundle", "_smoke_last_result", "_smoke_failure_bundle"):
         err(errors, token not in registry, f"registry missing smoke handoff token: {token}")
     for token in ("refreshSmokeLastResult", "smokeResultPersistPayloadJson", "smokeResultExportPayloadJson", "smokeFailureBundlePayloadJson"):
         err(errors, token not in (repo + vm), f"Android smoke handoff wiring missing: {token}")
-    for token in ("onRefreshSmokeLastResult", "onPersistSmokeResult", "onExportSmokeEvidence", "onCreateSmokeFailureBundle", "smoke_handoff_title", "smokeLastResult"):
+    for token in ("onRefreshSmokeLastResult", "onPersistSmokeResult", "onExportSmokeEvidence", "onCreateSmokeFailureBundle", "smoke_last_result_action", "smokeLastResult"):
         err(errors, token not in (tools + app + strings + models), f"smoke handoff UI missing: {token}")
     for forbidden in ("WebView", "Manifest.permission.POST_NOTIFICATIONS", "combine(arrayOf", '"/data/'):
         err(errors, forbidden in (repo + vm + tools + app), f"forbidden Android token found: {forbidden}")

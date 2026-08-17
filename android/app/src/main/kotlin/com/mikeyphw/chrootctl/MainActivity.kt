@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import com.mikeyphw.chrootctl.operations.ChrootOperationService
@@ -27,7 +28,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val notificationOperationId = mutableStateOf<String?>(null)
-    private val notificationOpenNonce = mutableStateOf(0L)
+    private val notificationOpenNonce = mutableLongStateOf(0L)
     private val notificationsEnabled = mutableStateOf(false)
 
     private val viewModel: MainViewModel by viewModels {

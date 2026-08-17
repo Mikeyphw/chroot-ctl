@@ -17,7 +17,8 @@ def test_overlay09_active_only_runtime_and_structured_readiness_contract() -> No
     assert '_REQUIRED_DEPENDENCY_MINIMUMS' in runtime
     assert 'dependencies.ready.json' in runtime
     assert 'compatibilityManifestSha256' in runtime
-    assert '"/data/adb/modules/chrootctl-magisk"' in magisk
+    assert 'ACTIVE_MODULE_ROOT = Path("/data/adb/modules")' in runtime
+    assert 'DEFAULT_MODULE_ID = "chrootctl-magisk"' in magisk
     assert '[ ! -L "$_active" ]' in magisk
     assert 'pending chrootctl module update exists' in magisk
     assert '. "$MODDIR/config/chrootctl/python.env"' not in magisk
@@ -60,8 +61,9 @@ def test_overlay09_release_build_is_host_independent_and_deterministic() -> None
     assert "static-python-env" in runtime
     assert "DEFAULT_MODULE_VERSION_CODE" in runtime
     assert "ANDROID_APP_VERSION_NAME" in runtime
-    assert "expectedModuleVersionCode" in android
-    assert "expectedAndroidVersionName" in android
+    assert "EXPECTED_MODULE_VERSION" in android
+    assert "MIN_SUPPORTED_MODULE_VERSION_CODE" in android
+    assert "EXPECTED_ANDROID_VERSION_NAME" in android
     assert "ZIP_NAME must stay inside the repository" in build
 
 

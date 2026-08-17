@@ -29,21 +29,21 @@ def test_compact_chroot_cards_expose_promised_contextual_actions() -> None:
     source = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/chroots/ChrootsScreen.kt")
     if "ChrootWorkspaceScreen" in source:
         compact_card = source.split("private fun Phase32ChrootCard", 1)[1].split("private fun ChrootWorkspaceScreen", 1)[0]
-        assert 'onStartLifecycle(chroot.name, "chroots.start")' in compact_card
-        assert 'onStartLifecycle(chroot.name, "chroots.restart")' in compact_card
+        assert 'onPreviewLifecycle(chroot.name, "start")' in compact_card
+        assert 'onPreviewLifecycle(chroot.name, "restart")' in compact_card
         assert 'onPreviewSnapshotCreate(chroot.name)' in compact_card
         assert "action_open_workspace" in compact_card
         assert "UsersPanel(" not in compact_card
         assert "ServicesPanel(" not in compact_card
     else:
         compact_card = source.split("private fun Phase32ChrootCard", 1)[1].split("private fun ChrootDetailCard", 1)[0]
-        assert 'onStartLifecycle(chroot.name, "chroots.start")' in compact_card
-        assert 'onStartLifecycle(chroot.name, "chroots.restart")' in compact_card
+        assert 'onPreviewLifecycle(chroot.name, "start")' in compact_card
+        assert 'onPreviewLifecycle(chroot.name, "restart")' in compact_card
         assert 'onPreviewSnapshotCreate(chroot.name)' in compact_card
         assert 'onPreviewLifecycle(chroot.name, "upgrade")' in compact_card
-        assert 'onStartLifecycle(chroot.name, "chroots.upgrade")' in compact_card
+        assert 'onPreviewLifecycle(chroot.name, "upgrade")' in compact_card
         assert 'onPreviewLifecycle(chroot.name, "remove")' in compact_card
-        assert "action_open_details" in compact_card
+        assert "action_open_workspace" in compact_card
 
 def test_install_screen_is_a_three_step_preview_first_wizard() -> None:
     source = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/install/InstallScreen.kt")
@@ -73,7 +73,7 @@ def test_sdk_lint_and_trust_boundaries_are_preserved() -> None:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
     kotlin = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "android/app/src/main/kotlin").rglob("*.kt"))
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

@@ -28,7 +28,7 @@ def main() -> int:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
 
-    require("targetSdk = 36" in build and "compileSdk = 36" in build, "Phase 33 must preserve SDK 36")
+    require("targetSdk = 36" in build and "compileSdk = 37" in build, "Phase 33 must preserve compileSdk 37 / targetSdk 36")
     require(re.findall(r'id="([^"]+)"', lint) == ["OldTargetApi"], "lint.xml must ignore only OldTargetApi")
     require("OperationActivityFilter" in activity and "FilterChip" in activity, "Activity filters missing")
     for token in ["onCancelOperation", "onRetryOperation", "onRetryWithFixes", "onRecoverLatestSnapshot", "AlertDialog", "previewRetryOperation", "previewRetryWithFixes"]:

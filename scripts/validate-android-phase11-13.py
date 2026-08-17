@@ -60,8 +60,8 @@ def main() -> int:
         if token in app_text + MANIFEST.read_text(encoding="utf-8"):
             errors.append(f"forbidden Android token found: {token}")
     build = BUILD.read_text(encoding="utf-8")
-    if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
-        errors.append("Android SDK must remain pinned to 36")
+    if "compileSdk = 37" not in build or "targetSdk = 36" not in build:
+        errors.append("compileSdk must be 37 while targetSdk remains 36")
     if not any(token in build for token in (
         'versionName = "0.1.0-phase13"',
         'versionName = "0.1.0-phase14"',
@@ -85,9 +85,9 @@ def main() -> int:
     strings = STRINGS.read_text(encoding="utf-8")
     for name in (
         "nav_install",
-        "install_native_title",
+        "install_phase32_title",
         "lifecycle_actions_title",
-        "snapshot_actions_title",
+        "snapshots_workspace_title",
         "action_remove_chroot",
         "lifecycle_remove_confirmation_label",
         "snapshot_restore_confirmation_label",

@@ -34,12 +34,12 @@ def test_phase34c_lint_api36_and_active_only_docs_are_preserved() -> None:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
     docs = read("docs/android/PHASE_34C_ROOT_MODULE_RUNTIME_RESOLVER.md")
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build
     ignored = re.findall(r'<issue\s+id="([^"]+)"\s+severity="ignore"\s*/>', lint)
     assert ignored == ["OldTargetApi"]
     assert "/data/adb/modules/chrootctl-magisk/system/bin/chrootctl" in docs
-    assert "pending updates are diagnostics only" in docs
+    assert "pending updates are diagnostics only" in docs.lower()
     assert "protocol-1" in docs

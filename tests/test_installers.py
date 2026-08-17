@@ -7,6 +7,7 @@ import pytest
 
 from chrootctl.arch import ArchInstaller
 from chrootctl.base_install import BaseInstaller, ReleaseRef
+from chrootctl.install_integrity import InstallFetchError
 from chrootctl.config import ChrootConfig
 from chrootctl.controller import ChrootController
 from chrootctl.models import (
@@ -136,8 +137,9 @@ def test_install_without_phase_runs_remaining_phases_by_default(tmp_path: Path) 
         profile="xfce4",
     )
 
-    assert installer.called == ["bootstrap", "desktop", "finalize"]
+    assert installer.called == ["extract", "bootstrap", "desktop", "finalize"]
     assert result == [
+        InstallExtractResult(version="latest", release="rolling", tarball="stub.tar.gz"),
         InstallBootstrapResult(username="mike", profile="xfce4"),
         InstallDesktopResult(desktop="xfce4", snapshot="", profile="xfce4"),
         InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
@@ -204,8 +206,9 @@ def test_auto_install_runs_remaining_phases(tmp_path: Path) -> None:
         profile="xfce4",
     )
 
-    assert installer.called == ["desktop", "finalize"]
+    assert installer.called == ["bootstrap", "desktop", "finalize"]
     assert result == [
+        InstallBootstrapResult(username="mike", profile="xfce4"),
         InstallDesktopResult(desktop="xfce4", snapshot="", profile="xfce4"),
         InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
     ]
@@ -259,9 +262,10 @@ def test_resume_runs_remaining_phases(tmp_path: Path) -> None:
         profile="dev",
     )
 
-    assert installer.called == ["bootstrap", "desktop", "finalize"]
-    assert result[0] == InstallBootstrapResult(username="mike", profile="dev")
-    assert result[1] == InstallDesktopResult(desktop="none", snapshot="", profile="dev")
+    assert installer.called == ["extract", "bootstrap", "desktop", "finalize"]
+    assert result[0] == InstallExtractResult(version="latest", release="rolling", tarball="stub.tar.gz")
+    assert result[1] == InstallBootstrapResult(username="mike", profile="dev")
+    assert result[2] == InstallDesktopResult(desktop="none", snapshot="", profile="dev")
 
 
 def test_repair_reruns_current_phase(tmp_path: Path) -> None:
@@ -281,8 +285,11 @@ def test_repair_reruns_current_phase(tmp_path: Path) -> None:
         profile="minimal",
     )
 
-    assert installer.called == ["desktop"]
-    assert result == [InstallDesktopResult(desktop="none", snapshot="", profile="minimal")]
+    assert installer.called == ["desktop", "finalize"]
+    assert result == [
+        InstallDesktopResult(desktop="none", snapshot="", profile="minimal"),
+        InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
+    ]
 
 
 def test_repair_reruns_extract_when_bootstrap_is_not_ready(tmp_path: Path) -> None:
@@ -303,8 +310,9 @@ def test_repair_reruns_extract_when_bootstrap_is_not_ready(tmp_path: Path) -> No
         profile="minimal",
     )
 
-    assert installer.called == ["extract"]
-    assert result == [InstallExtractResult(version="latest", release="rolling", tarball="stub.tar.gz")]
+    assert installer.called == ["extract", "bootstrap", "desktop", "finalize"]
+    assert result[0] == InstallExtractResult(version="latest", release="rolling", tarball="stub.tar.gz")
+    assert result[-1] == InstallFinalizeResult(installed=True, uid_sync=True, snapshot="")
 
 
 def test_upgrade_runs_installer_upgrade_flow(tmp_path: Path) -> None:
@@ -383,10 +391,10 @@ def test_ubuntu_default_install_reruns_extract_when_apt_is_missing(tmp_path: Pat
     assert result[0].phase == "extract"
     assert any(command[:2] == ["curl", "--fail"] for command in installer.runner.commands)
     curl_index = next(index for index, command in enumerate(installer.runner.commands) if command[:2] == ["curl", "--fail"])
-    assert "--progress-bar" in installer.runner.commands[curl_index]
+    assert "--location" in installer.runner.commands[curl_index]
+    assert "-o" in installer.runner.commands[curl_index]
     assert installer.runner.kwargs[curl_index]["capture_output"] is False
-    tar_index = next(index for index, command in enumerate(installer.runner.commands) if command[:2] == ["tar", "xpvf"])
-    assert installer.runner.kwargs[tar_index]["capture_output"] is False
+    assert not any(command and command[0] == "tar" for command in installer.runner.commands)
 
 
 def test_ubuntu_default_install_recovers_from_bootstrap_registry_when_apt_is_missing(tmp_path: Path) -> None:
@@ -413,18 +421,16 @@ def test_ubuntu_default_install_recovers_from_bootstrap_registry_when_apt_is_mis
     assert result[0].phase == "extract"
 
 
-def test_arch_extract_streams_download_and_extraction_progress(tmp_path: Path) -> None:
+def test_arch_extract_dry_run_reports_download_without_extracting(tmp_path: Path) -> None:
     installer, runner = build_real_installer(ArchInstaller, tmp_path)
-    installer._fetch_text = lambda url: "d41d8cd98f00b204e9800998ecf8427e  ArchLinuxARM-aarch64-latest.tar.gz"  # type: ignore[method-assign]
 
     result = installer.run_phase_extract(version=None, release=None, force_phase=True)
 
     curl_index = next(index for index, command in enumerate(runner.commands) if command[:2] == ["curl", "--fail"])
-    bsdtar_index = next(index for index, command in enumerate(runner.commands) if command[:2] == ["bsdtar", "-xpf"])
     assert result.phase == "extract"
-    assert "--progress-bar" in runner.commands[curl_index]
     assert runner.kwargs[curl_index]["capture_output"] is False
-    assert runner.kwargs[bsdtar_index]["capture_output"] is False
+    assert not any(command and command[0] == "bsdtar" for command in runner.commands)
+    assert installer.registry.get(installer.config.distro_name) is None
 
 
 def test_default_profile_is_minimal_and_default_desktop_is_none(tmp_path: Path) -> None:
@@ -471,6 +477,7 @@ def test_minimal_profile_forces_auto_desktop_to_none(tmp_path: Path) -> None:
     )
 
     assert result == [
+        InstallBootstrapResult(username="mike", profile="minimal"),
         InstallDesktopResult(desktop="none", snapshot="", profile="minimal"),
         InstallFinalizeResult(installed=True, uid_sync=True, snapshot=""),
     ]
@@ -545,7 +552,7 @@ def test_base_installer_download_retries_alternate_mirrors(tmp_path: Path) -> No
     def fake_download(url: str, target: Path) -> None:
         attempts.append(url)
         if "mirror-a" in url:
-            raise RuntimeError("primary down")
+            raise InstallFetchError("primary down")
 
     installer._download = fake_download  # type: ignore[method-assign]
 
@@ -575,16 +582,15 @@ def test_ubuntu_apt_commands_retry_alternate_mirrors(tmp_path: Path) -> None:
     )
 
     commands: list[str] = []
-
-    def fake_shell(command: str) -> None:
-        commands.append(command)
-        if "apt update" in command and "ports.ubuntu.com/ubuntu-ports" not in "".join(commands):
-            raise RuntimeError("archive down")
-
-    installer._chroot_shell = fake_shell  # type: ignore[method-assign]
+    responses = iter((
+        RunResult(returncode=1, stdout="", stderr="Temporary failure resolving archive.ubuntu.com"),
+        RunResult(returncode=0, stdout="", stderr=""),
+    ))
+    installer._chroot_shell = lambda command: commands.append(command)  # type: ignore[method-assign]
+    installer._chroot_shell_result = lambda command: commands.append(command) or next(responses)  # type: ignore[method-assign]
 
     installer._apt_with_mirror_fallback("apt update")
 
     assert any("archive.ubuntu.com/ubuntu" in command for command in commands)
     assert any("ports.ubuntu.com/ubuntu-ports" in command for command in commands)
-    assert commands[-1] == "apt update"
+    assert commands.count("apt update") == 2

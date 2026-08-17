@@ -30,7 +30,7 @@ def test_phase29_smoke_handoff_detects_failed_result_payload() -> None:
     assert "_smoke_result_failed" in registry
     assert "resultPayload" in registry
     assert "failCount" in registry
-    assert 'payload.get("includeOptional", payload.get("include_optional", True))' in registry
+    assert 'optional_bool(payload, "includeOptional", "include_optional", default=True' in registry
     assert 'payload.get("includeOptional") or payload.get("include_optional") or True' not in registry
 
 
@@ -49,7 +49,7 @@ def test_phase29_notification_permission_ux_and_state_hygiene() -> None:
     strings = read("android/app/src/main/res/values/strings.xml")
     gitignore = read(".gitignore")
     assert "RequestPermission" in main
-    assert "android.permission.POST_NOTIFICATIONS" in main
+    assert "Manifest.permission.POST_NOTIFICATIONS" in main
     assert "notifications_permission_title" in home
     assert "notifications_permission_body" in strings
     for token in (".devtool/state/", ".devtool/reports/", ".devtool/test-history.json"):
@@ -61,10 +61,12 @@ def test_phase29_notification_permission_ux_and_state_hygiene() -> None:
 def test_phase29_android_guardrails_remain_clean() -> None:
     kotlin = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in (ROOT / "android/app/src/main/kotlin").rglob("*.kt"))
     assert "WebView" not in kotlin
-    assert "Manifest.permission.POST_NOTIFICATIONS" not in kotlin
+    assert "Manifest.permission.POST_NOTIFICATIONS" in kotlin
+    assert "Build.VERSION.SDK_INT >= 33" in kotlin
+    assert "ActivityResultContracts.RequestPermission" in kotlin
     assert "combine(arrayOf" not in kotlin
     assert '"/data/' not in kotlin
     build = read("android/app/build.gradle.kts")
-    assert 'compileSdk = 36' in build
+    assert 'compileSdk = 37' in build
     assert 'targetSdk = 36' in build
     assert 'versionName = "0.1.0-phase29"' in build

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -64,20 +62,19 @@ def test_bridge_rejects_oversized_and_unknown_request_fields() -> None:
         BridgeRequest.from_json(raw)
 
 
-def test_bridge_cli_preserves_request_id_on_parse_failure() -> None:
+def test_bridge_cli_preserves_request_id_on_parse_failure(monkeypatch, capsys) -> None:
+    from chrootctl.bridge import cli as bridge_cli
+    from chrootctl import services as services_module
+
     request = json.dumps({"protocolVersion": 999, "requestId": "android-123", "operation": "chroots.list", "payload": {}})
-    completed = subprocess.run(
-        [sys.executable, "-m", "chrootctl.bridge.cli", "query", "--request-file", "-"],
-        cwd=ROOT,
-        env={"PYTHONPATH": str(SRC)},
-        input=request,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert completed.returncode == 2
-    assert json.loads(completed.stdout)["requestId"] == "android-123"
+    monkeypatch.setattr(bridge_cli, "_read_request", lambda _path: request)
+
+    def forbidden_service_init(*_args, **_kwargs):
+        raise AssertionError("malformed bridge input must fail before service initialization")
+
+    monkeypatch.setattr(services_module, "create_service_container", forbidden_service_init)
+    assert bridge_cli.main(["query", "--request-file", "-"]) == 2
+    assert json.loads(capsys.readouterr().out)["requestId"] == "android-123"
 
 
 def test_bridge_rejects_unknown_payload_field_and_string_boolean() -> None:

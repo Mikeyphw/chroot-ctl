@@ -24,7 +24,7 @@ def main() -> int:
     docs = read("docs/android/PHASE_34C_ROOT_MODULE_RUNTIME_RESOLVER.md")
     tests = read("tests/test_android_phase34c.py")
 
-    require("compileSdk = 36" in build, "compileSdk must remain API 36")
+    require("compileSdk = 37" in build, "compileSdk must be API 37")
     require("targetSdk = 36" in build, "targetSdk must remain API 36")
     require("warningsAsErrors = true" in build, "strict lint warningsAsErrors must remain enabled")
     require("abortOnError = true" in build, "strict lint abortOnError must remain enabled")
@@ -56,7 +56,7 @@ def main() -> int:
     require("File.separator" in resolver, "resolver must keep path construction portable and avoid hardcoded /data string literals")
     require('"/data/' not in resolver, "resolver Kotlin must not reintroduce forbidden quoted /data literals")
     require("pythonCandidates" in resolver, "Python bridge fallback must remain available")
-    require("Magisk/KSU module" in resolver, "diagnostic must mention the module-first backend search")
+    require("No active chrootctl executable or Python runtime was found" in resolver, "diagnostic must describe active-runtime discovery failure")
 
     for token in (
         "Phase 34C",

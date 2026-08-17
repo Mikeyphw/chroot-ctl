@@ -21,7 +21,7 @@ def test_module_validator_rejects_retired_webui_artifacts() -> None:
         "payload/src/chrootctl/web",
     ):
         assert token in magisk
-    assert "retired WebUI artifact returned" in magisk
+    assert "forbidden module artifact" in magisk
 
 
 def test_phase24_keeps_generated_outputs_uncommitted() -> None:

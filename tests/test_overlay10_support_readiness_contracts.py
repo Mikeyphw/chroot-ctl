@@ -20,11 +20,13 @@ def test_overlay10_readiness_rejects_stale_or_unbound_evidence() -> None:
     readiness = text("src/chrootctl/services/release_readiness.py")
     bridge = text("src/chrootctl/bridge/registry.py")
     docs = text("docs/release/VALIDATION_EVIDENCE.md")
-    for token in ('"android_compileDebugKotlin"', '"android_testDebugUnitTest"', '"android_lintDebug"', '"module_zip"', '"source_no_webui"', '"sourceCommit"', '"compatibilityManifestSha256"', '_current_source_commit'):
+    for token in ('"android_compileDebugKotlin"', '"android_testDebugUnitTest"', '"android_lintDebug"', '"module_zip"', '"source_no_webui"', '"sourceCommit"', '"validatedTree"', '"compatibilityManifestSha256"', '_current_source_commit', '_current_source_tree', '_current_source_parent'):
         assert token in readiness
     assert '"ok": bool(evidence.get("ready"))' in bridge
     assert '"required": False' in bridge
     assert "source commit" in docs.lower()
+    assert "validatedtree" in docs.lower()
+    assert "head^{tree}" in docs.lower()
 
 
 def test_overlay10_repair_is_plan_only_transactional_and_symlink_safe() -> None:

@@ -101,12 +101,11 @@ def test_chroots_parser_supports_show_remove_and_rename() -> None:
 def test_install_parser_supports_recovery_and_profile_flags() -> None:
     parser = build_parser()
 
-    args = parser.parse_args(
+    resume_args = parser.parse_args(
         [
             "install",
             "ubuntu",
             "--resume",
-            "--repair",
             "--profile",
             "dev",
             "--tool",
@@ -117,14 +116,17 @@ def test_install_parser_supports_recovery_and_profile_flags() -> None:
             "--select-addons",
         ]
     )
+    repair_args = parser.parse_args(["install", "ubuntu", "--repair", "--profile", "dev"])
 
-    assert args.resume is True
-    assert args.repair is True
-    assert args.profile == "dev"
-    assert args.tools == ["remove-snapd"]
-    assert args.addons == ["nala"]
-    assert args.select_tools is True
-    assert args.select_addons is True
+    assert resume_args.resume is True and resume_args.repair is False
+    assert repair_args.repair is True and repair_args.resume is False
+    assert resume_args.profile == "dev"
+    assert resume_args.tools == ["remove-snapd"]
+    assert resume_args.addons == ["nala"]
+    assert resume_args.select_tools is True
+    assert resume_args.select_addons is True
+    with pytest.raises(SystemExit):
+        parser.parse_args(["install", "ubuntu", "--resume", "--repair"])
 
 
 def test_catalog_parser_supports_tools_and_addons() -> None:

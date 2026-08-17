@@ -62,15 +62,15 @@ class FakeServices:
         return InstallService(self)
 
 
-def test_validate_install_submission_uses_default_username(tmp_path: Path):
+def test_validate_install_submission_requires_explicit_or_discovered_username(tmp_path: Path):
     service = InstallService(FakeServices(tmp_path))
     result = service.validate_install_submission(
         InstallRequest(distro="ubuntu", name="ubuntu", username="", preset="minimal-server")
     )
-    assert result["ok"] is True
-    assert result["requirements"]["default_username"] == "mike"
-    assert result["requirements"]["default_username"] == "mike"
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result["requirements"]["username_required"] is True
+    assert result["requirements"]["default_username"] == ""
+    assert any(item["code"] == "missing_username" for item in result["blocking"])
 
 
 def test_install_uses_keyword_build_installer_args(monkeypatch, tmp_path: Path):
@@ -92,7 +92,7 @@ def test_install_uses_keyword_build_installer_args(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("chrootctl.services.install.build_installer", fake_build_installer)
 
     result = service.install(
-        InstallRequest(distro="ubuntu", name="ubuntu", username="", preset="minimal-server")
+        InstallRequest(distro="ubuntu", name="ubuntu", username="mike", preset="minimal-server")
     )
 
     assert result.chroot_name == "ubuntu"

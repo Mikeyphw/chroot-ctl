@@ -38,7 +38,7 @@ No automatic replay:
 
 ## Preserved gates
 
-- `compileSdk = 36`
+- `compileSdk = 37`
 - `targetSdk = 36`
 - `warningsAsErrors = true`
 - `abortOnError = true`

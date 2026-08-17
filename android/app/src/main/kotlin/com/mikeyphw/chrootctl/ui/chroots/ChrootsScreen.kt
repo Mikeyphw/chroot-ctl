@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
@@ -330,7 +331,7 @@ private fun Phase32ChrootCard(
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ActionFlowRow {
                 StatusPill(chroot.status.ifBlank { stringResource(R.string.value_unknown) }, tone)
-                if (chroot.warningCount > 0) StatusPill(stringResource(R.string.chroot_warnings_count, chroot.warningCount), StatusTone.Warning)
+                if (chroot.warningCount > 0) StatusPill(pluralStringResource(R.plurals.chroot_warnings_count, chroot.warningCount, chroot.warningCount), StatusTone.Warning)
                 StatusPill(stringResource(R.string.chroot_workspace_app_chip), StatusTone.Accent)
             }
             Text(chroot.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -684,7 +685,7 @@ private fun WorkspaceOverviewTab(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         checks.take(MAX_OVERVIEW_CHECKS).forEach { check -> CheckRow(check) }
                         if (checks.size > MAX_OVERVIEW_CHECKS) {
-                            Text(stringResource(R.string.chroot_workspace_checks_more, checks.size - MAX_OVERVIEW_CHECKS), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(pluralStringResource(R.plurals.chroot_workspace_checks_more, checks.size - MAX_OVERVIEW_CHECKS, checks.size - MAX_OVERVIEW_CHECKS), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 },
@@ -1445,7 +1446,7 @@ private fun UsersPanel(
                     onClick = { filterName = UserWorkspaceFilter.SystemUsers.name },
                     modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
                 ) {
-                    Text(stringResource(R.string.action_show_system_users, systemUsers.size))
+                    Text(pluralStringResource(R.plurals.action_show_system_users, systemUsers.size, systemUsers.size))
                 }
             } else if (filter == UserWorkspaceFilter.SystemUsers) {
                 TextButton(

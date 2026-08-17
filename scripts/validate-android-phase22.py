@@ -68,7 +68,7 @@ def main() -> int:
     docs = read(docs_path)
 
     # SDK and Android build contract.
-    error_if(errors, "compileSdk = 36" not in build, "compileSdk must remain pinned to 36")
+    error_if(errors, "compileSdk = 37" not in build, "compileSdk must be pinned to 37")
     error_if(errors, "targetSdk = 36" not in build, "targetSdk must remain pinned to 36")
     error_if(
         errors,
@@ -142,8 +142,16 @@ def main() -> int:
     ):
         error_if(errors, method not in aidl, f"AIDL missing fixed method: {method}")
 
-    # Android lint traps already seen in this project.
-    error_if(errors, "Manifest.permission.POST_NOTIFICATIONS" in kotlin, "Kotlin must not reference Manifest.permission.POST_NOTIFICATIONS directly")
+    # Android lint traps already seen in this project. POST_NOTIFICATIONS is a
+    # runtime permission on API 33+, so require the direct constant to be guarded
+    # rather than banning the supported API.
+    for token in (
+        "Manifest.permission.POST_NOTIFICATIONS",
+        "Build.VERSION.SDK_INT >= 33",
+        "ContextCompat.checkSelfPermission",
+        "ActivityResultContracts.RequestPermission",
+    ):
+        error_if(errors, token not in kotlin, f"notification permission flow missing guarded token: {token}")
     error_if(errors, "combine(arrayOf" in kotlin, "fragile combine(arrayOf(...)) inference is forbidden")
     error_if(errors, bool(re.search(r'"/data/', kotlin)), "Kotlin must not hardcode /data/ path literals")
 

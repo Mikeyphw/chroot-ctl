@@ -24,9 +24,11 @@ def test_adaptive_shell_has_five_stable_primary_destinations() -> None:
     shell = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/components/AdaptiveNavigationShell.kt")
     assert "NavigationBar" in shell
     assert "NavigationRail" in shell
+    destination = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/AppDestination.kt")
     for item in ("Home", "Chroots", "Install", "Activity", "Tools"):
-        assert f"AppDestination.{item}" in shell
-    assert "AppDestination.Help" not in shell.split("private val primaryDestinations", 1)[1]
+        assert f"    {item}(" in destination
+    assert "private val primaryDestinations: List<AppDestination> = AppDestination.entries.toList()" in shell
+    assert "Help(" not in destination
 
 
 def test_home_keeps_cached_content_visible_during_refresh_failure() -> None:
@@ -48,7 +50,7 @@ def test_raw_transport_failure_is_disclosed_only_as_technical_detail() -> None:
 def test_sdk_and_strict_lint_contract_are_preserved() -> None:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

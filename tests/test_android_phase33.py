@@ -75,7 +75,7 @@ def test_phase33_preserves_native_boundaries() -> None:
     assert "WebView" not in kotlin
     assert "http://" not in kotlin and "https://" not in kotlin
     assert "targetSdk = 36" in build
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert 'id="OldTargetApi"' in lint
     assert "GradleDependency" not in lint
     assert "NewerVersionAvailable" not in lint

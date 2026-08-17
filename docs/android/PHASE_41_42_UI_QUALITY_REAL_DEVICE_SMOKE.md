@@ -34,7 +34,7 @@ The existing read-only smoke plan now includes root-module discovery and safe wo
 
 ## Guardrails preserved
 
-- compileSdk = 36 and targetSdk = 36.
+- compileSdk = 37 and targetSdk = 36.
 - Native Android + privileged RootService architecture.
 - Root-module-first runtime resolution.
 - RootService stdout/stderr drain hardening.

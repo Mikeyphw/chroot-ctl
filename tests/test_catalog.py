@@ -424,7 +424,7 @@ def test_external_manifest_rejects_script_hash_mismatch(tmp_path: Path) -> None:
     scripts.mkdir()
     (scripts / "external.sh").write_text("echo changed\n", encoding="utf-8")
     (manifests / "external.yaml").write_text(
-        "name: external\ndescription: External\ndistro: ubuntu\nscript: external.sh\nsha256: " + ("0" * 64) + "\n",
+        "name: external\ndescription: External\ndistro: ubuntu\nscript: external.sh\nsha256: \"" + ("0" * 64) + "\"\n",
         encoding="utf-8",
     )
     config = ChrootConfig(tool_manifest_dirs=(manifests,), tool_script_dirs=(scripts,))
@@ -482,7 +482,10 @@ def test_builtin_all_distro_scripts_cover_ubuntu_and_arch() -> None:
             payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
             script_text = (script_dir / payload["script"]).read_text(encoding="utf-8")
             distros = _normalize_manifest_distros(payload["distro"], filename=manifest.name)
-            if distros == {"ubuntu", "arch"} and payload["script"].endswith(".sh"):
+            if manifest.name == "sync-uid.yaml":
+                assert "host-managed by chrootctl" in script_text
+                assert "exit 64" in script_text
+            elif distros == {"ubuntu", "arch"} and payload["script"].endswith(".sh"):
                 assert "ubuntu)" in script_text, manifest.name
                 assert "arch)" in script_text, manifest.name
             elif payload["script"].endswith(".sh"):

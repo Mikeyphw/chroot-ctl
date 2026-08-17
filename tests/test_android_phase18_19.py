@@ -101,11 +101,11 @@ def test_phase18_19_validator_and_strings_are_present() -> None:
     strings = (ROOT / "android" / "app" / "src" / "main" / "res" / "values" / "strings.xml").read_text(encoding="utf-8")
     validator = (ROOT / "scripts" / "validate-android-phase18-19.py").read_text(encoding="utf-8")
     for name in (
-        "system_support_title",
+        "system_support_body",
         "support_bundle_action",
         "module_build_action",
-        "repair_apply_action",
-        "debug_workbench_title",
+        "repair_apply_selected_action",
+        "debug_timeline_title",
         "debug_export_action",
     ):
         assert f'name="{name}"' in strings

@@ -30,13 +30,9 @@ def test_python_packaging_exposes_only_cli_and_android_bridge() -> None:
 def test_magisk_renderer_no_longer_emits_webui_artifacts(tmp_path: Path) -> None:
     from chrootctl.magisk import MagiskModuleConfig, render_magisk_module
 
-    package_root = tmp_path / "pkgroot" / "src"
-    chrootctl_dir = package_root / "chrootctl"
-    chrootctl_dir.mkdir(parents=True)
-    (chrootctl_dir / "__init__.py").write_text("", encoding="utf-8")
-    (chrootctl_dir / "cli.py").write_text("def main():\n    return None\n", encoding="utf-8")
-    (package_root.parent / "pyproject.toml").write_text("[project]\nname='chrootctl'\n", encoding="utf-8")
-
+    # Release identity is now verified against the real package metadata, so use
+    # the repository package as input while keeping the rendered module isolated.
+    package_root = repo_root() / "src"
     output_dir = tmp_path / "module"
     render_magisk_module(
         output_dir,

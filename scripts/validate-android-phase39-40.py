@@ -176,11 +176,14 @@ def main() -> int:
         "fun snapshotCreatePayloadJson(name: String, snapshot: String)",
         "previewAction = normalizedAction",
         "previewSnapshot = snapshot",
-        "supportPreview?.rawJson",
         "storagePane",
         "logsPane",
     ):
         require(token in viewmodel, f"ViewModel Phase 39-40 wiring missing {token}")
+    require('.withPreviewContract(systemSupportPane.value.supportPreview, "support.bundle")' in viewmodel, "support bundle action is not bound to the accepted preview contract")
+    support_payload = viewmodel.split("fun supportBundlePayloadJson", 1)[1].split("fun ", 1)[0]
+    require("rawJson" not in support_payload, "support bundle payload must not replay untrusted raw preview JSON")
+    require('put("archive"' not in support_payload, "support bundle archive is server-managed and must not be client-injected")
     require("previewSnapshotCreate(name: String, snapshot: String)" in repository, "repository does not preview the exact reviewed snapshot name")
     snapshot_panel_signature = chroots.split("private fun SnapshotPanel", 1)[1].split(") {", 1)[0]
     require("onPreviewSnapshotCreate: (String, String) -> Unit" in snapshot_panel_signature, "SnapshotPanel preview callback is not bound to a stable snapshot name")
@@ -213,7 +216,7 @@ def main() -> int:
 
     # Architecture/API guardrails.
     build = read("android/app/build.gradle.kts")
-    require("compileSdk = 36" in build and "targetSdk = 36" in build, "API 36 guardrail regressed")
+    require("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 / targetSdk 36 guardrail regressed")
     manifest_and_sources = "\n".join(
         p.read_text(encoding="utf-8", errors="ignore")
         for p in (ROOT / "android/app/src/main").rglob("*")

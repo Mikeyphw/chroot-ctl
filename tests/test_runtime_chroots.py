@@ -71,7 +71,8 @@ def test_remove_chroot_deletes_registry_and_filesystem(tmp_path: Path) -> None:
 
 
 def test_rename_chroot_rejects_existing_destination(tmp_path: Path) -> None:
-    config, registry, _ = build_context(tmp_path)
+    config, registry, logger = build_context(tmp_path)
+    runner = Runner(dry_run=False)
     old_target = config.for_chroot("old").chroot_base
     old_target.mkdir(parents=True)
     registry.upsert(name="old", distro="ubuntu", path=str(old_target), phase="finalize", installed=True)
@@ -79,38 +80,41 @@ def test_rename_chroot_rejects_existing_destination(tmp_path: Path) -> None:
     registry.upsert(name="new", distro="ubuntu", path=str(new_target), phase="finalize", installed=True)
 
     with pytest.raises(RuntimeError, match="destination chroot already exists"):
-        rename_chroot(config, registry, "old", "new")
+        rename_chroot(config, registry, runner, logger, "old", "new")
 
 
 @pytest.mark.parametrize("name", ["", "   ", "../bad", "bad/name", "bad name"])
 def test_rename_chroot_rejects_invalid_destination_name(tmp_path: Path, name: str) -> None:
-    config, registry, _ = build_context(tmp_path)
+    config, registry, logger = build_context(tmp_path)
+    runner = Runner(dry_run=False)
     old_target = config.for_chroot("old").chroot_base
     old_target.mkdir(parents=True)
     registry.upsert(name="old", distro="ubuntu", path=str(old_target), phase="finalize", installed=True)
 
     with pytest.raises(RuntimeError, match="invalid chroot name|new chroot name is required"):
-        rename_chroot(config, registry, "old", name)
+        rename_chroot(config, registry, runner, logger, "old", name)
 
 
 def test_rename_chroot_rejects_registry_path_mismatch(tmp_path: Path) -> None:
-    config, registry, _ = build_context(tmp_path)
+    config, registry, logger = build_context(tmp_path)
+    runner = Runner(dry_run=False)
     expected = config.for_chroot("old").chroot_base
     expected.mkdir(parents=True)
     mismatched = tmp_path / "elsewhere" / "old"
     registry.upsert(name="old", distro="ubuntu", path=str(mismatched), phase="finalize", installed=True)
 
-    with pytest.raises(RuntimeError, match="registry path mismatch"):
-        rename_chroot(config, registry, "old", "new")
+    with pytest.raises(RuntimeError, match="registered chroot path is outside managed root"):
+        rename_chroot(config, registry, runner, logger, "old", "new")
 
 
 def test_rename_chroot_moves_filesystem_and_registry(tmp_path: Path) -> None:
-    config, registry, _ = build_context(tmp_path)
+    config, registry, logger = build_context(tmp_path)
+    runner = Runner(dry_run=False)
     old_target = config.for_chroot("old").chroot_base
     old_target.mkdir(parents=True)
     registry.upsert(name="old", distro="ubuntu", path=str(old_target), phase="finalize", installed=True)
 
-    result = rename_chroot(config, registry, "old", "new")
+    result = rename_chroot(config, registry, runner, logger, "old", "new")
 
     new_target = config.for_chroot("new").chroot_base
     assert result.new_name == "new"
@@ -128,7 +132,7 @@ def test_remove_chroot_refuses_registry_path_outside_chroot_root(tmp_path: Path)
     outside.mkdir(parents=True)
     registry.upsert(name="ubuntu", distro="ubuntu", path=str(outside), phase="finalize", installed=True)
 
-    with pytest.raises(RuntimeError, match="refusing to delete path outside chroot root"):
+    with pytest.raises(RuntimeError, match="registered chroot path is outside managed root"):
         remove_chroot(config, registry, runner, logger, "ubuntu")
 
     assert outside.exists()
@@ -136,7 +140,8 @@ def test_remove_chroot_refuses_registry_path_outside_chroot_root(tmp_path: Path)
 
 
 def test_rename_chroot_requires_registry_record(tmp_path: Path) -> None:
-    config, registry, _ = build_context(tmp_path)
+    config, registry, logger = build_context(tmp_path)
+    runner = Runner(dry_run=False)
 
     with pytest.raises(RuntimeError, match="no registry record for chroot: missing"):
-        rename_chroot(config, registry, "missing", "new")
+        rename_chroot(config, registry, runner, logger, "missing", "new")

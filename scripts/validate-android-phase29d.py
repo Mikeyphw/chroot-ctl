@@ -29,7 +29,7 @@ def main() -> int:
     tools = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/tools/ToolsScreen.kt")
     docs = read("docs/android/PHASE_29D_RUNTIME_BOOTSTRAP_AND_RESPONSIVE_ACTIONS.md")
 
-    require("compileSdk = 36" in build, "compileSdk must remain 36")
+    require("compileSdk = 37" in build, "compileSdk must be 37")
     require("targetSdk = 36" in build, "targetSdk must remain 36")
     require("warningsAsErrors = true" in build, "warningsAsErrors must remain enabled")
     require('<issue id="OldTargetApi" severity="ignore" />' in lint, "Phase 29C OldTargetApi policy must remain")
@@ -76,7 +76,7 @@ def main() -> int:
         "protocol-1",
         "Checking root and chrootctl runtime",
         "FlowRow",
-        "compileSdk = 36",
+        "compileSdk = 37",
         "targetSdk = 36",
     ):
         require(token in docs, f"Phase 29D docs missing: {token}")

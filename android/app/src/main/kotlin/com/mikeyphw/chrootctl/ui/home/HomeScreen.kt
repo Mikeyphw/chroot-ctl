@@ -22,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -162,12 +163,12 @@ private fun HomeReady(
             MetricCardData(
                 label = stringResource(R.string.metric_running_chroots),
                 value = runningChroots.toString(),
-                detail = stringResource(R.string.metric_running_chroots_detail, snapshot.chrootCount),
+                detail = pluralStringResource(R.plurals.metric_running_chroots_detail, snapshot.chrootCount, snapshot.chrootCount),
             ),
             MetricCardData(
                 label = stringResource(R.string.metric_active_operations),
                 value = runningOperations.toString(),
-                detail = stringResource(R.string.metric_active_operations_detail, snapshot.operationCount),
+                detail = pluralStringResource(R.plurals.metric_active_operations_detail, snapshot.operationCount, snapshot.operationCount),
             ),
             MetricCardData(
                 label = stringResource(R.string.metric_warnings),
@@ -363,7 +364,7 @@ private fun SystemHealthCard(
                 )
             }
             StatusPill(
-                label = stringResource(R.string.home_health_ready_count, readyRows, snapshot.readinessRows.size),
+                label = pluralStringResource(R.plurals.home_health_ready_count, snapshot.readinessRows.size, readyRows, snapshot.readinessRows.size),
                 tone = if (readyRows == snapshot.readinessRows.size) StatusTone.Success else StatusTone.Warning,
             )
         }
@@ -383,12 +384,12 @@ private fun SystemHealthCard(
         )
         HealthRow(
             label = stringResource(R.string.home_health_chroots),
-            detail = stringResource(R.string.home_health_chroots_detail, runningChroots, snapshot.chrootCount),
+            detail = pluralStringResource(R.plurals.home_health_chroots_detail, runningChroots, runningChroots, snapshot.chrootCount),
             state = if (snapshot.warningCount == 0) ReadinessState.Ready else ReadinessState.Warning,
         )
         HealthRow(
             label = stringResource(R.string.home_health_operations),
-            detail = stringResource(R.string.home_health_operations_detail, activeOperations),
+            detail = pluralStringResource(R.plurals.home_health_operations_detail, activeOperations, activeOperations),
             state = ReadinessState.Ready,
         )
     }

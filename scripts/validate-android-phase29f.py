@@ -101,8 +101,8 @@ def main() -> int:
     ):
         require(unit_test, token, "Binder recovery unit tests")
 
-    require(build, "compileSdk = 36", "SDK contract")
-    require(build, "targetSdk = 36", "SDK contract")
+    require(build, "compileSdk = 37", "compileSdk 37 contract")
+    require(build, "targetSdk = 36", "compileSdk 37 contract")
     require(build, "warningsAsErrors = true", "lint contract")
     require(build, "abortOnError = true", "lint contract")
     require(lint, '<issue id="OldTargetApi" severity="ignore" />', "Phase 29C lint policy")
@@ -119,7 +119,7 @@ def main() -> int:
         "pingBinder",
         "Retry a read-only request at most once",
         "Never replay operation start",
-        "compileSdk = 36",
+        "compileSdk = 37",
         "targetSdk = 36",
         "Daemon mode is intentionally not enabled",
     ):

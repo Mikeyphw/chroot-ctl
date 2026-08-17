@@ -214,7 +214,7 @@ class _Runner:
     dry_run = True
 
 
-def test_handle_start_auto_records_existing_clipboard_wrappers(monkeypatch, tmp_path: Path) -> None:
+def test_handle_start_does_not_mutate_clipboard_registry_state(monkeypatch, tmp_path: Path) -> None:
     chroot_base = tmp_path / "ubuntu"
     for rel in ("usr/local/bin/termux-clip", "usr/local/bin/xsel", "usr/local/bin/xclip"):
         path = chroot_base / rel
@@ -257,11 +257,10 @@ def test_handle_start_auto_records_existing_clipboard_wrappers(monkeypatch, tmp_
     assert exc.value.code == 0
 
     assert controller_calls == [(False, False, False)]
-    assert registry.upserts
-    assert registry.upserts[-1]["metadata"]["tools"] == "setup-clipboard"
+    assert registry.upserts == []
 
 
-def test_handle_start_auto_applies_clipboard_tool_when_missing(monkeypatch, tmp_path: Path) -> None:
+def test_handle_start_does_not_auto_apply_clipboard_tool(monkeypatch, tmp_path: Path) -> None:
     chroot_base = tmp_path / "ubuntu"
     registry = _RegistryWithWrites(
         {
@@ -276,8 +275,6 @@ def test_handle_start_auto_applies_clipboard_tool_when_missing(monkeypatch, tmp_
             "metadata": {},
         }
     )
-    applied: list[list[str]] = []
-
     class _Controller(Controller):
         def start_interactive(self, *, login: bool, root_login: bool, x11: bool = False):
             raise SystemExit(0)
@@ -292,11 +289,9 @@ def test_handle_start_auto_applies_clipboard_tool_when_missing(monkeypatch, tmp_
     )
 
     monkeypatch.setattr(session, "progress_call", lambda description, fn, **kwargs: fn())
-    monkeypatch.setattr(session, "apply_catalog_entries", lambda **kwargs: applied.append(kwargs["names"]) or [])
 
     with pytest.raises(SystemExit) as exc:
         session.handle_start(context)
 
     assert exc.value.code == 0
 
-    assert applied == [["setup-clipboard"]]

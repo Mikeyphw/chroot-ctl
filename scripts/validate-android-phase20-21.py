@@ -53,15 +53,21 @@ def main() -> int:
     for token in ("WebView", "runShell(", "executeArbitraryCommand", "MANAGE_EXTERNAL_STORAGE", "QUERY_ALL_PACKAGES"):
         if token in combined:
             errors.append(f"forbidden Android token found: {token}")
-    if "Manifest.permission.POST_NOTIFICATIONS" in android_text:
-        errors.append("Kotlin must not reference Manifest.permission.POST_NOTIFICATIONS directly")
+    for token in (
+        "Manifest.permission.POST_NOTIFICATIONS",
+        "Build.VERSION.SDK_INT >= 33",
+        "ContextCompat.checkSelfPermission",
+        "ActivityResultContracts.RequestPermission",
+    ):
+        if token not in android_text:
+            errors.append(f"notification permission flow missing guarded token: {token}")
     if "combine(arrayOf" in android_text:
         errors.append("Avoid fragile combine(arrayOf(...)) inference")
     if re.search(r'"/data/', android_text):
         errors.append("Kotlin must not hardcode /data/ path literals")
     build_text = read(build)
-    if "compileSdk = 36" not in build_text or "targetSdk = 36" not in build_text:
-        errors.append("Android SDK must remain pinned to 36")
+    if "compileSdk = 37" not in build_text or "targetSdk = 36" not in build_text:
+        errors.append("compileSdk must be 37 while targetSdk remains 36")
     if not any(f'versionName = "0.1.0-phase{phase}"' in build_text for phase in (21, 22, 23, 24, 25, 26, 27, 28, 29)):
         errors.append("Android app versionName must be at least phase21")
     backup_rules = ROOT / "android/app/src/main/res/xml/backup_rules.xml"

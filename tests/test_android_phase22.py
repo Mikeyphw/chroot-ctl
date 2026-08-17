@@ -51,7 +51,7 @@ def test_android_release_hardening_guardrails() -> None:
     manifest = read("android/app/src/main/AndroidManifest.xml")
     aidl = read("android/app/src/main/aidl/com/mikeyphw/chrootctl/root/IChrootRootService.aidl")
     kotlin = kotlin_sources()
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert "targetSdk = 36" in build
     assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(22, 30))
     assert "warningsAsErrors = true" in build
@@ -68,7 +68,13 @@ def test_android_release_hardening_guardrails() -> None:
         assert "<monochrome" in read(icon)
     for forbidden in ("WebView", "runShell(", "executeArbitraryCommand", "MANAGE_EXTERNAL_STORAGE", "QUERY_ALL_PACKAGES"):
         assert forbidden not in kotlin + manifest + aidl
-    assert "Manifest.permission.POST_NOTIFICATIONS" not in kotlin
+    for token in (
+        "Manifest.permission.POST_NOTIFICATIONS",
+        "Build.VERSION.SDK_INT >= 33",
+        "ContextCompat.checkSelfPermission",
+        "ActivityResultContracts.RequestPermission",
+    ):
+        assert token in kotlin
     assert "combine(arrayOf" not in kotlin
     assert not re.search(r'"/data/', kotlin)
 

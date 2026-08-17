@@ -20,7 +20,7 @@ def test_room_refresh_is_transactional_reconciled_retained_and_replay_safe():
     assert "version = 3" in database
     assert "MIGRATION_2_3" in migrations and "ALTER TABLE operation_events ADD COLUMN eventKey" in migrations
     assert 'Index(value = ["eventKey"], unique = true)' in entities
-    assert "@ColumnInfo(defaultValue = "''") val eventKey: String" in entities
+    assert '@ColumnInfo(defaultValue = "\'\'") val eventKey: String' in entities
     assert "replaceSnapshot" in chroots and "deleteMissing" in chroots
     assert "onConflict = OnConflictStrategy.IGNORE" in operations
     assert "pruneEvents" in operations and "pruneTerminalOperations" in operations

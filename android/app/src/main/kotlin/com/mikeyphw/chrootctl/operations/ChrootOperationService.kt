@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.mikeyphw.chrootctl.ChrootCtlApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,12 +80,12 @@ class ChrootOperationService : Service() {
         }
 
         val requestId = UUID.randomUUID().toString()
-        state.edit()
-            .putString(KEY_OPERATION, operation)
-            .putString(KEY_REQUEST_ID, requestId)
-            .remove(KEY_OPERATION_ID)
-            .putBoolean(KEY_CANCEL_REQUESTED, false)
-            .apply()
+        state.edit {
+            putString(KEY_OPERATION, operation)
+            putString(KEY_REQUEST_ID, requestId)
+            remove(KEY_OPERATION_ID)
+            putBoolean(KEY_CANCEL_REQUESTED, false)
+        }
         activeOperationId = null
         cancelRequested = false
         notifications.startForeground(this, notifications.build(operation.replace('.', ' '), "Queued"))
@@ -93,7 +94,7 @@ class ChrootOperationService : Service() {
             var terminalSeen = false
             repository.startBridgeOperation(operation, payload, requestId) { event ->
                 activeOperationId = event.optString("operationId").takeIf(String::isNotBlank) ?: activeOperationId
-                activeOperationId?.let { state.edit().putString(KEY_OPERATION_ID, it).apply() }
+                activeOperationId?.let { operationId -> state.edit { putString(KEY_OPERATION_ID, operationId) } }
                 val type = event.optString("type")
                 terminalSeen = terminalSeen || isTerminal(type)
                 notifications.update(event, activeOperationId)
@@ -121,7 +122,7 @@ class ChrootOperationService : Service() {
                     )
                 } else {
                     activeOperationId = operationId
-                    state.edit().putString(KEY_OPERATION_ID, operationId).apply()
+                    state.edit { putString(KEY_OPERATION_ID, operationId) }
                     reconcileUntilTerminal(operationId, repository)
                 }
             }
@@ -155,7 +156,7 @@ class ChrootOperationService : Service() {
                 return@launch
             }
             activeOperationId = operationId
-            state.edit().putString(KEY_OPERATION_ID, operationId).apply()
+            state.edit { putString(KEY_OPERATION_ID, operationId) }
             reconcileUntilTerminal(operationId, repository)
             finishOperation()
         }
@@ -198,7 +199,7 @@ class ChrootOperationService : Service() {
     }
 
     private fun finishOperation() {
-        state.edit().clear().apply()
+        state.edit { clear() }
         cancelRequested = false
         activeOperationId = null
         activeJob = null
@@ -209,7 +210,7 @@ class ChrootOperationService : Service() {
     private fun cancelActive(requestedOperationId: String?) {
         val operationId = requestedOperationId?.takeIf(String::isNotBlank) ?: activeOperationId
         cancelRequested = true
-        state.edit().putBoolean(KEY_CANCEL_REQUESTED, true).apply()
+        state.edit { putBoolean(KEY_CANCEL_REQUESTED, true) }
         if (operationId.isNullOrBlank()) {
             notifications.update(
                 JSONObject()
@@ -220,7 +221,7 @@ class ChrootOperationService : Service() {
             return
         }
         activeOperationId = operationId
-        state.edit().putString(KEY_OPERATION_ID, operationId).apply()
+        state.edit { putString(KEY_OPERATION_ID, operationId) }
         scope.launch {
             val repository = (application as ChrootCtlApplication).container.bridgeRepository
             repository.cancelOperation(operationId)

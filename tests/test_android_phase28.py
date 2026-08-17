@@ -12,7 +12,7 @@ def test_phase28_webui_still_retired_and_sdk_pinned() -> None:
     build = read("android/app/build.gradle.kts")
     for token in ("FastAPI", "Jinja2", "Uvicorn", "python-multipart", "chrootctl-web"):
         assert token not in pyproject
-    assert 'compileSdk = 36' in build
+    assert 'compileSdk = 37' in build
     assert 'targetSdk = 36' in build
     assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (28, 29))
 def test_phase28_release_docs_present() -> None:

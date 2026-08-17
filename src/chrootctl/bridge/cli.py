@@ -45,6 +45,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             _write_json(response.to_dict())
             return 0
 
+        parsed_request: BridgeRequest | None = None
+        if args.command in {"query", "preview", "run"}:
+            # Fail malformed/untrusted protocol input before constructing runtime
+            # services.  Apart from being cheaper, this guarantees parse failures
+            # cannot trigger registry/database/runtime side effects.
+            raw_request = _read_request(args.request_file)
+            parsed_request = BridgeRequest.from_json(raw_request)
+
         from ..services import create_service_container
         from .dispatcher import BridgeDispatcher
 
@@ -55,8 +63,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _write_json(response.to_dict())
             return 0 if response.ok else 2
         if args.command in {"query", "preview", "run"}:
-            raw_request = _read_request(args.request_file)
-            request = BridgeRequest.from_json(raw_request)
+            assert parsed_request is not None
+            request = parsed_request
             if args.command == "query":
                 response = dispatcher.query(request)
                 _write_json(response.to_dict())

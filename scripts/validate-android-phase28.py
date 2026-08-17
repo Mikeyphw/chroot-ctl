@@ -15,7 +15,7 @@ def main() -> int:
     docs = read("docs/android/PHASE_28_FINAL_OPERATIONAL_RELEASE_SEAL.md")
     runbook = read("docs/android/ANDROID_RELEASE_RUNBOOK.md")
     smoke = read("docs/android/REAL_DEVICE_SMOKE_CHECKLIST.md")
-    err(errors, 'compileSdk = 36' not in build, "compileSdk must remain 36")
+    err(errors, 'compileSdk = 37' not in build, "compileSdk must be 37")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
     err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (28, 29)), "versionName must advance to phase28")
     for token in ("final.preflight", "final.packaging_audit", "final.no_webui_regression", "final.release_seal", "_final_release_seal"):
@@ -25,8 +25,10 @@ def main() -> int:
     for token in ("FastAPI", "Jinja", "Uvicorn", "python-multipart", "chrootctl-web"):
         err(errors, token in read("pyproject.toml"), f"retired WebUI dependency/entrypoint returned: {token}")
     android_text = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in (ROOT/"android/app/src/main/kotlin").rglob("*.kt"))
-    for forbidden in ("WebView", "Manifest.permission.POST_NOTIFICATIONS", "combine(arrayOf", '"/data/'):
+    for forbidden in ("WebView", "combine(arrayOf", '"/data/'):
         err(errors, forbidden in android_text, f"forbidden Android token found: {forbidden}")
+    for token in ("Manifest.permission.POST_NOTIFICATIONS", "Build.VERSION.SDK_INT >= 33", "ContextCompat.checkSelfPermission", "ActivityResultContracts.RequestPermission"):
+        err(errors, token not in android_text, f"notification permission flow missing guarded token: {token}")
     for token in ("Phase 28", "final.release_seal", "SDK remains pinned to 36"):
         err(errors, token not in docs, f"phase28 docs missing token: {token}")
     for token in ("Run the real-device smoke suite", "WebUI remains retired"):

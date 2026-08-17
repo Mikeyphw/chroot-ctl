@@ -26,7 +26,7 @@ def main() -> int:
     docs = read("docs/android/PHASE_34D_PROTOCOL_CAPABILITIES_PROBE.md")
     tests = read("tests/test_android_phase34d.py")
 
-    require("compileSdk = 36" in build, "compileSdk must remain API 36")
+    require("compileSdk = 37" in build, "compileSdk must be API 37")
     require("targetSdk = 36" in build, "targetSdk must remain API 36")
     require("warningsAsErrors = true" in build, "strict lint warningsAsErrors must remain enabled")
     require("abortOnError = true" in build, "strict lint abortOnError must remain enabled")
@@ -52,7 +52,7 @@ def main() -> int:
         'listOf("capabilities")',
         'envelope.optBoolean("ok")',
         'data.optInt("protocolVersion", -1) == BRIDGE_PROTOCOL_VERSION',
-        'modules/chrootctl-magisk/system/bin/chrootctl',
+        'File(activeModuleDir, "system/bin/chrootctl")',
         'pendingModuleDirs',
         'isActiveModuleExecutable',
     ):
@@ -67,7 +67,7 @@ def main() -> int:
 
     for token in (
         "Phase 34D",
-        "protocol-1 Android bridge",
+        "protocol-1 JSON envelope",
         "service-free",
         "runtimeHealth.status=degraded",
         "/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",

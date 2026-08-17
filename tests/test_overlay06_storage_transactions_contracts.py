@@ -29,7 +29,7 @@ def test_import_restore_remove_and_rename_use_staging_unmount_commit_and_recover
     assert ".chrootctl-remove-" in archives
     assert "require_successful_unmount" in archives
     assert "best_effort_mutation_state" in archives and "best_effort_mutation_state" in snapshots
-    assert '"_chrootctl_mutation_id": mutation_id' in archives
+    assert 'imported_metadata["_chrootctl_mutation_id"] = mutation_id' in archives
     assert '"_chrootctl_mutation_id": mutation_id' in snapshots
     assert "os.replace(stage, target)" in snapshots
     assert "_require_restart_unmounted" in controller

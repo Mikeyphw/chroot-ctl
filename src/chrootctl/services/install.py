@@ -419,7 +419,7 @@ class InstallService:
             plan = self.validate_install_request(request)
             if request.preset:
                 plan["preset"] = request.preset
-            mirror_info = _resolve_mirror(self.mirror_options(request.distro, arch), request.mirror)
+            mirror_info = _resolve_mirror(self.mirror_options(request.distro, request.arch), request.mirror)
             plan["mirror"] = mirror_info["selected_url"] or mirror_info["selection"]
             plan["mirror_fallback_chain"] = mirror_info["fallback_chain"]
         except ValueError as exc:

@@ -18,7 +18,7 @@ def lint_issues() -> dict[str, str]:
 
 def test_phase29c_keeps_sdk_36_and_strict_lint() -> None:
     build = read("android/app/build.gradle.kts")
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

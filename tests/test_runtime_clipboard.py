@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from chrootctl.runtime import clipboard
 
 
-def test_handle_clipboard_doctor_reports_auto_adapt(monkeypatch, tmp_path: Path) -> None:
+def test_handle_clipboard_doctor_reports_hardened_status(monkeypatch, tmp_path: Path) -> None:
     config = SimpleNamespace(distro_name="ubuntu")
     registry = SimpleNamespace(get=lambda name: {"installed": True, "metadata": {}})
     context = SimpleNamespace(
@@ -41,6 +41,6 @@ def test_handle_clipboard_doctor_reports_auto_adapt(monkeypatch, tmp_path: Path)
 
     clipboard.handle_clipboard(context)
 
-    assert any("AUTO" in line for line in rendered)
+    assert not any("AUTO" in line for line in rendered)
     assert any("termux-clipboard-set" in line for line in rendered)
     assert any("daemon runs as Termux user" in line for line in rendered)

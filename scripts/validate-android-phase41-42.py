@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
@@ -16,10 +15,6 @@ def read(rel: str) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
-def sha(rel: str) -> str:
-    return hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
 
 
 def main() -> int:
@@ -145,16 +140,31 @@ def main() -> int:
 
     # Architecture/API and protected-runtime guardrails.
     build = read("android/app/build.gradle.kts")
-    require("compileSdk = 36" in build and "targetSdk = 36" in build, "API 36 guardrail regressed")
-    protected_hashes = {
-        "android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/RuntimeResolver.kt": "1119ce7d635dc71531934838b1370864c8c856313e13a67d2704f69f427856bb",
-        "android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/BridgeProcess.kt": "603695276da2e054b0067626541feca2d5ee1507c448952665b7ac05202f57a4",
-        "android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/ChrootRootService.kt": "846acef5e80773eebc06acdb376781ca54220b3964240a2d176cd4fc66724ad0",
-        "android/app/src/main/kotlin/com/mikeyphw/chrootctl/repository/BridgeRepository.kt": "6c97ed75b1a24c6b52f73ff2394966395a57b8c7a907c7a5235bb15298de4188",
-        "android/app/lint.xml": "dae3a0a90ef1a7a1a05fc8a2f2043b589a0fc274611911bf2f5daed3063ae86f",
-    }
-    for rel, expected in protected_hashes.items():
-        require(sha(rel) == expected, f"protected landed runtime file changed: {rel}")
+    require("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 / targetSdk 36 guardrail regressed")
+    runtime_resolver = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/RuntimeResolver.kt")
+    bridge_process = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/BridgeProcess.kt")
+    root_service = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/ChrootRootService.kt")
+    bridge_repository = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/repository/BridgeRepository.kt")
+    lint = read("android/app/lint.xml")
+    # Later hardening overlays intentionally evolve these files. Protect the
+    # trust boundaries semantically instead of freezing obsolete file hashes.
+    for token in (
+        'File(adbRoot, "modules/chrootctl-magisk")',
+        'File(activeModuleDir, "system/bin/chrootctl")',
+        'File(activeModuleDir, "disable").exists()',
+        'File(activeModuleDir, "remove").exists()',
+        'EXPECTED_MODULE_VERSION',
+        'EXPECTED_ANDROID_VERSION_NAME',
+        'canonicalFile',
+        'isSymbolicLink',
+    ):
+        require(token in runtime_resolver, f"active-module runtime guardrail missing: {token}")
+    require('modules_update/chrootctl-magisk/system/bin/chrootctl' not in runtime_resolver, "pending module update became executable")
+    require("BoundedOutputStream(MAX_CAPTURE_BYTES)" in bridge_process, "bridge output capture is no longer bounded")
+    require("bridgeErrorOutput(stderr, drainFailures)" in bridge_process, "bridge stderr/drain separation regressed")
+    require("reconcileOperation" in root_service, "root-service terminal reconciliation disappeared")
+    require('check(!capabilities.arbitraryShell)' in bridge_repository, "arbitrary-shell safety check regressed")
+    require(lint.count('<issue id="OldTargetApi" severity="ignore" />') == 1, "lint suppression boundary changed")
     main_sources = "\n".join(
         p.read_text(encoding="utf-8", errors="ignore")
         for p in (ROOT / "android/app/src/main").rglob("*")

@@ -39,7 +39,7 @@ def test_phase34_release_seal_preserves_security_and_lint_boundaries() -> None:
     lint = read("android/app/lint.xml")
     registry = read("src/chrootctl/bridge/registry.py")
     kotlin = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "android/app/src/main/kotlin").rglob("*.kt") if ".bak" not in path.name)
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert "targetSdk = 36" in build
     assert re.findall(r'id="([^"]+)"', lint) == ["OldTargetApi"]
     assert "WebView" not in kotlin

@@ -82,26 +82,32 @@ def main() -> int:
     for token in forbidden:
         if token in combined:
             errors.append(f"forbidden Android token found: {token}")
-    if "Manifest.permission.POST_NOTIFICATIONS" in app_text:
-        errors.append("Kotlin must not reference Manifest.permission.POST_NOTIFICATIONS directly")
+    for token in (
+        "Manifest.permission.POST_NOTIFICATIONS",
+        "Build.VERSION.SDK_INT >= 33",
+        "ContextCompat.checkSelfPermission",
+        "ActivityResultContracts.RequestPermission",
+    ):
+        if token not in app_text:
+            errors.append(f"notification permission flow missing guarded token: {token}")
     if "combine(arrayOf" in app_text:
         errors.append("Avoid fragile combine(arrayOf(...)) inference")
     if re.search(r'"/data/', app_text):
         errors.append("Kotlin must not hardcode /data/ path literals")
 
     build = read(BUILD)
-    if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
-        errors.append("Android SDK must remain pinned to 36")
+    if "compileSdk = 37" not in build or "targetSdk = 36" not in build:
+        errors.append("compileSdk must be 37 while targetSdk remains 36")
     if not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (15, 17, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29)):
         errors.append("Android app versionName must be at least phase15")
 
     strings = read(STRINGS)
     for name in (
-        "users_actions_title",
+        "users_workspace_title",
         "action_refresh_users",
         "action_set_password",
         "action_remove_user",
-        "services_actions_title",
+        "services_workspace_title",
         "action_refresh_services",
         "action_service_journal",
         "action_service_restart",

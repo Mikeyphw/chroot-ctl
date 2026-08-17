@@ -29,11 +29,20 @@ class UserSyncManager:
             capture_output=False,
         )
 
-    def _require_installed(self) -> None:
+    def _require_installed(self, *, allow_pending_finalize: bool = False) -> None:
+        if allow_pending_finalize and self.runner.dry_run:
+            return
         if self.registry is not None:
             record = self.registry.get(self.config.distro_name)
-            if record is None or not bool(record.get("installed")):
-                raise RuntimeError("chroot must be installed before UID/GID synchronization")
+            if record is not None and bool(record.get("installed")):
+                return
+            if allow_pending_finalize:
+                if self.runner.dry_run:
+                    return
+                phase = str((record or {}).get("phase") or "")
+                if phase == "desktop" and (self.config.chroot_base / "etc" / "passwd").is_file():
+                    return
+            raise RuntimeError("chroot must be installed before UID/GID synchronization")
         elif not (self.config.chroot_base / "etc" / "passwd").is_file():
             raise RuntimeError("chroot must be installed before UID/GID synchronization")
 
@@ -79,9 +88,15 @@ class UserSyncManager:
                     break
         return UserIdStatus(username=user, host_uid=host_uid, host_gid=host_gid, chroot_uid=current_uid, chroot_gid=current_gid, passwd_exists=passwd_path.exists(), group_exists=group_path.exists())
 
-    def sync_id(self, username: str | None = None, fix_ownership: bool = True) -> UserIdSyncResult:
+    def sync_id(
+        self,
+        username: str | None = None,
+        fix_ownership: bool = True,
+        *,
+        allow_pending_finalize: bool = False,
+    ) -> UserIdSyncResult:
         self.runner.require_root()
-        self._require_installed()
+        self._require_installed(allow_pending_finalize=allow_pending_finalize)
         user = self._validate_username(username or self.config.username)
         host_uid, host_gid = self.host_uid_gid()
         self._preflight_collisions(user, host_uid, host_gid)

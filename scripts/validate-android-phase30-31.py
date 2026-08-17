@@ -37,7 +37,7 @@ def main() -> int:
     strings_path = ROOT / "android/app/src/main/res/values/strings.xml"
     strings = read("android/app/src/main/res/values/strings.xml")
 
-    require("compileSdk = 36" in build and "targetSdk = 36" in build, "API 36 contract changed")
+    require("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 / targetSdk 36 contract changed")
     require("warningsAsErrors = true" in build and "abortOnError = true" in build, "strict lint policy changed")
     ignored = re.findall(r'<issue\s+id="([^"]+)"\s+severity="ignore"', lint)
     require(ignored == ["OldTargetApi"], f"unexpected ignored lint issues: {ignored}")
@@ -50,8 +50,10 @@ def main() -> int:
 
     for token in ("AdaptiveNavigationShell", "NavigationBar", "NavigationRail", "safeDrawingPadding", "primaryDestinations"):
         require(token in shell, f"adaptive shell missing {token}")
-    for item in ("AppDestination.Home", "AppDestination.Chroots", "AppDestination.Install", "AppDestination.Activity", "AppDestination.Tools"):
-        require(item in shell, f"primary navigation missing {item}")
+    for item in ("Home", "Chroots", "Install", "Activity", "Tools"):
+        require(f"    {item}(" in destination, f"primary navigation enum missing {item}")
+    require("private val primaryDestinations: List<AppDestination> = AppDestination.entries.toList()" in shell, "primary navigation must enumerate the stable destination enum")
+    require("Help(" not in destination, "Help must not become a primary destination")
     require("rememberSaveable" in app, "destination state is not saved")
     require("widthIn(max = ChrootLayout.MaximumContentWidth)" in app, "content max-width policy is not applied")
     require("PageHeader(" in app, "shared page header is not used")

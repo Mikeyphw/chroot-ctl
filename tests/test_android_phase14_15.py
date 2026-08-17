@@ -118,10 +118,10 @@ def test_phase14_15_strings_and_validator_are_present() -> None:
     strings = (ROOT / "android" / "app" / "src" / "main" / "res" / "values" / "strings.xml").read_text(encoding="utf-8")
     validator = (ROOT / "scripts" / "validate-android-phase14-15.py").read_text(encoding="utf-8")
     for name in (
-        "users_actions_title",
+        "users_workspace_title",
         "action_set_password",
         "action_remove_user",
-        "services_actions_title",
+        "services_workspace_title",
         "action_service_journal",
         "action_service_restart",
     ):

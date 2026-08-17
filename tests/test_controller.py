@@ -7,6 +7,7 @@ import pytest
 
 from chrootctl.config import BindMount, ChrootConfig
 from chrootctl.controller import ChrootController
+from chrootctl.models import OperationResult
 from chrootctl.system import RunResult
 
 
@@ -143,7 +144,7 @@ def test_exec_root_runs_via_shell_lc(tmp_path: Path) -> None:
 
 def test_restart_unmounts_before_start(tmp_path: Path) -> None:
     controller, runner = build_controller(tmp_path)
-    controller.unmount = lambda: runner.calls.append((["UNMOUNT"], {})) or None  # type: ignore[method-assign]
+    controller.unmount = lambda: runner.calls.append((["UNMOUNT"], {})) or OperationResult()  # type: ignore[method-assign]
 
     code = controller.restart(login=True, root_login=False)
 

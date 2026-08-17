@@ -284,6 +284,9 @@ class BaseInstaller:
         return list(PHASES).index(phase) if phase in PHASES else 0
 
     def current_phase(self) -> InstallPhase:
+        dry_run_phase = getattr(self, "_dry_run_phase", None)
+        if self.runner.dry_run and dry_run_phase in PHASES:
+            return dry_run_phase
         record = self.registry.get(self.config.distro_name)
         if record and record.get("phase") in PHASES:
             return record["phase"]
@@ -312,6 +315,9 @@ class BaseInstaller:
         metadata: dict | None = None,
     ) -> None:
         if self.runner.dry_run:
+            # Preserve read-only dry-run semantics while allowing subsequent
+            # simulated phases to see the phase that would have committed.
+            self._dry_run_phase = phase
             return
         record = self.registry.get(self.config.distro_name) or {}
         merged = dict(record.get("metadata", {}))
@@ -608,7 +614,11 @@ class BaseInstaller:
         self._ensure_chroot_execution_supported()
         self.assert_phase_allowed("finalize", force_phase)
         snapshot = self._create_snapshot("finalize")
-        self._run_install_substep("finalize", "uid-sync", lambda: self.user_sync.sync_id(username=username, fix_ownership=True))
+        self._run_install_substep(
+            "finalize",
+            "uid-sync",
+            lambda: self.user_sync.sync_id(username=username, fix_ownership=True, allow_pending_finalize=True),
+        )
         self._run_install_substep("finalize", "post-install-hooks", self._run_post_install_hooks)
         self.mark_phase("finalize", installed=True, metadata={"uid_sync": True, "finalize_snapshot": snapshot or ""})
         return InstallFinalizeResult(installed=True, uid_sync=True, snapshot=snapshot or "")
@@ -629,15 +639,15 @@ class BaseInstaller:
     ) -> list[InstallerResult]:
         results: list[InstallerResult] = []
         self._install_resume_mode = bool(resume or repair)
+        record = self.registry.get(self.config.distro_name)
+        if not repair and (auto or resume or phase is None) and record and record.get("installed"):
+            return [InstallAlreadyCompleteResult()]
         selected_profile = self._selected_profile(profile)
         selected_desktop = self._selected_desktop(desktop, selected_profile)
         self._install_context_key = "|".join((
             self.distro, self.arch, self.config.distro_name, username, selected_profile, selected_desktop,
             version or "", release or "",
         ))
-        record = self.registry.get(self.config.distro_name)
-        if not repair and (auto or resume or phase is None) and record and record.get("installed"):
-            return [InstallAlreadyCompleteResult()]
 
         def run_one(item: InstallPhase):
             if item == "extract":

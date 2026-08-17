@@ -81,11 +81,12 @@ def test_storage_and_logs_rooms_are_bounded_query_surfaces() -> None:
     assert "onStartServiceOperation" not in logs
 
 
-def test_support_export_reuses_the_archive_from_the_accepted_preview() -> None:
+def test_support_export_reuses_the_exact_accepted_preview_contract() -> None:
     viewmodel = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/MainViewModel.kt")
-    assert "supportPreview?.rawJson" in viewmodel
-    assert 'JSONObject(raw).optString("archive")' in viewmodel
-    assert 'payload.put("archive", archive)' in viewmodel
+    assert '.withPreviewContract(systemSupportPane.value.supportPreview, "support.bundle")' in viewmodel
+    payload = viewmodel.split("fun supportBundlePayloadJson", 1)[1].split("fun ", 1)[0]
+    assert "rawJson" not in payload
+    assert 'put("archive"' not in payload
 
 
 def test_advanced_room_keeps_preview_and_confirmation_gates() -> None:

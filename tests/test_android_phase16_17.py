@@ -60,7 +60,7 @@ def test_phase16_catalog_package_bridge_contracts_are_allowlisted() -> None:
 def test_phase17_transfer_bridge_contracts_are_allowlisted() -> None:
     names = _capability_names()
     assert {
-        "transfer.inspect_import",
+        "transfer.import_preview",
         "transfer.import",
         "transfer.preview_export",
         "transfer.export",
@@ -88,7 +88,7 @@ def test_android_phase16_17_native_catalog_transfer_are_wired() -> None:
         "catalog.apply",
         "packages.inventory",
         "packages.compare",
-        "transfer.inspect_import",
+        "transfer.import_preview",
         "transfer.import",
         "transfer.export",
         "artifacts.cleanup",
@@ -107,12 +107,12 @@ def test_phase16_17_validator_and_strings_are_present() -> None:
     strings = (ROOT / "android" / "app" / "src" / "main" / "res" / "values" / "strings.xml").read_text(encoding="utf-8")
     validator = (ROOT / "scripts" / "validate-android-phase16-17.py").read_text(encoding="utf-8")
     for name in (
-        "catalog_title",
-        "package_title",
-        "transfer_title",
-        "transfer_pick_import_action",
+        "catalog_tools_chip",
+        "package_inventory_action",
+        "transfer_import_archive_label",
+        "transfer_pick_archive_action",
         "transfer_create_document_action",
-        "artifacts_cleanup_action",
+        "transfer_cleanup_artifacts_action",
     ):
         assert f'name="{name}"' in strings
     assert "Phase 16-17 catalog and transfer validator passed" in validator

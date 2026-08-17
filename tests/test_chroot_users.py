@@ -113,7 +113,8 @@ def test_add_user_generates_sanitized_chroot_commands(tmp_path: Path) -> None:
 
 
 def test_remove_password_shell_and_sudo_commands(tmp_path: Path) -> None:
-    manager, _, runner, _ = build_manager(tmp_path)
+    manager, config, runner, _ = build_manager(tmp_path)
+    write_passwd(config)
 
     manager.remove_user("mike", delete_home=True)
     manager.set_password("mike")

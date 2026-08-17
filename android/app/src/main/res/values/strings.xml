@@ -10,31 +10,22 @@
     <string name="glyph_activity">↻</string>
     <string name="glyph_tools">⌘</string>
     <string name="status_checking_runtime">Checking root and chrootctl runtime</string>
-    <string name="status_backend_unavailable">Backend unavailable</string>
     <string name="action_retry">Retry</string>
     <string name="action_refresh">Refresh</string>
     <string name="action_open_activity">Open activity</string>
-    <string name="metric_chroots">Chroots</string>
-    <string name="metric_chroots_detail">Registered environments</string>
-    <string name="metric_operations">Operations</string>
-    <string name="metric_operations_detail">Recent journal records</string>
     <string name="metric_warnings">Warnings</string>
     <string name="metric_warnings_detail">Checks and failed operations</string>
     <string name="home_readiness_title">Readiness</string>
-    <string name="refresh_failed_title">Refresh failed</string>
     <string name="state_ready_marker">✓</string>
     <string name="state_warning_marker">!</string>
     <string name="state_blocked_marker">×</string>
     <string name="chroots_empty_title">No chroots yet</string>
     <string name="chroots_empty_body">The Android app can query the backend, but no registered chroot was returned. The native install flow lands in a later phase.</string>
-    <string name="chroot_unknown_distribution">Distribution not reported</string>
-    <string name="chroot_health_line">Mount: %1$s · health: %2$s · warnings: %3$d</string>
     <string name="activity_empty_title">No operations yet</string>
     <string name="activity_empty_body">Persistent operation history is ready. New bridge operations will appear here as they run.</string>
     <string name="operation_state_line">%1$s · %2$s</string>
     <string name="operation_error_code">Error code: %1$s</string>
     <string name="tools_empty_title">No capabilities loaded</string>
-    <string name="tools_empty_body">Refresh Home to load bridge capabilities and diagnostic groups.</string>
     <string name="tools_group_body">Allowlisted bridge operations exposed to the native app.</string>
     <string name="value_unknown">unknown</string>
     <string name="value_not_reported">not reported</string>
@@ -43,8 +34,6 @@
     <string name="action_refresh_detail">Refresh detail</string>
     <string name="action_refreshing">Refreshing</string>
     <string name="action_cancel_operation">Cancel</string>
-    <string name="chroot_detail_title">%1$s details</string>
-    <string name="chroot_detail_body">Read-only status, doctor checks and registry details for this chroot.</string>
     <string name="chroot_detail_status">Status</string>
     <string name="chroot_detail_release">Release</string>
     <string name="chroot_detail_path">Path</string>
@@ -68,12 +57,9 @@
     <string name="nav_install">Install</string>
     <string name="glyph_install">＋</string>
     <string name="install_open_action">Open install wizard</string>
-    <string name="install_native_title">Native install wizard</string>
-    <string name="install_native_body">Configure a chroot install through the versioned bridge, preview the plan, then run it as a foreground operation.</string>
     <string name="install_refresh_options">Refresh options</string>
     <string name="install_preview_action">Preview install</string>
     <string name="install_start_action">Start install</string>
-    <string name="install_request_title">Install request</string>
     <string name="install_field_distro">Distro</string>
     <string name="install_field_name">Chroot name</string>
     <string name="install_field_username">Username</string>
@@ -81,7 +67,6 @@
     <string name="install_field_desktop">Desktop</string>
     <string name="install_field_mirror">Mirror</string>
     <string name="install_form_distros">Distros</string>
-    <string name="install_form_profiles">Profiles</string>
     <string name="install_form_desktops">Desktops</string>
     <string name="preview_ready">Preview ready</string>
     <string name="preview_blocked">Preview blocked</string>
@@ -93,7 +78,6 @@
     <string name="action_preview_restart">Preview restart</string>
     <string name="action_restart_chroot">Restart</string>
     <string name="action_preview_remove">Preview remove</string>
-    <string name="snapshot_actions_title">Snapshots and recovery</string>
     <string name="action_refresh_snapshots">Refresh snapshots</string>
     <string name="action_preview_snapshot">Preview snapshot</string>
     <string name="action_create_snapshot">Create snapshot</string>
@@ -101,11 +85,8 @@
     <string name="action_remove_chroot">Remove chroot</string>
     <string name="lifecycle_remove_confirmation_label">Type %1$s to remove</string>
     <string name="snapshot_restore_confirmation_label">Type %1$s to restore</string>
-    <string name="action_preview_restore_snapshot">Preview restore</string>
     <string name="action_restore_snapshot">Restore</string>
-    <string name="action_preview_export_snapshot">Preview export</string>
     <string name="action_export_snapshot">Export</string>
-    <string name="users_actions_title">Users</string>
     <string name="users_workspace_title">Users workspace</string>
     <string name="users_workspace_body">Managed and login accounts stay visible first. System accounts remain collapsed until you ask for them.</string>
     <string name="users_workspace_filters_label">User filters</string>
@@ -115,7 +96,10 @@
     <string name="user_filter_managed">Managed</string>
     <string name="user_filter_login">Login users</string>
     <string name="user_filter_system">System users</string>
-    <string name="action_show_system_users">Show %1$d system users</string>
+    <plurals name="action_show_system_users">
+        <item quantity="one">Show %1$d system user</item>
+        <item quantity="other">Show %1$d system users</item>
+    </plurals>
     <string name="action_hide_system_users">Hide system users</string>
     <string name="action_refresh_users">Refresh users</string>
     <string name="action_review_add_user">Add user</string>
@@ -149,7 +133,6 @@
     <string name="user_action_summary_password">Password values stay inside this review flow and must match before the action is enabled.</string>
     <string name="user_action_summary_remove">Remove this account without deleting its home directory.</string>
     <string name="users_list_empty">No users loaded for this chroot.</string>
-    <string name="services_actions_title">Services</string>
     <string name="services_workspace_title">Services workspace</string>
     <string name="services_workspace_body">Focused service rows with filters and review sheets. Preview stays inside the action flow, not beside every button.</string>
     <string name="services_workspace_filters_label">Service filters</string>
@@ -172,13 +155,11 @@
     <string name="services_list_empty">No service units loaded for this chroot.</string>
     <string name="service_journal_title">Journal · %1$s</string>
     <string name="action_service_journal">Journal</string>
-    <string name="action_preview_short">Preview</string>
     <string name="action_service_start">Start</string>
     <string name="action_service_stop">Stop</string>
     <string name="action_service_restart">Restart</string>
     <string name="action_service_enable">Enable</string>
     <string name="action_service_disable">Disable</string>
-    <string name="catalog_title">Tools and add-ons catalog</string>
     <string name="catalog_tools_chip">Tools</string>
     <string name="catalog_addons_chip">Add-ons</string>
     <string name="catalog_target_label">Target chroot</string>
@@ -189,7 +170,6 @@
     <string name="catalog_available_chroots">Available chroots: %1$s</string>
     <string name="preview_action">Preview</string>
     <string name="apply_action">Apply</string>
-    <string name="package_title">Package inventory</string>
     <string name="package_left_label">Left chroot</string>
     <string name="package_right_label">Right chroot</string>
     <string name="package_inventory_action">Load inventory</string>
@@ -201,29 +181,17 @@
     <string name="package_compare_summary">Left %1$d · right %2$d · common %3$d</string>
     <string name="package_only_left">Only left: %1$s</string>
     <string name="package_only_right">Only right: %1$s</string>
-    <string name="transfer_title">Transfer and artifacts</string>
-    <string name="transfer_saf_body">Use Android document pickers for archive staging, then run import or export through the root bridge.</string>
-    <string name="transfer_pick_import_action">Pick import archive</string>
     <string name="transfer_import_archive_label">Import archive path</string>
-    <string name="transfer_import_name_label">Import as name</string>
     <string name="transfer_inspect_action">Inspect import</string>
     <string name="transfer_import_action">Import</string>
-    <string name="transfer_export_name_label">Export chroot name</string>
     <string name="transfer_export_archive_label">Managed export archive path</string>
     <string name="transfer_export_action">Export</string>
     <string name="transfer_create_document_action">Create export document</string>
-    <string name="artifacts_refresh_action">Refresh artifacts</string>
-    <string name="artifacts_cleanup_action">Clean all artifacts</string>
-    <plurals name="artifact_row">
-        <item quantity="one">%1$s · %2$d byte</item>
-        <item quantity="other">%1$s · %2$d bytes</item>
-    </plurals>
     <string name="transfer_document_open_failed">Unable to open selected document</string>
     <string name="transfer_document_saved">Export document saved</string>
     <string name="transfer_no_export_artifact">Export an artifact before saving it</string>
     <string name="transfer_default_archive_name">import.tar.zst</string>
     <string name="transfer_default_chroot_name">chroot</string>
-    <string name="system_support_title">System, support and module</string>
     <string name="system_support_body">Runtime paths, module state, repair previews, temporary cleanup and exportable support evidence.</string>
     <string name="system_refresh_action">Refresh system</string>
     <string name="system_runtime_title">Runtime</string>
@@ -233,17 +201,10 @@
     <string name="support_bundle_action">Export support bundle</string>
     <string name="module_preview_action">Preview module</string>
     <string name="module_build_action">Build module</string>
-    <string name="repair_preview_action">Preview repair</string>
-    <string name="repair_apply_action">Apply repair</string>
     <string name="cleanup_preview_action">Preview cleanup</string>
     <string name="cleanup_temp_action">Clean temp</string>
-    <string name="debug_workbench_title">Debug Workbench</string>
-    <string name="debug_workbench_body">Run grouped root, backend, storage, runtime, recovery and operation probes, then export evidence.</string>
-    <string name="debug_run_probes_action">Run probes</string>
     <string name="debug_export_action">Export debug evidence</string>
-    <string name="debug_probes_title">Probes</string>
     <string name="debug_timeline_title">Timeline</string>
-    <string name="debug_no_probes">No probes loaded yet.</string>
     <string name="debug_probe_row">%1$s/%2$s · %3$s · %4$s</string>
     <string name="debug_probe_next">Next: %1$s</string>
     <string name="debug_timeline_row">%1$s · %2$s · %3$s · %4$s</string>
@@ -253,8 +214,6 @@
     <string name="smoke_run_action">Run smoke</string>
     <string name="smoke_report_action">Smoke report</string>
     <string name="release_readiness_title">Release readiness</string>
-    <string name="smoke_handoff_title">Smoke result handoff</string>
-    <string name="smoke_handoff_body">Keep the last smoke result durable, export its evidence, or build a support bundle when the smoke fails.</string>
     <string name="smoke_last_result_action">Last result</string>
     <string name="smoke_persist_action">Persist result</string>
     <string name="smoke_export_action">Export evidence</string>
@@ -265,8 +224,6 @@
     <string name="notifications_permission_granted">Operation notifications enabled</string>
     <string name="notifications_permission_denied">Notification permission denied; foreground work can still run but progress may be less visible</string>
     <string name="notifications_permission_not_required">This Android version does not require notification permission</string>
-    <string name="nav_help">Help</string>
-    <string name="glyph_help">?</string>
     <string name="action_preview_upgrade">Preview upgrade</string>
     <string name="action_upgrade_chroot">Upgrade chroot</string>
     <string name="operation_cancel_action">Cancel operation</string>
@@ -274,16 +231,12 @@
     <string name="operation_retry_preview_action">Preview retry</string>
     <string name="operation_retry_action">Retry now</string>
     <string name="operation_retry_fixes_action">Retry with fixes</string>
-    <string name="operation_latest_snapshot_line">Latest snapshot: %1$s</string>
-    <string name="operation_restore_confirmation_label">Type %1$s to restore</string>
     <string name="operation_restore_latest_preview_action">Preview latest restore</string>
-    <string name="operation_restore_latest_action">Restore latest snapshot</string>
     <string name="help_open_action">Help and API reference</string>
     <string name="help_getting_started_title">Getting started</string>
     <string name="help_getting_started_body">Home checks root and bridge readiness. Install creates a chroot through a preview-first foreground operation. Chroots manages lifecycle, snapshots, users and services. Tools contains catalogs, transfers, logs, repair, diagnostics and support exports.</string>
     <string name="help_operations_title">Operations and cancellation</string>
     <string name="help_operations_body">Long-running work is journaled in Activity and remains visible through foreground notifications. Open an operation to inspect events, cancel active work, or use recovery actions after a failure.</string>
-    <string name="help_open_activity_action">Open Activity</string>
     <string name="help_recovery_title">Failure recovery</string>
     <string name="help_recovery_body">Failed, interrupted, blocked or cancelled work can expose Retry now, Retry with fixes, and Restore latest snapshot. Recovery is offered only when the journal contains a safe replay request and a matching snapshot exists.</string>
     <string name="help_storage_title">Imports, exports and snapshots</string>
@@ -295,12 +248,9 @@
     <string name="help_api_unavailable">Refresh Home to load the live operation catalog.</string>
     <string name="logs_title">System logs</string>
     <string name="logs_body">Read a bounded snapshot of the chrootctl log. Live tail polls the same read-only bridge query every three seconds and can be stopped at any time.</string>
-    <string name="logs_target_label">Chroot name, optional</string>
-    <string name="logs_level_all">All levels</string>
     <string name="logs_refresh_action">Refresh logs</string>
     <string name="logs_follow_action">Start live tail</string>
     <string name="logs_stop_follow_action">Stop live tail</string>
-    <string name="logs_source_line">Source: %1$s</string>
     <string name="logs_empty">No log lines returned.</string>
     <string name="repair_selective_title">Selective registry repair</string>
     <string name="repair_selective_body">Load the repair plan, choose each decision, preview the exact selection, then apply only the selected actions.</string>
@@ -314,7 +264,6 @@
     <string name="destination_install_subtitle">Create a chroot from a reviewed plan</string>
     <string name="destination_activity_subtitle">Track, cancel, retry, and recover operations</string>
     <string name="destination_tools_subtitle">Focused maintenance and support workspaces</string>
-    <string name="destination_help_subtitle">Recovery guidance and bridge capabilities</string>
     <string name="status_refreshing">Refreshing</string>
     <string name="status_cached_or_offline">Cached / offline</string>
     <string name="status_backend_ready">Backend ready</string>
@@ -338,22 +287,37 @@
     <string name="home_metrics_title">At a glance</string>
     <string name="home_metrics_body">High-signal numbers without a scrolling warehouse of diagnostics.</string>
     <string name="metric_running_chroots">Running chroots</string>
-    <string name="metric_running_chroots_detail">%1$d registered in total</string>
+    <plurals name="metric_running_chroots_detail">
+        <item quantity="one">%1$d registered chroot in total</item>
+        <item quantity="other">%1$d registered chroots in total</item>
+    </plurals>
     <string name="metric_active_operations">Active operations</string>
-    <string name="metric_active_operations_detail">%1$d recent journal records</string>
+    <plurals name="metric_active_operations_detail">
+        <item quantity="one">%1$d recent journal record</item>
+        <item quantity="other">%1$d recent journal records</item>
+    </plurals>
     <string name="metric_loading_detail">Loading dashboard data</string>
     <string name="value_loading_dash">—</string>
     <string name="home_system_health_title">System health</string>
     <string name="home_system_health_body">Plain-language checks with technical detail available only when needed.</string>
-    <string name="home_health_ready_count">%1$d/%2$d ready</string>
+    <plurals name="home_health_ready_count">
+        <item quantity="one">%1$d/%2$d check ready</item>
+        <item quantity="other">%1$d/%2$d checks ready</item>
+    </plurals>
     <string name="home_health_root_service">Root service</string>
     <string name="home_health_root_service_detail">%1$s backend · process %2$d</string>
     <string name="home_health_runtime">chrootctl runtime</string>
     <string name="home_health_runtime_detail">Version %1$s · protocol %2$d</string>
     <string name="home_health_chroots">Chroot registry</string>
-    <string name="home_health_chroots_detail">%1$d running · %2$d registered</string>
+    <plurals name="home_health_chroots_detail">
+        <item quantity="one">%1$d running chroot · %2$d registered</item>
+        <item quantity="other">%1$d running chroots · %2$d registered</item>
+    </plurals>
     <string name="home_health_operations">Operation journal</string>
-    <string name="home_health_operations_detail">%1$d operation(s) currently active</string>
+    <plurals name="home_health_operations_detail">
+        <item quantity="one">%1$d operation currently active</item>
+        <item quantity="other">%1$d operations currently active</item>
+    </plurals>
     <string name="home_recent_activity_title">Recent activity</string>
     <string name="home_recent_activity_body">The latest work that may need attention.</string>
     <string name="home_operation_target">Target: %1$s</string>
@@ -369,7 +333,6 @@
     <string name="backend_issue_runtime_body">Install or repair the compatible protocol runtime, then reconnect.</string>
     <string name="backend_issue_unknown_title">Backend is temporarily unavailable</string>
     <string name="backend_issue_unknown_body">Your cached data is safe. Retry the connection or open technical details for diagnosis.</string>
-    <string name="chroots_phase32_title">Chroot workspaces</string>
     <string name="chroots_phase32_body">Search, filter, preview and run lifecycle work from compact cards before opening full details.</string>
     <string name="chroots_search_label">Search chroots</string>
     <string name="chroots_no_matches_title">No matching chroots</string>
@@ -378,8 +341,10 @@
     <string name="chroot_filter_running">Running</string>
     <string name="chroot_filter_stopped">Stopped</string>
     <string name="chroot_filter_attention">Needs attention</string>
-    <string name="chroot_warnings_count">%1$d warning(s)</string>
-    <string name="action_open_details">Details</string>
+    <plurals name="chroot_warnings_count">
+        <item quantity="one">%1$d warning</item>
+        <item quantity="other">%1$d warnings</item>
+    </plurals>
     <string name="lifecycle_remove_safety_body">Removal is preview-first and still requires typing the chroot name before execution.</string>
     <string name="install_phase32_title">Install wizard</string>
     <string name="install_phase32_body">Choose a supported system, configure only the essentials, then review the exact foreground operation before root execution.</string>
@@ -404,7 +369,6 @@
     <string name="install_review_safety_body">Foreground operation with progress, journal events and cancellation from Activity.</string>
     <string name="install_validation_blocked">Fix the highlighted fields before previewing.</string>
     <string name="install_foreground_handoff_body">After start, progress appears in Activity and the foreground notification. Cancellation remains explicit.</string>
-    <string name="install_ready_to_preview">Ready to preview</string>
     <string name="action_back">Back</string>
     <string name="action_continue">Continue</string>
     <string name="transfer_import_target_label">Import as name</string>
@@ -414,11 +378,8 @@
     <string name="transfer_preview_export_action">Preview export</string>
     <string name="transfer_refresh_artifacts_action">Refresh artifacts</string>
     <string name="transfer_cleanup_artifacts_action">Clean artifacts</string>
-    <string name="transfer_artifact_row">%1$s · %2$s · %3$d bytes · expires %4$s</string>
+    <string name="transfer_artifact_row">%1$s · %2$s · %3$d B · expires %4$s</string>
     <string name="transfer_artifact_no_expiry">never</string>
-    <string name="phase34_release_seal_title">Adaptive UX release seal</string>
-    <string name="phase34_release_seal_body">Phone, landscape, foldable, tablet and desktop-width layouts share the same safe operation model.</string>
-    <string name="phase34_accessibility_summary">48 dp targets, pane titles, headings, TalkBack labels and 200 percent font scaling are release requirements.</string>
     <string name="operation_retry_preview_body">The stored retry request will run only after the bridge checks that it contains no redacted secrets. Destructive work is never replayed automatically; confirming starts a new foreground operation.</string>
     <string name="operation_retry_fixes_preview_action">Review retry with fixes</string>
     <string name="operation_retry_fixes_preview_body">Retry with fixes is limited to install operations. It reuses the stored install request only after redaction checks, then enables resume and repair for the new foreground operation.</string>
@@ -450,7 +411,10 @@
     <string name="chroot_workspace_checks_empty_title">No checks cached</string>
     <string name="chroot_workspace_checks_title">Recent checks</string>
     <string name="chroot_workspace_checks_body">Status and doctor checks for this workspace.</string>
-    <string name="chroot_workspace_checks_more">%1$d more check(s) in Advanced</string>
+    <plurals name="chroot_workspace_checks_more">
+        <item quantity="one">%1$d more check in Advanced</item>
+        <item quantity="other">%1$d more checks in Advanced</item>
+    </plurals>
     <string name="chroot_workspace_advanced_diagnostics_title">Diagnostics and danger zone</string>
     <string name="chroot_workspace_advanced_diagnostics_body">Lifecycle removal, raw payload size, full checks and technical state for this chroot.</string>
     <string name="bridge_shape_error_title">Backend response shape changed</string>

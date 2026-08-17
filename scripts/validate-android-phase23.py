@@ -23,7 +23,7 @@ def main() -> int:
     phase22_validator = read(ROOT / "scripts/validate-android-phase22.py")
     docs = read(ROOT / "docs/android/PHASE_23_GENERATED_ARTIFACT_PURGE.md")
 
-    error_if(errors, 'compileSdk = 36' not in build, "compileSdk must remain pinned to 36")
+    error_if(errors, 'compileSdk = 37' not in build, "compileSdk must be pinned to 37")
     error_if(errors, 'targetSdk = 36' not in build, "targetSdk must remain pinned to 36")
     error_if(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (23, 24, 25, 26, 27, 28, 29)), "versionName must be phase23 or later")
 
@@ -65,7 +65,13 @@ def main() -> int:
     kotlin_root = ROOT / "android/app/src/main/kotlin"
     kotlin = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in kotlin_root.rglob("*.kt"))
     error_if(errors, bool(re.search(r'"/data/', kotlin)), "Kotlin must not hardcode /data/ path literals")
-    error_if(errors, "Manifest.permission.POST_NOTIFICATIONS" in kotlin, "Kotlin must not reference POST_NOTIFICATIONS directly")
+    for token in (
+        "Manifest.permission.POST_NOTIFICATIONS",
+        "Build.VERSION.SDK_INT >= 33",
+        "ContextCompat.checkSelfPermission",
+        "ActivityResultContracts.RequestPermission",
+    ):
+        error_if(errors, token not in kotlin, f"notification permission flow missing guarded token: {token}")
     error_if(errors, "combine(arrayOf" in kotlin, "fragile combine(arrayOf(...)) inference is forbidden")
 
     if errors:

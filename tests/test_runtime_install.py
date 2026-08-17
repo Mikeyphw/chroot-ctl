@@ -120,7 +120,7 @@ def test_handle_install_applies_selected_tools_and_addons_after_finalize(monkeyp
 
     install_runtime.handle_install(context)
 
-    assert applied_calls == [("tool", ("tool-a", "setup-clipboard")), ("addon", ("addon-a",))]
+    assert applied_calls == [("tool", ("tool-a",)), ("addon", ("addon-a",))]
     assert rendered["title"] == "Install Results"
     rows = rendered["rows"]
     assert [type(row).__name__ for row in rows] == [
@@ -142,7 +142,7 @@ def test_handle_install_applies_selected_tools_and_addons_after_finalize(monkeyp
     ]
 
 
-def test_handle_install_auto_applies_setup_clipboard_after_finalize(monkeypatch, tmp_path: Path) -> None:
+def test_handle_install_does_not_auto_apply_clipboard_tools_after_finalize(monkeypatch, tmp_path: Path) -> None:
     context = build_context(tmp_path)
     rendered: dict[str, object] = {}
     applied_calls: list[tuple[str, tuple[str, ...]]] = []
@@ -182,13 +182,10 @@ def test_handle_install_auto_applies_setup_clipboard_after_finalize(monkeypatch,
 
     install_runtime.handle_install(context)
 
-    assert applied_calls == [("tool", ("setup-clipboard",))]
+    assert applied_calls == []
     assert rendered["title"] == "Install Results"
     rows = rendered["rows"]
-    assert [type(row).__name__ for row in rows] == [
-        "InstallFinalizeResult",
-        "CatalogApplyResult",
-    ]
+    assert [type(row).__name__ for row in rows] == ["InstallFinalizeResult"]
 
 
 def test_handle_install_does_not_reapply_setup_clipboard_when_already_recorded(monkeypatch, tmp_path: Path) -> None:
@@ -466,7 +463,7 @@ def test_handle_install_allows_fresh_install_with_explicit_username(monkeypatch,
     assert install_calls[0]["username"] == "devuser"
 
 
-def test_handle_install_uses_default_username_for_fresh_install(monkeypatch, tmp_path: Path) -> None:
+def test_handle_install_requires_explicit_or_discoverable_username_for_fresh_install(monkeypatch, tmp_path: Path) -> None:
     context = build_context(tmp_path)
     context.args.username = None
     context.config = context.config.with_overrides(username=None)
@@ -486,6 +483,7 @@ def test_handle_install_uses_default_username_for_fresh_install(monkeypatch, tmp
     monkeypatch.setattr(install_runtime, "emit_table", lambda context, title, rows: None)
     monkeypatch.setattr(install_runtime, "emit_panel", lambda context, title, data: None)
 
-    install_runtime.handle_install(context)
+    with pytest.raises(RuntimeError, match="install requires --username"):
+        install_runtime.handle_install(context)
 
-    assert install_calls[0]["username"] == "mike"
+    assert install_calls == []

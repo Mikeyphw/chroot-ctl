@@ -21,7 +21,8 @@ def test_phase34b_bridge_drain_threads_catch_throwables() -> None:
 def test_phase34b_drain_notes_go_to_error_output_not_stdout() -> None:
     bridge = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/BridgeProcess.kt")
     assert "bridgeErrorOutput(stderr, drainFailures)" in bridge
-    assert "output = String(stdout.toByteArray(), StandardCharsets.UTF_8)" in bridge
+    assert "output = stdout.asString()" in bridge
+    assert "BoundedOutputStream(MAX_CAPTURE_BYTES)" in bridge
     assert "android-stream-drain" in bridge
     result_block = bridge.split("return BridgeProcessResult(", 1)[1].split("    }\n\n    fun stream", 1)[0]
     assert "errorOutput = bridgeErrorOutput(stderr, drainFailures)" in result_block
@@ -46,7 +47,7 @@ def test_phase34b_preserves_sdk_lint_and_trust_boundaries() -> None:
         for path in (ROOT / "android/app/src/main/kotlin").rglob("*.kt")
     )
 
-    assert "compileSdk = 36" in build
+    assert "compileSdk = 37" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

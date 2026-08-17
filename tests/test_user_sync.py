@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from chrootctl.config import ChrootConfig
+from chrootctl.registry import ChrootRegistry
 from chrootctl.system import RunResult
 from chrootctl.user_sync import UserSyncManager
 
@@ -28,9 +29,22 @@ class RecordingRunner:
 
 
 def build_manager(tmp_path: Path) -> tuple[UserSyncManager, RecordingRunner]:
-    cfg = ChrootConfig(chroot_root=tmp_path, termux_home=tmp_path, distro_name="ubuntu")
+    cfg = ChrootConfig(
+        chroot_root=tmp_path / "chroots",
+        termux_home=tmp_path,
+        distro_name="ubuntu",
+        database_path=tmp_path / "registry.sqlite3",
+    )
     runner = RecordingRunner()
-    return UserSyncManager(cfg, runner, logging.getLogger("test")), runner
+    registry = ChrootRegistry(cfg.database_path)
+    registry.upsert(
+        name="ubuntu",
+        distro="ubuntu",
+        path=str(cfg.chroot_base),
+        phase="finalize",
+        installed=True,
+    )
+    return UserSyncManager(cfg, runner, logging.getLogger("test"), registry=registry), runner
 
 
 def test_show_id_reads_paths(tmp_path: Path) -> None:
@@ -50,8 +64,8 @@ def test_sync_id_uses_quoted_username_and_paths(tmp_path: Path) -> None:
     assert result.ownership_fixed is True
     commands = [cmd[-1] for cmd in runner.commands]
     assert "groupadd mike" in commands[0]
-    assert "useradd -m -s /bin/bash mike" in commands[1]
-    assert '[ -e /home/mike ] && chown -R 2000:2000 /home/mike || true' in commands[4]
+    assert "useradd -m -s /bin/bash -g mike mike" in commands[1]
+    assert '[ -d /home/mike ] && chown -R 2000:2000 /home/mike || true' in commands[4]
 
 
 @pytest.mark.parametrize("username", ["mike;id", "mike name", "mike$(id)"])

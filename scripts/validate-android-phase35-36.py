@@ -29,7 +29,7 @@ def main() -> int:
     workflow_test = read("android/app/src/test/kotlin/com/mikeyphw/chrootctl/ui/WorkflowUxPolicyTest.kt")
     strings_path = ROOT / "android/app/src/main/res/values/strings.xml"
 
-    require("compileSdk = 36" in build and "targetSdk = 36" in build, "API 36 contract changed")
+    require("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 / targetSdk 36 contract changed")
     require("warningsAsErrors = true" in build and "abortOnError = true" in build, "strict lint policy changed")
     ignored = re.findall(r'<issue\s+id="([^"]+)"\s+severity="ignore"', lint)
     require("OldTargetApi" in ignored, f"OldTargetApi suppression missing: {ignored}")

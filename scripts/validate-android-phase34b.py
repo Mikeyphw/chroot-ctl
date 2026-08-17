@@ -41,7 +41,7 @@ def main() -> int:
     for token in (
         "drainFailureBuffer",
         "bridgeErrorOutput(stderr, drainFailures)",
-        "bridgeErrorOutput(stderr: ByteArrayOutputStream, drainFailures: List<String>)",
+        "bridgeErrorOutput(stderr: BoundedOutputStream, drainFailures: List<String>)",
         "android-stream-drain",
         "catch (error: Throwable)",
         "uncaughtExceptionHandler = Thread.UncaughtExceptionHandler",
@@ -52,7 +52,8 @@ def main() -> int:
 
     require_condition(bridge.count("drainFailureBuffer()") >= 2, "Bridge stream-drain crash guard must protect invoke and stream")
     require_condition(bridge.count("drain(") >= 4, "Bridge stream readers must use guarded drain helper")
-    require_condition("output = String(stdout.toByteArray(), StandardCharsets.UTF_8)" in bridge, "stdout JSON must remain separate from drain notes")
+    require_condition("output = stdout.asString()" in bridge, "stdout JSON must remain separate from drain notes")
+    require(bridge, "BoundedOutputStream(MAX_CAPTURE_BYTES)", "bounded bridge capture")
     forbid(bridge, "source.copyTo(output, DEFAULT_BUFFER_SIZE) }\n    }, name)", "unguarded drain body")
 
     for token in (
@@ -70,7 +71,7 @@ def main() -> int:
     ):
         require(test, token, "Phase 34B regression tests")
 
-    require_condition("compileSdk = 36" in build and "targetSdk = 36" in build, "SDK 36 contract")
+    require_condition("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 contract")
     require_condition("warningsAsErrors = true" in build and "abortOnError = true" in build, "strict lint contract")
     require_condition(re.findall(r'id="([^"]+)"', lint) == ["OldTargetApi"], "lint.xml must ignore only OldTargetApi")
     for forbidden_method in ("runShell(", "executeShell(", "command(String", "String shell("):

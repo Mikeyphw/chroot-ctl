@@ -24,7 +24,7 @@ def main() -> int:
         if condition:
             errors.append(message)
 
-    err('compileSdk = 36' not in build, "compileSdk must remain 36")
+    err('compileSdk = 37' not in build, "compileSdk must be 37")
     err('targetSdk = 36' not in build, "targetSdk must remain 36")
     err('versionName = "0.1.0-phase29"' not in build, "versionName must advance to phase29")
 
@@ -46,7 +46,7 @@ def main() -> int:
     for token in ("start_webui", "stop_webui", "restart_webui"):
         err(token in lifecycle, f"retired WebUI lifecycle helper returned: {token}")
 
-    for token in ("RequestPermission", "android.permission.POST_NOTIFICATIONS", "requestNotificationPermission"):
+    for token in ("RequestPermission", "Manifest.permission.POST_NOTIFICATIONS", "requestNotificationPermission"):
         err(token not in main_activity, f"notification permission request path missing token: {token}")
     for token in ("notifications_permission_title", "onRequestNotificationPermission"):
         err(token not in home and token not in app, f"notification UX wiring missing token: {token}")
@@ -60,8 +60,10 @@ def main() -> int:
     # artifact inventories free of .devtool entries.
 
     kotlin = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in (ROOT / "android/app/src/main/kotlin").rglob("*.kt"))
-    for forbidden in ("WebView", "Manifest.permission.POST_NOTIFICATIONS", "combine(arrayOf", '"/data/'):
+    for forbidden in ("WebView", "combine(arrayOf", '"/data/'):
         err(forbidden in kotlin, f"forbidden Android token found: {forbidden}")
+    for token in ("Manifest.permission.POST_NOTIFICATIONS", "Build.VERSION.SDK_INT >= 33", "ContextCompat.checkSelfPermission", "ActivityResultContracts.RequestPermission"):
+        err(token not in kotlin, f"notification permission flow missing guarded token: {token}")
     for token in ("Phase 29", "transfer.artifact_root", "includeOptional=false", "notification-permission"):
         err(token not in docs, f"phase29 docs missing token: {token}")
 
