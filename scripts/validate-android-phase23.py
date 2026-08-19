@@ -23,7 +23,7 @@ def main() -> int:
     phase22_validator = read(ROOT / "scripts/validate-android-phase22.py")
     docs = read(ROOT / "docs/android/PHASE_23_GENERATED_ARTIFACT_PURGE.md")
 
-    error_if(errors, 'compileSdk = 37' not in build, "compileSdk must be pinned to 37")
+    error_if(errors, 'compileSdk = 36' not in build, "compileSdk must be pinned to 36")
     error_if(errors, 'targetSdk = 36' not in build, "targetSdk must remain pinned to 36")
     error_if(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (23, 24, 25, 26, 27, 28, 29)), "versionName must be phase23 or later")
 

@@ -49,8 +49,8 @@ def main() -> int:
     if 'android:foregroundServiceType="dataSync"' not in manifest:
         errors.append("foreground service must declare dataSync type")
     build = (ROOT / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
-    if "targetSdk = 36" not in build or "compileSdk = 37" not in build:
-        errors.append("compileSdk must be 37 while targetSdk remains 36")
+    if "targetSdk = 36" not in build or "compileSdk = 36" not in build:
+        errors.append("compileSdk must be 36 while targetSdk remains 36")
     strings = STRINGS.read_text(encoding="utf-8")
     for name in ("action_run_refresh_operation", "operation_notification_channel", "chroot_workspace_title", "operation_detail_title"):
         if f'name="{name}"' not in strings:

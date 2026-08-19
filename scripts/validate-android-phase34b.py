@@ -71,7 +71,7 @@ def main() -> int:
     ):
         require(test, token, "Phase 34B regression tests")
 
-    require_condition("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 contract")
+    require_condition("compileSdk = 36" in build and "targetSdk = 36" in build, "compileSdk 36 contract")
     require_condition("warningsAsErrors = true" in build and "abortOnError = true" in build, "strict lint contract")
     require_condition(re.findall(r'id="([^"]+)"', lint) == ["OldTargetApi"], "lint.xml must ignore only OldTargetApi")
     for forbidden_method in ("runShell(", "executeShell(", "command(String", "String shell("):

@@ -25,7 +25,7 @@ def test_phase26_home_readiness_ui() -> None:
 def test_phase26_sdk_and_smoke_continuity() -> None:
     build = read("android/app/build.gradle.kts")
     registry = read("src/chrootctl/bridge/registry.py")
-    assert 'compileSdk = 37' in build
+    assert 'compileSdk = 36' in build
     assert 'targetSdk = 36' in build
     assert any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(26, 30))
     assert "smoke.run" in registry

@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         notificationOperationId.value = intent?.getStringExtra(OperationNotificationController.EXTRA_OPEN_OPERATION_ID)
-        if (!notificationOperationId.value.isNullOrBlank()) notificationOpenNonce.value += 1L
+        if (!notificationOperationId.value.isNullOrBlank()) notificationOpenNonce.longValue += 1L
         refreshNotificationState()
         enableEdgeToEdge()
         setContent {
@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                 onRequestNotificationPermission = ::requestNotificationPermission,
                 notificationsEnabled = notificationsEnabled.value,
                 openOperationId = notificationOperationId.value,
-                openOperationNonce = notificationOpenNonce.value,
+                openOperationNonce = notificationOpenNonce.longValue,
             )
         }
     }
@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         notificationOperationId.value = intent.getStringExtra(OperationNotificationController.EXTRA_OPEN_OPERATION_ID)
-        if (!notificationOperationId.value.isNullOrBlank()) notificationOpenNonce.value += 1L
+        if (!notificationOperationId.value.isNullOrBlank()) notificationOpenNonce.longValue += 1L
     }
 
     private fun refreshNotificationState() {

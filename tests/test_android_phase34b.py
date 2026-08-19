@@ -47,7 +47,7 @@ def test_phase34b_preserves_sdk_lint_and_trust_boundaries() -> None:
         for path in (ROOT / "android/app/src/main/kotlin").rglob("*.kt")
     )
 
-    assert "compileSdk = 37" in build
+    assert "compileSdk = 36" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

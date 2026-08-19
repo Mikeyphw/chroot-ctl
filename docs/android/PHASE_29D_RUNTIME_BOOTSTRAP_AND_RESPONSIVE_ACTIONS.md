@@ -22,7 +22,7 @@ Button and filter groups on Home, Install, and Tools use wrapping `FlowRow` layo
 
 ## Guardrails
 
-- `compileSdk = 37`
+- `compileSdk = 36`
 - `targetSdk = 36`
 - `warningsAsErrors = true`
 - only `OldTargetApi` remains exempted by Phase 29C

@@ -6,7 +6,10 @@ plugins {
 
 android {
     namespace = "com.mikeyphw.chrootctl"
-    compileSdk = 37
+    // Fleet baseline intentionally pins API 36.
+    //noinspection GradleDependency
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "com.mikeyphw.chrootctl"
@@ -59,6 +62,11 @@ kotlin {
 ksp {
     arg("room.generateKotlin", "true")
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// Keep every Android build behind the fleet-wide stable toolchain contract.
+tasks.named("preBuild") {
+    dependsOn(rootProject.tasks.named("verifyStableToolchainBaseline"))
 }
 
 dependencies {

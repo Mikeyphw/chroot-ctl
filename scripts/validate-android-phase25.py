@@ -22,7 +22,7 @@ def main() -> int:
     strings = read("android/app/src/main/res/values/strings.xml")
     docs = read("docs/android/PHASE_25_REAL_DEVICE_OPERATIONAL_SMOKE.md")
 
-    err(errors, 'compileSdk = 37' not in build, "compileSdk must be 37")
+    err(errors, 'compileSdk = 36' not in build, "compileSdk must be 36")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
     err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(25, 30)), "versionName must advance to phase25")
     for token in ("smoke.plan", "smoke.run", "smoke.report", "_smoke_plan", "_smoke_run", "_smoke_report"):

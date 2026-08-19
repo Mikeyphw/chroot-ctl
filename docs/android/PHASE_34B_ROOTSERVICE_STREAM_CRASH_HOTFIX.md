@@ -19,7 +19,7 @@ The captured diagnostics are appended to `errorOutput` as `android-stream-drain`
 
 ## Boundaries preserved
 
-- `compileSdk = 37`
+- `compileSdk = 36`
 - `targetSdk = 36`
 - `warningsAsErrors = true`
 - `abortOnError = true`

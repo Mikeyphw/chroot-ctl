@@ -34,7 +34,7 @@ def test_phase34c_lint_api36_and_active_only_docs_are_preserved() -> None:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
     docs = read("docs/android/PHASE_34C_ROOT_MODULE_RUNTIME_RESOLVER.md")
-    assert "compileSdk = 37" in build
+    assert "compileSdk = 36" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

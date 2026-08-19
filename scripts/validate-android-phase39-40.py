@@ -216,7 +216,7 @@ def main() -> int:
 
     # Architecture/API guardrails.
     build = read("android/app/build.gradle.kts")
-    require("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 / targetSdk 36 guardrail regressed")
+    require("compileSdk = 36" in build and "targetSdk = 36" in build, "compileSdk 36 / targetSdk 36 guardrail regressed")
     manifest_and_sources = "\n".join(
         p.read_text(encoding="utf-8", errors="ignore")
         for p in (ROOT / "android/app/src/main").rglob("*")

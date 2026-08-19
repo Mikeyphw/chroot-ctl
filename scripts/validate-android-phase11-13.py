@@ -60,8 +60,8 @@ def main() -> int:
         if token in app_text + MANIFEST.read_text(encoding="utf-8"):
             errors.append(f"forbidden Android token found: {token}")
     build = BUILD.read_text(encoding="utf-8")
-    if "compileSdk = 37" not in build or "targetSdk = 36" not in build:
-        errors.append("compileSdk must be 37 while targetSdk remains 36")
+    if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
+        errors.append("compileSdk must be 36 while targetSdk remains 36")
     if not any(token in build for token in (
         'versionName = "0.1.0-phase13"',
         'versionName = "0.1.0-phase14"',

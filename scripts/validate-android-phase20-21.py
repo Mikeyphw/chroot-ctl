@@ -66,8 +66,8 @@ def main() -> int:
     if re.search(r'"/data/', android_text):
         errors.append("Kotlin must not hardcode /data/ path literals")
     build_text = read(build)
-    if "compileSdk = 37" not in build_text or "targetSdk = 36" not in build_text:
-        errors.append("compileSdk must be 37 while targetSdk remains 36")
+    if "compileSdk = 36" not in build_text or "targetSdk = 36" not in build_text:
+        errors.append("compileSdk must be 36 while targetSdk remains 36")
     if not any(f'versionName = "0.1.0-phase{phase}"' in build_text for phase in (21, 22, 23, 24, 25, 26, 27, 28, 29)):
         errors.append("Android app versionName must be at least phase21")
     backup_rules = ROOT / "android/app/src/main/res/xml/backup_rules.xml"

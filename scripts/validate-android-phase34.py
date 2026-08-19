@@ -31,7 +31,7 @@ def main() -> int:
     activity = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/activity/ActivityScreen.kt")
     registry = read("src/chrootctl/bridge/registry.py")
 
-    require("compileSdk = 37" in build and "targetSdk = 36" in build, "Phase 34 must preserve compileSdk 37 / targetSdk 36")
+    require("compileSdk = 36" in build and "targetSdk = 36" in build, "Phase 34 must preserve compileSdk 36 / targetSdk 36")
     require(re.findall(r'id="([^"]+)"', lint) == ["OldTargetApi"], "lint.xml must ignore only OldTargetApi")
     for token in ["PhonePortrait", "PhoneLandscape", "Foldable", "Tablet", "DesktopWidth", "releaseWindowProfile"]:
         require(token in adaptive, f"adaptive release profile missing: {token}")

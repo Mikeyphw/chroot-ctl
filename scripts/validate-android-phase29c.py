@@ -21,7 +21,7 @@ def main() -> int:
         if condition:
             errors.append(message)
 
-    error_if("compileSdk = 37" not in build, "compileSdk must be pinned to 37")
+    error_if("compileSdk = 36" not in build, "compileSdk must be pinned to 36")
     error_if("targetSdk = 36" not in build, "targetSdk must remain pinned to 36")
     error_if("warningsAsErrors = true" not in build, "lint warnings must remain errors")
     error_if("abortOnError = true" not in build, "lint must continue aborting on errors")

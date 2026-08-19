@@ -408,12 +408,14 @@ def test_android_lint_remediation_contract_is_strict_and_complete() -> None:
     service = _text("android/app/src/main/kotlin/com/mikeyphw/chrootctl/operations/ChrootOperationService.kt")
     activity = _text("android/app/src/main/kotlin/com/mikeyphw/chrootctl/MainActivity.kt")
 
-    assert "gradle-9.7.0-bin.zip" in wrapper
-    assert "compileSdk = 37" in build and "targetSdk = 36" in build
+    assert "gradle-9.7.1-bin.zip" in wrapper
+    assert "distributionSha256Sum=acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a" in wrapper
+    assert "compileSdk = 36" in build and 'buildToolsVersion = "36.0.0"' in build and "targetSdk = 36" in build
     for token in (
-        'kotlin = "2.4.10"', 'activity = "1.13.0"', 'compose = "1.12.0"',
-        'material3 = "1.4.0"', 'core = "1.19.0"', 'lifecycle = "2.11.0"',
-        'room = "2.8.4"', 'coroutines = "1.11.0"', 'json = "20260719"',
+        'agp = "9.3.1"', 'kotlin = "2.4.10"', 'ksp = "2.3.11"',
+        'activity = "1.12.4"', 'compose = "1.11.4"', 'material3 = "1.4.0"',
+        'core = "1.17.0"', 'lifecycle = "2.10.0"',
+        'room = "2.8.4"', 'coroutines = "1.11.0"', 'json = "20260814"',
     ):
         assert token in versions
     assert '<issue id="OldTargetApi" severity="ignore" />' in lint
@@ -463,7 +465,7 @@ def test_android_lint_remediation_contract_is_strict_and_complete() -> None:
         for p in folder.glob("*.py")
         if p != Path(__file__)
     )
-    assert "compileSdk = 36" not in contract_text
+    assert "compileSdk = 37" not in contract_text
 
 def test_final_seal_has_no_android_prevalidated_bypass() -> None:
     runner = (ROOT / "scripts/final-release-seal.py").read_text(encoding="utf-8")

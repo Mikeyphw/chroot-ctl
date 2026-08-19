@@ -140,7 +140,7 @@ def main() -> int:
 
     # Architecture/API and protected-runtime guardrails.
     build = read("android/app/build.gradle.kts")
-    require("compileSdk = 37" in build and "targetSdk = 36" in build, "compileSdk 37 / targetSdk 36 guardrail regressed")
+    require("compileSdk = 36" in build and "targetSdk = 36" in build, "compileSdk 36 / targetSdk 36 guardrail regressed")
     runtime_resolver = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/RuntimeResolver.kt")
     bridge_process = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/BridgeProcess.kt")
     root_service = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/ChrootRootService.kt")

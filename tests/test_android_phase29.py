@@ -67,6 +67,6 @@ def test_phase29_android_guardrails_remain_clean() -> None:
     assert "combine(arrayOf" not in kotlin
     assert '"/data/' not in kotlin
     build = read("android/app/build.gradle.kts")
-    assert 'compileSdk = 37' in build
+    assert 'compileSdk = 36' in build
     assert 'targetSdk = 36' in build
     assert 'versionName = "0.1.0-phase29"' in build

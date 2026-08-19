@@ -17,7 +17,7 @@ def main() -> int:
     models = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/model/UiModels.kt")
     strings = read("android/app/src/main/res/values/strings.xml")
     docs = read("docs/android/PHASE_27_SMOKE_RESULT_HANDOFF.md")
-    err(errors, 'compileSdk = 37' not in build, "compileSdk must be 37")
+    err(errors, 'compileSdk = 36' not in build, "compileSdk must be 36")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
     err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in range(27, 30)), "versionName must advance to phase27")
     for token in ("smoke.last_result", "smoke.result.persist", "smoke.result.export", "smoke.failure.bundle", "_smoke_last_result", "_smoke_failure_bundle"):

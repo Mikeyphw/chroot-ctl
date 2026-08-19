@@ -69,7 +69,7 @@ instrumentation = "never"
 prefer_native_termux = false
 
 [targets.chrootctl_android.gradle]
-version = "9.7.0"
+version = "9.7.1"
 provider = "auto"
 max_workers = 2
 parallel = true

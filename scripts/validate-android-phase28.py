@@ -15,7 +15,7 @@ def main() -> int:
     docs = read("docs/android/PHASE_28_FINAL_OPERATIONAL_RELEASE_SEAL.md")
     runbook = read("docs/android/ANDROID_RELEASE_RUNBOOK.md")
     smoke = read("docs/android/REAL_DEVICE_SMOKE_CHECKLIST.md")
-    err(errors, 'compileSdk = 37' not in build, "compileSdk must be 37")
+    err(errors, 'compileSdk = 36' not in build, "compileSdk must be 36")
     err(errors, 'targetSdk = 36' not in build, "targetSdk must remain 36")
     err(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (28, 29)), "versionName must advance to phase28")
     for token in ("final.preflight", "final.packaging_audit", "final.no_webui_regression", "final.release_seal", "_final_release_seal"):

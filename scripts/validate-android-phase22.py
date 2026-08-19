@@ -68,7 +68,7 @@ def main() -> int:
     docs = read(docs_path)
 
     # SDK and Android build contract.
-    error_if(errors, "compileSdk = 37" not in build, "compileSdk must be pinned to 37")
+    error_if(errors, "compileSdk = 36" not in build, "compileSdk must be pinned to 36")
     error_if(errors, "targetSdk = 36" not in build, "targetSdk must remain pinned to 36")
     error_if(
         errors,

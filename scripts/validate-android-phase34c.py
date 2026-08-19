@@ -24,7 +24,7 @@ def main() -> int:
     docs = read("docs/android/PHASE_34C_ROOT_MODULE_RUNTIME_RESOLVER.md")
     tests = read("tests/test_android_phase34c.py")
 
-    require("compileSdk = 37" in build, "compileSdk must be API 37")
+    require("compileSdk = 36" in build, "compileSdk must be API 36")
     require("targetSdk = 36" in build, "targetSdk must remain API 36")
     require("warningsAsErrors = true" in build, "strict lint warningsAsErrors must remain enabled")
     require("abortOnError = true" in build, "strict lint abortOnError must remain enabled")

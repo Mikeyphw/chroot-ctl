@@ -674,7 +674,7 @@ private fun JSONObject.toOperationEntity(existing: OperationEntity?): OperationE
 }
 
 private fun JSONObject.toOperationEventEntity(operationId: String): OperationEventEntity {
-    val timestampValue = opt("timestamp")
+    val timestampValue: Any? = opt("timestamp").takeUnless { it === JSONObject.NULL }
     val timestamp = when (timestampValue) {
         is Number -> (timestampValue.toDouble() * 1000).toLong()
         is String -> ((timestampValue.toDoubleOrNull() ?: System.currentTimeMillis() / 1000.0) * 1000).toLong()
@@ -789,10 +789,11 @@ private fun JSONObject.firstString(vararg keys: String): String {
 private fun JSONObject.optNullableInt(vararg keys: String): Int? {
     for (key in keys) {
         if (!has(key) || isNull(key)) continue
-        val value = opt(key)
+        val value: Any? = opt(key).takeUnless { it === JSONObject.NULL }
         val parsed = when (value) {
             is Number -> value.toInt()
             is String -> value.toIntOrNull()
+            null -> null
             else -> null
         }
         if (parsed != null) return parsed
@@ -803,10 +804,11 @@ private fun JSONObject.optNullableInt(vararg keys: String): Int? {
 private fun JSONObject.optEpochMillis(vararg keys: String): Long? {
     for (key in keys) {
         if (!has(key) || isNull(key)) continue
-        val value = opt(key)
+        val value: Any? = opt(key).takeUnless { it === JSONObject.NULL }
         val parsed = when (value) {
             is Number -> value.toDouble()
             is String -> value.toDoubleOrNull()
+            null -> null
             else -> null
         } ?: continue
         return if (parsed < 10_000_000_000L) (parsed * 1000).toLong() else parsed.toLong()
@@ -978,7 +980,7 @@ private fun JSONObject.rowsFromJson(
     }
     val nestedRows = buildList {
         keys().forEach { key ->
-            val value = opt(key)
+            val value: Any? = opt(key).takeUnless { it === JSONObject.NULL }
             when (value) {
                 is JSONObject -> add(
                     SystemRowSummary(
@@ -988,7 +990,7 @@ private fun JSONObject.rowsFromJson(
                     ),
                 )
                 is JSONArray -> Unit
-                null, JSONObject.NULL -> Unit
+                null -> Unit
                 else -> add(SystemRowSummary(label = key, value = value.toString(), state = "info"))
             }
         }

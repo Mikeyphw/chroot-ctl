@@ -73,7 +73,7 @@ def test_sdk_lint_and_trust_boundaries_are_preserved() -> None:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
     kotlin = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "android/app/src/main/kotlin").rglob("*.kt"))
-    assert "compileSdk = 37" in build
+    assert "compileSdk = 36" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

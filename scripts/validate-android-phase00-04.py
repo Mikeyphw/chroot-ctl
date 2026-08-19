@@ -23,7 +23,7 @@ if "runshell" in aidl or "executecommand" in aidl or "string command" in aidl:
     raise SystemExit("Unsafe arbitrary command capability found in AIDL")
 
 config = (ROOT / ".devtool.toml").read_text(encoding="utf-8")
-for token in ("[targets.chrootctl_android]", 'root = "android"', 'build = ["assembleDebug"]', 'lint = ["lintDebug"]'):
+for token in ("[targets.chrootctl_android]", 'root = "android"', 'build = [":app:assembleDebug"]', 'lint = [":app:lintDebug"]'):
     if token not in config:
         raise SystemExit(f"Missing Devtool Android target contract: {token}")
 

@@ -24,7 +24,7 @@ def main() -> int:
         if condition:
             errors.append(message)
 
-    err('compileSdk = 37' not in build, "compileSdk must be 37")
+    err('compileSdk = 36' not in build, "compileSdk must be 36")
     err('targetSdk = 36' not in build, "targetSdk must remain 36")
     err('versionName = "0.1.0-phase29"' not in build, "versionName must advance to phase29")
 

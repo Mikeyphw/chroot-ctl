@@ -92,8 +92,8 @@ def main() -> int:
     if re.search(r'"/data/', app_text):
         errors.append("Kotlin must not hardcode /data/ path literals")
     build = read(BUILD)
-    if "compileSdk = 37" not in build or "targetSdk = 36" not in build:
-        errors.append("compileSdk must be 37 while targetSdk remains 36")
+    if "compileSdk = 36" not in build or "targetSdk = 36" not in build:
+        errors.append("compileSdk must be 36 while targetSdk remains 36")
     if not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (19, 21, 22, 23, 24, 25, 26, 27, 28, 29)):
         errors.append("Android app versionName must be at least phase19")
     strings = read(STRINGS)

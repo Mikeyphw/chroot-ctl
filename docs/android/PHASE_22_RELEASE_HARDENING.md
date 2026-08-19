@@ -19,7 +19,7 @@ Phase 22 is the final hardening pass after the WebUI retirement. It does not add
 The Android project remains pinned to:
 
 ```text
-compileSdk = 37
+compileSdk = 36
 targetSdk = 36
 minSdk = 26
 ```

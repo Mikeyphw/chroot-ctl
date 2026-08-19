@@ -77,7 +77,7 @@ def test_phase34d_android_resolver_protocol_probe_remains_in_place() -> None:
 def test_phase34d_api36_and_strict_lint_policy_are_preserved() -> None:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
-    assert "compileSdk = 37" in build
+    assert "compileSdk = 36" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

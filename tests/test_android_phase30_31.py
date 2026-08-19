@@ -50,7 +50,7 @@ def test_raw_transport_failure_is_disclosed_only_as_technical_detail() -> None:
 def test_sdk_and_strict_lint_contract_are_preserved() -> None:
     build = read("android/app/build.gradle.kts")
     lint = read("android/app/lint.xml")
-    assert "compileSdk = 37" in build
+    assert "compileSdk = 36" in build
     assert "targetSdk = 36" in build
     assert "warningsAsErrors = true" in build
     assert "abortOnError = true" in build

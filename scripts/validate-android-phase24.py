@@ -23,7 +23,7 @@ def main() -> int:
     phase23 = read(ROOT / "scripts/validate-android-phase23.py")
     docs = read(ROOT / "docs/android/PHASE_24_MODULE_REGRESSION_SEAL.md")
 
-    error_if(errors, 'compileSdk = 37' not in build, "compileSdk must be pinned to 37")
+    error_if(errors, 'compileSdk = 36' not in build, "compileSdk must be pinned to 36")
     error_if(errors, 'targetSdk = 36' not in build, "targetSdk must remain pinned to 36")
     error_if(errors, not any(f'versionName = "0.1.0-phase{phase}"' in build for phase in (24, 25, 26, 27, 28, 29)), "versionName must advance to phase24")
 
