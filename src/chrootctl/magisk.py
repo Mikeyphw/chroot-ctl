@@ -313,9 +313,9 @@ def _module_prop(config: MagiskModuleConfig) -> str:
 
 def _customize_sh() -> str:
     return """#!/system/bin/sh
-# customize.sh is sourced by the module installer; use abort() for failures so
-# the installer can run its cleanup instead of being terminated by `set -e`.
-set -u
+# customize.sh is sourced by the Magisk/KernelSU module installer.
+# Do not enable set -e or set -u here: shell options would leak into the
+# parent installer and can break installer-provided helper functions.
 
 SKIPMOUNT=false
 PROPFILE=true
@@ -456,8 +456,13 @@ then
 fi
 
 ui_print "- Applying module permissions"
-set_perm_recursive "$MODPATH" 0 0 0755 0644 || abort "! failed to set module permissions"
-set_perm_recursive "$CONFIG_DIR" 0 0 0700 0600 || abort "! failed to secure module runtime configuration"
+SYSTEM_FILE_CONTEXT="u:object_r:system_file:s0"
+
+set_perm_recursive "$MODPATH" 0 0 0755 0644 "$SYSTEM_FILE_CONTEXT" \
+  || abort "! failed to set module permissions"
+
+set_perm_recursive "$CONFIG_DIR" 0 0 0700 0600 "$SYSTEM_FILE_CONTEXT" \
+  || abort "! failed to secure module runtime configuration"
 for _file in \
   "$MODPATH/customize.sh" \
   "$MODPATH/post-fs-data.sh" \
@@ -467,7 +472,8 @@ for _file in \
   "$MODPATH/system/bin/chrootctl-python-bootstrap" \
   "$MODPATH/bin/chrootctl-magisk-helper" \
   "$MODPATH/bin/chrootctl-python-bootstrap"; do
-  set_perm "$_file" 0 0 0755 || abort "! failed to set executable permission: $_file"
+  set_perm "$_file" 0 0 0755 "$SYSTEM_FILE_CONTEXT" \
+    || abort "! failed to set executable permission: $_file"
 done
 
 ui_print "- chrootctl module install checks complete; dependency readiness will be sealed after activation on boot"

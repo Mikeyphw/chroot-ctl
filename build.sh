@@ -4,6 +4,46 @@ set -euo pipefail
 MODULE_NAME="${MODULE_NAME:-chrootctl-magisk}"
 OUT_DIR="${OUT_DIR:-./out}"
 ZIP_NAME="${ZIP_NAME:-${MODULE_NAME}.zip}"
+INSTALL_MODULE=0
+
+usage() {
+    cat <<EOF
+Usage: $0 [-i|--install]
+
+Options:
+  -i, --install  Install the successfully built module with KernelSU
+                 and delete the built ZIP after successful installation.
+  -h, --help     Show this help.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -i|--install)
+            INSTALL_MODULE=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if [ "$#" -ne 0 ]; then
+    echo "Unexpected positional arguments: $*" >&2
+    usage >&2
+    exit 2
+fi
 
 python3 - "$OUT_DIR" "$ZIP_NAME" <<'PY'
 from pathlib import Path
@@ -78,4 +118,36 @@ validate_magisk_zip(Path(sys.argv[1]))
 PY
 
 echo "[4/4] Done: $ZIP_NAME"
-echo "Flash $ZIP_NAME in Magisk or KernelSU. Pending updates become runtime-active only after reboot activation."
+
+if [ "$INSTALL_MODULE" -eq 1 ]; then
+    echo "[install] Installing module with KernelSU..."
+
+    ZIP_ABS="$(python3 - "$ZIP_NAME" <<'PY_INSTALL_PATH'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).expanduser().resolve())
+PY_INSTALL_PATH
+)"
+
+    # Quote the path for the Android shell invoked by `su -c`.
+    INSTALL_ZIP="$(python3 - "$ZIP_ABS" <<'PY_INSTALL_QUOTE'
+import shlex
+import sys
+print(shlex.quote(sys.argv[1]))
+PY_INSTALL_QUOTE
+)"
+
+    if su -c "ksud module install $INSTALL_ZIP"; then
+        echo "[install] Module installed successfully."
+        rm -f -- "$ZIP_ABS"
+        echo "[install] Deleted built ZIP: $ZIP_ABS"
+        echo "[install] Reboot is required to activate the pending module update."
+    else
+        status=$?
+        echo "[install] KernelSU module installation failed with exit code $status." >&2
+        echo "[install] Keeping built ZIP for inspection: $ZIP_ABS" >&2
+        exit "$status"
+    fi
+else
+    echo "Flash $ZIP_NAME in Magisk or KernelSU. Pending updates become runtime-active only after reboot activation."
+fi
