@@ -61,63 +61,6 @@ enabled = false
 tools = ["pip_audit", "bandit"]
 sbom = false
 
-# ---------------------------------------------------------------------------
-# Root Python / Magisk module target
-# ---------------------------------------------------------------------------
-
-[targets.chrootctl]
-type = "python"
-root = "."
-execution_environment = "auto"
-chroot_name = "androidos"
-
-[targets.chrootctl.project]
-kind = "python"
-python = "python3"
-run_command = "chrootctl --help"
-package_command = "bash build.sh"
-
-[targets.chrootctl.build]
-max_workers = 2
-
-[targets.chrootctl.python]
-manager = "venv"
-test_framework = "pytest"
-extras = ["dev"]
-locked = false
-offline = false
-install_project = true
-lint = ["ruff", "mypy"]
-validator_dependencies = ["build>=1.2"]
-pre_commit = "auto"
-source_import_isolation = false
-cli_contract = false
-isolation = true
-disable_network = false
-matrix = []
-matrix_mode = "active"
-fresh_dist = true
-clean_categories = ["artifacts", "caches"]
-
-[targets.chrootctl.python.package]
-verify_all_wheels = true
-rebuild_sdist = true
-import_smoke = true
-verify_cli = true
-install_dependencies = true
-reproducible = false
-import_modules = ["chrootctl"]
-console_scripts = ["chrootctl", "chrootctl-app"]
-
-[targets.chrootctl.python.security]
-enabled = false
-tools = ["pip_audit", "bandit"]
-sbom = false
-
-# ---------------------------------------------------------------------------
-# Android companion app
-# ---------------------------------------------------------------------------
-
 [targets.chrootctl_android]
 type = "android"
 root = "android"
