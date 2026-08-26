@@ -202,3 +202,50 @@ package = [
 lint = [
   ":app:lintDebug",
 ]
+
+# ---------------------------------------------------------------------------
+# Root Python / Magisk module target
+# ---------------------------------------------------------------------------
+
+[targets.chrootctl]
+type = "python"
+root = "."
+execution_environment = "host"
+chroot_name = "androidos"
+run_command = "PYTHONPATH=src python3 -m chrootctl.cli --help"
+test_command = "PYTHONPATH=src python3 -m pytest -q tests/test_native_runtime.py"
+package_command = "bash build.sh"
+
+[targets.chrootctl.python]
+manager = "venv"
+test_framework = "pytest"
+extras = ["dev"]
+locked = false
+offline = false
+install_project = false
+lint = []
+validator_dependencies = ["pytest", "rich>=13.7.0", "PyYAML>=6.0", "pydantic>=2.7.0", "pydantic-core>=2.0"]
+pre_commit = "auto"
+source_import_isolation = false
+cli_contract = false
+isolation = true
+disable_network = false
+matrix = []
+matrix_mode = "active"
+fresh_dist = false
+clean_categories = ["artifacts", "caches"]
+
+[targets.chrootctl.python.package]
+verify_all_wheels = false
+rebuild_sdist = false
+import_smoke = false
+verify_cli = false
+install_dependencies = false
+reproducible = false
+import_modules = ["chrootctl"]
+console_scripts = ["chrootctl", "chrootctl-app"]
+
+[targets.chrootctl.python.security]
+enabled = false
+tools = []
+sbom = false
