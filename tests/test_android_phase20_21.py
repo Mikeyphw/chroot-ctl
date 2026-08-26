@@ -51,13 +51,15 @@ def test_magisk_renderer_no_longer_emits_webui_artifacts(tmp_path: Path) -> None
     )
 
     assert (output_dir / "system/bin/chrootctl").exists()
-    assert (output_dir / "system/bin/chrootctl-python-bootstrap").exists()
+    assert not (output_dir / "system/bin/chrootctl-python-bootstrap").exists()
+    assert not (output_dir / "bin/chrootctl-python-bootstrap").exists()
+    assert not (output_dir / "payload").exists()
     assert not (output_dir / "system/bin/chrootctl-web").exists()
     assert not (output_dir / "system/bin/chrootctl-webui-service").exists()
     assert not (output_dir / "bin/chrootctl-webui-service").exists()
     assert not (output_dir / "config/chrootctl/webui.env").exists()
     assert not (output_dir / "webroot/index.html").exists()
-    assert not (output_dir / "payload/src/chrootctl/web").exists()
+    assert not (output_dir / "payload").exists()
 
 
 def test_parity_matrix_is_green_or_retired() -> None:

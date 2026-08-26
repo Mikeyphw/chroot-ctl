@@ -30,23 +30,12 @@ BRIDGE_PROTOCOL_VERSION = 1
 PYTHON_PACKAGE_VERSION = "0.11.0"
 ANDROID_APP_VERSION_NAME = "0.1.0-phase29"
 ANDROID_APP_VERSION_CODE = 1
-ANDROID_PYDANTIC_CORE_INDEX_URL = "https://eutalix.github.io/android-pydantic-core/"
-SUPPORTED_ANDROID_PYDANTIC_CORE_PYTHONS = ("3.9", "3.10", "3.11", "3.12", "3.13")
-
-DEFAULT_PYTHON_DEPENDENCIES = (
-    "rich>=13.7.0",
-    "PyYAML>=6.0",
-    "pydantic>=2.7.0",
-    "pydantic-core>=2.0",
-)
-
 FORBIDDEN_MODULE_PATH_TOKENS = (
     "chrootctl-web",
     "chrootctl-webui-service",
     "webui.env",
     "webroot",
     "playwright.config.ts",
-    "payload/src/chrootctl/web",
 )
 FORBIDDEN_MODULE_BASENAMES = {
     ".DS_Store",
@@ -68,7 +57,6 @@ ALLOWED_MODULE_TOP_LEVEL = {
     "service.sh",
     "bin",
     "system",
-    "payload",
     "config",
     "runtime",
 }
@@ -82,10 +70,8 @@ REQUIRED_EXECUTABLE_PATHS = {
     "post-fs-data.sh",
     "service.sh",
     "bin/chrootctl-magisk-helper",
-    "bin/chrootctl-python-bootstrap",
     "system/bin/chrootctl",
     "system/bin/chrootctl-magisk-helper",
-    "system/bin/chrootctl-python-bootstrap",
     NATIVE_RUNTIME_ENTRYPOINT_PATH.as_posix(),
 }
 REQUIRED_MODULE_PATHS = {
@@ -94,21 +80,21 @@ REQUIRED_MODULE_PATHS = {
     "post-fs-data.sh",
     "service.sh",
     "bin/chrootctl-magisk-helper",
-    "bin/chrootctl-python-bootstrap",
     "system/bin/chrootctl",
     "system/bin/chrootctl-magisk-helper",
-    "system/bin/chrootctl-python-bootstrap",
-    "payload/pyproject.toml",
-    "payload/requirements.txt",
     "config/chrootctl/boot_targets.json",
-    "config/chrootctl/dependency-mode.env",
     "config/chrootctl/compatibility-manifest.json",
     NATIVE_RUNTIME_MANIFEST_PATH.as_posix(),
     NATIVE_RUNTIME_ENTRYPOINT_PATH.as_posix(),
 }
 _ALLOWED_MODULE_DIRS = {
-    "bin", "system", "system/bin", "payload", "payload/src", "payload/src/chrootctl",
-    "config", "config/chrootctl", "runtime", NATIVE_RUNTIME_MODULE_ROOT.as_posix(),
+    "bin",
+    "system",
+    "system/bin",
+    "config",
+    "config/chrootctl",
+    "runtime",
+    NATIVE_RUNTIME_MODULE_ROOT.as_posix(),
     (NATIVE_RUNTIME_MODULE_ROOT / "chrootctl.dist").as_posix(),
 }
 
@@ -180,12 +166,8 @@ def render_magisk_module(
         Path("post-fs-data.sh"): _post_fs_data_sh(),
         Path("service.sh"): _service_sh(config),
         Path(config.helper_path()): _helper_sh(config),
-        Path("bin/chrootctl-python-bootstrap"): _python_bootstrap_sh(),
         Path("system/bin/chrootctl"): _native_entrypoint(),
         Path("system/bin/chrootctl-magisk-helper"): _system_bin_proxy("bin/chrootctl-magisk-helper"),
-        Path("system/bin/chrootctl-python-bootstrap"): _system_bin_proxy("bin/chrootctl-python-bootstrap"),
-        Path("payload/requirements.txt"): _requirements_txt(DEFAULT_PYTHON_DEPENDENCIES),
-        Path("config/chrootctl/dependency-mode.env"): _dependency_mode_env(),
         Path("config/chrootctl/compatibility-manifest.json"): _compatibility_manifest_json(config),
         Path(config.state_path()): _boot_targets_json(startup_targets),
     }
@@ -198,7 +180,6 @@ def render_magisk_module(
             target.chmod(0o755)
         written.append(target)
 
-    written.extend(_copy_python_payload(output_dir, config.package_root()))
     written.extend(_copy_native_runtime(output_dir, config))
     return MagiskRenderResult(output_dir=output_dir, files=tuple(written))
 
@@ -224,7 +205,7 @@ def resolve_startup_targets(
 
 
 def _is_executable(path: Path, config: MagiskModuleConfig) -> bool:
-    return path.suffix == ".sh" or path.name in {config.helper_name, "chrootctl", "chrootctl-python-bootstrap"}
+    return path.suffix == ".sh" or path.name in {config.helper_name, "chrootctl"}
 
 
 def _forbidden_module_relative_path(relative: Path) -> bool:
@@ -236,36 +217,6 @@ def _forbidden_module_relative_path(relative: Path) -> bool:
     if any(part in {"__pycache__", ".git", ".pytest_cache", ".mypy_cache"} for part in relative.parts):
         return True
     return any(token in text for token in FORBIDDEN_MODULE_PATH_TOKENS)
-
-
-def _copy_python_payload(output_dir: Path, package_root: Path) -> list[Path]:
-    payload_root = output_dir / "payload"
-    source_root = package_root / "chrootctl"
-    if not source_root.exists():
-        raise FileNotFoundError(f"missing chrootctl package source at {source_root}")
-    target_root = payload_root / "src" / "chrootctl"
-    written: list[Path] = []
-    for source in sorted(source_root.rglob("*")):
-        relative = source.relative_to(source_root)
-        if _forbidden_module_relative_path(Path("payload/src/chrootctl") / relative):
-            continue
-        if source.is_symlink():
-            raise ValueError(f"refusing symlink in module Python payload: {source}")
-        if source.is_dir():
-            continue
-        if not source.is_file():
-            raise ValueError(f"refusing non-regular file in module Python payload: {source}")
-        target = target_root / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        written.append(target)
-    pyproject = package_root.parent / "pyproject.toml"
-    if pyproject.exists():
-        if pyproject.is_symlink() or not pyproject.is_file():
-            raise ValueError(f"invalid pyproject source: {pyproject}")
-        shutil.copy2(pyproject, payload_root / "pyproject.toml")
-        written.append(payload_root / "pyproject.toml")
-    return written
 
 
 def _copy_native_runtime(output_dir: Path, config: MagiskModuleConfig) -> list[Path]:
@@ -422,9 +373,7 @@ for _file in \
   "$MODPATH/service.sh" \
   "$MODPATH/system/bin/chrootctl" \
   "$MODPATH/system/bin/chrootctl-magisk-helper" \
-  "$MODPATH/system/bin/chrootctl-python-bootstrap" \
   "$MODPATH/bin/chrootctl-magisk-helper" \
-  "$MODPATH/bin/chrootctl-python-bootstrap" \
   "$RUNTIME_BIN"; do
   set_perm "$_file" 0 0 0755 "$SYSTEM_FILE_CONTEXT" \
     || abort "! failed to set executable permission: $_file"
@@ -594,36 +543,6 @@ exit 0
 """
 
 
-def _runtime_payload_guard_sh() -> str:
-    return """PAYLOAD_ROOT="$MODDIR/payload/src"
-PAYLOAD_PACKAGE="$PAYLOAD_ROOT/chrootctl"
-DEPENDENCY_MODE_FILE="$MODDIR/config/chrootctl/dependency-mode.env"
-REQUIREMENTS_FILE="$MODDIR/payload/requirements.txt"
-for _dir in "$MODDIR/payload" "$PAYLOAD_ROOT" "$PAYLOAD_PACKAGE"; do
-  [ -d "$_dir" ] && [ ! -L "$_dir" ] || { echo "module Python payload directory is missing or unsafe: $_dir" >&2; exit 1; }
-done
-_resolved_payload="$(cd "$PAYLOAD_ROOT" && pwd -P)" || exit 1
-[ "$_resolved_payload" = "$PAYLOAD_ROOT" ] || { echo "module Python payload path is not canonical" >&2; exit 1; }
-[ -f "$PAYLOAD_PACKAGE/__init__.py" ] && [ ! -L "$PAYLOAD_PACKAGE/__init__.py" ] || { echo "module Python package layout is incomplete or unsafe" >&2; exit 1; }
-[ -f "$DEPENDENCY_MODE_FILE" ] && [ ! -L "$DEPENDENCY_MODE_FILE" ] || { echo "dependency mode contract is missing or unsafe" >&2; exit 1; }
-[ -f "$REQUIREMENTS_FILE" ] && [ ! -L "$REQUIREMENTS_FILE" ] || { echo "dependency requirement contract is missing or unsafe" >&2; exit 1; }
-awk '
-  NR==1 { ok=($0=="DEPENDENCY_MODE=static-python-env") }
-  NR==2 { ok=ok && ($0=="DEPENDENCY_INSTALL_PHASE=none") }
-  NR==3 { ok=ok && ($0=="DEPENDENCY_NETWORK=disabled") }
-  NR==4 { ok=ok && ($0=="DEPENDENCY_REPAIR=disabled") }
-  END { exit !(ok && NR==4) }
-' "$DEPENDENCY_MODE_FILE" || { echo "dependency mode contract does not match this release" >&2; exit 1; }
-awk '
-  NR==1 { ok=($0=="rich>=13.7.0") }
-  NR==2 { ok=ok && ($0=="PyYAML>=6.0") }
-  NR==3 { ok=ok && ($0=="pydantic>=2.7.0") }
-  NR==4 { ok=ok && ($0=="pydantic-core>=2.0") }
-  END { exit !(ok && NR==4) }
-' "$REQUIREMENTS_FILE" || { echo "dependency requirements contract does not match this release" >&2; exit 1; }
-"""
-
-
 def _helper_sh(config: MagiskModuleConfig) -> str:
     return f"""#!/system/bin/sh
 set -eu
@@ -720,269 +639,11 @@ exec "$RUNTIME_BIN" "$@"
 """
 
 
-def _python_entrypoint(module_name: str) -> str:
-    resolver = _module_dir_resolver_sh()
-    payload_guard = _runtime_payload_guard_sh()
-    return f"""#!/system/bin/sh
-set -eu
-{resolver}
-MODDIR="$(resolve_moddir)" || {{ echo "no active chrootctl module" >&2; exit 1; }}
-{payload_guard}
-CONFIG="$MODDIR/config/chrootctl/python.env"
-READY="$MODDIR/config/chrootctl/dependencies.ready.json"
-COMPAT="$MODDIR/config/chrootctl/compatibility-manifest.json"
-
-[ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || {{ echo "runtime configuration is missing or unsafe" >&2; exit 1; }}
-config_value() {{
-  _key="$1"
-  [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || return 1
-  awk -F= -v key="$_key" '$1 == key {{ sub(/^[^=]*=/, ""); print; exit }}' "$CONFIG"
-}}
-PYTHON_BIN="$(config_value PYTHON_BIN || true)"
-PYTHON_LD_LIBRARY_PATH="$(config_value PYTHON_LD_LIBRARY_PATH || true)"
-[ -n "$PYTHON_BIN" ] && [ -x "$PYTHON_BIN" ] || {{ echo "configured Python runtime unavailable; run chrootctl-python-bootstrap" >&2; exit 1; }}
-if [ -n "$PYTHON_LD_LIBRARY_PATH" ]; then
-  [ -d "$PYTHON_LD_LIBRARY_PATH" ] || {{ echo "configured Python library path is missing" >&2; exit 1; }}
-  export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
-fi
-export PYTHONPATH="$MODDIR/payload/src"
-[ -f "$READY" ] && [ ! -L "$READY" ] && [ -f "$COMPAT" ] && [ ! -L "$COMPAT" ] || {{ echo "dependency readiness is missing or unsafe; run chrootctl-python-bootstrap" >&2; exit 1; }}
-"$PYTHON_BIN" - "$READY" "$COMPAT" "$PYTHON_BIN" "$DEPENDENCY_MODE_FILE" "$REQUIREMENTS_FILE" <<'PY'
-from importlib import metadata
-import hashlib, json, sys
-from pathlib import Path
-from chrootctl.magisk import MagiskModuleConfig, _compatibility_manifest_payload
-
-ready_path = Path(sys.argv[1])
-manifest_path = Path(sys.argv[2])
-selected = sys.argv[3]
-mode_path = Path(sys.argv[4])
-requirements_path = Path(sys.argv[5])
-try:
-    ready=json.loads(ready_path.read_text(encoding='utf-8'))
-    manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
-except Exception as exc:
-    raise SystemExit(f'invalid dependency readiness/compatibility data: {{type(exc).__name__}}')
-if manifest != _compatibility_manifest_payload(MagiskModuleConfig()):
-    raise SystemExit('compatibility manifest does not match this chrootctl release')
-actual=hashlib.sha256(manifest_path.read_bytes()).hexdigest()
-contract=hashlib.sha256(mode_path.read_bytes()+b'\\0'+requirements_path.read_bytes()).hexdigest()
-if ready.get('schemaVersion') != 1 or ready.get('ready') is not True:
-    raise SystemExit('dependency readiness is not ready')
-if ready.get('dependencyMode') != 'static-python-env':
-    raise SystemExit('dependency readiness mode is incompatible')
-if ready.get('compatibilityManifestSha256') != actual or ready.get('dependencyContractSha256') != contract:
-    raise SystemExit('dependency readiness is stale or incompatible')
-if str(ready.get('pythonExecutable') or '') != selected:
-    raise SystemExit('dependency readiness belongs to a different Python runtime')
-required={{'rich':(13,7,0),'PyYAML':(6,0),'pydantic':(2,7,0),'pydantic-core':(2,0)}}
-def vt(value):
-    out=[]
-    for raw in value.replace('-', '.').split('.'):
-        digits=''.join(ch for ch in raw if ch.isdigit())
-        if not digits: break
-        out.append(int(digits))
-    return tuple(out)
-for dist, minimum in required.items():
-    try: current=metadata.version(dist)
-    except metadata.PackageNotFoundError as exc: raise SystemExit(f'{{dist}} dependency is missing') from exc
-    if vt(current) < minimum: raise SystemExit(f'{{dist}} dependency {{current}} is below the required version')
-try:
-    import chrootctl, rich, yaml, pydantic, pydantic_core  # noqa: F401
-    from pydantic import TypeAdapter  # noqa: F401
-except Exception as exc:
-    raise SystemExit(f'chrootctl runtime imports failed: {{type(exc).__name__}}') from exc
-PY
-exec "$PYTHON_BIN" -m {module_name} "$@"
-"""
-
-
-def _python_bootstrap_sh() -> str:
-    resolver = _module_dir_resolver_sh()
-    payload_guard = _runtime_payload_guard_sh()
-    lock_helpers = _identity_lock_sh()
-    return f"""#!/system/bin/sh
-set -eu
-{resolver}
-MODDIR="$(resolve_moddir)" || {{ echo "bootstrap requires the active module" >&2; exit 1; }}
-{payload_guard}
-CONFIG_DIR="$MODDIR/config/chrootctl"
-CONFIG="$CONFIG_DIR/python.env"
-READY="$CONFIG_DIR/dependencies.ready.json"
-COMPAT="$CONFIG_DIR/compatibility-manifest.json"
-LOG="$CONFIG_DIR/dependency-bootstrap.log"
-LOCK="$CONFIG_DIR/bootstrap.lock"
-[ ! -L "$MODDIR/config" ] && [ ! -L "$CONFIG_DIR" ] || {{ echo "unsafe module configuration directory" >&2; exit 1; }}
-mkdir -p "$CONFIG_DIR"
-chmod 0700 "$CONFIG_DIR"
-[ -f "$COMPAT" ] && [ ! -L "$COMPAT" ] || {{ echo "compatibility manifest is missing or unsafe" >&2; exit 1; }}
-[ ! -L "$CONFIG" ] && [ ! -L "$READY" ] && [ ! -L "$LOG" ] || {{ echo "module readiness/configuration path is unsafe" >&2; exit 1; }}
-{lock_helpers}
-if acquire_identity_lock "$LOCK" "$CONFIG_DIR"; then
-  :
-else
-  _lock_status=$?
-  if [ "$_lock_status" -eq 2 ]; then
-    echo "dependency bootstrap already running" >&2
-  else
-    echo "failed to acquire safe dependency bootstrap lock" >&2
-  fi
-  exit 1
-fi
-trap 'release_identity_lock "$LOCK"' EXIT INT TERM
-
-config_value() {{
-  _key="$1"
-  [ -f "$CONFIG" ] || return 1
-  awk -F= -v key="$_key" '$1 == key {{ sub(/^[^=]*=/, ""); print; exit }}' "$CONFIG"
-}}
-configured="$(config_value PYTHON_BIN || true)"
-configured_lib="$(config_value PYTHON_LD_LIBRARY_PATH || true)"
-PYTHON_BIN=""
-PYTHON_LD_LIBRARY_PATH=""
-
-candidate_runs() {{
-  _bin="$1"; _lib="$2"
-  [ -n "$_bin" ] && [ -x "$_bin" ] || return 1
-  [ -z "$_lib" ] || [ -d "$_lib" ] || return 1
-  if [ -n "$_lib" ]; then LD_LIBRARY_PATH="$_lib${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}" "$_bin" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1
-  else "$_bin" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1; fi
-}}
-try_candidate() {{
-  _bin="$1"; [ -n "$_bin" ] && [ -x "$_bin" ] || return 1
-  _prefix="$(dirname "$(dirname "$_bin")")"
-  for _lib in "$configured_lib" "" "$_prefix/lib" /system/lib64 /system/lib /data/data/com.termux/files/usr/lib /data/adb/py2droid/usr/lib; do
-    if candidate_runs "$_bin" "$_lib"; then PYTHON_BIN="$_bin"; PYTHON_LD_LIBRARY_PATH="$_lib"; return 0; fi
-  done
-  return 1
-}}
-path_python="$(command -v python3 2>/dev/null || true)"
-for _bin in "$configured" "${{CHROOTCTL_PYTHON_BIN:-}}" /system/bin/python3 "$path_python" /data/data/com.termux/files/usr/bin/python3 /data/adb/py2droid/usr/bin/python3; do
-  try_candidate "$_bin" && break
-done
-[ -n "$PYTHON_BIN" ] || {{ echo "no runnable Python 3 runtime" >"$LOG"; chmod 0600 "$LOG"; exit 1; }}
-if [ -n "$PYTHON_LD_LIBRARY_PATH" ]; then export LD_LIBRARY_PATH="$PYTHON_LD_LIBRARY_PATH${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"; fi
-export PYTHONPATH="$MODDIR/payload/src"
-
-"$PYTHON_BIN" - "$CONFIG" "$READY" "$COMPAT" "$PYTHON_BIN" "$PYTHON_LD_LIBRARY_PATH" "$LOG" "$DEPENDENCY_MODE_FILE" "$REQUIREMENTS_FILE" <<'PY'
-from importlib import metadata
-from pathlib import Path
-import hashlib, json, os, sys, tempfile, time
-config_path = Path(sys.argv[1])
-ready_path = Path(sys.argv[2])
-manifest_path = Path(sys.argv[3])
-py_path = sys.argv[4]
-lib_path = sys.argv[5]
-log_path = Path(sys.argv[6])
-mode_path = Path(sys.argv[7])
-requirements_path = Path(sys.argv[8])
-required={{"rich":(13,7,0),"PyYAML":(6,0),"pydantic":(2,7,0),"pydantic-core":(2,0)}}
-unsafe_runtime_path = any("\\n" in value or "\\r" in value for value in (py_path, lib_path, sys.executable))
-
-def vt(value):
-    out=[]
-    for raw in value.replace('-', '.').split('.'):
-        digits=''.join(ch for ch in raw if ch.isdigit())
-        if not digits: break
-        out.append(int(digits))
-    return tuple(out)
-versions={{}}
-problems=[]
-if unsafe_runtime_path:
-    problems.append("python_runtime_path:unsafe_newline")
-for dist, minimum in required.items():
-    try: version=metadata.version(dist)
-    except metadata.PackageNotFoundError:
-        problems.append(f"{{dist}}:missing"); continue
-    versions[dist]=version
-    if vt(version) < minimum: problems.append(f"{{dist}}:{{version}}<required")
-try:
-    import chrootctl  # noqa: F401
-    from chrootctl.magisk import MagiskModuleConfig, _compatibility_manifest_payload
-    from pydantic import TypeAdapter  # noqa: F401
-except Exception as exc:
-    problems.append(f"runtime_import:{{type(exc).__name__}}:{{exc}}")
-try:
-    manifest_payload=json.loads(manifest_path.read_text(encoding='utf-8'))
-except Exception as exc:
-    manifest_payload=None
-    problems.append(f"compatibility_manifest:invalid:{{type(exc).__name__}}")
-if manifest_payload is not None and manifest_payload != _compatibility_manifest_payload(MagiskModuleConfig()):
-    problems.append('compatibility_manifest:identity_mismatch')
-manifest_hash=hashlib.sha256(manifest_path.read_bytes()).hexdigest() if manifest_path.is_file() else ''
-contract_hash=hashlib.sha256(mode_path.read_bytes()+b'\\0'+requirements_path.read_bytes()).hexdigest() if mode_path.is_file() and requirements_path.is_file() else ''
-if not manifest_hash: problems.append('compatibility_manifest:missing')
-if not contract_hash: problems.append('dependency_contract:missing')
-config_text=f"PYTHON_BIN={{py_path}}\\nPYTHON_LD_LIBRARY_PATH={{lib_path}}\\nPYTHON_VERSION={{sys.version_info.major}}.{{sys.version_info.minor}}\\nPYTHON_EXECUTABLE={{sys.executable}}\\n"
-
-def atomic_text(path, text, mode=0o600):
-    fd,tmp=tempfile.mkstemp(prefix=f'.{{path.name}}.', dir=str(path.parent))
-    try:
-        with os.fdopen(fd,'w',encoding='utf-8') as handle:
-            handle.write(text); handle.flush(); os.fsync(handle.fileno())
-        os.chmod(tmp,mode); os.replace(tmp,path)
-    finally:
-        try: os.unlink(tmp)
-        except FileNotFoundError: pass
-if not unsafe_runtime_path:
-    atomic_text(config_path, config_text)
-payload={{
-    'schemaVersion':1,
-    'ready':not problems,
-    'generatedAt':int(time.time()),
-    'pythonExecutable':py_path,
-    'pythonVersion':sys.version.replace('\\n',' '),
-    'pythonLibraryPath':lib_path,
-    'dependencyMode':'static-python-env',
-    'dependencies':versions,
-    'compatibilityManifestSha256':manifest_hash,
-    'dependencyContractSha256':contract_hash,
-    'problems':problems,
-}}
-atomic_text(ready_path, json.dumps(payload,sort_keys=True,indent=2)+'\\n')
-stamp=str(int(time.time()))
-entry=stamp+' '+('ready' if not problems else '; '.join(problems))
-try:
-    previous=log_path.read_text(encoding='utf-8').splitlines() if log_path.is_file() and not log_path.is_symlink() else []
-except OSError:
-    previous=[]
-lines=(previous+[entry])[-200:]
-log_text='\\n'.join(lines)+'\\n'
-while len(log_text.encode('utf-8')) > 32768 and len(lines) > 1:
-    lines=lines[1:]
-    log_text='\\n'.join(lines)+'\\n'
-atomic_text(log_path, log_text)
-if problems: raise SystemExit(1)
-PY
-chmod 0600 "$CONFIG" "$READY" "$LOG"
-"""
-
-
-def _dependency_mode_env() -> str:
-    return "\n".join(
-        (
-            "DEPENDENCY_MODE=static-python-env",
-            "DEPENDENCY_INSTALL_PHASE=none",
-            "DEPENDENCY_NETWORK=disabled",
-            "DEPENDENCY_REPAIR=disabled",
-            "",
-        )
-    )
-
-
-
-
-def _requirements_txt(requirements: tuple[str, ...]) -> str:
-    return "\n".join((*requirements, ""))
-
-
-
 def _boot_targets_json(startup_targets: tuple[str, ...]) -> str:
     payload = {
         "startup_targets": list(startup_targets),
     }
     return json.dumps(payload, indent=2) + "\n"
-
 
 
 def _parse_module_prop(path: Path) -> dict[str, str]:
@@ -1035,28 +696,20 @@ def _validate_module_relative(relative: Path, *, directory: bool = False) -> Non
         raise ValueError(f"forbidden module artifact: {relative}")
     runtime_dist_prefix = (NATIVE_RUNTIME_MODULE_ROOT / "chrootctl.dist").as_posix() + "/"
     if directory:
-        if text in _ALLOWED_MODULE_DIRS or text.startswith("payload/src/chrootctl/") or text.startswith(runtime_dist_prefix):
+        if text in _ALLOWED_MODULE_DIRS or text.startswith(runtime_dist_prefix):
             return
         raise ValueError(f"module directory is outside nested allow-list: {relative}")
     if text in REQUIRED_MODULE_PATHS:
         return
-    if text.startswith("payload/src/chrootctl/") or text.startswith(runtime_dist_prefix):
+    if text.startswith(runtime_dist_prefix):
         return
     raise ValueError(f"module file is outside nested allow-list: {relative}")
-
-
-def _validate_dependency_contract_text(mode_text: str, requirements_text: str) -> None:
-    if mode_text != _dependency_mode_env():
-        raise ValueError("module dependency mode contract mismatch")
-    if requirements_text != _requirements_txt(DEFAULT_PYTHON_DEPENDENCIES):
-        raise ValueError("module dependency requirements contract mismatch")
-
 
 def validate_magisk_module(output_dir: Path) -> tuple[Path, ...]:
     output_dir = output_dir.expanduser().resolve()
     if not output_dir.is_dir() or output_dir.is_symlink():
         raise NotADirectoryError(f"module output must be a real directory: {output_dir}")
-    required_paths = tuple(Path(path) for path in sorted(REQUIRED_MODULE_PATHS)) + (Path("payload/src/chrootctl"),)
+    required_paths = tuple(Path(path) for path in sorted(REQUIRED_MODULE_PATHS))
     missing = tuple(path for path in required_paths if not (output_dir / path).exists())
     if missing:
         raise FileNotFoundError("invalid module output; missing: " + ", ".join(map(str, missing)))
@@ -1078,10 +731,6 @@ def validate_magisk_module(output_dir: Path) -> tuple[Path, ...]:
             raise ValueError("module payload exceeds total size limit")
     prop = _parse_module_prop(output_dir / "module.prop")
     _validate_compatibility_manifest(output_dir / "config/chrootctl/compatibility-manifest.json", prop)
-    _validate_dependency_contract_text(
-        (output_dir / "config/chrootctl/dependency-mode.env").read_text(encoding="utf-8"),
-        (output_dir / "payload/requirements.txt").read_text(encoding="utf-8"),
-    )
     validate_native_runtime_artifact(
         output_dir / NATIVE_RUNTIME_MODULE_ROOT,
         expected_abi=DEFAULT_NATIVE_RUNTIME_ABI,
@@ -1153,6 +802,43 @@ def _validate_native_runtime_zip(archive: zipfile.ZipFile) -> None:
         raise ValueError("native runtime zip entrypoint is not an ELF executable")
 
 
+def _validate_no_external_python_bootstrap_residue(names: set[str], text_payloads: dict[str, str]) -> None:
+    forbidden_paths = {
+        "bin/chrootctl-python-bootstrap",
+        "system/bin/chrootctl-python-bootstrap",
+        "config/chrootctl/python.env",
+        "config/chrootctl/dependencies.ready.json",
+        "config/chrootctl/dependency-mode.env",
+        "payload/requirements.txt",
+        "payload/pyproject.toml",
+    }
+    present = sorted(name for name in names if name in forbidden_paths or name.startswith("payload/"))
+    if present:
+        raise ValueError("external Python bootstrap residue in module zip: " + ", ".join(present[:20]))
+
+    forbidden_tokens = (
+        "chrootctl-python-bootstrap",
+        "python.env",
+        "dependencies.ready.json",
+        "dependency-mode.env",
+        "DEPENDENCY_MODE=static-python-env",
+        "dependencyContractSha256",
+        "command -v python3",
+        "pip install",
+        "/data/adb/py2droid",
+        "/data/data/com.termux/files/usr/bin/python3",
+        "PYTHONPATH=\"$MODDIR/payload/src\"",
+    )
+    findings: list[str] = []
+    for name, payload in sorted(text_payloads.items()):
+        for token in forbidden_tokens:
+            if token in payload:
+                findings.append(f"{name}:{token}")
+                break
+    if findings:
+        raise ValueError("external Python bootstrap residue in module scripts: " + ", ".join(findings[:20]))
+
+
 def validate_magisk_zip(zip_path: Path) -> tuple[str, ...]:
     zip_path = zip_path.expanduser().resolve()
     required = set(REQUIRED_MODULE_PATHS)
@@ -1163,6 +849,7 @@ def validate_magisk_zip(zip_path: Path) -> tuple[str, ...]:
         if len(names) != len(set(names)):
             raise ValueError("module zip contains duplicate entry names")
         normalized: set[str] = set()
+        text_payloads: dict[str, str] = {}
         for info in infos:
             raw = info.filename
             if raw.startswith(("/", "\\")) or "\\" in raw:
@@ -1194,6 +881,12 @@ def validate_magisk_zip(zip_path: Path) -> tuple[str, ...]:
             total += info.file_size
             if total > MODULE_MAX_TOTAL_BYTES:
                 raise ValueError("module zip exceeds total uncompressed size limit")
+            if not info.is_dir() and raw.endswith((".sh", ".json", ".prop")) and info.file_size <= 1024 * 1024:
+                try:
+                    text_payloads[raw] = archive.read(info).decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+        _validate_no_external_python_bootstrap_residue(normalized, text_payloads)
         # Only decompress for CRC verification after central-directory metadata has
         # passed the per-file and aggregate uncompressed-size bounds.
         bad_crc = archive.testzip()
@@ -1219,10 +912,6 @@ def validate_magisk_zip(zip_path: Path) -> tuple[str, ...]:
             compat_path = tmpdir / "compat.json"
             compat_path.write_text(json.dumps(compat), encoding="utf-8")
             _validate_compatibility_manifest(compat_path, prop)
-            _validate_dependency_contract_text(
-                archive.read("config/chrootctl/dependency-mode.env").decode("utf-8"),
-                archive.read("payload/requirements.txt").decode("utf-8"),
-            )
         _validate_native_runtime_zip(archive)
     return tuple(names)
 

@@ -110,19 +110,21 @@ def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) ->
     service = (output_dir / "service.sh").read_text(encoding="utf-8")
     helper = (output_dir / "bin/chrootctl-magisk-helper").read_text(encoding="utf-8")
     launcher = (output_dir / "system/bin/chrootctl").read_text(encoding="utf-8")
-    bootstrap = (output_dir / "bin/chrootctl-python-bootstrap").read_text(encoding="utf-8")
     assert '. "$MODPATH/config/chrootctl/python.env"' not in customize
     assert '. "$MODDIR/config/chrootctl/python.env"' not in service
+    assert not (output_dir / "bin/chrootctl-python-bootstrap").exists()
+    assert not (output_dir / "system/bin/chrootctl-python-bootstrap").exists()
+    assert not (output_dir / "payload").exists()
+    assert not (output_dir / "config/chrootctl/dependency-mode.env").exists()
     assert "dependencies.ready.json" not in launcher
     assert 'RUNTIME_DIST="$RUNTIME_ROOT/chrootctl.dist"' in launcher
     assert 'RUNTIME_BIN="$RUNTIME_DIST/chrootctl"' in launcher
     assert "LD_LIBRARY_PATH" in launcher
-    assert "compatibilityManifestSha256" in bootstrap
     assert "/data/adb/modules/chrootctl-magisk" in launcher
     assert "/data/adb/modules_update/chrootctl-magisk" in launcher  # diagnostics only
     assert 'run --boot' not in service
     assert 'clipboard.enabled' in service
-    assert 'bootstrap.lock' in bootstrap
+    assert 'bootstrap.lock' not in customize + service + helper + launcher
     assert 'mount|unmount|start|restart' not in helper
     assert '"$CLI" --name "$name" mount' not in helper
     assert "__module-boot" in helper
@@ -132,7 +134,13 @@ def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) ->
     assert "no external Python environment" in customize
     assert "command -v python3" not in customize
     assert "pip install" not in customize
-    assert "pip install" not in bootstrap
+    for script in (customize, service, helper, launcher):
+        assert "chrootctl-python-bootstrap" not in script
+        assert "python.env" not in script
+        assert "dependency-mode.env" not in script
+        assert "dependencies.ready.json" not in script
+        assert "PYTHON_BIN" not in script
+        assert "PYTHONPATH" not in script
 
 
 def test_module_validator_rejects_backup_and_symlink_payloads(tmp_path: Path) -> None:
@@ -143,13 +151,14 @@ def test_module_validator_rejects_backup_and_symlink_payloads(tmp_path: Path) ->
         startup_targets=(),
         module_config=MagiskModuleConfig(package_source_dir=_build_package_source(tmp_path)),
     )
-    bad = output_dir / "payload/src/chrootctl/secret.py.bak"
+    runtime_dist = output_dir / "runtime/arm64-v8a/chrootctl.dist"
+    bad = runtime_dist / "secret.so.bak"
     bad.write_text("x", encoding="utf-8")
     with pytest.raises(ValueError, match="forbidden"):
         validate_magisk_module(output_dir)
     bad.unlink()
-    link = output_dir / "payload/src/chrootctl/link.py"
-    link.symlink_to(output_dir / "payload/src/chrootctl/cli.py")
+    link = runtime_dist / "link.so"
+    link.symlink_to(runtime_dist / "libfake.so")
     with pytest.raises(ValueError, match="symlink"):
         validate_magisk_module(output_dir)
 
@@ -170,6 +179,9 @@ def test_zip_magisk_module_deep_validates_final_zip(tmp_path: Path) -> None:
     assert "system/bin/chrootctl" in names
     assert "runtime/arm64-v8a/runtime-manifest.json" in names
     assert "runtime/arm64-v8a/chrootctl.dist/chrootctl" in names
+    assert "bin/chrootctl-python-bootstrap" not in names
+    assert "system/bin/chrootctl-python-bootstrap" not in names
+    assert not any(name.startswith("payload/") for name in names)
     assert not any(name.endswith((".bak", ".orig", ".rej")) for name in names)
     with zipfile.ZipFile(zip_path) as archive:
         info = archive.getinfo("system/bin/chrootctl")

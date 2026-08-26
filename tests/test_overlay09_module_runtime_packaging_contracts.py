@@ -47,6 +47,7 @@ def test_overlay09_deep_packaging_and_compatibility_contract() -> None:
         assert token in magisk
     assert "validate_magisk_zip" in build
     assert "refusing to clean a non-empty custom OUT_DIR" in build
+    assert "Self-Sustained Native Module Runtime Seal" in text("docs/release/SELF_SUSTAINED_NATIVE_MODULE_SEAL.md")
     assert '"schemaVersion": 2' in compat
     assert '"id": "chrootctl-magisk"' in compat
     assert '"versionCode": 15' in compat
@@ -62,7 +63,9 @@ def test_overlay09_release_build_is_host_independent_and_deterministic() -> None
     assert "wheelhouse" not in manage.lower()
     assert "date_time=(1980, 1, 1, 0, 0, 0)" in magisk
     assert "compresslevel=9" in magisk
-    assert "dependencyContractSha256" in magisk
+    assert "def _validate_no_external_python_bootstrap_residue" in magisk
+    assert "dependencyContractSha256" in magisk  # forbidden residue token only
+    assert "chrootctl-python-bootstrap" in magisk  # forbidden residue path only
     assert "runtime-manifest.json" in runtime
     assert "bundled-native" in runtime
     assert "static-python-env" not in runtime
@@ -76,8 +79,10 @@ def test_overlay09_release_build_is_host_independent_and_deterministic() -> None
 
 def test_overlay09_boot_lock_and_dependency_contract_fail_closed() -> None:
     magisk = text("src/chrootctl/magisk.py")
-    for token in ("/proc/sys/kernel/random/boot_id", "start_time", "dependencyContractSha256", "DEPENDENCY_MODE=static-python-env", "DEPENDENCY_INSTALL_PHASE=none", "DEPENDENCY_NETWORK=disabled", "DEPENDENCY_REPAIR=disabled"):
+    for token in ("/proc/sys/kernel/random/boot_id", "start_time"):
         assert token in magisk
+    for token in ("dependencyContractSha256", "DEPENDENCY_MODE=static-python-env", "DEPENDENCY_INSTALL_PHASE=none", "DEPENDENCY_NETWORK=disabled", "DEPENDENCY_REPAIR=disabled"):
+        assert token not in magisk or "forbidden_tokens" in magisk
     assert "offline_wheelhouse_dir" not in magisk
     assert "ZipInfo.from_file" not in magisk
 
