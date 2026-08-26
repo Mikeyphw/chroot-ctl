@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from chrootctl.native_runtime import DEFAULT_NATIVE_RUNTIME_ENTRYPOINT, write_native_runtime_manifest
+
 from chrootctl.magisk import (
     MagiskModuleConfig,
     render_magisk_module,
@@ -63,6 +65,19 @@ def _build_package_source(tmp_path: Path) -> Path:
             "minimumSupportedBridgeProtocolVersion": 1,
         },
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    runtime = repo_root / "out/native-runtime/arm64-v8a"
+    entrypoint = runtime / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_bytes(b"\x7fELFfake-chrootctl")
+    entrypoint.chmod(0o755)
+    (entrypoint.parent / "libfake.so").write_bytes(b"fake-library")
+    write_native_runtime_manifest(
+        runtime,
+        abi="arm64-v8a",
+        package_version="0.11.0",
+        bridge_protocol_version=1,
+        nuitka_version="test",
+    )
     return package_root
 
 
@@ -98,7 +113,10 @@ def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) ->
     bootstrap = (output_dir / "bin/chrootctl-python-bootstrap").read_text(encoding="utf-8")
     assert '. "$MODPATH/config/chrootctl/python.env"' not in customize
     assert '. "$MODDIR/config/chrootctl/python.env"' not in service
-    assert "dependencies.ready.json" in launcher
+    assert "dependencies.ready.json" not in launcher
+    assert 'RUNTIME_DIST="$RUNTIME_ROOT/chrootctl.dist"' in launcher
+    assert 'RUNTIME_BIN="$RUNTIME_DIST/chrootctl"' in launcher
+    assert "LD_LIBRARY_PATH" in launcher
     assert "compatibilityManifestSha256" in bootstrap
     assert "/data/adb/modules/chrootctl-magisk" in launcher
     assert "/data/adb/modules_update/chrootctl-magisk" in launcher  # diagnostics only
@@ -107,9 +125,12 @@ def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) ->
     assert 'bootstrap.lock' in bootstrap
     assert 'mount|unmount|start|restart' not in helper
     assert '"$CLI" --name "$name" mount' not in helper
-    assert "module.boot.start" in helper
-    assert "OperationManager" in helper
+    assert "__module-boot" in helper
+    assert "PYTHON_BIN" not in helper
+    assert "OperationManager" not in helper
     assert "refusing module service outside active module" in service
+    assert "no external Python environment" in customize
+    assert "command -v python3" not in customize
     assert "pip install" not in customize
     assert "pip install" not in bootstrap
 
@@ -147,6 +168,8 @@ def test_zip_magisk_module_deep_validates_final_zip(tmp_path: Path) -> None:
     assert "module.prop" in names
     assert "config/chrootctl/compatibility-manifest.json" in names
     assert "system/bin/chrootctl" in names
+    assert "runtime/arm64-v8a/runtime-manifest.json" in names
+    assert "runtime/arm64-v8a/chrootctl.dist/chrootctl" in names
     assert not any(name.endswith((".bak", ".orig", ".rej")) for name in names)
     with zipfile.ZipFile(zip_path) as archive:
         info = archive.getinfo("system/bin/chrootctl")
@@ -169,3 +192,17 @@ def test_magisk_render_parser_collects_targets(tmp_path: Path) -> None:
     assert args.magisk_names == ["work", "dev"]
     with pytest.raises(SystemExit):
         parser.parse_args(["magisk", "render", "--output", str(tmp_path / "module2"), "--wheelhouse", str(tmp_path / "wheelhouse")])
+
+
+def test_render_magisk_module_rejects_symlinked_native_runtime_root(tmp_path: Path) -> None:
+    package_root = _build_package_source(tmp_path)
+    runtime = package_root.parent / "out/native-runtime/arm64-v8a"
+    link = tmp_path / "native-runtime-link"
+    link.symlink_to(runtime, target_is_directory=True)
+    with pytest.raises(NotADirectoryError, match="real directory"):
+        render_magisk_module(
+            tmp_path / "module-from-link",
+            services=_FakeServices(),
+            startup_targets=(),
+            module_config=MagiskModuleConfig(package_source_dir=package_root, native_runtime_dir=link),
+        )

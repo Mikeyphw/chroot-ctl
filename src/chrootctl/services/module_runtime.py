@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import platform
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,20 +13,23 @@ from ..magisk import (
     DEFAULT_MODULE_ID,
     DEFAULT_MODULE_VERSION,
     DEFAULT_MODULE_VERSION_CODE,
-    DEFAULT_PYTHON_DEPENDENCIES,
     PYTHON_PACKAGE_VERSION,
 )
-_REQUIRED_DEPENDENCY_MINIMUMS = {
-    "rich": (13, 7, 0),
-    "PyYAML": (6, 0),
-    "pydantic": (2, 7, 0),
-    "pydantic-core": (2, 0),
-}
+from ..native_runtime import (
+    DEFAULT_NATIVE_RUNTIME_ABI,
+    DEFAULT_NATIVE_RUNTIME_ENTRYPOINT,
+    NATIVE_RUNTIME_KIND,
+    validate_native_runtime_artifact,
+)
+
 ACTIVE_MODULE_ROOT = Path("/data/adb/modules")
 PENDING_MODULE_ROOTS = (
     Path("/data/adb/modules_update"),
     Path("/data/adb/ksu/modules_update"),
 )
+_NATIVE_RUNTIME_RELATIVE = Path("runtime") / DEFAULT_NATIVE_RUNTIME_ABI
+_NATIVE_RUNTIME_MANIFEST_RELATIVE = _NATIVE_RUNTIME_RELATIVE / "runtime-manifest.json"
+_NATIVE_RUNTIME_ENTRYPOINT_RELATIVE = _NATIVE_RUNTIME_RELATIVE / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +50,10 @@ class ModuleRuntimePaths:
 class ModuleRuntimeStatusService:
     """Authoritative active/pending/readiness model for the root module.
 
-    Runtime execution is intentionally restricted to /data/adb/modules. Pending
-    update trees are diagnostics only and must never be selected for execution.
+    Runtime execution is restricted to the active module tree.  Pending update
+    trees are diagnostics only.  A module is runtime-ready only when its sealed
+    bundled native runtime validates against this release's package and bridge
+    identities; external Python installations are deliberately irrelevant.
     """
 
     def __init__(self, paths: ModuleRuntimePaths | None = None) -> None:
@@ -60,6 +63,7 @@ class ModuleRuntimeStatusService:
         active = self._candidate(self.paths.active_dir, pending=False)
         pending = [self._candidate(path, pending=True) for path in self.paths.pending_dirs if path.exists()]
         active_usable = bool(active.get("active"))
+        runtime = active.get("runtimeReadiness") if isinstance(active.get("runtimeReadiness"), dict) else {}
         warnings: list[str] = []
         if not active.get("exists"):
             warnings.append("No installed chrootctl Magisk/KernelSU module was detected in /data/adb/modules.")
@@ -68,12 +72,11 @@ class ModuleRuntimeStatusService:
         elif active.get("pendingRemoval"):
             warnings.append("The installed chrootctl module is marked for removal on reboot.")
         elif not active.get("layoutReady"):
-            warnings.append("The installed chrootctl module is missing required runtime payload files.")
+            warnings.append("The installed chrootctl module is missing required bundled-native runtime files.")
         if pending:
             warnings.append("A pending module update exists and is intentionally excluded from runtime execution until reboot activation.")
-        dependency = active.get("dependencyReadiness") if isinstance(active.get("dependencyReadiness"), dict) else {}
-        if active_usable and not dependency.get("ready", False):
-            warnings.append("The active module dependency readiness record is missing, stale, or not ready.")
+        if active_usable and not runtime.get("ready", False):
+            warnings.append("The active module bundled-native runtime seal is missing, stale, or invalid.")
         return {
             "moduleId": self.paths.module_id,
             "installed": bool(active.get("exists")),
@@ -81,14 +84,15 @@ class ModuleRuntimeStatusService:
             "installedState": active,
             "pendingUpdate": bool(pending),
             "pending": pending,
-            "ready": active_usable and bool(dependency.get("ready", False)),
+            "ready": active_usable and bool(runtime.get("ready", False)),
             "manager": self._detect_manager(),
             "warnings": warnings,
         }
 
     def active_executable(self) -> Path | None:
         candidate = self._candidate(self.paths.active_dir, pending=False)
-        if not candidate.get("active"):
+        readiness = candidate.get("runtimeReadiness") if isinstance(candidate.get("runtimeReadiness"), dict) else {}
+        if not candidate.get("active") or not readiness.get("ready"):
             return None
         executable = self.paths.active_dir / "system/bin/chrootctl"
         return executable if self._regular_file_in_module(executable, self.paths.active_dir) else None
@@ -103,23 +107,20 @@ class ModuleRuntimeStatusService:
         remove = (root / "remove").exists()
         required_files = (
             root / "system/bin/chrootctl",
-            root / "bin/chrootctl-python-bootstrap",
+            root / "bin/chrootctl-magisk-helper",
             root / "config/chrootctl/compatibility-manifest.json",
-            root / "config/chrootctl/dependency-mode.env",
-            root / "payload/requirements.txt",
+            root / _NATIVE_RUNTIME_MANIFEST_RELATIVE,
+            root / _NATIVE_RUNTIME_ENTRYPOINT_RELATIVE,
         )
-        required_dirs = (root / "payload/src/chrootctl",)
         layout_ready = bool(
             root_safe
             and prop_safe
             and module_id == self.paths.module_id
             and all(self._regular_file_in_module(path, root) for path in required_files)
-            and all(self._real_dir_in_module(path, root) for path in required_dirs)
-            and self._dependency_contract_valid(root)
         )
         active = bool(layout_ready and not pending and not disabled and not remove and self._contained_in_active_root(root))
         compatibility = self._compatibility(root, prop) if root.exists() else {"valid": False, "reason": "module_missing"}
-        readiness = self._dependency_readiness(root, compatibility) if root.exists() else {"ready": False, "reason": "module_missing"}
+        readiness = self._native_runtime_readiness(root, compatibility) if root.exists() else {"ready": False, "reason": "module_missing"}
         try:
             version_code = int(prop.get("versionCode", ""))
         except ValueError:
@@ -138,102 +139,50 @@ class ModuleRuntimeStatusService:
             "version": prop.get("version", ""),
             "versionCode": version_code,
             "compatibility": compatibility,
+            "runtimeReadiness": readiness,
+            # Compatibility alias for older bridge/UI clients.  Its payload now
+            # describes the bundled native runtime, not external Python deps.
             "dependencyReadiness": readiness,
         }
 
-    def _dependency_contract_valid(self, root: Path) -> bool:
-        mode_path = root / "config/chrootctl/dependency-mode.env"
-        requirements_path = root / "payload/requirements.txt"
-        if not self._regular_file_in_module(mode_path, root) or not self._regular_file_in_module(requirements_path, root):
-            return False
-        try:
-            mode_text = mode_path.read_text(encoding="utf-8")
-            requirements_text = requirements_path.read_text(encoding="utf-8")
-        except OSError:
-            return False
-        return (
-            mode_text == (
-                "DEPENDENCY_MODE=static-python-env\n"
-                "DEPENDENCY_INSTALL_PHASE=none\n"
-                "DEPENDENCY_NETWORK=disabled\n"
-                "DEPENDENCY_REPAIR=disabled\n"
-            )
-            and requirements_text == "\n".join((*DEFAULT_PYTHON_DEPENDENCIES, ""))
-        )
-
-    def _dependency_contract_hash(self, root: Path) -> str:
-        mode_path = root / "config/chrootctl/dependency-mode.env"
-        requirements_path = root / "payload/requirements.txt"
-        if not self._regular_file_in_module(mode_path, root) or not self._regular_file_in_module(requirements_path, root):
-            return ""
-        try:
-            digest = hashlib.sha256()
-            digest.update(mode_path.read_bytes())
-            digest.update(b"\0")
-            digest.update(requirements_path.read_bytes())
-            return digest.hexdigest()
-        except OSError:
-            return ""
-
-    def _dependency_readiness(self, root: Path, compatibility: dict[str, Any]) -> dict[str, Any]:
-        path = root / "config/chrootctl/dependencies.ready.json"
-        compatibility_path = root / "config/chrootctl/compatibility-manifest.json"
-        if not self._regular_file_in_module(path, root):
-            return {"ready": False, "reason": "readiness_missing_or_unsafe", "path": str(path)}
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError) as exc:
-            return {"ready": False, "reason": "readiness_invalid", "path": str(path), "detail": type(exc).__name__}
-        if not isinstance(payload, dict):
-            return {"ready": False, "reason": "readiness_invalid", "path": str(path)}
-        manifest_hash = self._sha256(compatibility_path) if self._regular_file_in_module(compatibility_path, root) else ""
-        recorded_hash = str(payload.get("compatibilityManifestSha256") or "")
-        contract_hash = self._dependency_contract_hash(root)
-        recorded_contract_hash = str(payload.get("dependencyContractSha256") or "")
-        executable = Path(str(payload.get("pythonExecutable") or ""))
-        dependencies = payload.get("dependencies")
-        deps_ready = isinstance(dependencies, dict) and all(
-            self._version_tuple(str(dependencies.get(name) or "")) >= minimum
-            for name, minimum in _REQUIRED_DEPENDENCY_MINIMUMS.items()
-        )
-        executable_ready = executable.is_file() and os.access(executable, os.X_OK)
-        ready = (
-            payload.get("schemaVersion") == 1
-            and bool(payload.get("ready"))
-            and isinstance(payload.get("generatedAt"), (int, float))
-            and payload.get("dependencyMode") == "static-python-env"
-            and bool(manifest_hash)
-            and recorded_hash == manifest_hash
-            and bool(contract_hash)
-            and recorded_contract_hash == contract_hash
-            and bool(compatibility.get("valid"))
-            and executable_ready
-            and deps_ready
-        )
-        result = dict(payload)
-        result["ready"] = bool(ready)
-        result["path"] = str(path)
+    def _native_runtime_readiness(self, root: Path, compatibility: dict[str, Any]) -> dict[str, Any]:
+        runtime_root = root / _NATIVE_RUNTIME_RELATIVE
+        manifest_path = root / _NATIVE_RUNTIME_MANIFEST_RELATIVE
+        entrypoint = root / _NATIVE_RUNTIME_ENTRYPOINT_RELATIVE
+        base: dict[str, Any] = {
+            "ready": False,
+            "mode": "bundled-native",
+            "runtimeKind": NATIVE_RUNTIME_KIND,
+            "abi": DEFAULT_NATIVE_RUNTIME_ABI,
+            "path": str(manifest_path),
+            "executable": str(entrypoint),
+            "pythonPackageVersion": PYTHON_PACKAGE_VERSION,
+            "bridgeProtocolVersion": BRIDGE_PROTOCOL_VERSION,
+        }
         if not compatibility.get("valid"):
-            result["reason"] = "compatibility_manifest_invalid"
-        elif not manifest_hash:
-            result["reason"] = "compatibility_manifest_missing"
-        elif recorded_hash != manifest_hash:
-            result["reason"] = "compatibility_manifest_changed"
-        elif not contract_hash:
-            result["reason"] = "dependency_contract_missing"
-        elif recorded_contract_hash != contract_hash:
-            result["reason"] = "dependency_contract_changed"
-        elif payload.get("dependencyMode") != "static-python-env":
-            result["reason"] = "dependency_mode_mismatch"
-        elif not isinstance(payload.get("generatedAt"), (int, float)):
-            result["reason"] = "readiness_timestamp_missing"
-        elif not executable_ready:
-            result["reason"] = "python_runtime_missing"
-        elif not deps_ready:
-            result["reason"] = "dependency_versions_missing"
-        elif not bool(payload.get("ready")):
-            result.setdefault("reason", "dependencies_not_ready")
-        return result
+            return {**base, "reason": "compatibility_manifest_invalid"}
+        if not self._real_dir_in_module(runtime_root, root):
+            return {**base, "reason": "native_runtime_directory_missing_or_unsafe"}
+        if not self._regular_file_in_module(manifest_path, root):
+            return {**base, "reason": "native_runtime_manifest_missing_or_unsafe"}
+        if not self._regular_file_in_module(entrypoint, root) or entrypoint.stat().st_mode & 0o111 == 0:
+            return {**base, "reason": "native_runtime_entrypoint_missing_or_unsafe"}
+        try:
+            manifest = validate_native_runtime_artifact(
+                runtime_root,
+                expected_abi=DEFAULT_NATIVE_RUNTIME_ABI,
+                package_version=PYTHON_PACKAGE_VERSION,
+                bridge_protocol_version=BRIDGE_PROTOCOL_VERSION,
+            )
+        except (OSError, ValueError, TypeError) as exc:
+            return {**base, "reason": "native_runtime_integrity_invalid", "detail": str(exc)}
+        return {
+            **base,
+            "ready": True,
+            "reason": "ok",
+            "compiler": manifest.get("compiler"),
+            "files": len(manifest.get("files", [])) if isinstance(manifest.get("files"), list) else 0,
+        }
 
     def _compatibility(self, root: Path, prop: dict[str, str]) -> dict[str, Any]:
         path = root / "config/chrootctl/compatibility-manifest.json"
@@ -272,17 +221,6 @@ class ModuleRuntimeStatusService:
             and android.get("minimumSupportedModuleVersionCode") == DEFAULT_MODULE_VERSION_CODE
         )
         return {"valid": valid, "reason": "ok" if valid else "identity_mismatch", "path": str(path), "manifest": payload if valid else None}
-
-
-    @staticmethod
-    def _version_tuple(value: str) -> tuple[int, ...]:
-        out: list[int] = []
-        for raw in value.replace("-", ".").split("."):
-            digits = "".join(ch for ch in raw if ch.isdigit())
-            if not digits:
-                break
-            out.append(int(digits))
-        return tuple(out)
 
     @staticmethod
     def _canonical_module_dir(root: Path) -> bool:
@@ -334,14 +272,6 @@ class ModuleRuntimeStatusService:
             key, value = line.split("=", 1)
             values[key.strip()] = value.strip()
         return values
-
-    @staticmethod
-    def _sha256(path: Path) -> str:
-        digest = hashlib.sha256()
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
 
     @staticmethod
     def _detect_manager() -> str:

@@ -1396,9 +1396,9 @@ def _debug_probe_rows(services: ServiceContainer, group: str = "all") -> list[di
         installed_state = module.get("installedState") if isinstance(module.get("installedState"), dict) else {}
         module_path = str(installed_state.get("path") or "/data/adb/modules/chrootctl-magisk")
         status = "pass" if module.get("ready") else ("warn" if module.get("installed") else "warn")
-        add("runtime", "module_runtime", status, f"active={bool(module.get('active'))} ready={bool(module.get('ready'))} path={module_path}", "Reboot pending updates or run the module dependency bootstrap." if not module.get("ready") else "")
+        add("runtime", "module_runtime", status, f"active={bool(module.get('active'))} ready={bool(module.get('ready'))} path={module_path}", "Reboot pending updates or rebuild/reinstall the sealed bundled-native module runtime." if not module.get("ready") else "")
     except Exception as exc:
-        add("runtime", "module_runtime", "warn", str(exc), "Inspect module status and dependency readiness.")
+        add("runtime", "module_runtime", "warn", str(exc), "Inspect module status and bundled-native runtime readiness.")
     return rows
 
 
@@ -1636,7 +1636,7 @@ def _run_smoke_step(services: ServiceContainer, step: dict[str, Any]) -> dict[st
             if not isinstance(module.get("active"), dict):
                 return {**step, "status": "fail", "message": "No enabled active chrootctl root module was detected."}
             if not bool(module.get("ready")):
-                return {**step, "status": "fail", "message": "The active chrootctl root module is not dependency-ready."}
+                return {**step, "status": "fail", "message": "The active chrootctl root module native runtime is not integrity-ready."}
         elif step_id == "bridge_capabilities":
             services.system().dashboard(details=True, tail=5)
         elif step_id == "chroots_list":
@@ -1857,7 +1857,7 @@ def _release_readiness(services: ServiceContainer, payload: dict[str, Any]) -> A
         "label": "Active module runtime",
         "status": module_status,
         "required": False,
-        "detail": "Active module is dependency-ready." if module_status == "pass" else "No dependency-ready active module is currently proven; pending updates are never runtime evidence.",
+        "detail": "Active module bundled-native runtime is integrity-ready." if module_status == "pass" else "No integrity-ready bundled-native active module is currently proven; pending updates are never runtime evidence.",
     }]
     failed = sum(item.get("status") == "fail" for item in checks)
     pending = sum(item.get("status") in {"pending", "warn"} for item in checks)

@@ -14,23 +14,29 @@ def test_overlay09_active_only_runtime_and_structured_readiness_contract() -> No
     assert 'PENDING_MODULE_ROOTS' in runtime
     assert '_regular_file_in_module' in runtime
     assert '_canonical_module_dir' in runtime
-    assert '_REQUIRED_DEPENDENCY_MINIMUMS' in runtime
-    assert 'dependencies.ready.json' in runtime
-    assert 'compatibilityManifestSha256' in runtime
+    assert 'runtimeReadiness' in runtime
+    assert 'bundled-native' in runtime
+    assert 'validate_native_runtime_artifact' in runtime
+    assert 'dependencies.ready.json' not in runtime
     assert 'ACTIVE_MODULE_ROOT = Path("/data/adb/modules")' in runtime
     assert 'DEFAULT_MODULE_ID = "chrootctl-magisk"' in magisk
     assert '[ ! -L "$_active" ]' in magisk
     assert 'pending chrootctl module update exists' in magisk
     assert '. "$MODDIR/config/chrootctl/python.env"' not in magisk
     assert 'startup target boot failed; boot orchestration failed' in magisk
-    assert "module.boot.start" in magisk
-    assert "OperationManager" in magisk
+    module_boot = text("src/chrootctl/module_boot.py")
+    assert "__module-boot" in magisk
+    assert "module.boot.start" in module_boot
+    assert "OperationManager" in module_boot
     assert '"$CLI" --name "$name" mount' not in magisk
     assert "archive.testzip()" in magisk
     assert "refusing module service outside active module" in magisk
     assert 'modules_update/chrootctl-magisk/system/bin/chrootctl' not in android
     assert 'canonicalFile' in android
     assert 'isSymbolicLink' in android
+    assert 'activeModuleClaimsAuthority' in android
+    assert 'external runtime fallback was refused' in android
+    assert 'NATIVE_RUNTIME_ENTRYPOINT' in android
 
 
 def test_overlay09_deep_packaging_and_compatibility_contract() -> None:
@@ -57,8 +63,9 @@ def test_overlay09_release_build_is_host_independent_and_deterministic() -> None
     assert "date_time=(1980, 1, 1, 0, 0, 0)" in magisk
     assert "compresslevel=9" in magisk
     assert "dependencyContractSha256" in magisk
-    assert "dependencyContractSha256" in runtime
-    assert "static-python-env" in runtime
+    assert "runtime-manifest.json" in runtime
+    assert "bundled-native" in runtime
+    assert "static-python-env" not in runtime
     assert "DEFAULT_MODULE_VERSION_CODE" in runtime
     assert "ANDROID_APP_VERSION_NAME" in runtime
     assert "EXPECTED_MODULE_VERSION" in android

@@ -18,6 +18,10 @@ def apply_start_name_shorthand(
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["__module-boot"]:
+        from .module_boot import main as module_boot_main
+
+        raise SystemExit(module_boot_main(sys.argv[2:]))
     if "app" in sys.argv[1:]:
         from .bridge.cli import main as bridge_main
 

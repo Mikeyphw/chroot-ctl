@@ -29,16 +29,25 @@ def test_python_packaging_exposes_only_cli_and_android_bridge() -> None:
 
 def test_magisk_renderer_no_longer_emits_webui_artifacts(tmp_path: Path) -> None:
     from chrootctl.magisk import MagiskModuleConfig, render_magisk_module
+    from chrootctl.native_runtime import DEFAULT_NATIVE_RUNTIME_ENTRYPOINT, write_native_runtime_manifest
 
     # Release identity is now verified against the real package metadata, so use
     # the repository package as input while keeping the rendered module isolated.
     package_root = repo_root() / "src"
+    native_runtime = tmp_path / "native/arm64-v8a"
+    native_entrypoint = native_runtime / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
+    native_entrypoint.parent.mkdir(parents=True)
+    native_entrypoint.write_bytes(b"\x7fELFfake-chrootctl")
+    native_entrypoint.chmod(0o755)
+    write_native_runtime_manifest(
+        native_runtime, abi="arm64-v8a", package_version="0.11.0", bridge_protocol_version=1, nuitka_version="test"
+    )
     output_dir = tmp_path / "module"
     render_magisk_module(
         output_dir,
         services=None,
         startup_targets=(),
-        module_config=MagiskModuleConfig(package_source_dir=package_root),
+        module_config=MagiskModuleConfig(package_source_dir=package_root, native_runtime_dir=native_runtime),
     )
 
     assert (output_dir / "system/bin/chrootctl").exists()

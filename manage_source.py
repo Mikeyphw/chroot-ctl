@@ -48,18 +48,29 @@ def _write_checksum(path: Path) -> Path:
 
 
 def _build_magisk(args: argparse.Namespace) -> None:
+    native_runtime_dir = getattr(args, "native_runtime_dir", None)
+    if native_runtime_dir is None:
+        native_root = ROOT / "out/native-runtime"
+        native_runtime_dir = native_root / "arm64-v8a"
+        if not (native_runtime_dir / "runtime-manifest.json").is_file():
+            _run(
+                [args.python, str(ROOT / "scripts/build-native-android-runtime.py"), "--output-root", str(native_root), "--jobs", "2"],
+                env=_source_env(),
+            )
+    native_runtime_dir = Path(native_runtime_dir).expanduser().absolute()
     script = f"""
 from pathlib import Path
 from chrootctl.magisk import MagiskModuleConfig, render_magisk_module, validate_magisk_module, validate_magisk_zip, zip_magisk_module
 
 out_dir = Path({str(args.output_dir)!r})
 zip_path = Path({str(args.zip_path)!r})
+native_runtime_dir = Path({str(native_runtime_dir)!r})
 
 render_magisk_module(
     out_dir,
     services=None,
     startup_targets=(),
-    module_config=MagiskModuleConfig(),
+    module_config=MagiskModuleConfig(native_runtime_dir=native_runtime_dir),
 )
 validate_magisk_module(out_dir)
 zip_magisk_module(out_dir, zip_path)
@@ -212,6 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     build = sub.add_parser("build-magisk", help="Render and zip the Magisk module.")
     build.add_argument("--output-dir", type=Path, default=ROOT / "out", help="Rendered module directory.")
     build.add_argument("--zip-path", type=Path, default=ROOT / "chrootctl-magisk.zip", help="Flashable zip path.")
+    build.add_argument("--native-runtime-dir", type=Path, default=None, help="Use an existing sealed Android native runtime artifact.")
     build.add_argument("--checksum", action="store_true", help="Write a .sha256 file for the ZIP.")
     build.set_defaults(func=_build_magisk)
 

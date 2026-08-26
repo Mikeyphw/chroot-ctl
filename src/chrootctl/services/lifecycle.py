@@ -38,11 +38,13 @@ class LifecyclePaths:
 
     @property
     def install_log_file(self) -> Path:
-        return self.module_dir / "config/chrootctl/dependencies.ready.json"
+        return self.module_dir / "runtime/arm64-v8a/runtime-manifest.json"
 
     @property
     def dependency_log_file(self) -> Path:
-        return self.module_dir / "config/chrootctl/dependency-bootstrap.log"
+        # Retained as a compatibility field for existing clients; native
+        # runtime diagnostics are represented by the sealed runtime manifest.
+        return self.module_dir / "runtime/arm64-v8a/runtime-manifest.json"
 
 
 class LifecycleService:
@@ -95,16 +97,24 @@ class LifecycleService:
         return ModuleRuntimeStatusService().status()
 
     def python_status(self) -> dict[str, Any]:
+        """Compatibility view of the now-bundled Python userspace.
+
+        Existing bridge/UI clients still consume this field name, but module
+        readiness no longer depends on any external Python interpreter or pip
+        package set.
+        """
         module = self.module_status()
         active = module.get("active") if isinstance(module.get("active"), dict) else {}
-        readiness = active.get("dependencyReadiness") if isinstance(active.get("dependencyReadiness"), dict) else {}
+        readiness = active.get("runtimeReadiness") if isinstance(active.get("runtimeReadiness"), dict) else {}
         return {
-            "binary": readiness.get("pythonExecutable"),
-            "version": readiness.get("pythonVersion"),
+            "binary": readiness.get("executable"),
+            "version": readiness.get("pythonPackageVersion"),
             "dependencies_ready": bool(readiness.get("ready")),
-            "dependencies": readiness.get("dependencies", []),
+            "dependencies": [],
             "reason": readiness.get("reason"),
             "readiness_file": readiness.get("path"),
+            "runtime_kind": readiness.get("runtimeKind"),
+            "abi": readiness.get("abi"),
         }
 
     @staticmethod

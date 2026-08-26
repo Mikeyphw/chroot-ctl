@@ -147,6 +147,12 @@ def _add_magisk_commands(subs: argparse._SubParsersAction[argparse.ArgumentParse
     render.add_argument("--output", type=Path, required=True, help="Target directory for the generated Magisk module tree.")
     render.add_argument("--zip", dest="zip_path", type=Path, default=None, help="Also create a flashable Magisk/KSU zip at this path.")
     render.add_argument(
+        "--native-runtime-dir",
+        type=Path,
+        default=None,
+        help="Sealed native Android runtime artifact directory; defaults to the repository build output.",
+    )
+    render.add_argument(
         "--all-installed",
         action="store_true",
         help="Include every installed chroot in the boot startup target list.",

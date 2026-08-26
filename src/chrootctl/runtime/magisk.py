@@ -30,7 +30,7 @@ def _handle_render(context: "RuntimeContext") -> None:
             Path(context.args.output),
             services=context.services,
             startup_targets=startup_targets,
-            module_config=MagiskModuleConfig(),
+            module_config=MagiskModuleConfig(native_runtime_dir=getattr(context.args, "native_runtime_dir", None)),
         ),
     )
     validate_magisk_module(result.output_dir)
