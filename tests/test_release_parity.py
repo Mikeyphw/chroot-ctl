@@ -81,3 +81,53 @@ def test_onefile_experiment_plan_rejects_symlink_output_root(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="onefile experiment output root"):
         native_onefile_experiment_plan(repo, output_root=link)
+
+
+
+def _load_final_native_runtime_release_check_module():
+    import importlib.util
+
+    script = Path("scripts/final-native-runtime-release-check.py")
+    spec = importlib.util.spec_from_file_location("final_native_runtime_release_check", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_final_native_runtime_release_check_requires_runtime_by_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_final_native_runtime_release_check_module()
+
+    class Result:
+        ok = True
+        checked = ()
+        mismatches = ()
+
+        def require_ok(self) -> None:
+            return None
+
+    monkeypatch.setattr(module, "check_release_parity", lambda repo: Result())
+    monkeypatch.setattr(module, "validate_native_runtime_artifact", lambda path: (_ for _ in ()).throw(FileNotFoundError(path)))
+    monkeypatch.setattr("sys.argv", ["final-native-runtime-release-check.py", "--repo-root", str(tmp_path)])
+
+    with pytest.raises(FileNotFoundError):
+        module.main()
+
+
+def test_final_native_runtime_release_check_has_explicit_source_only_escape(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    module = _load_final_native_runtime_release_check_module()
+
+    class Result:
+        ok = True
+        checked = ()
+        mismatches = ()
+
+        def require_ok(self) -> None:
+            return None
+
+    monkeypatch.setattr(module, "check_release_parity", lambda repo: Result())
+    monkeypatch.setattr(module, "validate_native_runtime_artifact", lambda path: (_ for _ in ()).throw(AssertionError("should not validate runtime")))
+    monkeypatch.setattr("sys.argv", ["final-native-runtime-release-check.py", "--repo-root", str(tmp_path), "--skip-runtime-integrity"])
+
+    assert module.main() == 0
+    assert "native-runtime-integrity" not in capsys.readouterr().out
