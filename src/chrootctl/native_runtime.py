@@ -20,6 +20,8 @@ NATIVE_RUNTIME_PLATFORM = "android"
 DEFAULT_NATIVE_RUNTIME_ABI = "arm64-v8a"
 DEFAULT_NATIVE_RUNTIME_ENTRYPOINT = "chrootctl.dist/chrootctl"
 DEFAULT_NATIVE_RUNTIME_BUILD_ROOT = Path("out/native-runtime")
+DEFAULT_NATIVE_ONEFILE_EXPERIMENT_ROOT = Path("out/native-runtime-onefile")
+DEFAULT_NATIVE_ONEFILE_EXPERIMENT_NAME = "chrootctl-onefile"
 SUPPORTED_ANDROID_MACHINES = {
     "aarch64": "arm64-v8a",
     "arm64": "arm64-v8a",
@@ -37,6 +39,17 @@ class NativeRuntimeBuildResult:
     entrypoint: Path
     manifest: Path
     command: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class NativeOnefileExperimentPlan:
+    output_root: Path
+    output_binary: Path
+    command: tuple[str, ...]
+    warning: str = (
+        "Nuitka onefile is experimental for Magisk/KSU because it extracts an internal runtime before execution; "
+        "do not package it until it has an equivalent integrity seal to the standalone runtime manifest."
+    )
 
 
 def _sha256(path: Path) -> str:
@@ -107,6 +120,63 @@ def nuitka_command(
         "--output-filename=chrootctl",
         f"--output-dir={output_dir}",
         str(entry_script),
+    )
+
+
+def nuitka_onefile_experiment_command(
+    *,
+    repo_root: Path,
+    output_dir: Path,
+    jobs: int = 2,
+    python_executable: str | None = None,
+) -> tuple[str, ...]:
+    repo_root = repo_root.expanduser().resolve()
+    output_dir = output_dir.expanduser().resolve()
+    entry_script = repo_root / "scripts/chrootctl-native-entry.py"
+    if not entry_script.is_file() or entry_script.is_symlink():
+        raise FileNotFoundError(f"missing safe native runtime entry script: {entry_script}")
+    if jobs < 1:
+        raise ValueError("jobs must be at least 1")
+    python = python_executable or sys.executable
+    return (
+        python,
+        "-m",
+        "nuitka",
+        "--mode=onefile",
+        "--clang",
+        f"--jobs={jobs}",
+        "--remove-output",
+        "--no-pyi-file",
+        "--include-package=chrootctl",
+        "--include-package-data=chrootctl",
+        f"--output-filename={DEFAULT_NATIVE_ONEFILE_EXPERIMENT_NAME}",
+        f"--output-dir={output_dir}",
+        str(entry_script),
+    )
+
+
+def native_onefile_experiment_plan(
+    repo_root: Path,
+    *,
+    output_root: Path | None = None,
+    jobs: int = 2,
+    python_executable: str | None = None,
+) -> NativeOnefileExperimentPlan:
+    repo_root = repo_root.expanduser().resolve()
+    expanded_root = (output_root or (repo_root / DEFAULT_NATIVE_ONEFILE_EXPERIMENT_ROOT)).expanduser()
+    if expanded_root.is_symlink():
+        raise ValueError("native onefile experiment output root must not be symlinked")
+    output_root = expanded_root.resolve()
+    command = nuitka_onefile_experiment_command(
+        repo_root=repo_root,
+        output_dir=output_root,
+        jobs=jobs,
+        python_executable=python_executable,
+    )
+    return NativeOnefileExperimentPlan(
+        output_root=output_root,
+        output_binary=output_root / DEFAULT_NATIVE_ONEFILE_EXPERIMENT_NAME,
+        command=command,
     )
 
 
