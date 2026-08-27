@@ -18,10 +18,11 @@ NATIVE_RUNTIME_SCHEMA_VERSION = 1
 NATIVE_RUNTIME_KIND = "nuitka-standalone"
 NATIVE_RUNTIME_PLATFORM = "android"
 DEFAULT_NATIVE_RUNTIME_ABI = "arm64-v8a"
-DEFAULT_NATIVE_RUNTIME_ENTRYPOINT = "chrootctl.dist/chrootctl"
+DEFAULT_NATIVE_RUNTIME_ENTRYPOINT = "chrootctl.dist/chrootctl-native-entry"
 DEFAULT_NATIVE_RUNTIME_BUILD_ROOT = Path("out/native-runtime")
 DEFAULT_NATIVE_ONEFILE_EXPERIMENT_ROOT = Path("out/native-runtime-onefile")
 DEFAULT_NATIVE_ONEFILE_EXPERIMENT_NAME = "chrootctl-onefile"
+NUITKA_STANDALONE_OUTPUT_NAME = "chrootctl-native-entry"
 SUPPORTED_ANDROID_MACHINES = {
     "aarch64": "arm64-v8a",
     "arm64": "arm64-v8a",
@@ -114,13 +115,12 @@ def nuitka_command(
         "--clang",
         f"--jobs={jobs}",
         "--remove-output",
-        "--no-pyi-file",
         "--noinclude-dlls=[vdso]",
         "--noinclude-dlls=linux-vdso*",
         "--noinclude-dlls=*vdso*",
         "--include-package=chrootctl",
         "--include-package-data=chrootctl",
-        "--output-filename=chrootctl",
+        f"--output-filename={NUITKA_STANDALONE_OUTPUT_NAME}",
         f"--output-dir={output_dir}",
         str(entry_script),
     )
@@ -149,7 +149,6 @@ def nuitka_onefile_experiment_command(
         "--clang",
         f"--jobs={jobs}",
         "--remove-output",
-        "--no-pyi-file",
         "--noinclude-dlls=[vdso]",
         "--noinclude-dlls=linux-vdso*",
         "--noinclude-dlls=*vdso*",
@@ -194,26 +193,35 @@ def _find_nuitka_distribution(stage_root: Path) -> Path:
 
 
 def _normalize_entrypoint(distribution_dir: Path) -> Path:
-    exact = distribution_dir / "chrootctl"
+    exact = distribution_dir / NUITKA_STANDALONE_OUTPUT_NAME
     candidates: list[Path] = []
+
     if exact.is_file() and not exact.is_symlink():
         candidates.append(exact)
+
     candidates.extend(
         path
         for path in sorted(distribution_dir.iterdir())
-        if path.is_file() and not path.is_symlink() and path.name in {"chrootctl.bin", "chrootctl-native-entry.bin", "chrootctl-native-entry"}
+        if path.is_file()
+        and not path.is_symlink()
+        and path.name in {
+            NUITKA_STANDALONE_OUTPUT_NAME,
+            f"{NUITKA_STANDALONE_OUTPUT_NAME}.bin",
+        }
     )
+
     deduped = list(dict.fromkeys(candidates))
     if len(deduped) != 1:
         raise RuntimeError("unable to identify a unique Nuitka chrootctl entrypoint")
+
     source = deduped[0]
     if source != exact:
         if exact.exists():
             raise RuntimeError(f"refusing to replace unexpected native entrypoint: {exact}")
         source.rename(exact)
+
     exact.chmod(exact.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return exact
-
 
 def _normalize_runtime_permissions(artifact_dir: Path) -> None:
     entrypoint = artifact_dir / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 MODULE_NAME="${MODULE_NAME:-chrootctl-magisk}"
-OUT_DIR="${OUT_DIR:-./out}"
+OUT_DIR="${OUT_DIR:-./out/module}"
 ZIP_NAME="${ZIP_NAME:-${MODULE_NAME}.zip}"
 INSTALL_MODULE=0
 NATIVE_RUNTIME_ROOT="${NATIVE_RUNTIME_ROOT:-./out/native-runtime}"
@@ -54,7 +54,7 @@ import sys
 out_dir = Path(sys.argv[1]).expanduser().resolve()
 zip_path = Path(sys.argv[2]).expanduser().resolve()
 repo = Path.cwd().resolve()
-default_out = (repo / "out").resolve()
+default_out = (repo / "out" / "module").resolve()
 
 if out_dir.exists():
     if out_dir.is_symlink() or not out_dir.is_dir():
@@ -72,6 +72,21 @@ if out_dir.exists():
                 raise SystemExit(f"refusing unusual output entry: {child}")
 else:
     out_dir.mkdir(parents=True, exist_ok=False)
+
+native_runtime_root = (repo / "out" / "native-runtime").resolve()
+try:
+    native_runtime_root.relative_to(out_dir)
+except ValueError:
+    pass
+else:
+    raise SystemExit("NATIVE_RUNTIME_ROOT must not be inside OUT_DIR; use OUT_DIR=./out/module")
+
+try:
+    out_dir.relative_to(native_runtime_root)
+except ValueError:
+    pass
+else:
+    raise SystemExit("OUT_DIR must not be inside NATIVE_RUNTIME_ROOT; use OUT_DIR=./out/module")
 
 try:
     zip_path.relative_to(out_dir)

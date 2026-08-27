@@ -354,7 +354,7 @@ case "$(uname -m 2>/dev/null || true)" in
 esac
 RUNTIME_ROOT="$MODPATH/runtime/$RUNTIME_ABI"
 RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
-RUNTIME_BIN="$RUNTIME_ROOT/chrootctl.dist/chrootctl"
+RUNTIME_BIN="$RUNTIME_ROOT/chrootctl.dist/chrootctl-native-entry"
 [ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] || abort "! bundled native runtime directory is missing or unsafe"
 [ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || abort "! bundled native runtime manifest is missing or unsafe"
 [ -f "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || abort "! bundled native chrootctl executable is missing or unsafe"

@@ -25,7 +25,7 @@ The script intentionally checks the checked-in Android resolver constants and `d
 The supported module runtime remains Nuitka standalone under:
 
 ```text
-runtime/arm64-v8a/chrootctl.dist/chrootctl
+runtime/arm64-v8a/chrootctl.dist/chrootctl-native-entry
 ```
 
 A onefile build is only an experiment because onefile runtimes extract internal files before execution. That extraction model is harder to audit inside Magisk/KSU than a sealed standalone directory with a manifest inventory.

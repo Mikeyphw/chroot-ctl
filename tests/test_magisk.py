@@ -178,7 +178,7 @@ def test_zip_magisk_module_deep_validates_final_zip(tmp_path: Path) -> None:
     assert "config/chrootctl/compatibility-manifest.json" in names
     assert "system/bin/chrootctl" in names
     assert "runtime/arm64-v8a/runtime-manifest.json" in names
-    assert "runtime/arm64-v8a/chrootctl.dist/chrootctl" in names
+    assert "runtime/arm64-v8a/chrootctl.dist/chrootctl-native-entry" in names
     assert "bin/chrootctl-python-bootstrap" not in names
     assert "system/bin/chrootctl-python-bootstrap" not in names
     assert not any(name.startswith("payload/") for name in names)

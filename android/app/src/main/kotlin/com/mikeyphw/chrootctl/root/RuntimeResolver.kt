@@ -261,7 +261,7 @@ internal object RuntimeResolver {
     private const val NATIVE_RUNTIME_PLATFORM = "android"
     private const val NATIVE_RUNTIME_ABI = "arm64-v8a"
     private const val NATIVE_RUNTIME_ROOT = "runtime/arm64-v8a"
-    private const val NATIVE_RUNTIME_ENTRYPOINT = "chrootctl.dist/chrootctl"
+    private const val NATIVE_RUNTIME_ENTRYPOINT = "chrootctl.dist/chrootctl-native-entry"
     private const val MODULE_ID = "chrootctl-magisk"
     private const val EXPECTED_MODULE_VERSION = "1.3.0"
     private const val MIN_SUPPORTED_MODULE_VERSION_CODE = 15

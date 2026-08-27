@@ -53,7 +53,7 @@ def _module(active_root: Path) -> Path:
     (root / "config/chrootctl/compatibility-manifest.json").write_text(
         json.dumps(compatibility), encoding="utf-8"
     )
-    entry = runtime / "chrootctl.dist/chrootctl"
+    entry = runtime / "chrootctl.dist/chrootctl-native-entry"
     entry.write_bytes(b"\x7fELF-native-test")
     entry.chmod(0o755)
     (runtime / "chrootctl.dist/library.so").write_bytes(b"library")
@@ -79,7 +79,7 @@ def test_module_runtime_ready_uses_sealed_native_bundle(tmp_path: Path) -> None:
     assert status["ready"] is True
     assert status["active"]["runtimeReadiness"]["mode"] == "bundled-native"
     assert status["active"]["dependencyReadiness"] == status["active"]["runtimeReadiness"]
-    assert status["active"]["runtimeReadiness"]["executable"].endswith("runtime/arm64-v8a/chrootctl.dist/chrootctl")
+    assert status["active"]["runtimeReadiness"]["executable"].endswith("runtime/arm64-v8a/chrootctl.dist/chrootctl-native-entry")
     assert _service(active_root).active_executable() == root / "system/bin/chrootctl"
 
 
