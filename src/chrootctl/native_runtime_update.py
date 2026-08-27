@@ -19,11 +19,14 @@ def validate_staged_native_runtime(path: Path) -> dict[str, object]:
 
 
 def stage_native_runtime_update(source: Path, destination: Path) -> NativeRuntimeUpdatePlan:
-    source = source.expanduser().resolve()
-    destination = destination.expanduser().resolve()
+    source = source.expanduser()
+    destination = destination.expanduser()
 
     if source.is_symlink() or not source.is_dir():
         raise ValueError("native runtime update source must be a real directory")
+
+    source = source.resolve()
+    destination = destination.resolve()
 
     validate_staged_native_runtime(source)
     destination.parent.mkdir(parents=True, exist_ok=True)
