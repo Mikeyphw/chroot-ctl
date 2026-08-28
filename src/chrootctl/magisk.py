@@ -323,21 +323,19 @@ def _module_prop(config: MagiskModuleConfig) -> str:
 
 def _customize_sh() -> str:
     return """#!/system/bin/sh
-set -eu
+# KernelSU/Magisk source this file inside the installer shell.
+# Do not enable set -u or run runtime validation here; that can abort install.
 
-RUNTIME_ABI="arm64-v8a"
-RUNTIME_ROOT="$MODPATH/runtime/$RUNTIME_ABI"
-RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"
-RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
+SKIPMOUNT=false
+PROPFILE=false
+POSTFSDATA=true
+LATESTARTSERVICE=true
+REPLACE=""
 
-echo "chrootctl ships a bundled native runtime; no external Python environment is installed or required."
+ui_print "chrootctl ships a bundled native runtime; no external Python environment is installed or required." 2>/dev/null || \
+  echo "chrootctl ships a bundled native runtime; no external Python environment is installed or required."
 
-[ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] || { echo "bundled native runtime directory is missing or unsafe" >&2; exit 1; }
-[ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || { echo "bundled native runtime manifest is missing or unsafe" >&2; exit 1; }
-[ -f "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || { echo "bundled native chrootctl executable is missing or unsafe" >&2; exit 1; }
-chmod 755 "$RUNTIME_BIN"
-mkdir -p /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
-chmod 0700 /data/adb/chrootctl /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
+return 0 2>/dev/null || exit 0
 """
 
 

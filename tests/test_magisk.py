@@ -218,3 +218,17 @@ def test_render_magisk_module_rejects_symlinked_native_runtime_root(tmp_path: Pa
             startup_targets=(),
             module_config=MagiskModuleConfig(package_source_dir=package_root, native_runtime_dir=link),
         )
+
+
+def test_customize_sh_is_kernelsu_source_safe() -> None:
+    from chrootctl.magisk import _customize_sh
+
+    script = _customize_sh()
+    assert "set -u" not in script
+    assert "set -eu" not in script
+    assert 'REPLACE=""' in script
+    assert "SKIPMOUNT=false" in script
+    assert "PROPFILE=false" in script
+    assert "POSTFSDATA=true" in script
+    assert "LATESTARTSERVICE=true" in script
+    assert "return 0 2>/dev/null || exit 0" in script
