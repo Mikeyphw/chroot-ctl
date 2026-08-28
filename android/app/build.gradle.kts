@@ -5,6 +5,7 @@ plugins {
 }
 
 android {
+    ndkVersion = "29.0.14206865"
     namespace = "com.mikeyphw.chrootctl"
     // Fleet baseline intentionally pins API 36.
     //noinspection GradleDependency
