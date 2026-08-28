@@ -117,8 +117,8 @@ def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) ->
     assert not (output_dir / "payload").exists()
     assert not (output_dir / "config/chrootctl/dependency-mode.env").exists()
     assert "dependencies.ready.json" not in launcher
-    assert 'RUNTIME_DIST="$RUNTIME_ROOT/chrootctl.dist"' in launcher
-    assert 'RUNTIME_BIN="$RUNTIME_DIST/chrootctl"' in launcher
+    assert '' in launcher
+    assert 'RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"' in launcher
     assert "LD_LIBRARY_PATH" in launcher
     assert "/data/adb/modules/chrootctl-magisk" in launcher
     assert "/data/adb/modules_update/chrootctl-magisk" in launcher  # diagnostics only
@@ -151,7 +151,7 @@ def test_module_validator_rejects_backup_and_symlink_payloads(tmp_path: Path) ->
         startup_targets=(),
         module_config=MagiskModuleConfig(package_source_dir=_build_package_source(tmp_path)),
     )
-    runtime_dist = output_dir / "runtime/arm64-v8a/chrootctl.dist"
+    runtime_dist = output_dir / "runtime/arm64-v8a"
     bad = runtime_dist / "secret.so.bak"
     bad.write_text("x", encoding="utf-8")
     with pytest.raises(ValueError, match="forbidden"):

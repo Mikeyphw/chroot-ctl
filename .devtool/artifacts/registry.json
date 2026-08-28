@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "e7f0078d9df5",
+      "name": "app-debug.apk",
+      "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+      "type": "apk",
+      "size": 12991007,
+      "sha256": "0ba92508dba66d69355a0f877f5172636bd01b2a8a63e832a568949b0693a1cc",
+      "commit": "25636c82747fa939ef3ddd8d68d62f532d3c0714",
+      "created_at": "2026-08-28T14:50:44.121036Z",
+      "registered_at": "2026-08-28T14:50:44.121072Z",
+      "valid": true,
+      "metadata": {
+        "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "variant": "debug",
+        "module": "app",
+        "size": 12991007,
+        "sha256": "0ba92508dba66d69355a0f877f5172636bd01b2a8a63e832a568949b0693a1cc",
+        "valid": true,
+        "package_id": "com.mikeyphw.chrootctl.debug",
+        "version_code": "1",
+        "version_name": "0.1.0-phase29-debug",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.chrootctl.MainActivity",
+        "signed": null,
+        "abis": [
+          "arm64-v8a",
+          "armeabi-v7a",
+          "x86",
+          "x86_64"
+        ],
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "skipped",
+            "detail": "apksigner not found"
+          }
+        ]
+      }
+    }
+  ],
+  "updated_at": "2026-08-28T14:50:44.122870Z"
+}

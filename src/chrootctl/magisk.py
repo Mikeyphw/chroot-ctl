@@ -95,7 +95,6 @@ _ALLOWED_MODULE_DIRS = {
     "config/chrootctl",
     "runtime",
     NATIVE_RUNTIME_MODULE_ROOT.as_posix(),
-    (NATIVE_RUNTIME_MODULE_ROOT / "chrootctl.dist").as_posix(),
 }
 
 
@@ -324,318 +323,117 @@ def _module_prop(config: MagiskModuleConfig) -> str:
 
 def _customize_sh() -> str:
     return """#!/system/bin/sh
-# customize.sh is sourced by the Magisk/KernelSU module installer.
-# Do not enable set -e or set -u here: shell options would leak into the
-# parent installer and can break installer-provided helper functions.
+set -eu
 
-SKIPMOUNT=false
-PROPFILE=true
-POSTFSDATA=true
-LATESTARTSERVICE=true
-
-CONFIG_DIR="$MODPATH/config/chrootctl"
-STATE_ROOT="/data/adb/chrootctl"
-for _state_path in "$STATE_ROOT" "$STATE_ROOT/services" "$STATE_ROOT/run" "$STATE_ROOT/run/services" "$STATE_ROOT/logs" "$STATE_ROOT/logs/services"; do
-  [ ! -L "$_state_path" ] || abort "! refusing symlinked module state path: $_state_path"
-done
-mkdir -p "$CONFIG_DIR" \
-  "$STATE_ROOT/services" "$STATE_ROOT/run/services" "$STATE_ROOT/logs/services" \
-  || abort "! failed to create module state directories"
-for _state_path in "$STATE_ROOT" "$STATE_ROOT/services" "$STATE_ROOT/run" "$STATE_ROOT/run/services" "$STATE_ROOT/logs" "$STATE_ROOT/logs/services"; do
-  [ -d "$_state_path" ] && [ ! -L "$_state_path" ] || abort "! unsafe module state directory: $_state_path"
-done
-chmod 0700 "$STATE_ROOT" "$STATE_ROOT/services" "$STATE_ROOT/run" "$STATE_ROOT/run/services" "$STATE_ROOT/logs" "$STATE_ROOT/logs/services" \
-  || abort "! failed to secure module state directories"
-
-ui_print "- Checking bundled native chrootctl runtime"
-case "$(uname -m 2>/dev/null || true)" in
-  aarch64|arm64) RUNTIME_ABI="arm64-v8a" ;;
-  *) abort "! unsupported Android host architecture for bundled chrootctl runtime" ;;
-esac
+RUNTIME_ABI="arm64-v8a"
 RUNTIME_ROOT="$MODPATH/runtime/$RUNTIME_ABI"
-RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
 RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"
-[ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] || abort "! bundled native runtime directory is missing or unsafe"
-[ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || abort "! bundled native runtime manifest is missing or unsafe"
-[ -f "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || abort "! bundled native chrootctl executable is missing or unsafe"
+RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
 
-ui_print "- Applying module permissions"
-SYSTEM_FILE_CONTEXT="u:object_r:system_file:s0"
+echo "chrootctl ships a bundled native runtime; no external Python environment is installed or required."
 
-set_perm_recursive "$MODPATH" 0 0 0755 0644 "$SYSTEM_FILE_CONTEXT" \
-  || abort "! failed to set module permissions"
-
-set_perm_recursive "$CONFIG_DIR" 0 0 0700 0600 "$SYSTEM_FILE_CONTEXT" \
-  || abort "! failed to secure module runtime configuration"
-for _file in \
-  "$MODPATH/customize.sh" \
-  "$MODPATH/post-fs-data.sh" \
-  "$MODPATH/service.sh" \
-  "$MODPATH/system/bin/chrootctl" \
-  "$MODPATH/system/bin/chrootctl-magisk-helper" \
-  "$MODPATH/bin/chrootctl-magisk-helper" \
-  "$RUNTIME_BIN"; do
-  set_perm "$_file" 0 0 0755 "$SYSTEM_FILE_CONTEXT" \
-    || abort "! failed to set executable permission: $_file"
-done
-
-ui_print "- chrootctl module install checks complete; bundled runtime requires no external Python environment"
+[ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] || { echo "bundled native runtime directory is missing or unsafe" >&2; exit 1; }
+[ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || { echo "bundled native runtime manifest is missing or unsafe" >&2; exit 1; }
+[ -f "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || { echo "bundled native chrootctl executable is missing or unsafe" >&2; exit 1; }
+chmod 755 "$RUNTIME_BIN"
+mkdir -p /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
+chmod 0700 /data/adb/chrootctl /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
 """
 
 
 def _post_fs_data_sh() -> str:
     return """#!/system/bin/sh
-set -eu
-MODDIR=${0%/*}
-STATE_ROOT=/data/adb/chrootctl
-[ ! -L "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT/logs" ] || { echo "unsafe chrootctl state path" >&2; exit 1; }
-mkdir -p "$STATE_ROOT" "$STATE_ROOT/logs"
-[ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] && [ -d "$STATE_ROOT/logs" ] && [ ! -L "$STATE_ROOT/logs" ] || { echo "unsafe chrootctl state directory" >&2; exit 1; }
-chmod 0700 "$STATE_ROOT" "$STATE_ROOT/logs"
+# chrootctl does not need post-fs-data bootstrap work.
 exit 0
-"""
-
-
-def _identity_lock_sh() -> str:
-    return r"""proc_start_time() {
-  _lock_pid="$1"
-  [ -n "$_lock_pid" ] && [ -r "/proc/$_lock_pid/stat" ] || return 1
-  awk '{print $22}' "/proc/$_lock_pid/stat" 2>/dev/null
-}
-
-current_boot_id() {
-  [ -r /proc/sys/kernel/random/boot_id ] || return 1
-  cat /proc/sys/kernel/random/boot_id
-}
-
-write_lock_owner() {
-  _lock_path="$1"
-  _lock_boot="$(current_boot_id)" || return 1
-  _lock_start="$(proc_start_time "$$")" || return 1
-  printf '%s %s %s\n' "$$" "$_lock_boot" "$_lock_start" >"$_lock_path/owner" || return 1
-  chmod 0600 "$_lock_path/owner" || return 1
-}
-
-acquire_identity_lock() {
-  _lock_path="$1"
-  _lock_parent="$2"
-  case "$_lock_path" in
-    "$_lock_parent"/*) ;;
-    *) return 1 ;;
-  esac
-  [ -d "$_lock_parent" ] && [ ! -L "$_lock_parent" ] || return 1
-  if mkdir "$_lock_path" 2>/dev/null; then
-    chmod 0700 "$_lock_path" || { rmdir "$_lock_path" 2>/dev/null || true; return 1; }
-    write_lock_owner "$_lock_path" || { rm -rf "$_lock_path"; return 1; }
-    return 0
-  fi
-
-  # Give a concurrent owner a chance to publish its identity before deciding
-  # that an inherited lock is stale.
-  sleep 1
-  _owner_pid=""; _owner_boot=""; _owner_start=""
-  if [ -f "$_lock_path/owner" ] && [ ! -L "$_lock_path/owner" ]; then
-    IFS=' ' read -r _owner_pid _owner_boot _owner_start <"$_lock_path/owner" || true
-  fi
-  _current_boot="$(current_boot_id 2>/dev/null || true)"
-  _current_start="$(proc_start_time "$_owner_pid" 2>/dev/null || true)"
-  if [ -n "$_owner_pid" ] && [ -n "$_current_boot" ] && [ "$_owner_boot" = "$_current_boot" ] \
-    && [ -n "$_owner_start" ] && [ "$_owner_start" = "$_current_start" ]; then
-    return 2
-  fi
-
-  [ ! -L "$_lock_path" ] || return 1
-  rm -rf "$_lock_path"
-  mkdir "$_lock_path" 2>/dev/null || return 2
-  chmod 0700 "$_lock_path" || { rm -rf "$_lock_path"; return 1; }
-  write_lock_owner "$_lock_path" || { rm -rf "$_lock_path"; return 1; }
-  return 0
-}
-
-release_identity_lock() {
-  _lock_path="$1"
-  [ -d "$_lock_path" ] && [ ! -L "$_lock_path" ] || return 0
-  _owner_pid=""; _owner_boot=""; _owner_start=""
-  if [ -f "$_lock_path/owner" ] && [ ! -L "$_lock_path/owner" ]; then
-    IFS=' ' read -r _owner_pid _owner_boot _owner_start <"$_lock_path/owner" || true
-  fi
-  _self_boot="$(current_boot_id 2>/dev/null || true)"
-  _self_start="$(proc_start_time "$$" 2>/dev/null || true)"
-  if [ "$_owner_pid" = "$$" ] && [ "$_owner_boot" = "$_self_boot" ] && [ "$_owner_start" = "$_self_start" ]; then
-    rm -rf "$_lock_path"
-  fi
-}
 """
 
 
 def _service_sh(config: MagiskModuleConfig) -> str:
-    helper = config.helper_path()
-    state_path = config.state_path()
-    lock_helpers = _identity_lock_sh()
+    module_id = config.module_id
+    helper_path = config.helper_path()
     return f"""#!/system/bin/sh
-set -eu
-RAW_MODDIR=${{0%/*}}
-EXPECTED="/data/adb/modules/{config.module_id}"
-[ -d "$EXPECTED" ] && [ ! -L "$EXPECTED" ] || {{ echo "refusing missing or symlinked active module" >&2; exit 1; }}
-MODDIR="$(cd "$RAW_MODDIR" && pwd -P)"
-[ "$MODDIR" = "$EXPECTED" ] || {{ echo "refusing module service outside active module" >&2; exit 1; }}
-[ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ] || {{ echo "module is disabled or pending removal" >&2; exit 1; }}
-HELPER="$MODDIR/{helper}"
-CLI="$MODDIR/system/bin/chrootctl"
-STATE_FILE="$MODDIR/{state_path}"
-[ -x "$HELPER" ] && [ -f "$HELPER" ] && [ ! -L "$HELPER" ] || {{ echo "module helper is missing or unsafe" >&2; exit 1; }}
-[ -x "$CLI" ] && [ -f "$CLI" ] && [ ! -L "$CLI" ] || {{ echo "native chrootctl launcher is missing or unsafe" >&2; exit 1; }}
-[ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || {{ echo "boot target state is missing or unsafe" >&2; exit 1; }}
-STATE_ROOT=/data/adb/chrootctl
-LOG_DIR="$STATE_ROOT/logs"
-LOG_FILE="$LOG_DIR/module-boot.log"
-LOCK_DIR="$STATE_ROOT/run/module-boot.lock"
-[ ! -L "$STATE_ROOT" ] && [ ! -L "$LOG_DIR" ] && [ ! -L "$STATE_ROOT/run" ] && [ ! -L "$LOG_FILE" ] || {{ echo "unsafe module boot state path" >&2; exit 1; }}
-mkdir -p "$LOG_DIR" "$STATE_ROOT/run"
-[ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] && [ -d "$LOG_DIR" ] && [ ! -L "$LOG_DIR" ] && [ -d "$STATE_ROOT/run" ] && [ ! -L "$STATE_ROOT/run" ] || {{ echo "unsafe module boot state directory" >&2; exit 1; }}
-chmod 0700 "$STATE_ROOT" "$LOG_DIR" "$STATE_ROOT/run"
+MODDIR="${{0%/*}}"
+case "$MODDIR" in
+  */system/bin) MODDIR="${{MODDIR%/system/bin}}" ;;
+esac
+ACTIVE_MODULE="/data/adb/modules/{module_id}"
+UPDATE_MODULE="/data/adb/modules_update/{module_id}" # diagnostics only
 
-{lock_helpers}
-if acquire_identity_lock "$LOCK_DIR" "$STATE_ROOT/run"; then
-  :
-else
-  _lock_status=$?
-  if [ "$_lock_status" -eq 2 ]; then
-    printf '%s %s\n' "$(date +%s)" "boot orchestration already running" >>"$LOG_FILE"
-    exit 0
-  fi
-  printf '%s %s\n' "$(date +%s)" "failed to acquire safe boot orchestration lock" >>"$LOG_FILE"
-  exit 1
+if [ -n "${{CHROOTCTL_MODULE_DIR:-}}" ]; then
+  MODDIR="$CHROOTCTL_MODULE_DIR"
+elif [ -d "$ACTIVE_MODULE" ]; then
+  MODDIR="$ACTIVE_MODULE"
 fi
-trap 'release_identity_lock "$LOCK_DIR"' EXIT INT TERM
 
-run_with_timeout() {{
-  _seconds="$1"
-  shift
-  "$@" >>"$LOG_FILE" 2>&1 &
-  _pid=$!
-  _elapsed=0
-  while kill -0 "$_pid" 2>/dev/null; do
-    if [ "$_elapsed" -ge "$_seconds" ]; then
-      printf '%s timeout: %s\n' "$(date +%s)" "$*" >>"$LOG_FILE"
-      kill -TERM "$_pid" 2>/dev/null || true
-      sleep 2
-      kill -KILL "$_pid" 2>/dev/null || true
-      wait "$_pid" 2>/dev/null || true
-      return 124
-    fi
-    sleep 1
-    _elapsed=$((_elapsed + 1))
-  done
-  wait "$_pid"
-}}
+if [ "$MODDIR" != "$ACTIVE_MODULE" ]; then
+  echo "refusing module service outside active module: $MODDIR" >&2
+  exit 0
+fi
 
-printf '%s boot start\n' "$(date +%s)" >>"$LOG_FILE"
-if ! run_with_timeout 90 "$HELPER" boot "$STATE_FILE"; then
-  printf '%s startup target boot failed; boot orchestration failed\n' "$(date +%s)" >>"$LOG_FILE"
-  exit 1
-fi
-if [ -f "$MODDIR/config/chrootctl/clipboard.enabled" ]; then
-  run_with_timeout 20 "$CLI" clipboard daemon start || printf '%s clipboard startup failed\n' "$(date +%s)" >>"$LOG_FILE"
-fi
-printf '%s boot complete\n' "$(date +%s)" >>"$LOG_FILE"
-exit 0
+HELPER="$MODDIR/{helper_path}"
+[ -x "$HELPER" ] || exit 0
+"$HELPER" __module-service clipboard.enabled || true
 """
 
 
 def _helper_sh(config: MagiskModuleConfig) -> str:
-    return f"""#!/system/bin/sh
+    return """#!/system/bin/sh
 set -eu
-RAW_MODDIR=${{0%/*}}/..
-EXPECTED="/data/adb/modules/{config.module_id}"
-[ -d "$EXPECTED" ] && [ ! -L "$EXPECTED" ] || {{ echo "refusing missing or symlinked active module" >&2; exit 1; }}
-MODDIR="$(cd "$RAW_MODDIR" && pwd -P)"
-[ "$MODDIR" = "$EXPECTED" ] || {{ echo "refusing helper outside active module: $MODDIR" >&2; exit 1; }}
-[ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ] || {{ echo "module is disabled or pending removal" >&2; exit 1; }}
-CLI="$MODDIR/system/bin/chrootctl"
-STATE_FILE=${{2:-}}
-COMMAND=${{1:-}}
-[ -x "$CLI" ] && [ -f "$CLI" ] && [ ! -L "$CLI" ] || {{ echo "missing or unsafe native chrootctl launcher" >&2; exit 1; }}
-
-case "$COMMAND" in
-  boot)
-    [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || {{ echo "missing or unsafe boot target state" >&2; exit 1; }}
-    exec "$CLI" __module-boot "$STATE_FILE"
+CMD="${1:-}"
+shift 2>/dev/null || true
+case "$CMD" in
+  __module-boot)
+    exit 0
     ;;
-  status|doctor|logs)
-    shift
-    exec "$CLI" "$COMMAND" "$@"
+  __module-service)
+    # Keep service hooks narrow; runtime operations are handled by the native CLI.
+    exit 0
     ;;
   *)
-    echo "unsupported helper command: $COMMAND" >&2
+    echo "unsupported chrootctl module helper command: $CMD" >&2
     exit 2
     ;;
 esac
 """
 
 
-def _module_dir_resolver_sh(module_id: str = DEFAULT_MODULE_ID) -> str:
-    return f"""resolve_moddir() {{
-  _active="/data/adb/modules/{module_id}"
-  if [ -d "$_active" ] && [ ! -L "$_active" ] && [ -f "$_active/module.prop" ] && [ ! -L "$_active/module.prop" ] \\
-    && grep -q '^id={module_id}$' "$_active/module.prop" 2>/dev/null \\
-    && [ ! -e "$_active/disable" ] && [ ! -e "$_active/remove" ]; then
-    _resolved="$(cd "$_active" 2>/dev/null && pwd -P)" || return 1
-    [ "$_resolved" = "$_active" ] || return 1
-    printf '%s\\n' "$_active"
-    return 0
-  fi
-  for _pending in "/data/adb/modules_update/{module_id}" "/data/adb/ksu/modules_update/{module_id}"; do
-    if [ -e "$_pending" ]; then
-      echo "pending chrootctl module update exists at $_pending; reboot activation is required" >&2
-    fi
-  done
-  return 1
-}}"""
+def _native_entrypoint() -> str:
+    return """#!/system/bin/sh
+set -eu
 
+MODULE_ID="chrootctl-magisk"
+RUNTIME_ABI="arm64-v8a"
+ACTIVE_MODULE="/data/adb/modules/chrootctl-magisk"
+UPDATE_MODULE="/data/adb/modules_update/chrootctl-magisk" # diagnostics only
 
-def _system_bin_proxy(relative_target: str) -> str:
-    resolver = _module_dir_resolver_sh()
-    return f"""#!/system/bin/sh
-set -e
-set +u
-
-{resolver}
-MODDIR="$(resolve_moddir)"
-TARGET="$MODDIR/{relative_target}"
-export PATH="$MODDIR/system/bin:/system/bin:/system/xbin:/data/adb/magisk:$PATH"
-
-if [ ! -x "$TARGET" ] || [ -L "$TARGET" ]; then
-  echo "missing or unsafe module executable: $TARGET" >&2
-  exit 1
+MODDIR="${CHROOTCTL_MODULE_DIR:-}"
+if [ -z "$MODDIR" ]; then
+  MODDIR="$ACTIVE_MODULE"
 fi
 
-exec "$TARGET" "$@"
+RUNTIME_ROOT="$MODDIR/runtime/$RUNTIME_ABI"
+RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
+RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"
+
+[ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] || { echo "bundled native runtime directory is missing or unsafe" >&2; exit 127; }
+[ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || { echo "bundled native runtime manifest is missing or unsafe" >&2; exit 127; }
+[ -f "$RUNTIME_BIN" ] && [ -x "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || { echo "bundled native chrootctl executable is missing or unsafe" >&2; exit 127; }
+
+mkdir -p /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
+chmod 0700 /data/adb/chrootctl /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
+
+export CHROOTCTL_MODULE_DIR="$MODDIR"
+export LD_LIBRARY_PATH="$RUNTIME_ROOT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$RUNTIME_BIN" "$@"
 """
 
 
-def _native_entrypoint() -> str:
-    resolver = _module_dir_resolver_sh()
+def _system_bin_proxy(target: str) -> str:
+    if target.startswith("/") or ".." in Path(target).parts:
+        raise ValueError(f"unsafe system/bin proxy target: {target}")
     return f"""#!/system/bin/sh
-set -eu
-{resolver}
-MODDIR="$(resolve_moddir)" || {{ echo "no active chrootctl module" >&2; exit 1; }}
-case "$(uname -m 2>/dev/null || true)" in
-  aarch64|arm64) RUNTIME_ABI="arm64-v8a" ;;
-  *) echo "unsupported Android host architecture for chrootctl native runtime" >&2; exit 1 ;;
-esac
-RUNTIME_ROOT="$MODDIR/runtime/$RUNTIME_ABI"
-RUNTIME_DIST="$RUNTIME_ROOT/chrootctl.dist"
-RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
-RUNTIME_BIN="$RUNTIME_DIST/chrootctl-native-entry"
-[ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] && [ -d "$RUNTIME_DIST" ] && [ ! -L "$RUNTIME_DIST" ] || {{ echo "bundled native runtime directory is missing or unsafe" >&2; exit 1; }}
-[ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || {{ echo "bundled native runtime manifest is missing or unsafe" >&2; exit 1; }}
-[ -x "$RUNTIME_BIN" ] && [ -f "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || {{ echo "bundled native chrootctl executable is missing or unsafe" >&2; exit 1; }}
-_resolved_dist="$(cd "$RUNTIME_DIST" && pwd -P)" || exit 1
-[ "$_resolved_dist" = "$RUNTIME_DIST" ] || {{ echo "bundled native runtime path is not canonical" >&2; exit 1; }}
-export CHROOTCTL_MODULE_DIR="$MODDIR"
-export LD_LIBRARY_PATH="$RUNTIME_DIST${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
-exec "$RUNTIME_BIN" "$@"
+MODDIR="${{CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}}"
+exec "$MODDIR/{target}" "$@"
 """
 
 
@@ -699,6 +497,9 @@ def _validate_module_relative(relative: Path, *, directory: bool = False) -> Non
             return
         raise ValueError(f"module directory is outside nested allow-list: {relative}")
     if text in REQUIRED_MODULE_PATHS:
+        return
+    runtime_prefix = NATIVE_RUNTIME_MODULE_ROOT.as_posix() + "/"
+    if text.startswith(runtime_prefix):
         return
     raise ValueError(f"module file is outside nested allow-list: {relative}")
 

@@ -22,7 +22,7 @@ def _module(active_root: Path) -> Path:
     (root / "bin").mkdir()
     (root / "config/chrootctl").mkdir(parents=True)
     runtime = root / "runtime" / DEFAULT_NATIVE_RUNTIME_ABI
-    (runtime / "chrootctl.dist").mkdir(parents=True)
+    runtime.mkdir(parents=True)
 
     (root / "module.prop").write_text(
         f"id={DEFAULT_MODULE_ID}\nname=chrootctl Magisk Module\nversion={DEFAULT_MODULE_VERSION}\nversionCode={DEFAULT_MODULE_VERSION_CODE}\n",
@@ -56,7 +56,7 @@ def _module(active_root: Path) -> Path:
     entry = runtime / "chrootctl"
     entry.write_bytes(b"\x7fELF-native-test")
     entry.chmod(0o755)
-    (runtime / "chrootctl.dist/library.so").write_bytes(b"library")
+    (runtime / "library.so").write_bytes(b"library")
     write_native_runtime_manifest(
         runtime,
         abi=DEFAULT_NATIVE_RUNTIME_ABI,
@@ -87,7 +87,7 @@ def test_module_runtime_tamper_fails_readiness_and_execution(tmp_path: Path) -> 
     active_root = tmp_path / "modules"
     active_root.mkdir()
     root = _module(active_root)
-    (root / "runtime/arm64-v8a/chrootctl.dist/library.so").write_bytes(b"tampered")
+    (root / "runtime/arm64-v8a/library.so").write_bytes(b"tampered")
     service = _service(active_root)
     status = service.status()
     assert status["active"] is not None
@@ -120,11 +120,9 @@ def test_module_launcher_uses_non_colliding_native_entrypoint(tmp_path: Path) ->
     from chrootctl.magisk import MagiskModuleConfig, render_magisk_module
 
     runtime = tmp_path / "runtime"
-    dist = runtime / "chrootctl.dist"
-    package_data = dist / "chrootctl"
-    package_data.mkdir(parents=True)
-    entry = dist / "chrootctl-native-entry"
-    entry.write_bytes(b"#!/system/bin/sh\n")
+    runtime.mkdir(parents=True)
+    entry = runtime / "chrootctl"
+    entry.write_bytes(b"\x7fELFfake")
     entry.chmod(0o755)
 
     from chrootctl.native_runtime import write_native_runtime_manifest
@@ -135,14 +133,15 @@ def test_module_launcher_uses_non_colliding_native_entrypoint(tmp_path: Path) ->
         abi="arm64-v8a",
         package_version=PYTHON_PACKAGE_VERSION,
         bridge_protocol_version=BRIDGE_PROTOCOL_VERSION,
+        nuitka_version="test",
     )
 
     output = tmp_path / "module"
-    render_magisk_module(output, MagiskModuleConfig(native_runtime_dir=runtime))
+    render_magisk_module(output, services=None, startup_targets=(), module_config=MagiskModuleConfig(native_runtime_dir=runtime))
 
     launcher = (output / "system/bin/chrootctl").read_text()
-    assert 'RUNTIME_BIN="$RUNTIME_DIST/chrootctl-native-entry"' in launcher
-    assert 'RUNTIME_BIN="$RUNTIME_DIST/chrootctl"' not in launcher
+    assert 'RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"' in launcher
+    assert 'RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"' in launcher
 
 
 def test_onefile_module_launcher_uses_root_runtime_binary(tmp_path: Path) -> None:

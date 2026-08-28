@@ -48,7 +48,7 @@ def test_android_abi_and_termux_host_detection_are_fail_closed() -> None:
         detect_android_abi(machine="x86_64")
 
 
-def test_nuitka_command_is_standalone_android_runtime_shape(tmp_path: Path) -> None:
+def test_nuitka_command_is_onefile_android_runtime_shape(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
     scripts.mkdir(parents=True)
@@ -61,7 +61,7 @@ def test_nuitka_command_is_standalone_android_runtime_shape(tmp_path: Path) -> N
     assert "--include-package=chrootctl" in command
     assert "--include-package-data=chrootctl" in command
     assert "--jobs=2" in command
-    assert "--onefile" not in joined
+    assert any(item.startswith("--onefile-tempdir-spec=/data/adb/chrootctl/onefile-tmp/") for item in command)
     assert DEFAULT_NATIVE_RUNTIME_BUILD_ROOT.as_posix() == "out/native-runtime"
 
 
@@ -78,7 +78,7 @@ def test_native_runtime_manifest_seals_every_file(tmp_path: Path) -> None:
     assert manifest["entrypoint"] == DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
     assert len(manifest["files"]) == 2
 
-    library = artifact / "chrootctl.dist/libpython-test.so"
+    library = artifact / "libpython-test.so"
     library.write_bytes(b"tampered")
     with pytest.raises(ValueError, match="integrity mismatch"):
         validate_native_runtime_artifact(artifact, package_version="0.11.0", bridge_protocol_version=1)
@@ -86,7 +86,7 @@ def test_native_runtime_manifest_seals_every_file(tmp_path: Path) -> None:
 
 def test_native_runtime_manifest_rejects_uninventoried_file_and_wrong_release(tmp_path: Path) -> None:
     artifact = _fake_runtime(tmp_path)
-    (artifact / "chrootctl.dist/extra.so").write_bytes(b"unexpected")
+    (artifact / "extra.so").write_bytes(b"unexpected")
     with pytest.raises(ValueError, match="inventory mismatch"):
         validate_native_runtime_artifact(artifact, package_version="0.11.0", bridge_protocol_version=1)
 
