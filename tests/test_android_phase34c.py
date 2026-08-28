@@ -43,3 +43,10 @@ def test_phase34c_lint_api36_and_active_only_docs_are_preserved() -> None:
     assert "/data/adb/modules/chrootctl-magisk/system/bin/chrootctl" in docs
     assert "pending updates are diagnostics only" in docs.lower()
     assert "protocol-1" in docs
+
+
+def test_runtime_resolver_accepts_onefile_native_runtime_contract() -> None:
+    resolver = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/RuntimeResolver.kt")
+    assert 'private const val NATIVE_RUNTIME_KIND = "nuitka-onefile"' in resolver
+    assert 'private const val NATIVE_RUNTIME_ENTRYPOINT = "chrootctl"' in resolver
+    assert "PROBE_TIMEOUT_SECONDS = 45L" in resolver

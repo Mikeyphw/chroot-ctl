@@ -354,7 +354,7 @@ case "$(uname -m 2>/dev/null || true)" in
 esac
 RUNTIME_ROOT="$MODPATH/runtime/$RUNTIME_ABI"
 RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
-RUNTIME_BIN="$RUNTIME_ROOT/chrootctl.dist/chrootctl-native-entry"
+RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"
 [ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] || abort "! bundled native runtime directory is missing or unsafe"
 [ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || abort "! bundled native runtime manifest is missing or unsafe"
 [ -f "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || abort "! bundled native chrootctl executable is missing or unsafe"
@@ -627,7 +627,7 @@ esac
 RUNTIME_ROOT="$MODDIR/runtime/$RUNTIME_ABI"
 RUNTIME_DIST="$RUNTIME_ROOT/chrootctl.dist"
 RUNTIME_MANIFEST="$RUNTIME_ROOT/runtime-manifest.json"
-RUNTIME_BIN="$RUNTIME_DIST/chrootctl"
+RUNTIME_BIN="$RUNTIME_DIST/chrootctl-native-entry"
 [ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] && [ -d "$RUNTIME_DIST" ] && [ ! -L "$RUNTIME_DIST" ] || {{ echo "bundled native runtime directory is missing or unsafe" >&2; exit 1; }}
 [ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || {{ echo "bundled native runtime manifest is missing or unsafe" >&2; exit 1; }}
 [ -x "$RUNTIME_BIN" ] && [ -f "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || {{ echo "bundled native chrootctl executable is missing or unsafe" >&2; exit 1; }}
@@ -694,14 +694,11 @@ def _validate_module_relative(relative: Path, *, directory: bool = False) -> Non
         raise ValueError(f"module path is outside allow-list: {relative}")
     if _forbidden_module_relative_path(relative):
         raise ValueError(f"forbidden module artifact: {relative}")
-    runtime_dist_prefix = (NATIVE_RUNTIME_MODULE_ROOT / "chrootctl.dist").as_posix() + "/"
     if directory:
-        if text in _ALLOWED_MODULE_DIRS or text.startswith(runtime_dist_prefix):
+        if text in _ALLOWED_MODULE_DIRS:
             return
         raise ValueError(f"module directory is outside nested allow-list: {relative}")
     if text in REQUIRED_MODULE_PATHS:
-        return
-    if text.startswith(runtime_dist_prefix):
         return
     raise ValueError(f"module file is outside nested allow-list: {relative}")
 
@@ -752,7 +749,7 @@ def _validate_native_runtime_zip(archive: zipfile.ZipFile) -> None:
         raise ValueError("native runtime manifest must be a JSON object")
     expected = {
         "schemaVersion": 1,
-        "runtimeKind": "nuitka-standalone",
+        "runtimeKind": "nuitka-onefile",
         "platform": "android",
         "abi": DEFAULT_NATIVE_RUNTIME_ABI,
         "entrypoint": DEFAULT_NATIVE_RUNTIME_ENTRYPOINT,

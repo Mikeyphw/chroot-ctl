@@ -62,7 +62,7 @@ def test_onefile_experiment_command_is_explicitly_separate_from_supported_standa
     joined = " ".join(command)
     assert command[:3] == ("python3", "-m", "nuitka")
     assert "--mode=onefile" in command
-    assert "--mode=standalone" not in command
+    assert "--mode=onefile" not in command
     assert f"--output-filename={DEFAULT_NATIVE_ONEFILE_EXPERIMENT_NAME}" in command
     assert DEFAULT_NATIVE_RUNTIME_BUILD_ROOT.as_posix() == "out/native-runtime"
     assert DEFAULT_NATIVE_ONEFILE_EXPERIMENT_ROOT.as_posix() == "out/native-runtime-onefile"

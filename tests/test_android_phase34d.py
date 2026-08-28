@@ -83,3 +83,10 @@ def test_phase34d_api36_and_strict_lint_policy_are_preserved() -> None:
     assert "abortOnError = true" in build
     ignored = re.findall(r'<issue\s+id="([^"]+)"\s+severity="ignore"\s*/>', lint)
     assert ignored == ["OldTargetApi"]
+
+
+def test_bridge_output_validator_extracts_clean_json_envelope() -> None:
+    validator = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/BridgeOutputValidator.kt")
+    assert "extractBridgeJsonEnvelope(result.output)" in validator
+    assert "private fun extractBridgeJsonEnvelope" in validator
+    assert 'line.startsWith("{") && line.endsWith("}")' in validator

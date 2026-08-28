@@ -15,13 +15,14 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 NATIVE_RUNTIME_SCHEMA_VERSION = 1
-NATIVE_RUNTIME_KIND = "nuitka-standalone"
+NATIVE_RUNTIME_KIND = "nuitka-onefile"
 NATIVE_RUNTIME_PLATFORM = "android"
 DEFAULT_NATIVE_RUNTIME_ABI = "arm64-v8a"
-DEFAULT_NATIVE_RUNTIME_ENTRYPOINT = "chrootctl.dist/chrootctl-native-entry"
+DEFAULT_NATIVE_RUNTIME_ENTRYPOINT = "chrootctl"
 DEFAULT_NATIVE_RUNTIME_BUILD_ROOT = Path("out/native-runtime")
 DEFAULT_NATIVE_ONEFILE_EXPERIMENT_ROOT = Path("out/native-runtime-onefile")
 DEFAULT_NATIVE_ONEFILE_EXPERIMENT_NAME = "chrootctl-onefile"
+DEFAULT_NATIVE_ONEFILE_TEMPDIR_SPEC = "/data/adb/chrootctl/onefile-tmp/chrootctl_{PID}_{TIME}"
 NUITKA_STANDALONE_OUTPUT_NAME = "chrootctl-native-entry"
 SUPPORTED_ANDROID_MACHINES = {
     "aarch64": "arm64-v8a",
@@ -111,20 +112,20 @@ def nuitka_command(
         python,
         "-m",
         "nuitka",
-        "--mode=standalone",
+        "--mode=onefile",
         "--clang",
         f"--jobs={jobs}",
         "--remove-output",
         "--noinclude-dlls=[vdso]",
         "--noinclude-dlls=linux-vdso*",
         "--noinclude-dlls=*vdso*",
+        f"--onefile-tempdir-spec={DEFAULT_NATIVE_ONEFILE_TEMPDIR_SPEC}",
         "--include-package=chrootctl",
         "--include-package-data=chrootctl",
-        f"--output-filename={NUITKA_STANDALONE_OUTPUT_NAME}",
+        f"--output-filename={DEFAULT_NATIVE_RUNTIME_ENTRYPOINT}",
         f"--output-dir={output_dir}",
         str(entry_script),
     )
-
 
 def nuitka_onefile_experiment_command(
     *,
@@ -133,32 +134,12 @@ def nuitka_onefile_experiment_command(
     jobs: int = 2,
     python_executable: str | None = None,
 ) -> tuple[str, ...]:
-    repo_root = repo_root.expanduser().resolve()
-    output_dir = output_dir.expanduser().resolve()
-    entry_script = repo_root / "scripts/chrootctl-native-entry.py"
-    if not entry_script.is_file() or entry_script.is_symlink():
-        raise FileNotFoundError(f"missing safe native runtime entry script: {entry_script}")
-    if jobs < 1:
-        raise ValueError("jobs must be at least 1")
-    python = python_executable or sys.executable
-    return (
-        python,
-        "-m",
-        "nuitka",
-        "--mode=onefile",
-        "--clang",
-        f"--jobs={jobs}",
-        "--remove-output",
-        "--noinclude-dlls=[vdso]",
-        "--noinclude-dlls=linux-vdso*",
-        "--noinclude-dlls=*vdso*",
-        "--include-package=chrootctl",
-        "--include-package-data=chrootctl",
-        f"--output-filename={DEFAULT_NATIVE_ONEFILE_EXPERIMENT_NAME}",
-        f"--output-dir={output_dir}",
-        str(entry_script),
+    return nuitka_command(
+        repo_root=repo_root,
+        output_dir=output_dir,
+        jobs=jobs,
+        python_executable=python_executable,
     )
-
 
 def native_onefile_experiment_plan(
     repo_root: Path,
@@ -191,37 +172,12 @@ def _find_nuitka_distribution(stage_root: Path) -> Path:
         raise RuntimeError(f"expected exactly one Nuitka standalone distribution, found {len(candidates)}")
     return candidates[0]
 
-
 def _normalize_entrypoint(distribution_dir: Path) -> Path:
-    exact = distribution_dir / NUITKA_STANDALONE_OUTPUT_NAME
-    candidates: list[Path] = []
-
-    if exact.is_file() and not exact.is_symlink():
-        candidates.append(exact)
-
-    candidates.extend(
-        path
-        for path in sorted(distribution_dir.iterdir())
-        if path.is_file()
-        and not path.is_symlink()
-        and path.name in {
-            NUITKA_STANDALONE_OUTPUT_NAME,
-            f"{NUITKA_STANDALONE_OUTPUT_NAME}.bin",
-        }
-    )
-
-    deduped = list(dict.fromkeys(candidates))
-    if len(deduped) != 1:
-        raise RuntimeError("unable to identify a unique Nuitka chrootctl entrypoint")
-
-    source = deduped[0]
-    if source != exact:
-        if exact.exists():
-            raise RuntimeError(f"refusing to replace unexpected native entrypoint: {exact}")
-        source.rename(exact)
-
-    exact.chmod(exact.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return exact
+    entrypoint = distribution_dir / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
+    if not entrypoint.is_file() or entrypoint.is_symlink():
+        raise FileNotFoundError(f"missing onefile native runtime entrypoint: {entrypoint}")
+    entrypoint.chmod(entrypoint.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return entrypoint
 
 def _normalize_runtime_permissions(artifact_dir: Path) -> None:
     entrypoint = artifact_dir / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
@@ -402,22 +358,31 @@ def build_native_android_runtime(
     root = expanded_root.resolve()
     final_dir = root / abi
     root.mkdir(parents=True, exist_ok=True)
+
     with tempfile.TemporaryDirectory(prefix="chrootctl-nuitka-", dir=str(root)) as tmp:
         stage_root = Path(tmp)
         command = nuitka_command(repo_root=repo_root, output_dir=stage_root, jobs=jobs, python_executable=python_executable)
         build_env = env.copy()
         source_root = str(repo_root / "src")
         build_env["PYTHONPATH"] = source_root if not build_env.get("PYTHONPATH") else f"{source_root}:{build_env['PYTHONPATH']}"
+
         completed = subprocess.run(command, cwd=repo_root, env=build_env, check=False)
         if completed.returncode != 0:
-            raise RuntimeError(f"Nuitka native runtime build failed with exit {completed.returncode}")
-        distribution = _find_nuitka_distribution(stage_root)
-        normalized = stage_root / "chrootctl.dist"
-        distribution.rename(normalized)
-        _normalize_entrypoint(normalized)
+            raise RuntimeError(f"Nuitka native runtime onefile build failed with exit {completed.returncode}")
+
+        source_binary = stage_root / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
+        if not source_binary.is_file() or source_binary.is_symlink():
+            candidates = sorted(path for path in stage_root.iterdir() if path.is_file() and not path.is_symlink())
+            if len(candidates) != 1:
+                raise RuntimeError("unable to identify unique Nuitka onefile output")
+            source_binary = candidates[0]
+
         artifact_stage = stage_root / abi
         artifact_stage.mkdir()
-        normalized.rename(artifact_stage / normalized.name)
+        entrypoint = artifact_stage / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
+        shutil.copy2(source_binary, entrypoint)
+        _normalize_entrypoint(artifact_stage)
+
         manifest = write_native_runtime_manifest(
             artifact_stage,
             abi=abi,
@@ -431,21 +396,22 @@ def build_native_android_runtime(
             package_version=_package_version(repo_root),
             bridge_protocol_version=_bridge_protocol_version(repo_root),
         )
+
         if final_dir.exists():
             if final_dir.is_symlink() or not final_dir.is_dir():
                 raise ValueError(f"refusing unsafe existing native runtime destination: {final_dir}")
             shutil.rmtree(final_dir)
         shutil.copytree(artifact_stage, final_dir, symlinks=False)
+
     final_manifest = final_dir / manifest.name
     final_entrypoint = final_dir / DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
     return NativeRuntimeBuildResult(
         artifact_dir=final_dir,
-        distribution_dir=final_dir / "chrootctl.dist",
+        distribution_dir=final_dir,
         entrypoint=final_entrypoint,
         manifest=final_manifest,
         command=command,
     )
-
 
 def _package_version(repo_root: Path) -> str:
     text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")

@@ -17,7 +17,7 @@ internal fun validateBridgeProcessResult(
             message = "Bridge runtime ${runtime.executable} timed out",
         )
     }
-    val output = result.output.trim()
+    val output = extractBridgeJsonEnvelope(result.output)
     if (output.isBlank()) {
         val detail = bridgeOutputExcerpt(result.errorOutput)
         return BridgeOutputValidation.Rejected(
@@ -58,3 +58,15 @@ internal fun bridgeOutputExcerpt(raw: String): String = raw
 
 private const val BRIDGE_PROTOCOL_VERSION = 1
 private const val MAX_BRIDGE_ERROR_EXCERPT = 240
+
+
+private fun extractBridgeJsonEnvelope(raw: String): String {
+    val trimmed = raw.trim()
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed
+
+    return raw
+        .lineSequence()
+        .map(String::trim)
+        .firstOrNull { line -> line.startsWith("{") && line.endsWith("}") }
+        .orEmpty()
+}

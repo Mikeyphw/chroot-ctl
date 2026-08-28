@@ -253,15 +253,15 @@ internal object RuntimeResolver {
 
     private fun isExecutable(path: File): Boolean = path.isFile && path.canExecute()
 
-    private const val PROBE_TIMEOUT_SECONDS = 2L
+    private const val PROBE_TIMEOUT_SECONDS = 45L
     private const val BRIDGE_PROTOCOL_VERSION = 1
     private const val COMPATIBILITY_SCHEMA_VERSION = 2
     private const val NATIVE_RUNTIME_SCHEMA_VERSION = 1
-    private const val NATIVE_RUNTIME_KIND = "nuitka-standalone"
+    private const val NATIVE_RUNTIME_KIND = "nuitka-onefile"
     private const val NATIVE_RUNTIME_PLATFORM = "android"
     private const val NATIVE_RUNTIME_ABI = "arm64-v8a"
     private const val NATIVE_RUNTIME_ROOT = "runtime/arm64-v8a"
-    private const val NATIVE_RUNTIME_ENTRYPOINT = "chrootctl.dist/chrootctl-native-entry"
+    private const val NATIVE_RUNTIME_ENTRYPOINT = "chrootctl"
     private const val MODULE_ID = "chrootctl-magisk"
     private const val EXPECTED_MODULE_VERSION = "1.3.0"
     private const val MIN_SUPPORTED_MODULE_VERSION_CODE = 15

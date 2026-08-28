@@ -56,7 +56,7 @@ def test_nuitka_command_is_standalone_android_runtime_shape(tmp_path: Path) -> N
     command = nuitka_command(repo_root=repo, output_dir=tmp_path / "out", jobs=2, python_executable="python3")
     joined = " ".join(command)
     assert command[:3] == ("python3", "-m", "nuitka")
-    assert "--mode=standalone" in command
+    assert "--mode=onefile" in command
     assert "--clang" in command
     assert "--include-package=chrootctl" in command
     assert "--include-package-data=chrootctl" in command
@@ -73,7 +73,7 @@ def test_native_runtime_manifest_seals_every_file(tmp_path: Path) -> None:
         package_version="0.11.0",
         bridge_protocol_version=1,
     )
-    assert manifest["runtimeKind"] == "nuitka-standalone"
+    assert manifest["runtimeKind"] == "nuitka-onefile"
     assert manifest["platform"] == "android"
     assert manifest["entrypoint"] == DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
     assert len(manifest["files"]) == 2
@@ -104,3 +104,11 @@ def test_native_runtime_validator_rejects_symlink_artifact_root(tmp_path: Path) 
     link.symlink_to(artifact, target_is_directory=True)
     with pytest.raises(NotADirectoryError, match="real directory"):
         validate_native_runtime_artifact(link, package_version="0.11.0", bridge_protocol_version=1)
+
+
+def test_nuitka_command_builds_onefile_module_runtime(tmp_path: Path) -> None:
+    command = nuitka_command(repo_root=Path.cwd(), output_dir=tmp_path, jobs=2)
+    assert "--mode=onefile" in command
+    assert "--output-filename=chrootctl" in command
+    assert any(item.startswith("--onefile-tempdir-spec=/data/adb/chrootctl/onefile-tmp/") for item in command)
+    assert "--include-package-data=chrootctl" in command
