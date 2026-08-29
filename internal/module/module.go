@@ -215,14 +215,56 @@ func moduleProp() string {
 	return fmt.Sprintf("id=%s\nname=%s\nversion=%s\nversionCode=%d\nauthor=chrootctl\ndescription=Self-contained chrootctl Magisk/KernelSU runtime with a bundled Android Go backend.\n", ModuleID, ModuleName, ModuleVersion, ModuleVersionCode)
 }
 func customize() string {
-	return "#!/system/bin/sh\nSKIPMOUNT=false\nPROPFILE=false\nPOSTFSDATA=true\nLATESTARTSERVICE=true\nREPLACE=\"\"\nui_print \"chrootctl ships a bundled Go native runtime.\" 2>/dev/null || echo \"chrootctl ships a bundled Go native runtime.\"\nreturn 0 2>/dev/null || exit 0\n"
+	return `#!/system/bin/sh
+SKIPMOUNT=false
+PROPFILE=false
+POSTFSDATA=true
+LATESTARTSERVICE=true
+REPLACE=""
+
+ui_print "chrootctl ships a bundled Go native runtime." 2>/dev/null || echo "chrootctl ships a bundled Go native runtime."
+
+# Magisk/KernelSU extraction may leave module payload files as 0644 even when
+# the ZIP records executable modes. Enforce executable bits during install so
+# /system/bin/chrootctl can exec the bundled Go runtime after promotion.
+if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
+  if command -v set_perm_recursive >/dev/null 2>&1; then
+    set_perm_recursive "$MODPATH" 0 0 0755 0644
+  else
+    chown -R 0:0 "$MODPATH" 2>/dev/null || true
+    find "$MODPATH" -type d -exec chmod 0755 {} + 2>/dev/null || true
+    find "$MODPATH" -type f -exec chmod 0644 {} + 2>/dev/null || true
+  fi
+
+  if command -v set_perm >/dev/null 2>&1; then
+    set_perm "$MODPATH/customize.sh" 0 0 0755
+    set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
+    set_perm "$MODPATH/service.sh" 0 0 0755
+    set_perm "$MODPATH/bin/chrootctl-magisk-helper" 0 0 0755
+    set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755
+    set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755
+    set_perm "$MODPATH/runtime/arm64-v8a/chrootctl" 0 0 0755
+  else
+    chmod 0755 "$MODPATH/customize.sh" 2>/dev/null || true
+    chmod 0755 "$MODPATH/post-fs-data.sh" 2>/dev/null || true
+    chmod 0755 "$MODPATH/service.sh" 2>/dev/null || true
+    chmod 0755 "$MODPATH/bin/chrootctl-magisk-helper" 2>/dev/null || true
+    chmod 0755 "$MODPATH/system/bin/chrootctl" 2>/dev/null || true
+    chmod 0755 "$MODPATH/system/bin/chrootctl-magisk-helper" 2>/dev/null || true
+    chmod 0755 "$MODPATH/runtime/arm64-v8a/chrootctl" 2>/dev/null || true
+  fi
+fi
+
+return 0 2>/dev/null || exit 0
+`
 }
+
 func postFS() string { return "#!/system/bin/sh\nexit 0\n" }
 func helper() string {
 	return "#!/system/bin/sh\nset -u\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-${0%/bin/*}}\"\nCHROOTCTL=\"$MODDIR/system/bin/chrootctl\"\n[ -x \"$CHROOTCTL\" ] || { echo \"bundled chrootctl runtime is unavailable\" >&2; exit 127; }\ncase \"$CMD\" in\n  __module-boot|__module-service)\n    rc=0\n    \"$CHROOTCTL\" clipboard daemon start >/dev/null 2>&1 || true\n    for target in \"$@\"; do\n      \"$CHROOTCTL\" --name \"$target\" mount || rc=1\n    done\n    \"$CHROOTCTL\" run --boot || rc=1\n    exit \"$rc\"\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
 }
 func launcher() string {
-	return "#!/system/bin/sh\nset -eu\n\nMODULE_ID=\"chrootctl-magisk\"\nRUNTIME_ABI=\"arm64-v8a\"\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\" # diagnostics only\n\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-}\"\nif [ -z \"$MODDIR\" ]; then\n  MODDIR=\"$ACTIVE_MODULE\"\nfi\n\nRUNTIME_ROOT=\"$MODDIR/runtime/$RUNTIME_ABI\"\nRUNTIME_MANIFEST=\"$RUNTIME_ROOT/runtime-manifest.json\"\nRUNTIME_BIN=\"$RUNTIME_ROOT/chrootctl\"\n\n[ -d \"$RUNTIME_ROOT\" ] && [ ! -L \"$RUNTIME_ROOT\" ] || { echo \"bundled native runtime directory is missing or unsafe\" >&2; exit 127; }\n[ -f \"$RUNTIME_MANIFEST\" ] && [ ! -L \"$RUNTIME_MANIFEST\" ] || { echo \"bundled native runtime manifest is missing or unsafe\" >&2; exit 127; }\n[ -f \"$RUNTIME_BIN\" ] && [ -x \"$RUNTIME_BIN\" ] && [ ! -L \"$RUNTIME_BIN\" ] || { echo \"bundled native chrootctl executable is missing or unsafe\" >&2; exit 127; }\n\nmkdir -p /data/adb/chrootctl 2>/dev/null || true\nchmod 0700 /data/adb/chrootctl 2>/dev/null || true\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nexec \"$RUNTIME_BIN\" \"$@\"\n"
+	return "#!/system/bin/sh\nset -eu\n\nMODULE_ID=\"chrootctl-magisk\"\nRUNTIME_ABI=\"arm64-v8a\"\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\"\n\nruntime_bin_ok() {\n  [ -f \"$1\" ] && [ -x \"$1\" ] && [ ! -L \"$1\" ]\n}\n\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-}\"\nif [ -z \"$MODDIR\" ]; then\n  case \"$0\" in\n    */system/bin/chrootctl) MODDIR=\"${0%/system/bin/chrootctl}\" ;;\n  esac\nfi\ncase \"$MODDIR\" in\n  \"\"|/system|/system_root/system) MODDIR=\"$ACTIVE_MODULE\" ;;\nesac\n\nRUNTIME_ROOT=\"$MODDIR/runtime/$RUNTIME_ABI\"\nRUNTIME_MANIFEST=\"$RUNTIME_ROOT/runtime-manifest.json\"\nRUNTIME_BIN=\"$RUNTIME_ROOT/chrootctl\"\n\n[ -d \"$RUNTIME_ROOT\" ] && [ ! -L \"$RUNTIME_ROOT\" ] || { echo \"bundled native runtime directory is missing or unsafe: $RUNTIME_ROOT\" >&2; echo \"hint: after installing/updating the module, reboot so modules_update is promoted to modules; for direct staging tests set CHROOTCTL_MODULE_DIR.\" >&2; exit 127; }\n[ -f \"$RUNTIME_MANIFEST\" ] && [ ! -L \"$RUNTIME_MANIFEST\" ] || { echo \"bundled native runtime manifest is missing or unsafe: $RUNTIME_MANIFEST\" >&2; echo \"hint: rebuild/reinstall the module from a sealed Go-native runtime.\" >&2; exit 127; }\nruntime_bin_ok \"$RUNTIME_BIN\" || { echo \"bundled native chrootctl executable is missing or unsafe: $RUNTIME_BIN\" >&2; echo \"hint: verify it exists, is not a symlink, and has executable mode; reboot after module install/update.\" >&2; exit 127; }\n\nmkdir -p /data/adb/chrootctl 2>/dev/null || true\nchmod 0700 /data/adb/chrootctl 2>/dev/null || true\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nexec \"$RUNTIME_BIN\" \"$@\"\n"
 }
 func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
@@ -338,30 +380,53 @@ func Zip(root, path string) error {
 	if e := ValidateRendered(root); e != nil {
 		return e
 	}
-	if e := os.MkdirAll(filepath.Dir(path), 0755); e != nil {
-		return e
-	}
-	f, e := os.Create(path)
+	absRoot, e := filepath.Abs(root)
 	if e != nil {
 		return e
 	}
-	zw := zip.NewWriter(f)
-	var names []string
-	filepath.WalkDir(root, func(p string, d fs.DirEntry, e error) error {
-		if e == nil && !d.IsDir() {
-			rel, _ := filepath.Rel(root, p)
-			names = append(names, filepath.ToSlash(rel))
-		}
+	absZip, e := filepath.Abs(path)
+	if e != nil {
 		return e
-	})
+	}
+	var names []string
+	if e = filepath.WalkDir(absRoot, func(p string, d fs.DirEntry, e error) error {
+		if e != nil || d.IsDir() {
+			return e
+		}
+		absPath, e := filepath.Abs(p)
+		if e != nil {
+			return e
+		}
+		if absPath == absZip {
+			return nil
+		}
+		rel, e := filepath.Rel(absRoot, p)
+		if e != nil {
+			return e
+		}
+		names = append(names, filepath.ToSlash(rel))
+		return nil
+	}); e != nil {
+		return e
+	}
+	if e := os.MkdirAll(filepath.Dir(absZip), 0755); e != nil {
+		return e
+	}
+	tmp, e := os.CreateTemp(filepath.Dir(absZip), ".chrootctl-module-*.zip.tmp")
+	if e != nil {
+		return e
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	zw := zip.NewWriter(tmp)
 	sort.Strings(names)
 	epoch := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, name := range names {
-		p := filepath.Join(root, filepath.FromSlash(name))
+		p := filepath.Join(absRoot, filepath.FromSlash(name))
 		st, e := safeRegular(p)
 		if e != nil {
 			zw.Close()
-			f.Close()
+			tmp.Close()
 			return e
 		}
 		h, _ := zip.FileInfoHeader(st)
@@ -372,28 +437,34 @@ func Zip(root, path string) error {
 		w, e := zw.CreateHeader(h)
 		if e != nil {
 			zw.Close()
-			f.Close()
+			tmp.Close()
 			return e
 		}
 		src, e := os.Open(p)
 		if e != nil {
 			zw.Close()
-			f.Close()
+			tmp.Close()
 			return e
 		}
 		_, e = io.Copy(w, src)
 		src.Close()
 		if e != nil {
 			zw.Close()
-			f.Close()
+			tmp.Close()
 			return e
 		}
 	}
 	if e = zw.Close(); e != nil {
-		f.Close()
+		tmp.Close()
 		return e
 	}
-	return f.Close()
+	if e = tmp.Close(); e != nil {
+		return e
+	}
+	if e = os.Rename(tmpName, absZip); e != nil {
+		return e
+	}
+	return nil
 }
 func ValidateRendered(root string) error {
 	required := []string{"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper", "config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl"}

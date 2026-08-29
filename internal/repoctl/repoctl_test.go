@@ -25,6 +25,21 @@ func TestForbiddenSourceNames(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallModuleShellSupportsKernelSUAndMagisk(t *testing.T) {
+	got := installModuleShell("/tmp/a'b.zip")
+	for _, want := range []string{
+		`ksud module install '/tmp/a'\''b.zip'`,
+		`/data/adb/ksud module install '/tmp/a'\''b.zip'`,
+		`magisk --install-module '/tmp/a'\''b.zip'`,
+		"no supported Magisk/KernelSU module installer",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("install shell missing %q in:\n%s", want, got)
+		}
+	}
+}
+
 func TestSourceArchiveExcludesGeneratedBuildState(t *testing.T) {
 	for _, name := range []string{".gradle", ".kotlin", "build"} {
 		if !excludedDirs[name] {

@@ -1,9 +1,11 @@
 package module
 
 import (
+	"archive/zip"
 	"encoding/binary"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -78,6 +80,102 @@ func TestRenderGoNativeModule(t *testing.T) {
 			t.Fatalf("module helper missing %q", want)
 		}
 	}
+}
+
+func TestLauncherResolvesModuleDirFromExplicitModuleTreePath(t *testing.T) {
+	moduleRoot := filepath.Join(t.TempDir(), "chrootctl-magisk")
+	launcherPath := filepath.Join(moduleRoot, "system/bin/chrootctl")
+	runtimePath := filepath.Join(moduleRoot, "runtime/arm64-v8a/chrootctl")
+	if err := os.MkdirAll(filepath.Dir(launcherPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(runtimePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(launcherPath, []byte(launcher()), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(runtimePath), "runtime-manifest.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runtimePath, []byte("#!/bin/sh\necho runtime:$1:$CHROOTCTL_MODULE_DIR\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", launcherPath, "probe")
+	cmd.Env = append(os.Environ(), "CHROOTCTL_MODULE_DIR=")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("launcher failed: %v\n%s", err, out)
+	}
+	want := "runtime:probe:" + moduleRoot
+	if !strings.Contains(string(out), want) {
+		t.Fatalf("launcher did not derive module root from $0; want %q in %q", want, out)
+	}
+}
+
+func TestLauncherMissingRuntimeErrorNamesResolvedPath(t *testing.T) {
+	moduleRoot := filepath.Join(t.TempDir(), "chrootctl-magisk")
+	launcherPath := filepath.Join(moduleRoot, "system/bin/chrootctl")
+	if err := os.MkdirAll(filepath.Dir(launcherPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(launcherPath, []byte(launcher()), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", launcherPath)
+	cmd.Env = append(os.Environ(), "CHROOTCTL_MODULE_DIR=")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("launcher unexpectedly succeeded: %s", out)
+	}
+	text := string(out)
+	for _, want := range []string{moduleRoot + "/runtime/arm64-v8a", "reboot so modules_update is promoted to modules"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("launcher diagnostic missing %q: %s", want, text)
+		}
+	}
+}
+
+func assertZipDoesNotContain(t *testing.T, zipPath string, forbidden ...string) {
+	t.Helper()
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		for _, name := range forbidden {
+			if f.Name == name || strings.Contains(f.Name, name) {
+				t.Fatalf("zip %s unexpectedly contains %s", zipPath, f.Name)
+			}
+		}
+	}
+}
+
+func TestRenderZipInsideOutputDoesNotIncludeZipItself(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	z := filepath.Join(out, "module.zip")
+	if err := Render(Options{OutputDir: out, ZipPath: z, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	assertZipDoesNotContain(t, z, "module.zip", ".chrootctl-module-")
+}
+
+func TestZipSkipsExistingDestinationInsideModuleTree(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	z := filepath.Join(out, "module.zip")
+	if err := Render(Options{OutputDir: out, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(z, []byte("stale zip placeholder"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Zip(out, z); err != nil {
+		t.Fatal(err)
+	}
+	assertZipDoesNotContain(t, z, "module.zip", ".chrootctl-module-")
 }
 
 func TestValidateRuntimeRejectsMislabeledNonArm64ELF(t *testing.T) {

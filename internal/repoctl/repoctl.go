@@ -284,10 +284,16 @@ func BuildModule(opts ModuleOptions) (string, error) {
 		return "", e
 	}
 	defer os.RemoveAll(tmp)
-	if e = chmodule.Render(chmodule.Options{OutputDir: tmp, ZipPath: zipPath, NativeRuntimeDir: runtimeDir, StartupTargets: opts.StartupTargets}); e != nil {
+	if e = chmodule.Render(chmodule.Options{OutputDir: tmp, NativeRuntimeDir: runtimeDir, StartupTargets: opts.StartupTargets}); e != nil {
 		return "", e
 	}
 	if e = replaceDir(tmp, out); e != nil {
+		return "", e
+	}
+	if e = chmodule.ValidateRendered(out); e != nil {
+		return "", e
+	}
+	if e = chmodule.Zip(out, zipPath); e != nil {
 		return "", e
 	}
 	if opts.Checksum {
@@ -307,6 +313,18 @@ func BuildModule(opts ModuleOptions) (string, error) {
 	return zipPath, nil
 }
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+
+func installModuleShell(abs string) string {
+	quoted := shellQuote(abs)
+	return strings.Join([]string{
+		"if command -v ksud >/dev/null 2>&1; then exec ksud module install " + quoted + "; fi",
+		"if [ -x /data/adb/ksud ]; then exec /data/adb/ksud module install " + quoted + "; fi",
+		"if command -v magisk >/dev/null 2>&1; then exec magisk --install-module " + quoted + "; fi",
+		"echo 'no supported Magisk/KernelSU module installer found in root shell' >&2",
+		"exit 127",
+	}, "\n")
+}
+
 func InstallModule(zipPath string) error {
 	abs, e := filepath.Abs(zipPath)
 	if e != nil {
@@ -315,7 +333,7 @@ func InstallModule(zipPath string) error {
 	if _, e = os.Stat(abs); e != nil {
 		return e
 	}
-	cmd := exec.Command("su", "-c", "ksud module install "+shellQuote(abs))
+	cmd := exec.Command("su", "-c", installModuleShell(abs))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
