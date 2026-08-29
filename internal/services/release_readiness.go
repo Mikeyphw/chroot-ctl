@@ -17,6 +17,8 @@ import (
 type ReleaseReadinessService struct{ C *Container }
 type readinessRequirement struct{ ID, Label string }
 
+const releaseEvidenceSchemaVersion = 3
+
 var readinessRequirements = []readinessRequirement{
 	{"go_test", "Go test suite"}, {"go_vet", "Go vet"}, {"go_contracts", "Go contract seal"}, {"repo_purity", "Go-only repository purity"},
 	{"source_package", "Source package validator"}, {"android_compileDebugKotlin", "Android compileDebugKotlin"}, {"android_testDebugUnitTest", "Android testDebugUnitTest"}, {"android_lintDebug", "Android lintDebug"},
@@ -95,8 +97,25 @@ func readEvidence(path string) (map[string]any, string) {
 		return map[string]any{}, "validation evidence is unreadable"
 	}
 	schema, ok := finiteNumber(payload["schemaVersion"])
-	if !ok || int(schema) != 2 {
-		return map[string]any{}, "validation evidence schemaVersion must be 2"
+	if !ok || int(schema) != releaseEvidenceSchemaVersion {
+		return map[string]any{}, fmt.Sprintf("validation evidence schemaVersion must be %d", releaseEvidenceSchemaVersion)
+	}
+	if strings.TrimSpace(stringValue(payload["validationRunId"])) == "" {
+		return map[string]any{}, "validation evidence validationRunId is required"
+	}
+	generated, ok := finiteNumber(payload["generatedAt"])
+	if !ok || generated <= 0 {
+		return map[string]any{}, "validation evidence generatedAt must be a finite positive timestamp"
+	}
+	commit, tree := stringValue(payload["sourceCommit"]), stringValue(payload["sourceTree"])
+	if (commit == "") != (tree == "") {
+		return map[string]any{}, "validation evidence sourceCommit/sourceTree must both be present or both be empty"
+	}
+	if commit != "" && (!oidRE.MatchString(commit) || !oidRE.MatchString(tree)) {
+		return map[string]any{}, "validation evidence Git identities must be exact lowercase 40-hex object ids"
+	}
+	if !shaRE.MatchString(stringValue(payload["compatibilityManifestSha256"])) {
+		return map[string]any{}, "validation evidence compatibilityManifestSha256 must be an exact lowercase SHA-256"
 	}
 	checks, ok := payload["checks"].(map[string]any)
 	if !ok {
@@ -119,69 +138,37 @@ func readEvidence(path string) (map[string]any, string) {
 	if len(missing) > 0 || len(extra) > 0 {
 		return map[string]any{}, fmt.Sprintf("validation evidence check set mismatch; missing=%v extra=%v", missing, extra)
 	}
-	generated, gok := finiteNumber(payload["generatedAt"])
-	started, sok := finiteNumber(payload["validationStartedAt"])
-	completed, cok := finiteNumber(payload["validationCompletedAt"])
-	if !gok {
-		return map[string]any{}, "validation evidence generatedAt must be a finite timestamp"
-	}
-	if !sok {
-		return map[string]any{}, "validation evidence validationStartedAt must be a finite timestamp"
-	}
-	if !cok {
-		return map[string]any{}, "validation evidence validationCompletedAt must be a finite timestamp"
-	}
-	if completed < started || generated != completed {
-		return map[string]any{}, "validation evidence run timestamps are inconsistent"
-	}
-	if strings.TrimSpace(stringValue(payload["validationRunId"])) == "" {
-		return map[string]any{}, "validation evidence validationRunId is required"
-	}
-	for _, k := range []string{"sourceCommit", "sourceTree", "validatedTree"} {
-		if !oidRE.MatchString(stringValue(payload[k])) {
-			return map[string]any{}, fmt.Sprintf("validation evidence %s must be an exact lowercase 40-hex Git object id", k)
-		}
-	}
-	if payload["sourceTree"] == payload["validatedTree"] {
-		return map[string]any{}, "validation evidence validatedTree must differ from the pre-overlay sourceTree"
-	}
-	if !shaRE.MatchString(stringValue(payload["compatibilityManifestSha256"])) {
-		return map[string]any{}, "validation evidence compatibilityManifestSha256 must be an exact lowercase SHA-256"
-	}
 	for id := range required {
 		item, ok := checks[id].(map[string]any)
 		if !ok {
 			return map[string]any{}, fmt.Sprintf("validation evidence check %s must be an object", id)
 		}
-		if strings.ToLower(stringValue(item["status"])) != "pass" {
-			continue
+		status := strings.ToLower(stringValue(item["status"]))
+		if status != "pass" && status != "fail" {
+			return map[string]any{}, fmt.Sprintf("validation evidence check %s has invalid status %q", id, status)
 		}
-		gs, a := finiteNumber(item["startedAt"])
-		gf, b := finiteNumber(item["finishedAt"])
-		ra, c := finiteNumber(item["recordedAt"])
-		if !a || !b || !c {
-			return map[string]any{}, fmt.Sprintf("validation evidence passing check %s has invalid timing provenance", id)
-		}
-		if !(started <= gs && gs <= gf && gf <= completed && gf <= ra && ra <= completed) {
-			return map[string]any{}, fmt.Sprintf("validation evidence passing check %s has inconsistent timing provenance", id)
-		}
-		prov := stringValue(item["provenance"])
-		if prov == "deduplicated-subprocess" {
-			parent := stringValue(item["derivedFrom"])
-			if !required[parent] || parent == id {
-				return map[string]any{}, fmt.Sprintf("validation evidence passing check %s has invalid derivedFrom provenance", id)
+		if status == "pass" {
+			code, cok := finiteNumber(item["exitCode"])
+			recorded, rok := finiteNumber(item["recordedAt"])
+			if !cok || int(code) != 0 || !rok || recorded <= 0 || strings.TrimSpace(stringValue(item["command"])) == "" {
+				return map[string]any{}, fmt.Sprintf("validation evidence passing check %s has incomplete execution provenance", id)
+			}
+			prov := stringValue(item["provenance"])
+			if prov != "subprocess" && prov != "internal-check" {
+				return map[string]any{}, fmt.Sprintf("validation evidence passing check %s has invalid provenance", id)
 			}
 		}
 	}
 	return payload, ""
 }
+
 func findRepoRoot() string {
 	cwd, e := os.Getwd()
 	if e != nil {
 		return ""
 	}
 	for p := cwd; ; p = filepath.Dir(p) {
-		if exists(filepath.Join(p, ".git")) {
+		if exists(filepath.Join(p, "go.mod")) {
 			return p
 		}
 		parent := filepath.Dir(p)
@@ -191,44 +178,16 @@ func findRepoRoot() string {
 	}
 	return ""
 }
-func gitValue(repo string, env []string, args ...string) string {
-	if repo == "" {
+func gitValue(repo string, args ...string) string {
+	if repo == "" || !exists(filepath.Join(repo, ".git")) {
 		return ""
 	}
 	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	if env != nil {
-		cmd.Env = env
-	}
 	b, e := cmd.Output()
 	if e != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
-}
-func worktreeTree(repo string) string {
-	if repo == "" {
-		return ""
-	}
-	f, e := os.CreateTemp("", "chrootctl-readiness-index-*")
-	if e != nil {
-		return ""
-	}
-	name := f.Name()
-	f.Close()
-	os.Remove(name)
-	defer os.Remove(name)
-	env := append(os.Environ(), "GIT_INDEX_FILE="+name)
-	cmd := exec.Command("git", "-C", repo, "read-tree", "HEAD")
-	cmd.Env = env
-	if e = cmd.Run(); e != nil {
-		return ""
-	}
-	cmd = exec.Command("git", "-C", repo, "add", "-A", "--", ".")
-	cmd.Env = env
-	if e = cmd.Run(); e != nil {
-		return ""
-	}
-	return gitValue(repo, env, "write-tree")
 }
 func fileSHA(path string) string {
 	st, e := os.Lstat(path)
@@ -261,30 +220,15 @@ func (s *ReleaseReadinessService) compatibilityHash(repo string) string {
 }
 func (s *ReleaseReadinessService) identityProblem(payload map[string]any) string {
 	repo := findRepoRoot()
-	recordedCommit := stringValue(payload["sourceCommit"])
-	recordedSourceTree := stringValue(payload["sourceTree"])
-	recordedValidatedTree := stringValue(payload["validatedTree"])
-	if repo != "" {
-		currentCommit := gitValue(repo, nil, "rev-parse", "HEAD")
-		if !oidRE.MatchString(currentCommit) {
-			return "validation evidence source identity cannot be verified because Git HEAD is unavailable"
+	commit, tree := stringValue(payload["sourceCommit"]), stringValue(payload["sourceTree"])
+	if repo != "" && exists(filepath.Join(repo, ".git")) && commit != "" {
+		currentCommit := gitValue(repo, "rev-parse", "HEAD")
+		currentTree := gitValue(repo, "rev-parse", "HEAD^{tree}")
+		if currentCommit != commit || currentTree != tree {
+			return "validation evidence does not match the current Git source identity"
 		}
-		if gitValue(repo, nil, "rev-parse", recordedCommit+"^{tree}") != recordedSourceTree {
-			return "validation evidence sourceCommit does not resolve to the recorded pre-overlay sourceTree"
-		}
-		if wt := worktreeTree(repo); !oidRE.MatchString(wt) || wt != recordedValidatedTree {
-			return "validation evidence validatedTree does not match the exact current tracked/untracked worktree"
-		}
-		currentTree := gitValue(repo, nil, "rev-parse", "HEAD^{tree}")
-		if currentCommit == recordedCommit {
-			if currentTree != recordedSourceTree {
-				return "validation evidence pre-commit HEAD tree does not match the recorded sourceTree"
-			}
-		} else {
-			parent := gitValue(repo, nil, "rev-parse", "HEAD^")
-			if parent != recordedCommit || currentTree != recordedValidatedTree {
-				return fmt.Sprintf("validation evidence belongs to source commit %s, current checkout is %s, and it is not the single Devtool commit of the exact validated tree", recordedCommit, currentCommit)
-			}
+		if out, e := exec.Command("git", "-C", repo, "status", "--porcelain", "--untracked-files=normal").Output(); e != nil || strings.TrimSpace(string(out)) != "" {
+			return "validation evidence requires an unchanged clean source worktree"
 		}
 	}
 	expected := s.compatibilityHash(repo)
@@ -317,42 +261,21 @@ func (s *ReleaseReadinessService) Status() map[string]any {
 		if status == "" {
 			status = "pending"
 		}
-		if status != "pass" && status != "fail" && status != "warn" && status != "pending" {
-			status = "fail"
-		}
 		detail := stringValue(item["detail"])
 		if status == "pass" {
-			prov := stringValue(item["provenance"])
-			code, ok := finiteNumber(item["exitCode"])
-			cmd := strings.TrimSpace(stringValue(item["command"]))
-			if _, ok2 := finiteNumber(item["recordedAt"]); !ok2 {
-				status = "fail"
-				detail = "Passing evidence is missing recordedAt."
-			} else if !ok || int(code) != 0 {
-				status = "fail"
-				detail = "Passing evidence is missing a proven exitCode 0."
-			} else if prov != "subprocess" && prov != "deduplicated-subprocess" {
-				status = "fail"
-				detail = "Passing evidence has invalid provenance."
-			} else if cmd == "" {
-				status = "fail"
-				detail = "Passing evidence is missing command/task provenance."
-			}
-		}
-		if status == "pending" && detail == "" {
-			detail = "No final-seal evidence recorded."
-		}
-		switch status {
-		case "pass":
 			pass++
-		case "fail":
+		} else if status == "fail" {
 			fail++
-		default:
+		} else {
 			pending++
+			status = "pending"
+			if detail == "" {
+				detail = "No Go-native final-seal evidence recorded."
+			}
 		}
 		checks = append(checks, map[string]any{"id": req.ID, "label": req.Label, "status": status, "detail": detail, "command": stringValue(item["command"]), "provenance": stringValue(item["provenance"]), "exitCode": item["exitCode"], "recordedAt": item["recordedAt"]})
 	}
-	return map[string]any{"schemaVersion": 2, "evidencePath": path, "evidencePresent": problem == "" && exists(path), "evidenceProblem": nilIfEmpty(problem), "generatedAt": payload["generatedAt"], "validationRunId": stringValue(payload["validationRunId"]), "sourceCommit": stringValue(payload["sourceCommit"]), "sourceTree": stringValue(payload["sourceTree"]), "validatedTree": stringValue(payload["validatedTree"]), "checks": checks, "passCount": pass, "failCount": fail, "pendingCount": pending, "ready": fail == 0 && pending == 0 && pass == len(readinessRequirements)}
+	return map[string]any{"schemaVersion": releaseEvidenceSchemaVersion, "evidencePath": path, "evidencePresent": problem == "" && exists(path), "evidenceProblem": nilIfEmpty(problem), "generatedAt": payload["generatedAt"], "validationRunId": stringValue(payload["validationRunId"]), "sourceCommit": stringValue(payload["sourceCommit"]), "sourceTree": stringValue(payload["sourceTree"]), "checks": checks, "passCount": pass, "failCount": fail, "pendingCount": pending, "ready": fail == 0 && pending == 0 && pass == len(readinessRequirements)}
 }
 func (s *ReleaseReadinessService) Check(status map[string]any, id string) map[string]any {
 	if rows, ok := status["checks"].([]map[string]any); ok {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"chrootctl/internal/config"
@@ -100,5 +101,61 @@ func TestServiceUnitParser(t *testing.T) {
 	}
 	if u.Name != "demo.service" || u.Chroot != "work" || u.ExecStart != "echo hello" || u.Environment["FOO"] != "bar" {
 		t.Fatalf("unit=%+v", u)
+	}
+}
+
+func TestServiceBoundChrootRejectsOverride(t *testing.T) {
+	s := &UnitService{}
+	if _, err := s.bound(ServiceUnit{Name: "demo.service", Chroot: "work"}, "other"); err == nil {
+		t.Fatal("expected bound-chroot mismatch to fail")
+	}
+}
+
+func TestBootLayersIncludeRequiresAndRespectAfter(t *testing.T) {
+	units := map[string]ServiceUnit{
+		"db.service":  {Name: "db.service", Chroot: "work"},
+		"api.service": {Name: "api.service", Chroot: "work", Requires: []string{"db.service"}, After: []string{"db.service"}},
+		"web.service": {Name: "web.service", Chroot: "work", Requires: []string{"api.service"}, After: []string{"api.service"}},
+	}
+	layers, err := buildBootLayers(units, func(chroot, unit string) bool { return unit == "web.service" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(layers) != 3 || layers[0][0].Name != "db.service" || layers[1][0].Name != "api.service" || layers[2][0].Name != "web.service" {
+		t.Fatalf("unexpected boot layers: %#v", layers)
+	}
+}
+
+func TestBootLayersParallelizeIndependentUnits(t *testing.T) {
+	units := map[string]ServiceUnit{
+		"a.service": {Name: "a.service", Chroot: "work"},
+		"b.service": {Name: "b.service", Chroot: "work"},
+	}
+	layers, err := buildBootLayers(units, func(chroot, unit string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(layers) != 1 || len(layers[0]) != 2 {
+		t.Fatalf("independent services should share one layer: %#v", layers)
+	}
+}
+
+func TestBootLayersRejectCycle(t *testing.T) {
+	units := map[string]ServiceUnit{
+		"a.service": {Name: "a.service", Chroot: "work", After: []string{"b.service"}},
+		"b.service": {Name: "b.service", Chroot: "work", After: []string{"a.service"}},
+	}
+	if _, err := buildBootLayers(units, func(chroot, unit string) bool { return true }); err == nil {
+		t.Fatal("expected dependency cycle to fail")
+	}
+}
+
+func TestServiceStartCommandHonorsWorkingDirectoryAndRestart(t *testing.T) {
+	u := ServiceUnit{ExecStart: "run-server", WorkingDirectory: "/home/me/a b", Restart: "on-failure", RestartSec: 5}
+	got := serviceStartCommand(u)
+	for _, want := range []string{"cd -- '/home/me/a b'", "run-server", "sleep 5", "rc=$?"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("command %q missing %q", got, want)
+		}
 	}
 }

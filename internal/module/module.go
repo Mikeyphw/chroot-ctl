@@ -3,6 +3,7 @@ package module
 import (
 	"archive/zip"
 	"crypto/sha256"
+	"debug/elf"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"chrootctl/internal/validation"
 )
 
 const (
@@ -175,14 +178,28 @@ func ValidateRuntime(root string) error {
 	if st.Mode().Perm()&0111 == 0 {
 		return errors.New("native runtime entrypoint is not executable")
 	}
-	f, e := os.Open(ep)
+	ef, e := elf.Open(ep)
 	if e != nil {
-		return e
+		return fmt.Errorf("native runtime entrypoint is not a valid ELF: %w", e)
 	}
-	defer f.Close()
-	magic := make([]byte, 4)
-	if _, e = io.ReadFull(f, magic); e != nil || string(magic) != "\x7fELF" {
-		return errors.New("native runtime entrypoint is not ELF")
+	defer ef.Close()
+	if ef.Class != elf.ELFCLASS64 || ef.Data != elf.ELFDATA2LSB || ef.Machine != elf.EM_AARCH64 || ef.Type != elf.ET_DYN {
+		return fmt.Errorf("native runtime ELF identity mismatch: class=%s data=%s machine=%s type=%s", ef.Class, ef.Data, ef.Machine, ef.Type)
+	}
+	interpreter := ""
+	for _, prog := range ef.Progs {
+		if prog.Type != elf.PT_INTERP {
+			continue
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(prog.Open(), 256))
+		if readErr != nil {
+			return fmt.Errorf("read native runtime interpreter: %w", readErr)
+		}
+		interpreter = strings.TrimRight(string(raw), "\x00")
+		break
+	}
+	if interpreter != "/system/bin/linker64" {
+		return fmt.Errorf("native runtime Android interpreter mismatch: %q", interpreter)
 	}
 	return nil
 }
@@ -202,13 +219,25 @@ func customize() string {
 }
 func postFS() string { return "#!/system/bin/sh\nexit 0\n" }
 func helper() string {
-	return "#!/system/bin/sh\nset -eu\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\ncase \"$CMD\" in\n  __module-boot)\n    exit 0\n    ;;\n  __module-service)\n    exit 0\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
+	return "#!/system/bin/sh\nset -u\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-${0%/bin/*}}\"\nCHROOTCTL=\"$MODDIR/system/bin/chrootctl\"\n[ -x \"$CHROOTCTL\" ] || { echo \"bundled chrootctl runtime is unavailable\" >&2; exit 127; }\ncase \"$CMD\" in\n  __module-boot|__module-service)\n    rc=0\n    \"$CHROOTCTL\" clipboard daemon start >/dev/null 2>&1 || true\n    for target in \"$@\"; do\n      \"$CHROOTCTL\" --name \"$target\" mount || rc=1\n    done\n    \"$CHROOTCTL\" run --boot || rc=1\n    exit \"$rc\"\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
 }
 func launcher() string {
 	return "#!/system/bin/sh\nset -eu\n\nMODULE_ID=\"chrootctl-magisk\"\nRUNTIME_ABI=\"arm64-v8a\"\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\" # diagnostics only\n\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-}\"\nif [ -z \"$MODDIR\" ]; then\n  MODDIR=\"$ACTIVE_MODULE\"\nfi\n\nRUNTIME_ROOT=\"$MODDIR/runtime/$RUNTIME_ABI\"\nRUNTIME_MANIFEST=\"$RUNTIME_ROOT/runtime-manifest.json\"\nRUNTIME_BIN=\"$RUNTIME_ROOT/chrootctl\"\n\n[ -d \"$RUNTIME_ROOT\" ] && [ ! -L \"$RUNTIME_ROOT\" ] || { echo \"bundled native runtime directory is missing or unsafe\" >&2; exit 127; }\n[ -f \"$RUNTIME_MANIFEST\" ] && [ ! -L \"$RUNTIME_MANIFEST\" ] || { echo \"bundled native runtime manifest is missing or unsafe\" >&2; exit 127; }\n[ -f \"$RUNTIME_BIN\" ] && [ -x \"$RUNTIME_BIN\" ] && [ ! -L \"$RUNTIME_BIN\" ] || { echo \"bundled native chrootctl executable is missing or unsafe\" >&2; exit 127; }\n\nmkdir -p /data/adb/chrootctl 2>/dev/null || true\nchmod 0700 /data/adb/chrootctl 2>/dev/null || true\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nexec \"$RUNTIME_BIN\" \"$@\"\n"
 }
-func service() string {
-	return "#!/system/bin/sh\nMODDIR=\"${0%/*}\"\ncase \"$MODDIR\" in\n  */system/bin) MODDIR=\"${MODDIR%/system/bin}\" ;;\nesac\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\" # diagnostics only\n\nif [ -n \"${CHROOTCTL_MODULE_DIR:-}\" ]; then\n  MODDIR=\"$CHROOTCTL_MODULE_DIR\"\nelif [ -d \"$ACTIVE_MODULE\" ]; then\n  MODDIR=\"$ACTIVE_MODULE\"\nfi\n\nif [ \"$MODDIR\" != \"$ACTIVE_MODULE\" ]; then\n  echo \"refusing module service outside active module: $MODDIR\" >&2\n  exit 0\nfi\n\nHELPER=\"$MODDIR/bin/chrootctl-magisk-helper\"\n[ -x \"$HELPER\" ] || exit 0\n\"$HELPER\" __module-service clipboard.enabled || true\n"
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func service(startupTargets []string) string {
+	args := make([]string, 0, len(startupTargets))
+	for _, target := range startupTargets {
+		args = append(args, shellSingleQuote(target))
+	}
+	invocation := "\"$HELPER\" __module-service"
+	if len(args) > 0 {
+		invocation += " " + strings.Join(args, " ")
+	}
+	return "#!/system/bin/sh\nMODDIR=\"${0%/*}\"\ncase \"$MODDIR\" in\n  */system/bin) MODDIR=\"${MODDIR%/system/bin}\" ;;\nesac\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\" # diagnostics only\n\nif [ -n \"${CHROOTCTL_MODULE_DIR:-}\" ]; then\n  MODDIR=\"$CHROOTCTL_MODULE_DIR\"\nelif [ -d \"$ACTIVE_MODULE\" ]; then\n  MODDIR=\"$ACTIVE_MODULE\"\nfi\n\nif [ \"$MODDIR\" != \"$ACTIVE_MODULE\" ]; then\n  echo \"refusing module service outside active module: $MODDIR\" >&2\n  exit 0\nfi\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nHELPER=\"$MODDIR/bin/chrootctl-magisk-helper\"\n[ -x \"$HELPER\" ] || exit 0\n" + invocation + " || true\n"
 }
 func proxy(target string) string {
 	return "#!/system/bin/sh\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}\"\nexec \"$MODDIR/" + target + "\" \"$@\"\n"
@@ -228,6 +257,19 @@ func Render(opts Options) error {
 	if e := ValidateRuntime(runtime); e != nil {
 		return e
 	}
+	seenTargets := map[string]bool{}
+	cleanTargets := make([]string, 0, len(opts.StartupTargets))
+	for _, target := range opts.StartupTargets {
+		name, e := validation.ChrootName(strings.TrimSpace(target))
+		if e != nil {
+			return fmt.Errorf("invalid module startup target %q: %w", target, e)
+		}
+		if !seenTargets[name] {
+			seenTargets[name] = true
+			cleanTargets = append(cleanTargets, name)
+		}
+	}
+	opts.StartupTargets = cleanTargets
 	if st, e := os.Lstat(out); e == nil {
 		if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
 			return errors.New("unsafe module output directory")
@@ -248,7 +290,7 @@ func Render(opts Options) error {
 	files := map[string]struct {
 		c string
 		m fs.FileMode
-	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
+	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
 	for rel, v := range files {
 		if e := writeFile(out, rel, v.c, v.m); e != nil {
 			return e

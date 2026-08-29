@@ -2,13 +2,13 @@
 
 The supported module runtime is the complete Go `cmd/chrootctl` executable built for Android arm64 with CGO enabled for SQLite.
 
-Build on Termux or with an Android NDK toolchain:
+Build with the Go-native repository tool:
 
-```bash
-PYTHONPATH=src python3 scripts/build-native-android-runtime.py --jobs 2
+```sh
+scripts/repoctl build-runtime --jobs 2
 ```
 
-The builder resolves Termux clang first, otherwise an Android NDK `aarch64-linux-android26-clang`, and invokes Go with `GOOS=android GOARCH=arm64 CGO_ENABLED=1`.
+The builder resolves an Android-capable arm64 C compiler and invokes Go with `GOOS=android GOARCH=arm64 CGO_ENABLED=1`.
 
 The output layout is:
 
@@ -18,4 +18,4 @@ out/native-runtime/arm64-v8a/
 └── runtime-manifest.json
 ```
 
-New runtime manifests use schema 2 and `runtimeKind: go-native`. They seal the backend version, bridge protocol, compiler identity, and SHA-256/size/executable bit for every runtime file. Schema-1 `nuitka-onefile` manifests are accepted only as a migration-time read compatibility path for already-installed older modules.
+Runtime manifests use schema 2 and `runtimeKind: go-native`. They seal backend version, bridge protocol, compiler identity, and SHA-256/size/executable metadata for the runtime files. Current Android runtime resolution does not accept Python or legacy Nuitka candidates.

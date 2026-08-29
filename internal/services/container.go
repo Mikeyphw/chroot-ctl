@@ -121,7 +121,8 @@ func (c *Container) ModuleRuntime() *ModuleRuntimeService { return &ModuleRuntim
 func (c *Container) ReleaseReadiness() *ReleaseReadinessService {
 	return &ReleaseReadinessService{C: c}
 }
-func (c *Container) Services() *UnitService { return &UnitService{C: c} }
+func (c *Container) Services() *UnitService             { return &UnitService{C: c} }
+func (c *Container) ModuleBuilder() *ModuleBuildService { return &ModuleBuildService{C: c} }
 func (c *Container) RecoverOperations(ctx context.Context) ([]string, error) {
 	return c.Operations.Recover(ctx)
 }

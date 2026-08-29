@@ -156,3 +156,19 @@ func Resolve(req Request, expectedMode string) (OperationSpec, error) {
 	}
 	return spec, nil
 }
+
+// ContractSpecs returns a defensive, ordered copy of the live protocol metadata.
+// repoctl uses this to prove that the executable bridge still matches the frozen
+// GO00 protocol-v1 fixture, rather than merely validating the fixture itself.
+func ContractSpecs() []OperationSpec {
+	out := make([]OperationSpec, 0, len(orderedSpecs))
+	for _, spec := range orderedSpecs {
+		fields := make(map[string]struct{}, len(spec.PayloadFields))
+		for field := range spec.PayloadFields {
+			fields[field] = struct{}{}
+		}
+		spec.PayloadFields = fields
+		out = append(out, spec)
+	}
+	return out
+}

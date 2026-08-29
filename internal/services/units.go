@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 type ServiceUnit struct {
 	Name, Path, Description, Chroot, User, ExecStart, ExecStop, WorkingDirectory, Restart string
+	RestartSec                                                                            int
 	Environment                                                                           map[string]string
 	X11, Root                                                                             bool
 	WantedBy, After, Requires                                                             []string
@@ -45,7 +47,7 @@ func loadUnit(path string) (ServiceUnit, error) {
 		return ServiceUnit{}, e
 	}
 	defer f.Close()
-	u := ServiceUnit{Name: filepath.Base(path), Path: path, Environment: map[string]string{}, Restart: "no"}
+	u := ServiceUnit{Name: filepath.Base(path), Path: path, Environment: map[string]string{}, Restart: "no", RestartSec: 1}
 	section := ""
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -84,7 +86,13 @@ func loadUnit(path string) (ServiceUnit, error) {
 		case "Service.Root":
 			u.Root = parseBool(v)
 		case "Service.Restart":
-			u.Restart = v
+			u.Restart = strings.ToLower(v)
+		case "Service.RestartSec":
+			n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(v), "s"))
+			if err != nil || n < 0 {
+				return ServiceUnit{}, fmt.Errorf("service %s has invalid RestartSec %q", u.Name, v)
+			}
+			u.RestartSec = n
 		case "Service.Environment":
 			for _, part := range strings.Fields(v) {
 				kv := strings.SplitN(part, "=", 2)
@@ -150,6 +158,9 @@ func (s *UnitService) get(name string) (ServiceUnit, error) {
 	return u, nil
 }
 func (s *UnitService) bound(u ServiceUnit, requested string) (string, error) {
+	if requested != "" && u.Chroot != "" && requested != u.Chroot {
+		return "", fmt.Errorf("service %s is bound to chroot %s, not %s", u.Name, u.Chroot, requested)
+	}
 	name := requested
 	if name == "" {
 		name = u.Chroot
@@ -234,6 +245,173 @@ func (s *UnitService) Status(ctx context.Context, name, chroot string) (map[stri
 	}
 	return map[string]any{"service": u.Name, "chroot": ch, "status": status, "pid": pid, "enabled": s.IsEnabled(ch, u.Name, "boot.target"), "log_file": s.logPath(ch, u.Name)}, nil
 }
+func serviceShellQuote(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", "'\\''") + "'"
+}
+
+func serviceStartCommand(u ServiceUnit) string {
+	cmd := u.ExecStart
+	if u.WorkingDirectory != "" {
+		cmd = "cd -- " + serviceShellQuote(u.WorkingDirectory) + " && " + cmd
+	}
+	switch strings.ToLower(strings.TrimSpace(u.Restart)) {
+	case "always":
+		return fmt.Sprintf("while :; do ( %s ); sleep %d; done", cmd, u.RestartSec)
+	case "on-failure":
+		return fmt.Sprintf("while :; do ( %s ); rc=$?; [ \"$rc\" -eq 0 ] && exit 0; sleep %d; done", cmd, u.RestartSec)
+	default:
+		return cmd
+	}
+}
+
+type bootUnitRef struct {
+	Name   string
+	Chroot string
+}
+
+func buildBootLayers(units map[string]ServiceUnit, enabled func(chroot, unit string) bool) ([][]bootUnitRef, error) {
+	selected := map[string]bool{}
+	var include func(string) error
+	include = func(name string) error {
+		name = normalizeUnitName(name)
+		if selected[name] {
+			return nil
+		}
+		u, ok := units[name]
+		if !ok {
+			return nil // external/system dependency: ordering applies only to managed units
+		}
+		if u.Chroot == "" {
+			return fmt.Errorf("boot service %s is not bound to a chroot", name)
+		}
+		selected[name] = true
+		for _, dep := range u.Requires {
+			if err := include(dep); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for name, u := range units {
+		if u.Chroot != "" && enabled(u.Chroot, name) {
+			if err := include(name); err != nil {
+				return nil, err
+			}
+		}
+	}
+	indegree := map[string]int{}
+	edges := map[string]map[string]bool{}
+	for name := range selected {
+		indegree[name] = 0
+	}
+	for name := range selected {
+		u := units[name]
+		deps := append(append([]string(nil), u.Requires...), u.After...)
+		for _, raw := range deps {
+			dep := normalizeUnitName(raw)
+			if !selected[dep] || dep == name {
+				continue
+			}
+			if edges[dep] == nil {
+				edges[dep] = map[string]bool{}
+			}
+			if !edges[dep][name] {
+				edges[dep][name] = true
+				indegree[name]++
+			}
+		}
+	}
+	remaining := len(selected)
+	layers := [][]bootUnitRef{}
+	for remaining > 0 {
+		ready := []string{}
+		for name, degree := range indegree {
+			if degree == 0 {
+				ready = append(ready, name)
+			}
+		}
+		if len(ready) == 0 {
+			return nil, fmt.Errorf("service dependency cycle detected among %d boot unit(s)", remaining)
+		}
+		sort.Strings(ready)
+		layer := make([]bootUnitRef, 0, len(ready))
+		for _, name := range ready {
+			layer = append(layer, bootUnitRef{Name: name, Chroot: units[name].Chroot})
+			delete(indegree, name)
+			remaining--
+		}
+		for _, name := range ready {
+			for child := range edges[name] {
+				indegree[child]--
+			}
+		}
+		layers = append(layers, layer)
+	}
+	return layers, nil
+}
+
+func (s *UnitService) Boot(ctx context.Context, target string, parallel bool) (map[string]any, error) {
+	if target == "" {
+		target = "boot.target"
+	}
+	units, err := s.units()
+	if err != nil {
+		return nil, err
+	}
+	layers, err := buildBootLayers(units, func(chroot, unit string) bool { return s.IsEnabled(chroot, unit, target) })
+	if err != nil {
+		return nil, err
+	}
+	started := []map[string]any{}
+	for _, layer := range layers {
+		if !parallel || len(layer) < 2 {
+			for _, ref := range layer {
+				row, e := s.Start(ctx, ref.Name, ref.Chroot, false)
+				if e != nil {
+					return nil, e
+				}
+				started = append(started, row)
+			}
+			continue
+		}
+		type result struct {
+			row map[string]any
+			err error
+		}
+		ch := make(chan result, len(layer))
+		var wg sync.WaitGroup
+		for _, ref := range layer {
+			ref := ref
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				row, e := s.Start(ctx, ref.Name, ref.Chroot, false)
+				ch <- result{row: row, err: e}
+			}()
+		}
+		wg.Wait()
+		close(ch)
+		rows := []map[string]any{}
+		for r := range ch {
+			if r.err != nil {
+				return nil, r.err
+			}
+			rows = append(rows, r.row)
+		}
+		sort.Slice(rows, func(i, j int) bool { return fmt.Sprint(rows[i]["service"]) < fmt.Sprint(rows[j]["service"]) })
+		started = append(started, rows...)
+	}
+	plan := make([][]string, 0, len(layers))
+	for _, layer := range layers {
+		names := make([]string, 0, len(layer))
+		for _, ref := range layer {
+			names = append(names, ref.Name)
+		}
+		plan = append(plan, names)
+	}
+	return map[string]any{"target": target, "parallel": parallel, "layers": plan, "started": started, "count": len(started)}, nil
+}
+
 func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground bool) (map[string]any, error) {
 	u, e := s.get(name)
 	if e != nil {
@@ -254,7 +432,7 @@ func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground
 		return nil, e
 	}
 	rootUser := u.Root || strings.EqualFold(u.User, "root")
-	argv, env, e := rt.Controller.ServiceInvocation(rootUser, u.ExecStart, u.X11, u.User)
+	argv, env, e := rt.Controller.ServiceInvocation(rootUser, serviceStartCommand(u), u.X11, u.User)
 	if e != nil {
 		return nil, e
 	}
@@ -265,6 +443,13 @@ func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground
 		return nil, e
 	}
 	log := s.logPath(ch, u.Name)
+	if foreground {
+		res, runErr := rt.Runner.RunAttached(ctx, argv, sys.RunOptions{Env: env})
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "exited", "exit_code": res.ReturnCode, "log_file": log, "foreground": true}, runErr
+	}
+	if s.C.DryRun || rt.Runner.DryRun {
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "dry-run", "pid": 0, "log_file": log, "dry_run": true}, nil
+	}
 	pid, e := rt.Runner.Spawn(argv, sys.SpawnOptions{Env: env, OutputPath: log, Append: true})
 	if e != nil {
 		return nil, e
@@ -275,7 +460,7 @@ func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground
 		return nil, e
 	}
 	_ = os.WriteFile(prefix+".pid", []byte(strconv.Itoa(pid)+"\n"), 0600)
-	return map[string]any{"service": u.Name, "chroot": ch, "status": map[bool]string{true: "foreground", false: "running"}[foreground], "pid": pid, "log_file": log}, nil
+	return map[string]any{"service": u.Name, "chroot": ch, "status": "running", "pid": pid, "log_file": log}, nil
 }
 func (s *UnitService) Stop(ctx context.Context, name, chroot string) (map[string]any, error) {
 	u, e := s.get(name)

@@ -184,13 +184,8 @@ func (s *LifecycleService) BackendStatus() map[string]any {
 	}
 	return out
 }
-func (s *LifecycleService) legacyProtocolBackendAlias() map[string]any {
-	b := s.BackendStatus()
-	return map[string]any{"binary": b["binary"], "version": b["version"], "dependencies_ready": b["ready"], "dependencies": []string{}, "reason": b["reason"], "readiness_file": b["readiness_file"], "runtime_kind": b["runtime_kind"], "abi": b["abi"]}
-}
-
 func (s *LifecycleService) Status() map[string]any {
 	m := s.C.ModuleRuntime().Status()
 	_, enabledErr := os.Stat("/data/adb/chrootctl/android-app.enabled")
-	return map[string]any{"running": m["active"] != nil, "state": "android_app_primary", "control_file": "/data/adb/chrootctl/control.state", "enabled": enabledErr == nil, "mode": s.RuntimeMode(), "module": m, "backend": s.BackendStatus(), "python": s.legacyProtocolBackendAlias(), "logs": map[string]string{"module": "/data/adb/modules/" + moduleID + "/var/log/chrootctl.log", "install": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json", "dependencies": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json"}, "checked_at": time.Now().Unix()}
+	return map[string]any{"running": m["active"] != nil, "state": "android_app_primary", "control_file": "/data/adb/chrootctl/control.state", "enabled": enabledErr == nil, "mode": s.RuntimeMode(), "module": m, "backend": s.BackendStatus(), "logs": map[string]string{"module": "/data/adb/modules/" + moduleID + "/var/log/chrootctl.log", "install": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json", "dependencies": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json"}, "checked_at": time.Now().Unix()}
 }

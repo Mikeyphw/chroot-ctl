@@ -326,19 +326,11 @@ func (a *App) units(ctx context.Context, cmd string) error {
 		names = a.Inv.Strings("service_targets")
 	}
 	if cmd == "run" && a.Inv.Bool("boot") {
-		rows, e := svc.List(ctx)
+		result, e := svc.Boot(ctx, a.Inv.String("target"), !a.Inv.Bool("no_parallel"))
 		if e != nil {
 			return e
 		}
-		for _, r := range rows {
-			if r["boot"] == "yes" {
-				_, e = svc.Start(ctx, r["service"], r["chroot"], false)
-				if e != nil {
-					return e
-				}
-			}
-		}
-		return a.emit("Services", rows)
+		return a.emit("Services", result)
 	}
 	if len(names) == 0 {
 		return errors.New("service target is required")

@@ -26,6 +26,7 @@ Thumbs.db
 # ===================
 # Build Outputs
 # ===================
+dist/
 
 # ===================
 # Testing & Coverage

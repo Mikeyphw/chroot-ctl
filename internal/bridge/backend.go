@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -1265,16 +1264,17 @@ func (b *ServicesBackend) moduleBuild(ctx context.Context, p map[string]any, pro
 	if b.Services.DryRun {
 		return map[string]any{"dry_run": true, "preview": prev}, nil
 	}
-	if _, e := os.Stat("build.sh"); e != nil {
-		return nil, protocolError("MODULE_BUILDER_UNAVAILABLE", "Legacy module builder is unavailable; GO12 native packaging has not been applied yet", nil)
-	}
-	cmd := exec.CommandContext(ctx, "bash", "build.sh")
-	out, e := cmd.CombinedOutput()
+	result, e := b.Services.ModuleBuilder().Build(ctx, services.ModuleBuildRequest{
+		Archive:        optText(p, "archive"),
+		StartupTargets: asStringSlice(p["startupTargets"]),
+		AllInstalled:   func() bool { v, _ := optBool(p, []string{"allInstalled", "all_installed"}, false); return v }(),
+	})
 	if e != nil {
-		return nil, fmt.Errorf("module build failed: %s", strings.TrimSpace(string(out)))
+		return nil, e
 	}
 	_ = emit(progress, map[string]any{"phase": "complete", "percent": 100, "message": "Module build completed"})
-	return map[string]any{"built": true, "output": strings.TrimSpace(string(out)), "preview": prev}, nil
+	result["preview"] = prev
+	return result, nil
 }
 func (b *ServicesBackend) debugProbes(ctx context.Context, group string) (any, error) {
 	if group == "" {
@@ -1407,7 +1407,10 @@ func (b *ServicesBackend) finalPackaging() (any, error) {
 	return map[string]any{"ok": m["status"] == "ready", "module": m, "compatibilitySchemaVersion": 3, "bridgeProtocolVersion": 1}, nil
 }
 func (b *ServicesBackend) finalNoWebUI() (any, error) {
-	return map[string]any{"ok": true, "retired": true, "checks": []string{"No WebUI runtime is required by the Go backend.", "Android communicates only through protocol-v1 bridge operations."}}, nil
+	status := b.Services.ReleaseReadiness().Status()
+	check := b.Services.ReleaseReadiness().Check(status, "source_no_webui")
+	ok := check["status"] == "pass"
+	return map[string]any{"ok": ok, "retired": ok, "evidence": check, "checks": []string{"No WebUI runtime is required by the Go backend.", "Android communicates only through protocol-v1 bridge operations."}}, nil
 }
 func (b *ServicesBackend) finalSeal() (any, error) {
 	pre, _ := b.finalPreflight()

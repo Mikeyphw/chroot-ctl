@@ -3,9 +3,9 @@
 ## Ownership boundaries
 
 - Kotlin owns Android lifecycle, Compose presentation, notifications, Room cache, file descriptors, and Binder transport.
-- Python owns chroot discovery, validation, previews, installation, lifecycle, users, services, snapshots, transfer, recovery, and support behavior.
-- The bridge owns protocol versioning, allowlisted operation dispatch, redaction, durable operation state, and NDJSON progress events.
-- Room is a cache and local timeline. Python state remains authoritative.
+- Go owns chroot discovery, validation, previews, installation, lifecycle, users, services, snapshots, transfer, recovery, support behavior, persistent operations, and authoritative registry state.
+- The Go bridge owns protocol versioning, allowlisted operation dispatch, redaction, durable operation state, and NDJSON progress events.
+- Room is an Android-side cache and local timeline; the Go registry/service layer remains authoritative.
 
 ## Process path
 
@@ -16,8 +16,8 @@ Compose feature screen
   -> fixed IChrootRootService AIDL
   -> ChrootRootService (UID 0)
   -> RuntimeResolver + BridgeProcess
-  -> chrootctl app JSON/NDJSON bridge
-  -> existing services/* domain layer
+  -> chrootctl app JSON/NDJSON protocol-v1 bridge
+  -> internal/services transport-neutral Go layer
 ```
 
 ## Security contract
@@ -25,10 +25,6 @@ Compose feature screen
 The Binder interface exposes fixed capabilities only. It must never include an arbitrary command string, shell script body, environment injection, executable path supplied by the UI, or unvalidated operation name.
 
 Bridge requests contain a protocol version, request ID, allowlisted operation name, and JSON object payload. Sensitive keys are redacted before operation requests, events, results, or retry payloads are persisted.
-
-## Phase 0-4 scope
-
-The initial bridge supports read-only dashboard, status, doctor and chroot queries; removal/export previews; and a persistent read-only refresh operation. Later overlays extend the same operation registry rather than adding ad hoc Binder methods.
 
 ## Persistent operation layout
 
@@ -42,4 +38,4 @@ The operation root is derived from the configured registry directory:
   locks/<scope>.lock
 ```
 
-Records use queued, running, cancelling, cancelled, succeeded, failed, interrupted and blocked states. Active records whose process disappeared are recovered as interrupted.
+Records use queued, running, cancelling, cancelled, succeeded, failed, interrupted and blocked states. Active records whose verified process identity disappeared are recovered as interrupted.

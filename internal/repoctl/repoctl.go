@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"chrootctl/internal/contracts"
 	chmodule "chrootctl/internal/module"
 	chsystem "chrootctl/internal/system"
 
@@ -35,6 +36,7 @@ type RuntimeOptions struct {
 }
 type ModuleOptions struct {
 	OutputDir, ZipPath, RuntimeDir string
+	StartupTargets                 []string
 	Jobs                           int
 	Install, Checksum              bool
 }
@@ -45,6 +47,7 @@ type SourceOptions struct {
 type ReleaseOptions struct {
 	Version, DistDir string
 	Jobs             int
+	GO02Evidence     string
 }
 
 type runtimeFile struct {
@@ -281,7 +284,7 @@ func BuildModule(opts ModuleOptions) (string, error) {
 		return "", e
 	}
 	defer os.RemoveAll(tmp)
-	if e = chmodule.Render(chmodule.Options{OutputDir: tmp, ZipPath: zipPath, NativeRuntimeDir: runtimeDir}); e != nil {
+	if e = chmodule.Render(chmodule.Options{OutputDir: tmp, ZipPath: zipPath, NativeRuntimeDir: runtimeDir, StartupTargets: opts.StartupTargets}); e != nil {
 		return "", e
 	}
 	if e = replaceDir(tmp, out); e != nil {
@@ -319,7 +322,8 @@ func InstallModule(zipPath string) error {
 	return cmd.Run()
 }
 
-var excludedDirs = map[string]bool{".git": true, "dist": true, "out": true, ".devtool": true, "tmpout": true}
+var excludedDirs = map[string]bool{".git": true, "dist": true, "out": true, ".devtool": true, "tmpout": true, ".gradle": true, ".kotlin": true, "build": true}
+var excludedSourceFiles = map[string]bool{"local.properties": true}
 
 func forbiddenName(name string) bool {
 	return strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".orig") || strings.HasSuffix(name, ".rej") || strings.HasSuffix(name, "~") || strings.Contains(name, ".bak")
@@ -366,6 +370,9 @@ func BuildSource(opts SourceOptions) (string, error) {
 		}
 		if d.IsDir() && (transientCacheDirs[d.Name()] || pythonPackagingResidueDir(d.Name())) {
 			return filepath.SkipDir
+		}
+		if !d.IsDir() && excludedSourceFiles[d.Name()] {
+			return nil
 		}
 		if !d.IsDir() && pythonBytecode(d.Name()) {
 			return nil
@@ -473,6 +480,16 @@ func Validate() error {
 	if e = ValidateRepositoryPurity(root); e != nil {
 		return e
 	}
+	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
+	if e != nil {
+		return e
+	}
+	if e = bundle.Validate(); e != nil {
+		return e
+	}
+	if e = ValidateLiveContracts(root, bundle); e != nil {
+		return e
+	}
 	if e = run(root, nil, "go", "test", "-p", "2", "./..."); e != nil {
 		return e
 	}
@@ -499,12 +516,12 @@ func Release(opts ReleaseOptions) error {
 	if opts.DistDir == "" {
 		opts.DistDir = "dist"
 	}
-	if e := Validate(); e != nil {
-		return e
-	}
 	root, _ := repoRoot()
 	dist := absFromRoot(root, opts.DistDir, "dist")
 	if e := os.MkdirAll(dist, 0755); e != nil {
+		return e
+	}
+	if e := FinalSeal(FinalSealOptions{Jobs: opts.Jobs, GO02Evidence: opts.GO02Evidence, EvidencePath: filepath.Join(dist, "validation-results.json")}); e != nil {
 		return e
 	}
 	runtime, e := BuildRuntime(RuntimeOptions{OutputRoot: filepath.Join(dist, "runtime-"+opts.Version), Jobs: opts.Jobs})

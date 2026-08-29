@@ -10,7 +10,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|final-seal|release|doctor-cross-arch> [options]")
+	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|go02-device-acceptance|final-seal|release|doctor-cross-arch> [options]")
 }
 func fail(err error) { fmt.Fprintln(os.Stderr, "repoctl:", err); os.Exit(1) }
 func main() {
@@ -41,6 +41,9 @@ func main() {
 		install := fs.Bool("install", false, "")
 		installShort := fs.Bool("i", false, "")
 		checksum := fs.Bool("checksum", false, "")
+		var startupTargets multi
+		fs.Var(&startupTargets, "startup-target", "installed chroot to mount at module boot; repeatable")
+		fs.Var(&startupTargets, "name", "compatibility alias for --startup-target")
 		fs.Parse(os.Args[2:])
 		if *zipCompat != "" {
 			*zip = *zipCompat
@@ -48,7 +51,7 @@ func main() {
 		if *runtimeCompat != "" {
 			*runtime = *runtimeCompat
 		}
-		path, e := repoctl.BuildModule(repoctl.ModuleOptions{OutputDir: *out, ZipPath: *zip, RuntimeDir: *runtime, Jobs: *jobs, Install: *install || *installShort, Checksum: *checksum})
+		path, e := repoctl.BuildModule(repoctl.ModuleOptions{OutputDir: *out, ZipPath: *zip, RuntimeDir: *runtime, StartupTargets: startupTargets, Jobs: *jobs, Install: *install || *installShort, Checksum: *checksum})
 		if e != nil {
 			fail(e)
 		}
@@ -68,13 +71,23 @@ func main() {
 		if e := repoctl.Validate(); e != nil {
 			fail(e)
 		}
+	case "go02-device-acceptance":
+		fs := flag.NewFlagSet("go02-device-acceptance", flag.ExitOnError)
+		evidence := fs.String("evidence", "", "write portable GO02 Android/ARM64 acceptance evidence")
+		fs.Parse(os.Args[2:])
+		result, e := repoctl.RunGO02DeviceAcceptance(*evidence)
+		if e != nil {
+			fail(e)
+		}
+		fmt.Printf("GO02 accepted: %s/%s sqlite=%s\n", result.GOOS, result.GOARCH, result.SQLiteVersion)
 	case "final-seal":
 		fs := flag.NewFlagSet("final-seal", flag.ExitOnError)
 		work := fs.String("work-dir", "", "")
 		jobs := fs.Int("jobs", 2, "")
-		skipValidation := fs.Bool("skip-validation", false, "")
+		go02Evidence := fs.String("go02-evidence", "", "GO02 evidence produced on real Android/ARM64 when sealing elsewhere")
+		evidence := fs.String("evidence", "", "write schema-v3 final validation evidence; defaults to Android state or dist/")
 		fs.Parse(os.Args[2:])
-		if e := repoctl.FinalSeal(repoctl.FinalSealOptions{WorkDir: *work, Jobs: *jobs, SkipValidation: *skipValidation}); e != nil {
+		if e := repoctl.FinalSeal(repoctl.FinalSealOptions{WorkDir: *work, Jobs: *jobs, GO02Evidence: *go02Evidence, EvidencePath: *evidence}); e != nil {
 			fail(e)
 		}
 	case "release":
@@ -82,8 +95,9 @@ func main() {
 		version := fs.String("version", "dev", "")
 		dist := fs.String("dist", "dist", "")
 		jobs := fs.Int("jobs", 2, "")
+		go02Evidence := fs.String("go02-evidence", "", "GO02 evidence produced on real Android/ARM64 when releasing elsewhere")
 		fs.Parse(os.Args[2:])
-		if e := repoctl.Release(repoctl.ReleaseOptions{Version: *version, DistDir: *dist, Jobs: *jobs}); e != nil {
+		if e := repoctl.Release(repoctl.ReleaseOptions{Version: *version, DistDir: *dist, Jobs: *jobs, GO02Evidence: *go02Evidence}); e != nil {
 			fail(e)
 		}
 	case "doctor-cross-arch":

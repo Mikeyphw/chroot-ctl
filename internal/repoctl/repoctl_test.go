@@ -25,6 +25,16 @@ func TestForbiddenSourceNames(t *testing.T) {
 		}
 	}
 }
+func TestSourceArchiveExcludesGeneratedBuildState(t *testing.T) {
+	for _, name := range []string{".gradle", ".kotlin", "build"} {
+		if !excludedDirs[name] {
+			t.Fatalf("expected generated directory %q to be excluded", name)
+		}
+	}
+	if !excludedSourceFiles["local.properties"] {
+		t.Fatal("expected generated Android local.properties to be excluded")
+	}
+}
 func TestRuntimeManifestShapeMatchesShippingContract(t *testing.T) {
 	m := runtimeManifest{SchemaVersion: chmodule.RuntimeSchemaVersion, RuntimeKind: chmodule.RuntimeKind, Platform: "android", ABI: chmodule.RuntimeABI, Entrypoint: chmodule.RuntimeEntrypoint, BackendVersion: chmodule.BackendVersion, BridgeProtocolVersion: chmodule.BridgeProtocolVersion}
 	if m.SchemaVersion != 2 || m.RuntimeKind != "go-native" || m.BackendVersion != "0.11.0" || m.BridgeProtocolVersion != 1 {
