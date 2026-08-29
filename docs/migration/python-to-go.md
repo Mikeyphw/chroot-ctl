@@ -147,10 +147,13 @@ Delivered:
 
 Controller/install behavior remains out of scope until GO06.
 
-### GO06 — Controller and distro installers
+### GO06 — Controller and distro installers — COMPLETE
 
-Port controller, Ubuntu/Arch bootstrap/install, integrity verification,
-resume/repair phases, QEMU handling, extraction, mounts, and rollback.
+Implemented in `internal/controller`, `internal/install`, and
+`internal/integrity`: mount/session orchestration, Ubuntu/Arch extraction and
+bootstrap paths, pinned signature/checksum verification, phase/resume tracking,
+filesystem promotion journaling/rollback, snapshots, and foreign-architecture
+QEMU/binfmt guards.
 
 ### GO07 — Users, catalog, clipboard, completion
 
