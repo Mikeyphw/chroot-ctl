@@ -47,13 +47,19 @@ func TestCriticalBridgeOperationsAreFrozen(t *testing.T) {
 	}
 }
 
-func TestGO12RuntimeContractIsGoNative(t *testing.T) {
+func TestGO13RuntimeContractIsGoNative(t *testing.T) {
 	bundle, err := LoadDir(contractDir(t))
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if bundle.Release.CompatibilitySchemaVersion != 2 {
-		t.Fatalf("compatibility schema = %d, want 2", bundle.Release.CompatibilitySchemaVersion)
+	if bundle.Release.CompatibilitySchemaVersion != 3 {
+		t.Fatalf("compatibility schema = %d, want 3", bundle.Release.CompatibilitySchemaVersion)
+	}
+	if bundle.Release.Backend.Implementation != "go" {
+		t.Fatalf("backend implementation = %q, want go", bundle.Release.Backend.Implementation)
+	}
+	if bundle.Release.Backend.Version == "" {
+		t.Fatal("backend version is empty")
 	}
 	if bundle.Release.NativeRuntime.SchemaVersion != 2 {
 		t.Fatalf("native runtime schema = %d, want 2", bundle.Release.NativeRuntime.SchemaVersion)

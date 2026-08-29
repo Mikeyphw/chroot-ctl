@@ -1,21 +1,28 @@
 {
-  "schemaVersion": 2,
-  "project": "chrootctl",
-  "bridgeProtocolVersion": 1,
-  "pythonPackage": {
-    "name": "chrootctl",
-    "version": "0.11.0"
-  },
   "androidApp": {
     "applicationId": "com.mikeyphw.chrootctl",
-    "versionName": "0.1.0-phase29",
+    "minimumSupportedModuleVersionCode": 15,
     "versionCode": 1,
-    "minimumSupportedModuleVersionCode": 15
+    "versionName": "0.1.0-phase29"
   },
+  "backend": {
+    "implementation": "go",
+    "version": "0.11.0"
+  },
+  "bridgeProtocolVersion": 1,
   "module": {
     "id": "chrootctl-magisk",
+    "minimumSupportedBridgeProtocolVersion": 1,
     "version": "1.3.0",
-    "versionCode": 15,
-    "minimumSupportedBridgeProtocolVersion": 1
-  }
+    "versionCode": 15
+  },
+  "nativeRuntime": {
+    "abi": "arm64-v8a",
+    "entrypoint": "chrootctl",
+    "kind": "go-native",
+    "platform": "android",
+    "schemaVersion": 2
+  },
+  "project": "chrootctl",
+  "schemaVersion": 3
 }

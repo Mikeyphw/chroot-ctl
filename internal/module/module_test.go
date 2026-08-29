@@ -36,12 +36,16 @@ func TestRenderGoNativeModule(t *testing.T) {
 		t.Fatal("empty launcher")
 	}
 }
-func TestCompatibilityPayloadGO12(t *testing.T) {
+func TestCompatibilityPayloadGO13(t *testing.T) {
 	p := CompatibilityPayload()
-	if p["schemaVersion"] != 2 {
+	if p["schemaVersion"] != 3 {
 		t.Fatalf("schema=%v", p["schemaVersion"])
 	}
-	if _, ok := p["pythonPackage"]; !ok {
-		t.Fatal("GO12 compatibility shim missing")
+	if _, ok := p["pythonPackage"]; ok {
+		t.Fatal("schema3 must not contain pythonPackage")
+	}
+	b := p["backend"].(map[string]any)
+	if b["implementation"] != "go" {
+		t.Fatalf("backend=%v", b)
 	}
 }

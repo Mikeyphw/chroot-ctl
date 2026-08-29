@@ -27,7 +27,9 @@ DEFAULT_MODULE_NAME = "chrootctl Magisk Module"
 DEFAULT_MODULE_VERSION = "1.3.0"
 DEFAULT_MODULE_VERSION_CODE = 15
 BRIDGE_PROTOCOL_VERSION = 1
-PYTHON_PACKAGE_VERSION = "0.11.0"
+BACKEND_IMPLEMENTATION = "go"
+BACKEND_VERSION = "0.11.0"
+PYTHON_PACKAGE_VERSION = BACKEND_VERSION  # legacy source/test alias until GO17
 ANDROID_APP_VERSION_NAME = "0.1.0-phase29"
 ANDROID_APP_VERSION_CODE = 1
 FORBIDDEN_MODULE_PATH_TOKENS = (
@@ -284,10 +286,20 @@ def _validate_release_identity_sources(config: MagiskModuleConfig) -> None:
 
 def _compatibility_manifest_payload(config: MagiskModuleConfig) -> dict[str, object]:
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "project": "chrootctl",
         "bridgeProtocolVersion": BRIDGE_PROTOCOL_VERSION,
-        "pythonPackage": {"name": "chrootctl", "version": PYTHON_PACKAGE_VERSION},
+        "backend": {
+            "implementation": BACKEND_IMPLEMENTATION,
+            "version": BACKEND_VERSION,
+        },
+        "nativeRuntime": {
+            "schemaVersion": 2,
+            "kind": "go-native",
+            "platform": "android",
+            "abi": DEFAULT_NATIVE_RUNTIME_ABI,
+            "entrypoint": DEFAULT_NATIVE_RUNTIME_ENTRYPOINT,
+        },
         "androidApp": {
             "applicationId": "com.mikeyphw.chrootctl",
             "versionName": ANDROID_APP_VERSION_NAME,
@@ -475,7 +487,7 @@ def _validate_compatibility_manifest(path: Path, prop: dict[str, str]) -> dict[s
         raise ValueError("compatibility manifest must be an object")
     expected = _compatibility_manifest_payload(MagiskModuleConfig())
     if payload != expected:
-        raise ValueError("compatibility manifest does not match the exact module/Python/Android release identity")
+        raise ValueError("compatibility manifest does not match the exact module/backend/Android release identity")
     if prop.get("id") != DEFAULT_MODULE_ID or prop.get("version") != DEFAULT_MODULE_VERSION or int(prop.get("versionCode", "-1")) != DEFAULT_MODULE_VERSION_CODE:
         raise ValueError("module.prop identity does not match compatibility manifest build constants")
     return payload

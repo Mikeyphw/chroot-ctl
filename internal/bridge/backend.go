@@ -1404,7 +1404,7 @@ func (b *ServicesBackend) finalPreflight() (any, error) {
 }
 func (b *ServicesBackend) finalPackaging() (any, error) {
 	m := b.Services.ModuleRuntime().Status()
-	return map[string]any{"ok": m["status"] == "ready", "module": m, "compatibilitySchemaVersion": 2, "bridgeProtocolVersion": 1}, nil
+	return map[string]any{"ok": m["status"] == "ready", "module": m, "compatibilitySchemaVersion": 3, "bridgeProtocolVersion": 1}, nil
 }
 func (b *ServicesBackend) finalNoWebUI() (any, error) {
 	return map[string]any{"ok": true, "retired": true, "checks": []string{"No WebUI runtime is required by the Go backend.", "Android communicates only through protocol-v1 bridge operations."}}, nil

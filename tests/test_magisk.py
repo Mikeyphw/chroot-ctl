@@ -48,10 +48,11 @@ def _build_package_source(tmp_path: Path) -> Path:
     release = repo_root / "docs/release"
     release.mkdir(parents=True)
     (release / "compatibility-manifest.json").write_text(json.dumps({
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "project": "chrootctl",
         "bridgeProtocolVersion": 1,
-        "pythonPackage": {"name": "chrootctl", "version": "0.11.0"},
+        "backend": {"implementation": "go", "version": "0.11.0"},
+        "nativeRuntime": {"schemaVersion": 2, "kind": "go-native", "platform": "android", "abi": "arm64-v8a", "entrypoint": "chrootctl"},
         "androidApp": {
             "applicationId": "com.mikeyphw.chrootctl",
             "versionName": "0.1.0-phase29",
@@ -102,7 +103,9 @@ def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) ->
     required = validate_magisk_module(output_dir)
     assert required
     compat = json.loads((output_dir / "config/chrootctl/compatibility-manifest.json").read_text(encoding="utf-8"))
-    assert compat["schemaVersion"] == 2
+    assert compat["schemaVersion"] == 3
+    assert compat["backend"] == {"implementation": "go", "version": "0.11.0"}
+    assert compat["nativeRuntime"]["kind"] == "go-native"
     assert compat["module"]["id"] == "chrootctl-magisk"
     assert compat["module"]["versionCode"] == 15
 

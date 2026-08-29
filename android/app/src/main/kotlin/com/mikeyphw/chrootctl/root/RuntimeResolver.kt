@@ -155,22 +155,36 @@ internal object RuntimeResolver {
         if (!isCanonicalModuleFile(compatibilityFile)) return false
         val compatibility = runCatching { JSONObject(compatibilityFile.readText()) }.getOrNull() ?: return false
         val module = compatibility.optJSONObject("module") ?: return false
-        val python = compatibility.optJSONObject("pythonPackage") ?: return false
         val android = compatibility.optJSONObject("androidApp") ?: return false
-        val compatible = compatibility.optInt("schemaVersion", -1) == COMPATIBILITY_SCHEMA_VERSION &&
-            compatibility.optString("project") == "chrootctl" &&
+        val commonCompatible = compatibility.optString("project") == "chrootctl" &&
             compatibility.optInt("bridgeProtocolVersion", -1) == BRIDGE_PROTOCOL_VERSION &&
             module.optString("id") == MODULE_ID &&
             module.optString("version") == EXPECTED_MODULE_VERSION &&
             module.optInt("versionCode", -1) == MIN_SUPPORTED_MODULE_VERSION_CODE &&
             module.optInt("minimumSupportedBridgeProtocolVersion", -1) == BRIDGE_PROTOCOL_VERSION &&
-            python.optString("name") == "chrootctl" &&
-            python.optString("version") == EXPECTED_PYTHON_PACKAGE_VERSION &&
             android.optString("applicationId") == "com.mikeyphw.chrootctl" &&
             android.optString("versionName") == EXPECTED_ANDROID_VERSION_NAME &&
             android.optInt("versionCode", -1) == EXPECTED_ANDROID_VERSION_CODE &&
             android.optInt("minimumSupportedModuleVersionCode", -1) == MIN_SUPPORTED_MODULE_VERSION_CODE
-        return compatible && isNativeRuntimeReady()
+        val identityCompatible = when (compatibility.optInt("schemaVersion", -1)) {
+            COMPATIBILITY_SCHEMA_VERSION -> {
+                val backend = compatibility.optJSONObject("backend") ?: return false
+                val runtime = compatibility.optJSONObject("nativeRuntime") ?: return false
+                backend.optString("implementation") == EXPECTED_BACKEND_IMPLEMENTATION &&
+                    backend.optString("version") == EXPECTED_BACKEND_VERSION &&
+                    runtime.optInt("schemaVersion", -1) == NATIVE_RUNTIME_SCHEMA_VERSION &&
+                    runtime.optString("kind") == NATIVE_RUNTIME_KIND &&
+                    runtime.optString("platform") == NATIVE_RUNTIME_PLATFORM &&
+                    runtime.optString("abi") == NATIVE_RUNTIME_ABI &&
+                    runtime.optString("entrypoint") == NATIVE_RUNTIME_ENTRYPOINT
+            }
+            LEGACY_COMPATIBILITY_SCHEMA_VERSION -> {
+                val python = compatibility.optJSONObject("pythonPackage") ?: return false
+                python.optString("name") == "chrootctl" && python.optString("version") == EXPECTED_PYTHON_PACKAGE_VERSION
+            }
+            else -> false
+        }
+        return commonCompatible && identityCompatible && isNativeRuntimeReady()
     }
 
     private fun isNativeRuntimeReady(): Boolean {
@@ -183,7 +197,7 @@ internal object RuntimeResolver {
         val runtimeKind = manifest.optString("runtimeKind")
         val versionCompatible = when (schemaVersion) {
             NATIVE_RUNTIME_SCHEMA_VERSION -> runtimeKind == NATIVE_RUNTIME_KIND &&
-                manifest.optString("backendVersion") == EXPECTED_PYTHON_PACKAGE_VERSION
+                manifest.optString("backendVersion") == EXPECTED_BACKEND_VERSION
             LEGACY_NATIVE_RUNTIME_SCHEMA_VERSION -> runtimeKind == LEGACY_NATIVE_RUNTIME_KIND &&
                 manifest.optString("pythonPackageVersion") == EXPECTED_PYTHON_PACKAGE_VERSION
             else -> false
@@ -262,7 +276,8 @@ internal object RuntimeResolver {
 
     private const val PROBE_TIMEOUT_SECONDS = 45L
     private const val BRIDGE_PROTOCOL_VERSION = 1
-    private const val COMPATIBILITY_SCHEMA_VERSION = 2
+    private const val COMPATIBILITY_SCHEMA_VERSION = 3
+    private const val LEGACY_COMPATIBILITY_SCHEMA_VERSION = 2
     private const val NATIVE_RUNTIME_SCHEMA_VERSION = 2
     private const val NATIVE_RUNTIME_KIND = "go-native"
     private const val LEGACY_NATIVE_RUNTIME_SCHEMA_VERSION = 1
@@ -274,6 +289,8 @@ internal object RuntimeResolver {
     private const val MODULE_ID = "chrootctl-magisk"
     private const val EXPECTED_MODULE_VERSION = "1.3.0"
     private const val MIN_SUPPORTED_MODULE_VERSION_CODE = 15
+    private const val EXPECTED_BACKEND_IMPLEMENTATION = "go"
+    private const val EXPECTED_BACKEND_VERSION = "0.11.0"
     private const val EXPECTED_PYTHON_PACKAGE_VERSION = "0.11.0"
     private const val EXPECTED_ANDROID_VERSION_NAME = "0.1.0-phase29"
     private const val EXPECTED_ANDROID_VERSION_CODE = 1

@@ -120,7 +120,7 @@ func (s *SystemService) Doctor(ctx context.Context, name string) ([]model.CheckR
 }
 func (s *SystemService) HostDoctor(ctx context.Context) []model.CheckRow {
 	r := s.C.BaseConfig
-	checks := []model.CheckRow{{Check: "python_runtime", Result: "PASS", Detail: "Bundled backend runtime available."}}
+	checks := []model.CheckRow{{Check: "backend_runtime", Result: "PASS", Detail: "Bundled backend runtime available."}}
 	for _, cmd := range []struct {
 		name  string
 		block bool

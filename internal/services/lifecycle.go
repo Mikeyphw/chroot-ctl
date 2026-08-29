@@ -45,6 +45,55 @@ func regularExecutable(path string) bool {
 	return e == nil && st.Mode().IsRegular() && st.Mode()&0111 != 0
 }
 
+func manifestInt(v any) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case json.Number:
+		i, _ := strconv.Atoi(n.String())
+		return i
+	case string:
+		i, _ := strconv.Atoi(n)
+		return i
+	default:
+		return 0
+	}
+}
+
+func compatibilityReady(root string) (bool, bool) {
+	b, err := os.ReadFile(filepath.Join(root, "config/chrootctl/compatibility-manifest.json"))
+	if err != nil {
+		return false, false
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return false, false
+	}
+	if manifestInt(m["bridgeProtocolVersion"]) != 1 || stringValue(m["project"]) != "chrootctl" {
+		return false, false
+	}
+	mod, _ := m["module"].(map[string]any)
+	android, _ := m["androidApp"].(map[string]any)
+	common := stringValue(mod["id"]) == moduleID && stringValue(mod["version"]) == "1.3.0" && manifestInt(mod["versionCode"]) == 15 && manifestInt(mod["minimumSupportedBridgeProtocolVersion"]) == 1 && stringValue(android["applicationId"]) == "com.mikeyphw.chrootctl" && stringValue(android["versionName"]) == "0.1.0-phase29" && manifestInt(android["versionCode"]) == 1 && manifestInt(android["minimumSupportedModuleVersionCode"]) == 15
+	if !common {
+		return false, false
+	}
+	switch manifestInt(m["schemaVersion"]) {
+	case 3:
+		backend, _ := m["backend"].(map[string]any)
+		runtime, _ := m["nativeRuntime"].(map[string]any)
+		ok := stringValue(backend["implementation"]) == "go" && stringValue(backend["version"]) == "0.11.0" && manifestInt(runtime["schemaVersion"]) == 2 && stringValue(runtime["kind"]) == "go-native" && stringValue(runtime["platform"]) == "android" && stringValue(runtime["abi"]) == "arm64-v8a" && stringValue(runtime["entrypoint"]) == "chrootctl"
+		return ok, false
+	case 2:
+		py, _ := m["pythonPackage"].(map[string]any)
+		return stringValue(py["name"]) == "chrootctl" && stringValue(py["version"]) == "0.11.0", true
+	default:
+		return false, false
+	}
+}
+
 func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]any {
 	prop := readKV(filepath.Join(root, "module.prop"))
 	disabled := exists(filepath.Join(root, "disable"))
@@ -55,7 +104,8 @@ func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]a
 		st, e := os.Lstat(p)
 		layout = layout && e == nil && st.Mode().IsRegular()
 	}
-	active := layout && !pending && !disabled && !removal
+	compatOK, legacyCompat := compatibilityReady(root)
+	active := layout && compatOK && !pending && !disabled && !removal
 	readiness := map[string]any{"ready": false, "mode": "bundled-native", "path": filepath.Join(root, "runtime/arm64-v8a/runtime-manifest.json"), "executable": filepath.Join(root, "runtime/arm64-v8a/chrootctl"), "runtimeKind": "go-native", "abi": "arm64-v8a", "backendVersion": "0.11.0", "pythonPackageVersion": "0.11.0", "bridgeProtocolVersion": 1}
 	if active && regularExecutable(filepath.Join(root, "runtime/arm64-v8a/chrootctl")) {
 		readiness["ready"] = true
@@ -71,7 +121,7 @@ func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]a
 		readiness["reason"] = "native_runtime_entrypoint_missing_or_unsafe"
 	}
 	vc, _ := strconv.Atoi(prop["versionCode"])
-	return map[string]any{"path": root, "exists": exists(root), "pending": pending, "active": active, "disabled": disabled, "pendingRemoval": removal, "hasModuleProp": exists(filepath.Join(root, "module.prop")), "layoutReady": layout, "id": prop["id"], "name": prop["name"], "version": prop["version"], "versionCode": vc, "runtimeReadiness": readiness, "dependencyReadiness": readiness}
+	return map[string]any{"path": root, "exists": exists(root), "pending": pending, "active": active, "disabled": disabled, "pendingRemoval": removal, "hasModuleProp": exists(filepath.Join(root, "module.prop")), "layoutReady": layout, "compatibility": map[string]any{"valid": compatOK, "legacy": legacyCompat}, "id": prop["id"], "name": prop["name"], "version": prop["version"], "versionCode": vc, "runtimeReadiness": readiness, "dependencyReadiness": readiness}
 }
 func (s *ModuleRuntimeService) Status() map[string]any {
 	active := s.candidate("/data/adb/modules/"+moduleID, false)
@@ -128,14 +178,17 @@ func (s *LifecycleService) RuntimeMode() map[string]any {
 	}
 	return map[string]any{"id": "pip", "label": "Pip/source", "privileged": false, "control_accessible": false}
 }
-func (s *LifecycleService) PythonStatus() map[string]any {
+func (s *LifecycleService) BackendStatus() map[string]any {
 	m := s.C.ModuleRuntime().Status()
-	out := map[string]any{"binary": nil, "version": nil, "dependencies_ready": false, "dependencies": []string{}, "reason": "module_missing", "readiness_file": nil, "runtime_kind": nil, "abi": nil}
+	out := map[string]any{"binary": nil, "implementation": "go", "version": nil, "ready": false, "reason": "module_missing", "readiness_file": nil, "runtime_kind": nil, "abi": nil}
 	if a, ok := m["active"].(map[string]any); ok {
 		if rr, ok := a["runtimeReadiness"].(map[string]any); ok {
 			out["binary"] = rr["executable"]
-			out["version"] = rr["pythonPackageVersion"]
-			out["dependencies_ready"] = rr["ready"]
+			out["version"] = rr["backendVersion"]
+			if out["version"] == nil {
+				out["version"] = rr["pythonPackageVersion"]
+			}
+			out["ready"] = rr["ready"]
 			out["reason"] = rr["reason"]
 			out["readiness_file"] = rr["path"]
 			out["runtime_kind"] = rr["runtimeKind"]
@@ -144,8 +197,13 @@ func (s *LifecycleService) PythonStatus() map[string]any {
 	}
 	return out
 }
+func (s *LifecycleService) PythonStatus() map[string]any {
+	b := s.BackendStatus()
+	return map[string]any{"binary": b["binary"], "version": b["version"], "dependencies_ready": b["ready"], "dependencies": []string{}, "reason": b["reason"], "readiness_file": b["readiness_file"], "runtime_kind": b["runtime_kind"], "abi": b["abi"]}
+}
+
 func (s *LifecycleService) Status() map[string]any {
 	m := s.C.ModuleRuntime().Status()
 	_, enabledErr := os.Stat("/data/adb/chrootctl/android-app.enabled")
-	return map[string]any{"running": m["active"] != nil, "state": "android_app_primary", "control_file": "/data/adb/chrootctl/control.state", "enabled": enabledErr == nil, "mode": s.RuntimeMode(), "module": m, "python": s.PythonStatus(), "logs": map[string]string{"module": "/data/adb/modules/" + moduleID + "/var/log/chrootctl.log", "install": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json", "dependencies": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json"}, "checked_at": time.Now().Unix()}
+	return map[string]any{"running": m["active"] != nil, "state": "android_app_primary", "control_file": "/data/adb/chrootctl/control.state", "enabled": enabledErr == nil, "mode": s.RuntimeMode(), "module": m, "backend": s.BackendStatus(), "python": s.PythonStatus(), "logs": map[string]string{"module": "/data/adb/modules/" + moduleID + "/var/log/chrootctl.log", "install": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json", "dependencies": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json"}, "checked_at": time.Now().Unix()}
 }

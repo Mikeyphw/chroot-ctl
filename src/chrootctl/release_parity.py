@@ -8,6 +8,8 @@ from typing import Mapping
 
 from .magisk import (
     ANDROID_APP_VERSION_CODE,
+    BACKEND_IMPLEMENTATION,
+    BACKEND_VERSION,
     ANDROID_APP_VERSION_NAME,
     BRIDGE_PROTOCOL_VERSION,
     DEFAULT_MODULE_ID,
@@ -26,7 +28,8 @@ from .native_runtime import (
 )
 
 ANDROID_APPLICATION_ID = "com.mikeyphw.chrootctl"
-COMPATIBILITY_SCHEMA_VERSION = 2
+COMPATIBILITY_SCHEMA_VERSION = 3
+LEGACY_COMPATIBILITY_SCHEMA_VERSION = 2
 RUNTIME_RESOLVER_PATH = Path("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/RuntimeResolver.kt")
 COMPATIBILITY_MANIFEST_PATH = Path("docs/release/compatibility-manifest.json")
 
@@ -70,7 +73,11 @@ def expected_runtime_resolver_constants() -> dict[str, str | int]:
         "MODULE_ID": DEFAULT_MODULE_ID,
         "EXPECTED_MODULE_VERSION": DEFAULT_MODULE_VERSION,
         "MIN_SUPPORTED_MODULE_VERSION_CODE": DEFAULT_MODULE_VERSION_CODE,
+        "EXPECTED_BACKEND_IMPLEMENTATION": BACKEND_IMPLEMENTATION,
+        "EXPECTED_BACKEND_VERSION": BACKEND_VERSION,
         "EXPECTED_PYTHON_PACKAGE_VERSION": PYTHON_PACKAGE_VERSION,
+        "COMPATIBILITY_SCHEMA_VERSION": COMPATIBILITY_SCHEMA_VERSION,
+        "LEGACY_COMPATIBILITY_SCHEMA_VERSION": LEGACY_COMPATIBILITY_SCHEMA_VERSION,
         "EXPECTED_ANDROID_VERSION_NAME": ANDROID_APP_VERSION_NAME,
         "EXPECTED_ANDROID_VERSION_CODE": ANDROID_APP_VERSION_CODE,
     }
@@ -81,7 +88,14 @@ def expected_compatibility_manifest() -> dict[str, object]:
         "schemaVersion": COMPATIBILITY_SCHEMA_VERSION,
         "project": "chrootctl",
         "bridgeProtocolVersion": BRIDGE_PROTOCOL_VERSION,
-        "pythonPackage": {"name": "chrootctl", "version": PYTHON_PACKAGE_VERSION},
+        "backend": {"implementation": BACKEND_IMPLEMENTATION, "version": BACKEND_VERSION},
+        "nativeRuntime": {
+            "schemaVersion": NATIVE_RUNTIME_SCHEMA_VERSION,
+            "kind": NATIVE_RUNTIME_KIND,
+            "platform": NATIVE_RUNTIME_PLATFORM,
+            "abi": DEFAULT_NATIVE_RUNTIME_ABI,
+            "entrypoint": DEFAULT_NATIVE_RUNTIME_ENTRYPOINT,
+        },
         "androidApp": {
             "applicationId": ANDROID_APPLICATION_ID,
             "versionName": ANDROID_APP_VERSION_NAME,

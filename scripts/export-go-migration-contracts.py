@@ -42,6 +42,8 @@ from chrootctl.errors import AppError, error_from_http_exception  # noqa: E402
 from chrootctl.logging_utils import configure_logging  # noqa: E402
 from chrootctl.magisk import (  # noqa: E402
     ANDROID_APP_VERSION_CODE,
+    BACKEND_IMPLEMENTATION,
+    BACKEND_VERSION,
     ANDROID_APP_VERSION_NAME,
     BRIDGE_PROTOCOL_VERSION,
     DEFAULT_MODULE_ID,
@@ -521,7 +523,7 @@ def release_contract() -> dict[str, Any]:
             "manifestPath": NATIVE_RUNTIME_MANIFEST_PATH.as_posix(),
             "entrypointPath": NATIVE_RUNTIME_ENTRYPOINT_PATH.as_posix(),
         },
-        "pythonPackage": {"name": "chrootctl", "version": PYTHON_PACKAGE_VERSION},
+        "backend": {"implementation": BACKEND_IMPLEMENTATION, "version": BACKEND_VERSION},
         "module": {
             "id": DEFAULT_MODULE_ID,
             "version": DEFAULT_MODULE_VERSION,

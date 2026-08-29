@@ -15,7 +15,7 @@ const (
 	ExpectedBridgeOperationCount       = 86
 	ExpectedBridgeProtocolVersion      = 1
 	ExpectedOperationSchemaVersion     = 2
-	ExpectedCompatibilitySchemaVersion = 2
+	ExpectedCompatibilitySchemaVersion = 3
 	ExpectedNativeRuntimeSchemaVersion = 2
 )
 
@@ -113,7 +113,11 @@ type ReleaseContract struct {
 	ContractSchemaVersion      int `json:"contractSchemaVersion"`
 	BridgeProtocolVersion      int `json:"bridgeProtocolVersion"`
 	CompatibilitySchemaVersion int `json:"compatibilitySchemaVersion"`
-	NativeRuntime              struct {
+	Backend                    struct {
+		Implementation string `json:"implementation"`
+		Version        string `json:"version"`
+	} `json:"backend"`
+	NativeRuntime struct {
 		SchemaVersion int    `json:"schemaVersion"`
 		Kind          string `json:"kind"`
 		Platform      string `json:"platform"`
@@ -180,6 +184,9 @@ func (b Bundle) Validate() error {
 	}
 	if b.Release.CompatibilitySchemaVersion != ExpectedCompatibilitySchemaVersion {
 		return fmt.Errorf("compatibility manifest schema drift: expected %d, got %d", ExpectedCompatibilitySchemaVersion, b.Release.CompatibilitySchemaVersion)
+	}
+	if b.Release.Backend.Implementation != "go" || b.Release.Backend.Version == "" {
+		return fmt.Errorf("GO13 backend identity drift: implementation=%q version=%q", b.Release.Backend.Implementation, b.Release.Backend.Version)
 	}
 	if b.Release.NativeRuntime.SchemaVersion != ExpectedNativeRuntimeSchemaVersion {
 		return fmt.Errorf("native runtime schema drift: expected %d, got %d", ExpectedNativeRuntimeSchemaVersion, b.Release.NativeRuntime.SchemaVersion)

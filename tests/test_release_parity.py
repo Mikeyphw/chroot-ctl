@@ -22,7 +22,9 @@ def test_android_runtime_resolver_matches_module_and_native_runtime_constants() 
 
 def test_expected_compatibility_manifest_matches_release_identity() -> None:
     payload = expected_compatibility_manifest()
-    assert payload["schemaVersion"] == 2
+    assert payload["schemaVersion"] == 3
+    assert payload["backend"] == {"implementation": "go", "version": "0.11.0"}
+    assert payload["nativeRuntime"]["kind"] == "go-native"
     assert payload["project"] == "chrootctl"
     assert payload["module"]["id"] == "chrootctl-magisk"  # type: ignore[index]
     assert payload["nativeRuntime"] if "nativeRuntime" in payload else True

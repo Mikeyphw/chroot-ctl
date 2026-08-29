@@ -55,10 +55,11 @@ type runtimeManifest struct {
 
 func CompatibilityPayload() map[string]any {
 	return map[string]any{
-		"schemaVersion":         2,
+		"schemaVersion":         3,
 		"project":               "chrootctl",
 		"bridgeProtocolVersion": BridgeProtocolVersion,
-		"pythonPackage":         map[string]any{"name": "chrootctl", "version": BackendVersion},
+		"backend":               map[string]any{"implementation": "go", "version": BackendVersion},
+		"nativeRuntime":         map[string]any{"schemaVersion": RuntimeSchemaVersion, "kind": RuntimeKind, "platform": "android", "abi": RuntimeABI, "entrypoint": RuntimeEntrypoint},
 		"androidApp":            map[string]any{"applicationId": "com.mikeyphw.chrootctl", "versionName": "0.1.0-phase29", "versionCode": 1, "minimumSupportedModuleVersionCode": ModuleVersionCode},
 		"module":                map[string]any{"id": ModuleID, "version": ModuleVersion, "versionCode": ModuleVersionCode, "minimumSupportedBridgeProtocolVersion": BridgeProtocolVersion},
 	}

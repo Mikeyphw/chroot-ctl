@@ -63,7 +63,8 @@ class LifecycleService:
             "enabled": self.paths.app_control_file.exists(),
             "mode": mode,
             "module": module,
-            "python": self.python_status(),
+            "backend": self.backend_status(),
+            "python": self.python_status(),  # compatibility alias for older clients
             "logs": {
                 "module": str(self.paths.module_log_file),
                 "install": str(self.paths.install_log_file),
@@ -96,25 +97,33 @@ class LifecycleService:
 
         return ModuleRuntimeStatusService().status()
 
-    def python_status(self) -> dict[str, Any]:
-        """Compatibility view of the now-bundled Python userspace.
-
-        Existing bridge/UI clients still consume this field name, but module
-        readiness no longer depends on any external Python interpreter or pip
-        package set.
-        """
+    def backend_status(self) -> dict[str, Any]:
         module = self.module_status()
         active = module.get("active") if isinstance(module.get("active"), dict) else {}
         readiness = active.get("runtimeReadiness") if isinstance(active.get("runtimeReadiness"), dict) else {}
         return {
             "binary": readiness.get("executable"),
-            "version": readiness.get("pythonPackageVersion"),
-            "dependencies_ready": bool(readiness.get("ready")),
-            "dependencies": [],
+            "implementation": "go",
+            "version": readiness.get("backendVersion") or readiness.get("pythonPackageVersion"),
+            "ready": bool(readiness.get("ready")),
             "reason": readiness.get("reason"),
             "readiness_file": readiness.get("path"),
             "runtime_kind": readiness.get("runtimeKind"),
             "abi": readiness.get("abi"),
+        }
+
+    def python_status(self) -> dict[str, Any]:
+        """Legacy bridge/UI alias. New clients should consume ``backend``."""
+        backend = self.backend_status()
+        return {
+            "binary": backend.get("binary"),
+            "version": backend.get("version"),
+            "dependencies_ready": backend.get("ready"),
+            "dependencies": [],
+            "reason": backend.get("reason"),
+            "readiness_file": backend.get("readiness_file"),
+            "runtime_kind": backend.get("runtime_kind"),
+            "abi": backend.get("abi"),
         }
 
     @staticmethod

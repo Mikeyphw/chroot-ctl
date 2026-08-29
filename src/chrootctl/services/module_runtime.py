@@ -8,6 +8,8 @@ from typing import Any
 
 from ..magisk import (
     ANDROID_APP_VERSION_CODE,
+    BACKEND_IMPLEMENTATION,
+    BACKEND_VERSION,
     ANDROID_APP_VERSION_NAME,
     BRIDGE_PROTOCOL_VERSION,
     DEFAULT_MODULE_ID,
@@ -193,17 +195,16 @@ class ModuleRuntimeStatusService:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError) as exc:
             return {"valid": False, "reason": "invalid", "detail": type(exc).__name__, "path": str(path)}
-        module = payload.get("module") if isinstance(payload, dict) else None
-        python = payload.get("pythonPackage") if isinstance(payload, dict) else None
-        android = payload.get("androidApp") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return {"valid": False, "reason": "invalid", "path": str(path)}
+        module = payload.get("module")
+        android = payload.get("androidApp")
         try:
             prop_version_code = int(prop.get("versionCode", ""))
         except ValueError:
             prop_version_code = -1
-        valid = bool(
-            isinstance(payload, dict)
-            and payload.get("schemaVersion") == 2
-            and payload.get("project") == "chrootctl"
+        common = bool(
+            payload.get("project") == "chrootctl"
             and payload.get("bridgeProtocolVersion") == BRIDGE_PROTOCOL_VERSION
             and isinstance(module, dict)
             and module.get("id") == self.paths.module_id
@@ -212,16 +213,44 @@ class ModuleRuntimeStatusService:
             and module.get("versionCode") == DEFAULT_MODULE_VERSION_CODE
             and module.get("versionCode") == prop_version_code
             and module.get("minimumSupportedBridgeProtocolVersion") == BRIDGE_PROTOCOL_VERSION
-            and isinstance(python, dict)
-            and python.get("name") == "chrootctl"
-            and python.get("version") == PYTHON_PACKAGE_VERSION
             and isinstance(android, dict)
             and android.get("applicationId") == "com.mikeyphw.chrootctl"
             and android.get("versionName") == ANDROID_APP_VERSION_NAME
             and android.get("versionCode") == ANDROID_APP_VERSION_CODE
             and android.get("minimumSupportedModuleVersionCode") == DEFAULT_MODULE_VERSION_CODE
         )
-        return {"valid": valid, "reason": "ok" if valid else "identity_mismatch", "path": str(path), "manifest": payload if valid else None}
+        schema = payload.get("schemaVersion")
+        if schema == 3:
+            backend = payload.get("backend")
+            runtime = payload.get("nativeRuntime")
+            identity = bool(
+                isinstance(backend, dict)
+                and backend.get("implementation") == BACKEND_IMPLEMENTATION
+                and backend.get("version") == BACKEND_VERSION
+                and isinstance(runtime, dict)
+                and runtime.get("schemaVersion") == 2
+                and runtime.get("kind") == "go-native"
+                and runtime.get("platform") == "android"
+                and runtime.get("abi") == DEFAULT_NATIVE_RUNTIME_ABI
+                and runtime.get("entrypoint") == DEFAULT_NATIVE_RUNTIME_ENTRYPOINT
+            )
+            legacy = False
+        elif schema == 2:
+            python = payload.get("pythonPackage")
+            identity = bool(isinstance(python, dict) and python.get("name") == "chrootctl" and python.get("version") == PYTHON_PACKAGE_VERSION)
+            legacy = True
+        else:
+            identity = False
+            legacy = False
+        valid = common and identity
+        return {
+            "valid": valid,
+            "reason": "ok" if valid else "identity_mismatch",
+            "path": str(path),
+            "schemaVersion": schema,
+            "legacy": legacy if valid else False,
+            "manifest": payload if valid else None,
+        }
 
     @staticmethod
     def _canonical_module_dir(root: Path) -> bool:

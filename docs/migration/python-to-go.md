@@ -207,10 +207,12 @@ read compatibility for already-installed modules during the transition. The
 module launcher no longer creates a Nuitka onefile extraction directory or
 sets Python/loader environment state.
 
-### GO13 — Release identity schema transition
+### GO13 — Release identity schema transition — COMPLETE
 
-Introduce generic backend/runtime identity fields and update compatibility
-manifest/runtime resolver with explicit backward compatibility.
+Compatibility manifest schema 3 replaces `pythonPackage` with generic `backend`
+and `nativeRuntime` identities. New module/runtime identity is Go-native while the
+Android/Python/Go diagnostic readers explicitly retain schema-2 compatibility
+for already-installed modules. Bridge protocol remains version 1.
 
 ### GO14 — Remove Android Python fallback
 
