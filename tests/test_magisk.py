@@ -119,7 +119,8 @@ def test_render_magisk_module_writes_active_only_safe_runtime(tmp_path: Path) ->
     assert "dependencies.ready.json" not in launcher
     assert '' in launcher
     assert 'RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"' in launcher
-    assert "LD_LIBRARY_PATH" in launcher
+    assert "LD_LIBRARY_PATH" not in launcher
+    assert "onefile-runtime" not in launcher
     assert "/data/adb/modules/chrootctl-magisk" in launcher
     assert "/data/adb/modules_update/chrootctl-magisk" in launcher  # diagnostics only
     assert 'run --boot' not in service

@@ -81,12 +81,12 @@ run_target = "./cmd/chrootctl"
 [targets.chrootctl_go.go.outputs]
 "./cmd/chrootctl" = "chrootctl"
 
-# Cross-build profile for the final Android/module backend. Keep normal
-# validation native to the current host so Go tests can execute.
+# Shipping Android/module backend profile. SQLite requires CGO; native Termux clang or an Android NDK compiler must be available.
+# Keep normal validation native to the current host so Go tests can execute.
 [targets.chrootctl_go.variants.android-arm64.env]
 GOOS = "android"
 GOARCH = "arm64"
-CGO_ENABLED = "0"
+CGO_ENABLED = "1"
 
 [targets.chrootctl_go.variants.android-arm64.go]
 build_directory = ".devtool/build/go/android-arm64"

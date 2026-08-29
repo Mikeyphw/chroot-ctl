@@ -156,7 +156,8 @@ class ModuleRuntimeStatusService:
             "abi": DEFAULT_NATIVE_RUNTIME_ABI,
             "path": str(manifest_path),
             "executable": str(entrypoint),
-            "pythonPackageVersion": PYTHON_PACKAGE_VERSION,
+            "backendVersion": PYTHON_PACKAGE_VERSION,
+            "pythonPackageVersion": PYTHON_PACKAGE_VERSION,  # legacy client alias
             "bridgeProtocolVersion": BRIDGE_PROTOCOL_VERSION,
         }
         if not compatibility.get("valid"):

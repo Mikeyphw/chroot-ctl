@@ -1,0 +1,28 @@
+{
+  "androidApp": {
+    "applicationId": "com.mikeyphw.chrootctl",
+    "versionCode": 1,
+    "versionName": "0.1.0-phase29"
+  },
+  "bridgeProtocolVersion": 1,
+  "compatibilitySchemaVersion": 2,
+  "contractSchemaVersion": 1,
+  "module": {
+    "id": "chrootctl-magisk",
+    "version": "1.3.0",
+    "versionCode": 15
+  },
+  "nativeRuntime": {
+    "abi": "arm64-v8a",
+    "entrypoint": "chrootctl",
+    "entrypointPath": "runtime/arm64-v8a/chrootctl",
+    "kind": "go-native",
+    "manifestPath": "runtime/arm64-v8a/runtime-manifest.json",
+    "platform": "android",
+    "schemaVersion": 2
+  },
+  "pythonPackage": {
+    "name": "chrootctl",
+    "version": "0.11.0"
+  }
+}

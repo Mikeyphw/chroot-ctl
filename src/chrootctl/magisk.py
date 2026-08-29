@@ -324,7 +324,7 @@ def _module_prop(config: MagiskModuleConfig) -> str:
 def _customize_sh() -> str:
     return """#!/system/bin/sh
 # KernelSU/Magisk source this file inside the installer shell.
-# Do not enable set -u or run runtime validation here; that can abort install.
+# Avoid shell nounset and runtime validation here; either can abort install.
 
 SKIPMOUNT=false
 PROPFILE=false
@@ -417,11 +417,10 @@ RUNTIME_BIN="$RUNTIME_ROOT/chrootctl"
 [ -f "$RUNTIME_MANIFEST" ] && [ ! -L "$RUNTIME_MANIFEST" ] || { echo "bundled native runtime manifest is missing or unsafe" >&2; exit 127; }
 [ -f "$RUNTIME_BIN" ] && [ -x "$RUNTIME_BIN" ] && [ ! -L "$RUNTIME_BIN" ] || { echo "bundled native chrootctl executable is missing or unsafe" >&2; exit 127; }
 
-mkdir -p /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
-chmod 0700 /data/adb/chrootctl /data/adb/chrootctl/onefile-tmp 2>/dev/null || true
+mkdir -p /data/adb/chrootctl 2>/dev/null || true
+chmod 0700 /data/adb/chrootctl 2>/dev/null || true
 
 export CHROOTCTL_MODULE_DIR="$MODDIR"
-export LD_LIBRARY_PATH="$RUNTIME_ROOT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$RUNTIME_BIN" "$@"
 """
 
@@ -547,12 +546,12 @@ def _validate_native_runtime_zip(archive: zipfile.ZipFile) -> None:
     if not isinstance(payload, dict):
         raise ValueError("native runtime manifest must be a JSON object")
     expected = {
-        "schemaVersion": 1,
-        "runtimeKind": "nuitka-onefile",
+        "schemaVersion": 2,
+        "runtimeKind": "go-native",
         "platform": "android",
         "abi": DEFAULT_NATIVE_RUNTIME_ABI,
         "entrypoint": DEFAULT_NATIVE_RUNTIME_ENTRYPOINT,
-        "pythonPackageVersion": PYTHON_PACKAGE_VERSION,
+        "backendVersion": PYTHON_PACKAGE_VERSION,
         "bridgeProtocolVersion": BRIDGE_PROTOCOL_VERSION,
     }
     for key, value in expected.items():

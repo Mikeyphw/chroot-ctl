@@ -56,7 +56,7 @@ func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]a
 		layout = layout && e == nil && st.Mode().IsRegular()
 	}
 	active := layout && !pending && !disabled && !removal
-	readiness := map[string]any{"ready": false, "mode": "bundled-native", "path": filepath.Join(root, "runtime/arm64-v8a/runtime-manifest.json"), "executable": filepath.Join(root, "runtime/arm64-v8a/chrootctl"), "runtimeKind": "nuitka-onefile", "abi": "arm64-v8a", "pythonPackageVersion": "0.11.0", "bridgeProtocolVersion": 1}
+	readiness := map[string]any{"ready": false, "mode": "bundled-native", "path": filepath.Join(root, "runtime/arm64-v8a/runtime-manifest.json"), "executable": filepath.Join(root, "runtime/arm64-v8a/chrootctl"), "runtimeKind": "go-native", "abi": "arm64-v8a", "backendVersion": "0.11.0", "pythonPackageVersion": "0.11.0", "bridgeProtocolVersion": 1}
 	if active && regularExecutable(filepath.Join(root, "runtime/arm64-v8a/chrootctl")) {
 		readiness["ready"] = true
 		if b, e := os.ReadFile(filepath.Join(root, "runtime/arm64-v8a/runtime-manifest.json")); e == nil {

@@ -45,8 +45,10 @@ def test_phase34c_lint_api36_and_active_only_docs_are_preserved() -> None:
     assert "protocol-1" in docs
 
 
-def test_runtime_resolver_accepts_onefile_native_runtime_contract() -> None:
+def test_runtime_resolver_accepts_go_native_and_legacy_runtime_contracts() -> None:
     resolver = read("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/RuntimeResolver.kt")
-    assert 'private const val NATIVE_RUNTIME_KIND = "nuitka-onefile"' in resolver
+    assert 'private const val NATIVE_RUNTIME_KIND = "go-native"' in resolver
+    assert 'private const val LEGACY_NATIVE_RUNTIME_KIND = "nuitka-onefile"' in resolver
+    assert "LEGACY_NATIVE_RUNTIME_SCHEMA_VERSION = 1" in resolver
     assert 'private const val NATIVE_RUNTIME_ENTRYPOINT = "chrootctl"' in resolver
     assert "PROBE_TIMEOUT_SECONDS = 45L" in resolver

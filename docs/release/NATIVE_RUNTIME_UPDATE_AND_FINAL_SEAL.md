@@ -1,16 +1,5 @@
-# Native runtime update and final seal
+# Native runtime update and release seal
 
-OV07 adds staged native runtime update validation:
+Runtime updates stage and validate the sealed Go-native runtime before replacing the active artifact. New artifacts use schema 2 / `go-native` and contain the Android arm64 `chrootctl` ELF plus `runtime-manifest.json`.
 
-- validate the source runtime before replacement
-- copy through a temporary staging directory
-- reject symlink sources and destinations
-- refuse non-directory destinations
-
-OV08 adds the final release seal command:
-
-```bash
-PYTHONPATH=src python3 scripts/final-native-runtime-release-check.py --repo-root .
-```
-
-The supported module runtime remains the sealed standalone runtime. The Nuitka onefile path remains an opt-in experiment only.
+Final release checks fail closed on missing, unsafe, unsealed, or identity-mismatched runtime artifacts. Legacy schema-1 `nuitka-onefile` manifests remain readable only for migration diagnostics and are not produced by current builds.

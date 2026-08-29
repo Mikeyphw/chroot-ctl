@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"chrootctl/internal/clipboard"
 	"chrootctl/internal/completion"
 	"chrootctl/internal/model"
+	modulepkg "chrootctl/internal/module"
 	"chrootctl/internal/services"
 	sys "chrootctl/internal/system"
 )
@@ -992,30 +992,45 @@ func (a *App) magisk(ctx context.Context) error {
 	if a.Inv.Spec.Command != "magisk render" {
 		return errors.New("unsupported magisk command")
 	}
-	// GO12 replaces this transitional renderer. GO11 preserves the human command
-	// surface without changing the legacy module/runtime schema early.
-	args := []string{"-m", "chrootctl.cli", "magisk", "render", "--output", a.Inv.String("output")}
-	if x := a.Inv.String("zip_path"); x != "" {
-		args = append(args, "--zip", x)
+	rows, err := a.Services.Registry.List(ctx)
+	if err != nil {
+		return err
 	}
-	if x := a.Inv.String("native_runtime_dir"); x != "" {
-		args = append(args, "--native-runtime-dir", x)
+	installed := map[string]bool{}
+	all := []string{}
+	for _, row := range rows {
+		if row.Installed {
+			installed[row.Name] = true
+			all = append(all, row.Name)
+		}
 	}
-	if a.Inv.Bool("all_installed") {
-		args = append(args, "--all-installed")
+	targets := []string{}
+	requested := a.Inv.Strings("magisk_names")
+	if len(requested) > 0 {
+		seen := map[string]bool{}
+		for _, n := range requested {
+			n = strings.TrimSpace(n)
+			if n == "" || seen[n] {
+				continue
+			}
+			if !installed[n] {
+				return fmt.Errorf("module startup targets must be installed chroots: %s", n)
+			}
+			seen[n] = true
+			targets = append(targets, n)
+		}
+	} else if a.Inv.Bool("all_installed") {
+		sort.Strings(all)
+		targets = all
 	}
-	for _, n := range a.Inv.Strings("magisk_names") {
-		args = append(args, "--name", n)
+	opts := modulepkg.Options{OutputDir: a.Inv.String("output"), ZipPath: a.Inv.String("zip_path"), NativeRuntimeDir: a.Inv.String("native_runtime_dir"), StartupTargets: targets}
+	if err := modulepkg.Render(opts); err != nil {
+		return err
 	}
-	cmd := exec.CommandContext(ctx, "python3", args...)
-	cmd.Stdin = a.Stdin
-	cmd.Stdout = a.Stdout
-	cmd.Stderr = a.Stderr
-	env := os.Environ()
-	if _, e := os.Stat("src/chrootctl"); e == nil {
-		env = append(env, "PYTHONPATH="+filepath.Join(mustGetwd(), "src"))
+	if opts.ZipPath != "" {
+		_, _ = fmt.Fprintln(a.Stdout, opts.ZipPath)
+	} else {
+		_, _ = fmt.Fprintln(a.Stdout, opts.OutputDir)
 	}
-	cmd.Env = env
-	return cmd.Run()
+	return nil
 }
-func mustGetwd() string { d, _ := os.Getwd(); return d }

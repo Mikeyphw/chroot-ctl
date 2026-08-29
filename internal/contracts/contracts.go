@@ -16,7 +16,7 @@ const (
 	ExpectedBridgeProtocolVersion      = 1
 	ExpectedOperationSchemaVersion     = 2
 	ExpectedCompatibilitySchemaVersion = 2
-	ExpectedNativeRuntimeSchemaVersion = 1
+	ExpectedNativeRuntimeSchemaVersion = 2
 )
 
 type CLIContract struct {
@@ -193,8 +193,8 @@ func (b Bundle) Validate() error {
 	if b.Foundations.Logging.LoggerName != "chrootctl" || b.Foundations.Logging.LoggerLevel != "DEBUG" || b.Foundations.Logging.Propagate {
 		return errors.New("GO03 logging contract drift")
 	}
-	if b.Release.NativeRuntime.Kind != "nuitka-onefile" {
-		return fmt.Errorf("GO00 baseline must describe current Nuitka runtime, got %q", b.Release.NativeRuntime.Kind)
+	if b.Release.NativeRuntime.Kind != "go-native" {
+		return fmt.Errorf("GO12 runtime contract must describe go-native runtime, got %q", b.Release.NativeRuntime.Kind)
 	}
 	if b.Release.NativeRuntime.Platform != "android" || b.Release.NativeRuntime.ABI != "arm64-v8a" || b.Release.NativeRuntime.Entrypoint != "chrootctl" {
 		return errors.New("native runtime platform/ABI/entrypoint baseline drift")

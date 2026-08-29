@@ -105,7 +105,7 @@ if zip_path.exists():
 PY
 
 if [ -z "$NATIVE_RUNTIME_DIR" ]; then
-    echo "[1/5] Building self-contained Android runtime with Nuitka..."
+    echo "[1/5] Building self-contained Android runtime as Go/Android ARM64..."
     PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}src" python3 scripts/build-native-android-runtime.py \
         --output-root "$NATIVE_RUNTIME_ROOT" --jobs "${CHROOTCTL_NATIVE_JOBS:-2}"
     NATIVE_RUNTIME_DIR="$(python3 - "$NATIVE_RUNTIME_ROOT" <<'PY_NATIVE_PATH'

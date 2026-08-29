@@ -198,10 +198,14 @@ The legacy `magisk render` implementation remains a deliberate transitional
 delegation until GO12 replaces module/runtime packaging; no runtime schema is
 changed in GO11.
 
-### GO12 — Go-native module/runtime packaging
+### GO12 — Go-native module/runtime packaging — COMPLETE
 
-Replace Nuitka and the bundled Python userspace with the Go executable and a
-new runtime manifest. Keep old schema support only as a transition mechanism.
+The module runtime now builds `cmd/chrootctl` as an Android/arm64 CGO Go ELF.
+New artifacts use native-runtime schema 2 with `runtimeKind=go-native`; runtime
+validators and the Android resolver retain explicit schema-1 `nuitka-onefile`
+read compatibility for already-installed modules during the transition. The
+module launcher no longer creates a Nuitka onefile extraction directory or
+sets Python/loader environment state.
 
 ### GO13 — Release identity schema transition
 

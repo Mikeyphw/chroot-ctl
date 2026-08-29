@@ -179,12 +179,19 @@ internal object RuntimeResolver {
         val manifestFile = File(runtimeRoot, "runtime-manifest.json")
         if (!isCanonicalModuleFile(manifestFile)) return false
         val manifest = runCatching { JSONObject(manifestFile.readText()) }.getOrNull() ?: return false
-        if (manifest.optInt("schemaVersion", -1) != NATIVE_RUNTIME_SCHEMA_VERSION ||
-            manifest.optString("runtimeKind") != NATIVE_RUNTIME_KIND ||
+        val schemaVersion = manifest.optInt("schemaVersion", -1)
+        val runtimeKind = manifest.optString("runtimeKind")
+        val versionCompatible = when (schemaVersion) {
+            NATIVE_RUNTIME_SCHEMA_VERSION -> runtimeKind == NATIVE_RUNTIME_KIND &&
+                manifest.optString("backendVersion") == EXPECTED_PYTHON_PACKAGE_VERSION
+            LEGACY_NATIVE_RUNTIME_SCHEMA_VERSION -> runtimeKind == LEGACY_NATIVE_RUNTIME_KIND &&
+                manifest.optString("pythonPackageVersion") == EXPECTED_PYTHON_PACKAGE_VERSION
+            else -> false
+        }
+        if (!versionCompatible ||
             manifest.optString("platform") != NATIVE_RUNTIME_PLATFORM ||
             manifest.optString("abi") != NATIVE_RUNTIME_ABI ||
             manifest.optString("entrypoint") != NATIVE_RUNTIME_ENTRYPOINT ||
-            manifest.optString("pythonPackageVersion") != EXPECTED_PYTHON_PACKAGE_VERSION ||
             manifest.optInt("bridgeProtocolVersion", -1) != BRIDGE_PROTOCOL_VERSION
         ) return false
 
@@ -256,8 +263,10 @@ internal object RuntimeResolver {
     private const val PROBE_TIMEOUT_SECONDS = 45L
     private const val BRIDGE_PROTOCOL_VERSION = 1
     private const val COMPATIBILITY_SCHEMA_VERSION = 2
-    private const val NATIVE_RUNTIME_SCHEMA_VERSION = 1
-    private const val NATIVE_RUNTIME_KIND = "nuitka-onefile"
+    private const val NATIVE_RUNTIME_SCHEMA_VERSION = 2
+    private const val NATIVE_RUNTIME_KIND = "go-native"
+    private const val LEGACY_NATIVE_RUNTIME_SCHEMA_VERSION = 1
+    private const val LEGACY_NATIVE_RUNTIME_KIND = "nuitka-onefile"
     private const val NATIVE_RUNTIME_PLATFORM = "android"
     private const val NATIVE_RUNTIME_ABI = "arm64-v8a"
     private const val NATIVE_RUNTIME_ROOT = "runtime/arm64-v8a"
