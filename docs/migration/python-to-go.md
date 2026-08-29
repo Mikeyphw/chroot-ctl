@@ -171,10 +171,13 @@ compaction, global/target `flock` locks, cancellation markers, verified process
 identity signalling, explicit stale-operation reconciliation/recovery, redacted
 requests/results/progress, retry metadata, and fail-closed corrupt-record placeholders.
 
-### GO09 — Service layer
+### GO09 — Service layer — COMPLETE
 
-Port all backend services so CLI and Android bridge share one Go business-logic
-layer.
+Implemented in `internal/services`: one transport-neutral container composes
+registry, controller, operations, users, catalog, install, snapshots, transfer,
+preview/repair, support, lifecycle/module readiness, release evidence and service
+unit control. GO10 and GO11 consume this layer instead of duplicating backend
+business logic in the bridge or CLI.
 
 ### GO10 — Android bridge protocol-v1 parity
 
