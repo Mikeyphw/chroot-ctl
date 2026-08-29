@@ -838,7 +838,7 @@ func (b *ServicesBackend) moduleBuildPreview(p map[string]any) (any, error) {
 	if archive == "" {
 		archive = "./chrootctl-magisk.zip"
 	}
-	return map[string]any{"ok": true, "kind": "system.module_build", "archive": archive, "startupTargets": targets, "allInstalled": all, "blocking": []any{}, "warnings": []string{"GO12 will replace the legacy module builder with the native Go packager."}, "confirm": false}, nil
+	return map[string]any{"ok": true, "kind": "system.module_build", "archive": archive, "startupTargets": targets, "allInstalled": all, "blocking": []any{}, "warnings": []string{}, "confirm": false}, nil
 }
 
 func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string]any, progress Progress, isCancelled func() bool) (any, error) {

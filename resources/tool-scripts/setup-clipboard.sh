@@ -5,10 +5,10 @@ case "${CHROOTCTL_DISTRO:?}" in
   ubuntu)
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y xclip xsel wl-clipboard python3
+    apt-get install -y xclip xsel wl-clipboard jq socat
     ;;
   arch)
-    pacman -Syu --noconfirm --needed xclip xsel wl-clipboard python
+    pacman -Syu --noconfirm --needed xclip xsel wl-clipboard jq socat
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2
@@ -18,72 +18,48 @@ esac
 
 install -d /usr/local/bin
 
-cat >/usr/local/bin/termux-clip <<'EOF'
-#!/usr/bin/env python3
-from __future__ import annotations
+cat >/usr/local/bin/termux-clip <<'EOF_INNER'
+#!/bin/sh
+set -eu
 
-import argparse
-import json
-import socket
-import sys
+SOCKET_PATH=/tmp/chrootctl/clipboard.sock
+TOKEN_PATH=/tmp/chrootctl/clipboard.token
 
-SOCKET_PATH = "/tmp/chrootctl/clipboard.sock"
-TOKEN_PATH = "/tmp/chrootctl/clipboard.token"
-TIMEOUT_SECONDS = 5.0
+[ -S "$SOCKET_PATH" ] || { echo "clipboard socket is unavailable: $SOCKET_PATH" >&2; exit 1; }
+[ -r "$TOKEN_PATH" ] || { echo "clipboard token is unavailable: $TOKEN_PATH" >&2; exit 1; }
+token=$(cat "$TOKEN_PATH")
 
+mode=set
+if [ "${1:-}" = "-o" ] || [ "${1:-}" = "--output" ]; then
+  mode=get
+  shift
+elif [ "${1:-}" = "-i" ] || [ "${1:-}" = "--input" ]; then
+  shift
+fi
 
-def request(payload: dict[str, object]) -> dict[str, object]:
-    payload = dict(payload)
-    payload["token"] = open(TOKEN_PATH, "r", encoding="utf-8").read().strip()
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(TIMEOUT_SECONDS)
-        client.connect(SOCKET_PATH)
-        client.sendall(json.dumps(payload).encode("utf-8"))
-        client.shutdown(socket.SHUT_WR)
-        chunks: list[bytes] = []
-        total = 0
-        while True:
-            chunk = client.recv(65536)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > 1024 * 1024:
-                raise RuntimeError("clipboard response exceeds 1 MiB")
-            chunks.append(chunk)
-    response = json.loads(b"".join(chunks).decode("utf-8"))
-    if not isinstance(response, dict):
-        raise RuntimeError("clipboard daemon returned an invalid response")
-    return response
+if [ "$mode" = get ]; then
+  request=$(jq -cn --arg token "$token" '{action:"get",token:$token}')
+else
+  if [ "$#" -gt 0 ]; then
+    text="$*"
+  else
+    text=$(cat)
+  fi
+  request=$(jq -cn --arg token "$token" --arg text "$text" '{action:"set",token:$token,text:$text}')
+fi
 
+response=$(printf '%s' "$request" | socat - "UNIX-CONNECT:$SOCKET_PATH")
+ok=$(printf '%s' "$response" | jq -r '.ok // false')
+if [ "$ok" != true ]; then
+  printf '%s\n' "$(printf '%s' "$response" | jq -r '.error // "clipboard request failed"')" >&2
+  exit 1
+fi
+if [ "$mode" = get ]; then
+  printf '%s' "$response" | jq -rj '.text // ""'
+fi
+EOF_INNER
 
-def main() -> int:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("-o", "--output", action="store_true")
-    parser.add_argument("-i", "--input", action="store_true")
-    parser.add_argument("text", nargs="*")
-    args = parser.parse_args()
-
-    if args.output:
-        payload = request({"action": "get"})
-        if not payload.get("ok"):
-            print(str(payload.get("error", "clipboard get failed")), file=sys.stderr)
-            return 1
-        sys.stdout.write(str(payload.get("text", "")))
-        return 0
-
-    text = " ".join(args.text) if args.text else sys.stdin.read()
-    payload = request({"action": "set", "text": text})
-    if not payload.get("ok"):
-        print(str(payload.get("error", "clipboard set failed")), file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-EOF
-
-cat >/usr/local/bin/chrootctl-xsel <<'EOF'
+cat >/usr/local/bin/chrootctl-xsel <<'EOF_INNER'
 #!/bin/sh
 set -eu
 
@@ -120,9 +96,9 @@ if [ "$mode" = "get" ]; then
 fi
 
 exec /usr/local/bin/termux-clip "$@"
-EOF
+EOF_INNER
 
-cat >/usr/local/bin/chrootctl-xclip <<'EOF'
+cat >/usr/local/bin/chrootctl-xclip <<'EOF_INNER'
 #!/bin/sh
 set -eu
 
@@ -160,7 +136,7 @@ if [ "$mode" = "get" ]; then
 fi
 
 exec /usr/local/bin/termux-clip "$@"
-EOF
+EOF_INNER
 
 chmod 0755 /usr/local/bin/termux-clip /usr/local/bin/chrootctl-xsel /usr/local/bin/chrootctl-xclip
 

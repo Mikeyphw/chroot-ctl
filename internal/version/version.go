@@ -5,5 +5,3 @@ var (
 	Version = "0.11.0"
 	Commit  = "unknown"
 )
-
-const PythonBaseline = "0.11.0"

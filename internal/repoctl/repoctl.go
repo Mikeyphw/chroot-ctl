@@ -319,7 +319,7 @@ func InstallModule(zipPath string) error {
 	return cmd.Run()
 }
 
-var excludedDirs = map[string]bool{".git": true, "dist": true, "out": true, ".devtool": true, "__pycache__": true, ".pytest_cache": true, ".mypy_cache": true, ".ruff_cache": true, ".venv": true, "tmpout": true}
+var excludedDirs = map[string]bool{".git": true, "dist": true, "out": true, ".devtool": true, "tmpout": true}
 
 func forbiddenName(name string) bool {
 	return strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".orig") || strings.HasSuffix(name, ".rej") || strings.HasSuffix(name, "~") || strings.Contains(name, ".bak")
@@ -364,6 +364,12 @@ func BuildSource(opts SourceOptions) (string, error) {
 				return nil
 			}
 		}
+		if d.IsDir() && (transientCacheDirs[d.Name()] || pythonPackagingResidueDir(d.Name())) {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && pythonBytecode(d.Name()) {
+			return nil
+		}
 		if forbiddenName(d.Name()) {
 			return fmt.Errorf("forbidden source artifact: %s", rel)
 		}
@@ -391,6 +397,11 @@ func BuildSource(opts SourceOptions) (string, error) {
 	for _, rel := range paths {
 		path := filepath.Join(root, rel)
 		st, e := os.Lstat(path)
+		if os.IsNotExist(e) {
+			// Ignore a path which disappeared after WalkDir (for example a
+			// concurrent cleanup of generated cache residue during validation).
+			continue
+		}
 		if e != nil {
 			tw.Close()
 			gz.Close()
@@ -456,7 +467,10 @@ func Validate() error {
 	if e != nil {
 		return e
 	}
-	if e = testseal.Validate(root, true); e != nil {
+	if e = testseal.Validate(root, false); e != nil {
+		return e
+	}
+	if e = ValidateRepositoryPurity(root); e != nil {
 		return e
 	}
 	if e = run(root, nil, "go", "test", "-p", "2", "./..."); e != nil {

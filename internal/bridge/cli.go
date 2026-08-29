@@ -105,7 +105,7 @@ func RunApp(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	if o.Command == "capabilities" {
 		cfg := config.Default(config.DetectRuntime())
 		root := filepath.Join(filepath.Dir(cfg.DatabasePath), "operations")
-		payload := Success("capabilities", map[string]any{"protocolVersion": ProtocolVersion, "backendVersion": version.PythonBaseline, "operations": Capabilities(), "operationRoot": root, "transport": []string{"json", "ndjson"}, "arbitraryShell": false, "runtimeHealth": map[string]any{"status": "ready"}})
+		payload := Success("capabilities", map[string]any{"protocolVersion": ProtocolVersion, "backendVersion": version.Version, "operations": Capabilities(), "operationRoot": root, "transport": []string{"json", "ndjson"}, "arbitraryShell": false, "runtimeHealth": map[string]any{"status": "ready"}})
 		writeJSON(stdout, payload)
 		return 0
 	}

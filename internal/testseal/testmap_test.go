@@ -18,8 +18,8 @@ func repoRoot(t *testing.T) string {
 	}
 	return root
 }
-func TestLegacyPythonSuiteIsFullyMapped(t *testing.T) {
-	if err := Validate(repoRoot(t), true); err != nil {
+func TestLegacyPythonSuiteMapSurvivesFinalPurge(t *testing.T) {
+	if err := Validate(repoRoot(t), false); err != nil {
 		t.Fatal(err)
 	}
 }

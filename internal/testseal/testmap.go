@@ -2,7 +2,6 @@ package testseal
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -116,8 +115,39 @@ func Validate(root string, requireLegacySources bool) error {
 				return fmt.Errorf("legacy test map mismatch: filesystem=%q map=%q", got[i], want[i])
 			}
 		}
-	} else if st, err := os.Stat(testsDir); err == nil && st.IsDir() {
-		return errors.New("legacy tests directory remains after final purge")
+	} else {
+		if err := validateFinalTestResidue(testsDir, root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFinalTestResidue(path, root string) error {
+	entries, err := os.ReadDir(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		child := filepath.Join(path, entry.Name())
+		if entry.IsDir() {
+			if entry.Name() == "__pycache__" || strings.HasSuffix(strings.ToLower(entry.Name()), ".egg-info") || strings.HasSuffix(strings.ToLower(entry.Name()), ".dist-info") {
+				continue
+			}
+			if err := validateFinalTestResidue(child, root); err != nil {
+				return err
+			}
+			continue
+		}
+		lower := strings.ToLower(entry.Name())
+		if strings.HasSuffix(lower, ".pyc") || strings.HasSuffix(lower, ".pyo") {
+			continue
+		}
+		rel, _ := filepath.Rel(root, child)
+		return fmt.Errorf("unexpected legacy test residue remains: %s", filepath.ToSlash(rel))
 	}
 	return nil
 }

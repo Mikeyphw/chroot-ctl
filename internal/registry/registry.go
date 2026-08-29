@@ -347,12 +347,12 @@ func safeJSONDict(raw, field string) map[string]any {
 func stringifyMetadata(value map[string]any) map[string]string {
 	result := make(map[string]string, len(value))
 	for key, item := range value {
-		result[key] = pythonString(item)
+		result[key] = reprString(item)
 	}
 	return result
 }
 
-func pythonString(value any) string {
+func reprString(value any) string {
 	switch item := value.(type) {
 	case nil:
 		return "None"
@@ -366,7 +366,7 @@ func pythonString(value any) string {
 	case []any:
 		parts := make([]string, len(item))
 		for i, child := range item {
-			parts[i] = pythonRepr(child)
+			parts[i] = reprValue(child)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case map[string]any:
@@ -377,7 +377,7 @@ func pythonString(value any) string {
 		sort.Strings(keys)
 		parts := make([]string, 0, len(keys))
 		for _, key := range keys {
-			parts = append(parts, pythonRepr(key)+": "+pythonRepr(item[key]))
+			parts = append(parts, reprValue(key)+": "+reprValue(item[key]))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	default:
@@ -385,11 +385,11 @@ func pythonString(value any) string {
 	}
 }
 
-func pythonRepr(value any) string {
+func reprValue(value any) string {
 	if text, ok := value.(string); ok {
 		return "'" + strings.ReplaceAll(text, "'", "\\'") + "'"
 	}
-	return pythonString(value)
+	return reprString(value)
 }
 
 func (r *Registry) Upsert(ctx context.Context, input ChrootInput) error {

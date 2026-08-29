@@ -464,15 +464,10 @@ func (c Catalog) Apply(ctx context.Context, name string, cfg config.ChrootConfig
 		return model.CatalogApplyResult{}, err
 	}
 	env := map[string]string{"CHROOTCTL_NAME": cfg.DistroName, "CHROOTCTL_DISTRO": rec.Distro, "CHROOTCTL_USERNAME": cfg.Username}
-	if strings.HasSuffix(entry.Script, ".sh") {
-		_, err = runner.Run(ctx, []string{"busybox", "chroot", cfg.ChrootBase(), "/bin/bash", "-lc", "set -e\n" + entry.ScriptText}, sys.RunOptions{ChrootEnv: true, Env: env, NoCapture: true})
+	if !strings.HasSuffix(entry.Script, ".sh") {
+		err = fmt.Errorf("%s '%s' uses unsupported embedded script type %q", c.Kind, name, entry.Script)
 	} else {
-		check, _ := runner.Run(ctx, []string{"busybox", "chroot", cfg.ChrootBase(), "python3", "--version"}, sys.RunOptions{ChrootEnv: true, Env: env, AllowFailure: true})
-		if check.ReturnCode != 0 {
-			err = fmt.Errorf("%s '%s' requires python3 inside the chroot", c.Kind, name)
-		} else {
-			_, err = runner.Run(ctx, []string{"busybox", "chroot", cfg.ChrootBase(), "python3", "-"}, sys.RunOptions{ChrootEnv: true, Env: env, NoCapture: true, Input: entry.ScriptText})
-		}
+		_, err = runner.Run(ctx, []string{"busybox", "chroot", cfg.ChrootBase(), "/bin/bash", "-lc", "set -e\n" + entry.ScriptText}, sys.RunOptions{ChrootEnv: true, Env: env, NoCapture: true})
 	}
 	latest, _ := reg.Get(ctx, cfg.DistroName)
 	if latest == nil {

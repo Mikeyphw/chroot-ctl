@@ -6,29 +6,6 @@ on:
   pull_request:
 
 jobs:
-  legacy-differential:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install package and dev tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev] || pip install -e .
-          pip install pytest ruff mypy
-      - name: Ruff
-        run: ruff check src tests
-      - name: Mypy
-        run: mypy src
-      - name: Go migration contract drift
-        run: PYTHONPATH=src python scripts/export-go-migration-contracts.py --check
-      - name: Legacy Python regression oracle
-        run: pytest -q
-      - name: GO16 Python-Go differential
-        run: go run ./cmd/repoctl differential
-
   go-native:
     runs-on: ubuntu-latest
     steps:
@@ -39,10 +16,8 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android NDK for Go SQLite runtime
         run: sdkmanager "ndk;29.0.14206865"
-      - name: Go tests and vet
-        run: |
-          go test ./...
-          go vet ./...
+      - name: Go-only repository and contract validation
+        run: go run ./cmd/repoctl validate
       - name: Build sealed Android Go runtime
         run: go run ./cmd/repoctl build-runtime --output-root /tmp/chrootctl-runtime --jobs 2
       - name: Build Go-native module
@@ -68,27 +43,3 @@ jobs:
       - name: Gradle lint
         working-directory: android
         run: ./gradlew --no-daemon :app:lintDebug
-
-  browser-e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev] || pip install -e .
-      - name: Install Playwright
-        run: |
-          npm install
-          npx playwright install --with-deps chromium
-      - name: Run seeded E2E suite
-        env:
-          CHROOTCTL_E2E_FIXTURES: '1'
-          CHROOTCTL_E2E_DASHBOARD_MODE: dense
-        run: npx playwright test

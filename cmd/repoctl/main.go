@@ -10,7 +10,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|differential|release|doctor-cross-arch> [options]")
+	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|final-seal|release|doctor-cross-arch> [options]")
 }
 func fail(err error) { fmt.Fprintln(os.Stderr, "repoctl:", err); os.Exit(1) }
 func main() {
@@ -68,8 +68,13 @@ func main() {
 		if e := repoctl.Validate(); e != nil {
 			fail(e)
 		}
-	case "differential":
-		if e := repoctl.Differential(); e != nil {
+	case "final-seal":
+		fs := flag.NewFlagSet("final-seal", flag.ExitOnError)
+		work := fs.String("work-dir", "", "")
+		jobs := fs.Int("jobs", 2, "")
+		skipValidation := fs.Bool("skip-validation", false, "")
+		fs.Parse(os.Args[2:])
+		if e := repoctl.FinalSeal(repoctl.FinalSealOptions{WorkDir: *work, Jobs: *jobs, SkipValidation: *skipValidation}); e != nil {
 			fail(e)
 		}
 	case "release":

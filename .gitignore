@@ -18,49 +18,18 @@ Thumbs.db
 *.swp
 *.swo
 .project
-.pydevproject
 .settings/
 *.sublime-workspace
 *.sublime-project
 .history/
 
 # ===================
-# Python
-# ===================
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-*.egg-info/
-dist/
-build/
-.pytest_cache/
-.coverage
-htmlcov/
-*.log
-*.pyc
-*.pyo
-*.pyd
-
-# ===================
 # Build Outputs
 # ===================
-*.egg-info/
-.eggs/
-.installed.cfg
-*.manifest
-*.spec
 
 # ===================
 # Testing & Coverage
 # ===================
-.pytest_cache/
-.coverage
-htmlcov/
 test_reports/
 .junit
 test-results/
@@ -155,21 +124,6 @@ tmpmod.zip
 **/.cxx/
 **/.externalNativeBuild/
 local.properties
-
-# Python generated state
-**/__pycache__/
-**/.pytest_cache/
-**/.mypy_cache/
-**/.ruff_cache/
-**/.tox/
-**/.nox/
-**/.venv/
-**/venv/
-*.py[cod]
-*.egg-info/
-.coverage
-coverage.xml
-htmlcov/
 
 # Node generated state
 **/node_modules/

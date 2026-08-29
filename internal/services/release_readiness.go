@@ -18,9 +18,8 @@ type ReleaseReadinessService struct{ C *Container }
 type readinessRequirement struct{ ID, Label string }
 
 var readinessRequirements = []readinessRequirement{
-	{"python_pytest", "Python pytest"}, {"python_mypy", "Python mypy"}, {"python_compileall", "Python compileall"},
-	{"android_contract_validators", "Android source-contract validators"}, {"source_package", "Source package validator"},
-	{"android_compileDebugKotlin", "Android compileDebugKotlin"}, {"android_testDebugUnitTest", "Android testDebugUnitTest"}, {"android_lintDebug", "Android lintDebug"},
+	{"go_test", "Go test suite"}, {"go_vet", "Go vet"}, {"go_contracts", "Go contract seal"}, {"repo_purity", "Go-only repository purity"},
+	{"source_package", "Source package validator"}, {"android_compileDebugKotlin", "Android compileDebugKotlin"}, {"android_testDebugUnitTest", "Android testDebugUnitTest"}, {"android_lintDebug", "Android lintDebug"},
 	{"module_render", "Module render/tree validator"}, {"module_zip", "Module ZIP validator"}, {"module_shell", "Module shell contract"}, {"source_no_webui", "Retired WebUI regression scan"},
 }
 var oidRE = regexp.MustCompile(`^[0-9a-f]{40}$`)

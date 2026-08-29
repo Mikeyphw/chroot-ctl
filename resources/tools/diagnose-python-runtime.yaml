@@ -4,7 +4,7 @@ distro: all
 categories:
 - diagnostics
 - development
-script: diagnose-python-runtime.py
+script: diagnose-python-runtime.sh
 version: '1'
 risks:
 - package-mutation

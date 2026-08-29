@@ -37,7 +37,7 @@ func NewServicesDispatcher(s *services.Container) (*Dispatcher, error) {
 	return NewDispatcher(NewServicesBackend(s), m, p), nil
 }
 func (d *Dispatcher) Capabilities() map[string]any {
-	return map[string]any{"protocolVersion": ProtocolVersion, "backendVersion": version.PythonBaseline, "operations": Capabilities(), "operationRoot": d.Operations.Journal.Root, "transport": []string{"json", "ndjson"}, "arbitraryShell": false}
+	return map[string]any{"protocolVersion": ProtocolVersion, "backendVersion": version.Version, "operations": Capabilities(), "operationRoot": d.Operations.Journal.Root, "transport": []string{"json", "ndjson"}, "arbitraryShell": false}
 }
 func (d *Dispatcher) State(ctx context.Context, id string) Response {
 	v, e := d.Backend.State(ctx)

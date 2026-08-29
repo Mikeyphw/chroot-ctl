@@ -1,13 +1,11 @@
-# chrootctl v9
+# chrootctl
 
-Proper installable `src/` pip package for managing Termux chroots.
+Go-native Android/Termux chroot manager with a Magisk/KernelSU module runtime and Kotlin Android companion.
 
 ## Features
 
-- `pip install .` / `pip install -e .`
-- separate installers:
-  - `src/chrootctl/ubuntu.py`
-  - `src/chrootctl/arch.py`
+- single Go backend (`cmd/chrootctl`) for CLI and Android bridge protocol v1
+- native Ubuntu and Arch installers
 - multi-chroot registry
 - Ubuntu and Arch install flows
 - UID/GID sync to match the Termux host user
@@ -22,17 +20,22 @@ Proper installable `src/` pip package for managing Termux chroots.
 - YAML-backed `tools` and `addons` repositories with optional `fzf` multi-select
 - rich CLI output
 
-## Install
+## Build and install
 
 ```bash
-pip install .
-# or
-pip install -e .
+# Validate the Go backend
+go run ./cmd/repoctl validate
 
-# one-shot for current shell
-source <(chrootctl completion zsh)
+# Build the sealed Android/ARM64 runtime and Magisk/KernelSU module
+./build.sh
 
-# persistent install
+# Build and install the module through KernelSU
+./build.sh --install
+
+# Final deterministic release seal
+./scripts/final-seal
+
+# shell completion
 mkdir -p ~/.local/share/zsh/site-functions
 chrootctl completion zsh > ~/.local/share/zsh/site-functions/_chrootctl
 ```
@@ -77,7 +80,7 @@ source <(chrootctl completion zsh)
 
 ## Service units
 
-`chrootctl run` loads systemd-inspired `*.service` files from `service_dirs`. On Android the default directory is `/data/adb/chrootctl/services`, so you can add or change services without editing the module or Python source. The Magisk/KSU `service.sh` also calls `chrootctl run --boot`, which starts enabled units wanted by `boot.target`.
+`chrootctl run` loads systemd-inspired `*.service` files from `service_dirs`. On Android the default directory is `/data/adb/chrootctl/services`, so you can add or change services without editing the module or backend source. The Magisk/KSU `service.sh` also calls `chrootctl run --boot`, which starts enabled units wanted by `boot.target`.
 
 Each service is intentionally bound to one chroot with `[Service] Chroot=<name>`. Passing a different chroot on the CLI is treated as a safety error instead of silently starting the service elsewhere.
 

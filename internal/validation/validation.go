@@ -16,7 +16,7 @@ var (
 	usernameRE     = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}[$]?$`)
 )
 
-func pythonStringRepr(value string) string {
+func stringRepr(value string) string {
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	value = strings.ReplaceAll(value, `'`, `\'`)
 	value = strings.ReplaceAll(value, "\n", `\n`)
@@ -49,7 +49,7 @@ func validateBasename(value any, field string, pattern *regexp.Regexp) (string, 
 		return "", fmt.Errorf("%s must be a safe basename", field)
 	}
 	if !pattern.MatchString(text) {
-		return "", fmt.Errorf("invalid %s: %s", field, pythonStringRepr(text))
+		return "", fmt.Errorf("invalid %s: %s", field, stringRepr(text))
 	}
 	return text, nil
 }
@@ -96,7 +96,7 @@ func UsernameField(value any, field string) (string, error) {
 		return "", err
 	}
 	if !usernameRE.MatchString(text) {
-		return "", fmt.Errorf("invalid %s: %s", field, pythonStringRepr(text))
+		return "", fmt.Errorf("invalid %s: %s", field, stringRepr(text))
 	}
 	return text, nil
 }

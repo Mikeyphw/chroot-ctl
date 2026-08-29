@@ -71,12 +71,12 @@ func TestBuildSourceIsGoNativeAndDoesNotFollowSymlinks(t *testing.T) {
 	_ = root
 }
 
-func TestGO16LegacyTestMapIsComplete(t *testing.T) {
+func TestGO17LegacyTestMapIsRetained(t *testing.T) {
 	root, e := repoRoot()
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = testseal.Validate(root, true); e != nil {
+	if e = testseal.Validate(root, false); e != nil {
 		t.Fatal(e)
 	}
 }

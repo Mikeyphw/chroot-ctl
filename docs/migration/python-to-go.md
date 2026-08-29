@@ -30,10 +30,10 @@ The committed fixtures under `migration/contracts/v1/` currently define:
 | Android bridge operations | 86 |
 | Bridge protocol | 1 |
 | Operation journal schema | 2 |
-| Compatibility manifest schema | 2 |
-| Native runtime manifest schema | 1 |
-| Current native runtime kind | `nuitka-onefile` |
-| Current production backend | Python 0.11.0 |
+| Compatibility manifest schema | 3 |
+| Native runtime manifest schema | 2 |
+| Current native runtime kind | `go-native` |
+| Current production backend | Go 0.11.0 |
 
 The bridge operation distribution is 36 query, 16 preview, and 34 operation
 handlers. Arbitrary shell execution is not part of the bridge contract.
@@ -238,8 +238,11 @@ file maps to surviving Go/Kotlin tests or an explicitly retired frozen contract,
 is the final transition-only Python/Go oracle: it verifies byte-identical zsh completion
 and deterministic frozen-contract parity while both implementations still exist.
 
-### GO17 — Python purge + final release seal
+### GO17 — Python purge + final release seal ✅
 
-Delete Python product code, Python scripts/tests, Python packaging/dependencies,
-Nuitka logic, and compatibility fallbacks. Add a repository guard preventing
-runtime/build/validation Python from returning.
+The legacy Python package, tests, validators, packaging metadata, compatibility shims, and
+Nuitka-era execution fallbacks are removed. Devtool and CI are Go/Kotlin-only.
+`repoctl validate` enforces repository purity and the retained GO16 migration-test map;
+`repoctl final-seal` additionally proves the 66-node CLI / 86-operation bridge contracts,
+builds a real Android/ARM64 CGO runtime, and requires byte-for-byte deterministic source
+and module archives before reporting a final seal.

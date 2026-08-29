@@ -59,11 +59,11 @@ func (snapshot LogSnapshot) DisplayMap() map[string]string {
 	}
 	entries := make([]string, 0, len(snapshot.Entries))
 	for _, entry := range snapshot.Entries {
-		entries = append(entries, pythonLogEntryDict(entry))
+		entries = append(entries, logEntryDict(entry))
 	}
 	links := make([]string, 0, len(snapshot.RelatedLinks))
 	for _, link := range snapshot.RelatedLinks {
-		links = append(links, pythonLogLinkDict(link))
+		links = append(links, logLinkDict(link))
 	}
 	return map[string]string{
 		"log_file":      snapshot.LogFile,
@@ -88,24 +88,24 @@ func (result AppBuildResult) DisplayMap() map[string]string {
 func displayLogLinks(values []LogLink) string {
 	parts := make([]string, 0, len(values))
 	for _, value := range values {
-		parts = append(parts, pythonLogLinkDict(value))
+		parts = append(parts, logLinkDict(value))
 	}
 	return strings.Join(parts, ",")
 }
 
-func pythonLogLinkDict(link LogLink) string {
-	return "{'label': " + pythonRepr(link.Label) + ", 'href': " + pythonRepr(link.Href) + "}"
+func logLinkDict(link LogLink) string {
+	return "{'label': " + reprString(link.Label) + ", 'href': " + reprString(link.Href) + "}"
 }
 
-func pythonLogEntryDict(entry LogEntry) string {
+func logEntryDict(entry LogEntry) string {
 	level := ""
 	if entry.Level != nil {
 		level = *entry.Level
 	}
-	return "{'line': " + pythonRepr(entry.Line) + ", 'level': " + pythonRepr(level) + ", 'links': " + pythonRepr(displayLogLinks(entry.Links)) + "}"
+	return "{'line': " + reprString(entry.Line) + ", 'level': " + reprString(level) + ", 'links': " + reprString(displayLogLinks(entry.Links)) + "}"
 }
 
-func pythonRepr(value string) string {
+func reprString(value string) string {
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	value = strings.ReplaceAll(value, `'`, `\'`)
 	value = strings.ReplaceAll(value, "\n", `\n`)

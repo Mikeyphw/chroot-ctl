@@ -1,3 +1,0 @@
-android/app/src/main/kotlin/com/mikeyphw/chrootctl/repository/BridgeRepository.kt.bak-phase29b
-android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/chroots/ChrootsScreen.kt.bak-phase29b
-src/chrootctl/services/chroot_archives.py.bak-transfer-export

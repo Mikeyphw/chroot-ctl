@@ -1,67 +1,24 @@
 # chroot-ctl repository configuration for Devtool.
 #
 # Production backend: Go chrootctl rooted at ./cmd/chrootctl.
-# Legacy Python target remains only for the GO16 differential oracle and is deleted by GO17.
-# Module packaging is owned by cmd/repoctl; build.sh is a thin Go wrapper.
+# Module packaging/release: cmd/repoctl.
 # Android companion target: ./android.
 
 [project]
-kind = "python"
-python = "python3"
+kind = "go"
 
 [execution]
-# Use native execution when available. Devtool may still be overridden with
-# --chroot androidos when the host requires the Android build chroot.
 environment = "auto"
 chroot_name = "androidos"
 
 [toolchain]
-# Python/Android toolchains are managed by the repository and Devtool target
-# settings rather than mise.
 manager = "none"
 
 [build]
-# Conservative defaults for Termux/ARM64 hosts.
 max_workers = 2
 
-[python]
-manager = "venv"
-test_framework = "pytest"
-extras = ["dev"]
-locked = false
-offline = false
-install_project = true
-lint = ["ruff", "mypy"]
-validator_dependencies = ["build>=1.2"]
-pre_commit = "auto"
-source_import_isolation = false
-cli_contract = false
-isolation = true
-disable_network = false
-matrix = []
-matrix_mode = "active"
-fresh_dist = true
-clean_categories = ["artifacts", "caches"]
-
-[python.package]
-verify_all_wheels = true
-rebuild_sdist = true
-import_smoke = true
-verify_cli = true
-install_dependencies = true
-reproducible = false
-import_modules = ["chrootctl"]
-console_scripts = ["chrootctl", "chrootctl-app"]
-
-# This repo is being validated for correctness/release behavior, not as a
-# cybersecurity audit target.
-[python.security]
-enabled = false
-tools = ["pip_audit", "bandit"]
-sbom = false
-
 # ---------------------------------------------------------------------------
-# Go migration backend target
+# Go production backend target
 # ---------------------------------------------------------------------------
 
 [targets.chrootctl_go]
@@ -235,48 +192,14 @@ lint = [
 ]
 
 # ---------------------------------------------------------------------------
-# Root Python / Magisk module target
+# Go-native module/release command target
 # ---------------------------------------------------------------------------
 
 [targets.chrootctl]
-type = "python"
+type = "command"
 root = "."
 execution_environment = "host"
-chroot_name = "androidos"
-run_command = "PYTHONPATH=src python3 -m chrootctl.cli --help"
-test_command = "PYTHONPATH=src python3 -m pytest -q tests/test_native_runtime.py"
+run_command = "go run ./cmd/chrootctl --help"
+test_command = "go test -p 2 ./..."
+build_command = "go run ./cmd/repoctl build-runtime"
 package_command = "go run ./cmd/repoctl build-module"
-
-[targets.chrootctl.python]
-manager = "venv"
-test_framework = "pytest"
-extras = ["dev"]
-locked = false
-offline = false
-install_project = false
-lint = []
-validator_dependencies = ["pytest", "rich>=13.7.0", "PyYAML>=6.0", "pydantic>=2.7.0", "pydantic-core>=2.0"]
-pre_commit = "auto"
-source_import_isolation = false
-cli_contract = false
-isolation = true
-disable_network = false
-matrix = []
-matrix_mode = "active"
-fresh_dist = false
-clean_categories = ["artifacts", "caches"]
-
-[targets.chrootctl.python.package]
-verify_all_wheels = false
-rebuild_sdist = false
-import_smoke = false
-verify_cli = false
-install_dependencies = false
-reproducible = false
-import_modules = ["chrootctl"]
-console_scripts = ["chrootctl", "chrootctl-app"]
-
-[targets.chrootctl.python.security]
-enabled = false
-tools = []
-sbom = false
