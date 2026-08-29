@@ -131,11 +131,21 @@ Delivered:
 The Go registry does not replace the production Python service layer yet; GO09
 performs that service cutover after controller/operation parity.
 
-### GO05 — System runner and low-level host primitives
+### GO05 — System runner and low-level host primitives — COMPLETE
 
-Port subprocess execution, environment construction, dry-run behavior, root
-re-exec policy, process identity, mount command construction, `/proc`, and
-signal/process-group handling.
+Delivered:
+
+- Go subprocess runner with dry-run, clean/chroot environments, stdin, bounded
+  capture, background execution, timeout and cancellation behavior;
+- independent process groups for managed commands plus PID/PGID/start-time/boot
+  identity capture and fail-closed signalling to prevent reused-PID kills;
+- root detection/requirement, sudo re-exec, Go self re-exec arguments, uid/gid
+  discovery, host architecture and current-user helpers;
+- `/proc/mounts` parsing, QEMU-user discovery and binfmt_misc capability checks;
+- secure detached-output creation with no-follow semantics;
+- CGO-free Android/ARM64 compile proof for the low-level system package.
+
+Controller/install behavior remains out of scope until GO06.
 
 ### GO06 — Controller and distro installers
 
