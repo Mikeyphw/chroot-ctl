@@ -83,7 +83,6 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
                     File(File.separator, "system/bin"),
                     File(File.separator, "system/xbin"),
                 ).joinToString(File.pathSeparator) { it.path }
-                environment()["PYTHONUNBUFFERED"] = "1"
             }
             .start()
     }

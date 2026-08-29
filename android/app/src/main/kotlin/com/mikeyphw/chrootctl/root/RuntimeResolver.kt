@@ -33,11 +33,6 @@ internal object RuntimeResolver {
         File(termuxHome, ".local/bin/chrootctl"),
         File(termuxUsr, "bin/chrootctl"),
     )
-    private val pythonCandidates = listOf(
-        File(adbRoot, "chrootctl/python/bin/python3"),
-        File(termuxUsr, "bin/python3"),
-        File(termuxUsr, "bin/python"),
-    )
 
     @Volatile private var cachedRuntime: BridgeRuntime? = null
     @Volatile private var lastDiagnostic: String = "No compatible chrootctl Android bridge runtime has been resolved"
@@ -71,13 +66,11 @@ internal object RuntimeResolver {
                 }
                 // Once an enabled module exists it owns runtime resolution. A
                 // corrupt or stale module must fail closed instead of silently
-                // executing an unrelated system/Termux Python installation.
+                // executing an unrelated external development runtime. GO14
+                // deliberately removed every Python-module fallback.
                 if (!activeModuleClaimsAuthority) {
                     externalExecutableCandidates.filter(::isExecutable).forEach { executable ->
                         add(BridgeRuntime(listOf(executable.path, "app"), "chrootctl", executable.path))
-                    }
-                    pythonCandidates.filter(::isExecutable).forEach { python ->
-                        add(BridgeRuntime(listOf(python.path, "-m", "chrootctl.bridge.cli"), "python-module", python.path))
                     }
                 }
             }
@@ -87,8 +80,8 @@ internal object RuntimeResolver {
                 val pendingNote = if (pending.isEmpty()) "" else " Pending module update(s) were detected but are intentionally not executable until activation after reboot."
                 val base = when {
                     activeModuleClaimsAuthority -> "An enabled chrootctl module is installed, but its sealed bundled-native runtime is unsafe, incompatible, or did not expose the protocol-1 Android bridge; external runtime fallback was refused"
-                    candidates.isEmpty() -> "No active chrootctl executable or Python development runtime was found in system, legacy adb-root, or Termux locations"
-                    else -> "Found chrootctl development runtime candidates, but none exposed the protocol-1 Android bridge"
+                    candidates.isEmpty() -> "No active Go chrootctl executable was found in module, system, legacy adb-root, or Termux locations"
+                    else -> "Found Go chrootctl executable candidates, but none exposed the protocol-1 Android bridge"
                 }
                 lastDiagnostic = listOfNotNull(overrideFailure, base + pendingNote).joinToString(". ")
             } else {
@@ -166,24 +159,18 @@ internal object RuntimeResolver {
             android.optString("versionName") == EXPECTED_ANDROID_VERSION_NAME &&
             android.optInt("versionCode", -1) == EXPECTED_ANDROID_VERSION_CODE &&
             android.optInt("minimumSupportedModuleVersionCode", -1) == MIN_SUPPORTED_MODULE_VERSION_CODE
-        val identityCompatible = when (compatibility.optInt("schemaVersion", -1)) {
-            COMPATIBILITY_SCHEMA_VERSION -> {
-                val backend = compatibility.optJSONObject("backend") ?: return false
-                val runtime = compatibility.optJSONObject("nativeRuntime") ?: return false
-                backend.optString("implementation") == EXPECTED_BACKEND_IMPLEMENTATION &&
-                    backend.optString("version") == EXPECTED_BACKEND_VERSION &&
-                    runtime.optInt("schemaVersion", -1) == NATIVE_RUNTIME_SCHEMA_VERSION &&
-                    runtime.optString("kind") == NATIVE_RUNTIME_KIND &&
-                    runtime.optString("platform") == NATIVE_RUNTIME_PLATFORM &&
-                    runtime.optString("abi") == NATIVE_RUNTIME_ABI &&
-                    runtime.optString("entrypoint") == NATIVE_RUNTIME_ENTRYPOINT
-            }
-            LEGACY_COMPATIBILITY_SCHEMA_VERSION -> {
-                val python = compatibility.optJSONObject("pythonPackage") ?: return false
-                python.optString("name") == "chrootctl" && python.optString("version") == EXPECTED_PYTHON_PACKAGE_VERSION
-            }
-            else -> false
-        }
+        val identityCompatible = compatibility.optInt("schemaVersion", -1) == COMPATIBILITY_SCHEMA_VERSION &&
+            compatibility.optJSONObject("backend")?.let { backend ->
+                compatibility.optJSONObject("nativeRuntime")?.let { runtime ->
+                    backend.optString("implementation") == EXPECTED_BACKEND_IMPLEMENTATION &&
+                        backend.optString("version") == EXPECTED_BACKEND_VERSION &&
+                        runtime.optInt("schemaVersion", -1) == NATIVE_RUNTIME_SCHEMA_VERSION &&
+                        runtime.optString("kind") == NATIVE_RUNTIME_KIND &&
+                        runtime.optString("platform") == NATIVE_RUNTIME_PLATFORM &&
+                        runtime.optString("abi") == NATIVE_RUNTIME_ABI &&
+                        runtime.optString("entrypoint") == NATIVE_RUNTIME_ENTRYPOINT
+                }
+            } == true
         return commonCompatible && identityCompatible && isNativeRuntimeReady()
     }
 
@@ -193,15 +180,9 @@ internal object RuntimeResolver {
         val manifestFile = File(runtimeRoot, "runtime-manifest.json")
         if (!isCanonicalModuleFile(manifestFile)) return false
         val manifest = runCatching { JSONObject(manifestFile.readText()) }.getOrNull() ?: return false
-        val schemaVersion = manifest.optInt("schemaVersion", -1)
-        val runtimeKind = manifest.optString("runtimeKind")
-        val versionCompatible = when (schemaVersion) {
-            NATIVE_RUNTIME_SCHEMA_VERSION -> runtimeKind == NATIVE_RUNTIME_KIND &&
-                manifest.optString("backendVersion") == EXPECTED_BACKEND_VERSION
-            LEGACY_NATIVE_RUNTIME_SCHEMA_VERSION -> runtimeKind == LEGACY_NATIVE_RUNTIME_KIND &&
-                manifest.optString("pythonPackageVersion") == EXPECTED_PYTHON_PACKAGE_VERSION
-            else -> false
-        }
+        val versionCompatible = manifest.optInt("schemaVersion", -1) == NATIVE_RUNTIME_SCHEMA_VERSION &&
+            manifest.optString("runtimeKind") == NATIVE_RUNTIME_KIND &&
+            manifest.optString("backendVersion") == EXPECTED_BACKEND_VERSION
         if (!versionCompatible ||
             manifest.optString("platform") != NATIVE_RUNTIME_PLATFORM ||
             manifest.optString("abi") != NATIVE_RUNTIME_ABI ||
@@ -277,11 +258,8 @@ internal object RuntimeResolver {
     private const val PROBE_TIMEOUT_SECONDS = 45L
     private const val BRIDGE_PROTOCOL_VERSION = 1
     private const val COMPATIBILITY_SCHEMA_VERSION = 3
-    private const val LEGACY_COMPATIBILITY_SCHEMA_VERSION = 2
     private const val NATIVE_RUNTIME_SCHEMA_VERSION = 2
     private const val NATIVE_RUNTIME_KIND = "go-native"
-    private const val LEGACY_NATIVE_RUNTIME_SCHEMA_VERSION = 1
-    private const val LEGACY_NATIVE_RUNTIME_KIND = "nuitka-onefile"
     private const val NATIVE_RUNTIME_PLATFORM = "android"
     private const val NATIVE_RUNTIME_ABI = "arm64-v8a"
     private const val NATIVE_RUNTIME_ROOT = "runtime/arm64-v8a"
@@ -291,7 +269,6 @@ internal object RuntimeResolver {
     private const val MIN_SUPPORTED_MODULE_VERSION_CODE = 15
     private const val EXPECTED_BACKEND_IMPLEMENTATION = "go"
     private const val EXPECTED_BACKEND_VERSION = "0.11.0"
-    private const val EXPECTED_PYTHON_PACKAGE_VERSION = "0.11.0"
     private const val EXPECTED_ANDROID_VERSION_NAME = "0.1.0-phase29"
     private const val EXPECTED_ANDROID_VERSION_CODE = 1
 }

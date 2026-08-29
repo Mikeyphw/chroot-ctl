@@ -17,10 +17,10 @@ def test_schema3_manifest_is_generic_go_backend() -> None:
     assert payload["bridgeProtocolVersion"] == 1
 
 
-def test_runtime_resolver_contains_explicit_schema2_fallback() -> None:
+def test_runtime_resolver_go14_removes_python_schema_fallback() -> None:
     text = Path("android/app/src/main/kotlin/com/mikeyphw/chrootctl/root/RuntimeResolver.kt").read_text()
     assert "COMPATIBILITY_SCHEMA_VERSION = 3" in text
-    assert "LEGACY_COMPATIBILITY_SCHEMA_VERSION = 2" in text
+    assert "LEGACY_COMPATIBILITY_SCHEMA_VERSION" not in text
     assert 'EXPECTED_BACKEND_IMPLEMENTATION = "go"' in text
     assert 'NATIVE_RUNTIME_KIND = "go-native"' in text
-    assert 'LEGACY_NATIVE_RUNTIME_KIND = "nuitka-onefile"' in text
+    assert 'LEGACY_NATIVE_RUNTIME_KIND' not in text

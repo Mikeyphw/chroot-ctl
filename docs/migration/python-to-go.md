@@ -214,10 +214,13 @@ and `nativeRuntime` identities. New module/runtime identity is Go-native while t
 Android/Python/Go diagnostic readers explicitly retain schema-2 compatibility
 for already-installed modules. Bridge protocol remains version 1.
 
-### GO14 — Remove Android Python fallback
+### GO14 — Remove Android Python fallback ✅
 
-After Go module parity, remove Python candidate resolution and Python-version
-checks from the Android runtime resolver.
+Android runtime resolution is Go-only. Python executable/module candidates, Python-version
+compatibility checks, legacy Nuitka runtime acceptance, and Python-only process environment
+variables have been removed. An enabled module remains authoritative and fails closed; when no
+module is active, explicit/system/Termux **Go chrootctl executables** remain valid development
+candidates after the normal protocol-v1 capabilities probe.
 
 ### GO15 — Build/release tooling conversion
 
