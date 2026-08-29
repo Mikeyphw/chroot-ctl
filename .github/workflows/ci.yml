@@ -27,7 +27,7 @@ jobs:
       - name: Pytest
         run: pytest -q
 
-  go-migration:
+  go-native:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,26 +35,18 @@ jobs:
         with:
           go-version: '1.23.x'
       - uses: android-actions/setup-android@v3
-      - name: Install Android NDK for SQLite cgo gate
+      - name: Install Android NDK for Go SQLite runtime
         run: sdkmanager "ndk;29.0.14206865"
-      - name: GO02 Python-Go SQLite compatibility gate
-        env:
-          CHROOTCTL_GO02_REQUIRE_ANDROID: '1'
-        run: bash scripts/validate-go02-sqlite-compat.sh
-      - name: Go migration tests and vet
+      - name: Go tests and vet
         run: |
           go test ./...
           go vet ./...
-      - name: GO10 Android bridge cgo build gate
-        env:
-          CHROOTCTL_GO10_REQUIRE_ANDROID: '1'
-        run: bash scripts/build-go10-android-bridge.sh /tmp/chrootctl-android-arm64
-      - name: GO11 frozen CLI contract drift
-        run: python scripts/export-go-cli-specs.py --check
-      - name: GO11 Android human CLI cgo build gate
-        env:
-          CHROOTCTL_GO11_REQUIRE_ANDROID: '1'
-        run: bash scripts/build-go11-android-cli.sh /tmp/chrootctl-cli-android-arm64
+      - name: Build sealed Android Go runtime
+        run: go run ./cmd/repoctl build-runtime --output-root /tmp/chrootctl-runtime --jobs 2
+      - name: Build Go-native module
+        run: go run ./cmd/repoctl build-module --runtime-dir /tmp/chrootctl-runtime/arm64-v8a --output-dir /tmp/chrootctl-module --zip /tmp/chrootctl-magisk.zip --checksum
+      - name: Build source artifact with repoctl
+        run: go run ./cmd/repoctl build-source --version ci --output /tmp/chrootctl-source-ci.tar.gz --checksum
 
   android:
     runs-on: ubuntu-latest

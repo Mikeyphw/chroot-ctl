@@ -1,8 +1,8 @@
 # chroot-ctl repository configuration for Devtool.
 #
-# Primary production target: Python chrootctl package.
-# Migration target: Go backend rooted at ./cmd/chrootctl.
-# Package artifact today: Magisk/KernelSU module produced by build.sh.
+# Production backend: Go chrootctl rooted at ./cmd/chrootctl.
+# Legacy Python target remains only for differential tests until GO16/GO17.
+# Module packaging is owned by cmd/repoctl; build.sh is a thin Go wrapper.
 # Android companion target: ./android.
 
 [project]
@@ -245,7 +245,7 @@ execution_environment = "host"
 chroot_name = "androidos"
 run_command = "PYTHONPATH=src python3 -m chrootctl.cli --help"
 test_command = "PYTHONPATH=src python3 -m pytest -q tests/test_native_runtime.py"
-package_command = "bash build.sh"
+package_command = "go run ./cmd/repoctl build-module"
 
 [targets.chrootctl.python]
 manager = "venv"

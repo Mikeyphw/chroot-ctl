@@ -268,6 +268,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    # GO15: packaging/release/native-runtime ownership moved to cmd/repoctl.
+    # Keep this Python entrypoint only as a compatibility surface until GO17.
+    converted = {"build-magisk": "build-module", "build-source": "build-source", "doctor-cross-arch": "doctor-cross-arch", "release": "release"}
+    if len(sys.argv) > 1 and sys.argv[1] in converted:
+        command = converted[sys.argv[1]]
+        forwarded = sys.argv[2:]
+        if command == "build-module":
+            remapped = []
+            it = iter(forwarded)
+            for arg in it:
+                if arg == "--zip-path": remapped.extend(["--zip", next(it)])
+                elif arg == "--native-runtime-dir": remapped.extend(["--runtime-dir", next(it)])
+                else: remapped.append(arg)
+            forwarded = remapped
+        os.execvp("go", ["go", "run", "./cmd/repoctl", command, *forwarded])
     parser = build_parser()
     args = parser.parse_args()
     args.func(args)

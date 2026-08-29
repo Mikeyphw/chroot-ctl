@@ -222,10 +222,13 @@ variables have been removed. An enabled module remains authoritative and fails c
 module is active, explicit/system/Termux **Go chrootctl executables** remain valid development
 candidates after the normal protocol-v1 capabilities probe.
 
-### GO15 — Build/release tooling conversion
+### GO15 — Build/release tooling conversion ✅
 
-Replace Python repository/release/native-runtime tooling with Go commands and
-thin shell wrappers where appropriate.
+`cmd/repoctl` now owns Android runtime sealing, Magisk/KernelSU module packaging/install, source
+archives, validation, cross-architecture diagnostics, and release artifacts. `build.sh` and
+`scripts/repoctl` are thin Go wrappers. Devtool packaging and the Go-native CI job no longer use
+Python/Nuitka. Legacy Python test/development commands remain only for GO16 differential coverage
+and GO17 removal.
 
 ### GO16 — Test-suite conversion
 
