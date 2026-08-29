@@ -49,6 +49,12 @@ jobs:
         env:
           CHROOTCTL_GO10_REQUIRE_ANDROID: '1'
         run: bash scripts/build-go10-android-bridge.sh /tmp/chrootctl-android-arm64
+      - name: GO11 frozen CLI contract drift
+        run: python scripts/export-go-cli-specs.py --check
+      - name: GO11 Android human CLI cgo build gate
+        env:
+          CHROOTCTL_GO11_REQUIRE_ANDROID: '1'
+        run: bash scripts/build-go11-android-cli.sh /tmp/chrootctl-cli-android-arm64
 
   android:
     runs-on: ubuntu-latest

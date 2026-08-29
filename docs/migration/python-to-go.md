@@ -188,10 +188,15 @@ cancel/reconcile, NDJSON streaming, redaction, and malformed-request validation
 before service/config construction. The Android build gate compiles the complete
 SQLite-backed bridge as a CGO Android/arm64 executable.
 
-### GO11 — Human CLI parity
+### GO11 — Human CLI parity — COMPLETE
 
-Recreate the frozen CLI without redesigning it. New UX work waits until the
-migration is complete.
+Implemented in `internal/cli` from the frozen 66-node CLI contract. The native
+parser preserves the existing command/argument surface, static and dynamic
+completion paths, root escalation policy, target/user resolution, interactive
+session I/O, and service-layer dispatch. `app` delegates to the GO10 bridge.
+The legacy `magisk render` implementation remains a deliberate transitional
+delegation until GO12 replaces module/runtime packaging; no runtime schema is
+changed in GO11.
 
 ### GO12 — Go-native module/runtime packaging
 

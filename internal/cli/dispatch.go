@@ -1,0 +1,1021 @@
+package cli
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"chrootctl/internal/clipboard"
+	"chrootctl/internal/completion"
+	"chrootctl/internal/model"
+	"chrootctl/internal/services"
+	sys "chrootctl/internal/system"
+)
+
+func strptr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	v := s
+	return &v
+}
+
+func (a *App) Dispatch(ctx context.Context) error {
+	cmd := a.Inv.Spec.Command
+	switch {
+	case cmd == "status":
+		return a.status(ctx)
+	case cmd == "mount" || cmd == "unmount" || cmd == "fix-tty":
+		return a.mountAction(ctx, cmd)
+	case cmd == "doctor":
+		return a.doctor(ctx)
+	case cmd == "logs":
+		return a.logs(ctx)
+	case cmd == "start" || cmd == "restart":
+		return a.start(ctx, cmd == "restart")
+	case cmd == "exec":
+		return a.exec(ctx)
+	case cmd == "run" || cmd == "enable" || cmd == "disable" || cmd == "journal":
+		return a.units(ctx, cmd)
+	case cmd == "install":
+		return a.install(ctx)
+	case cmd == "upgrade":
+		return a.upgrade(ctx)
+	case cmd == "completion":
+		return errors.New("completion shell is required")
+	case strings.HasPrefix(cmd, "chroots"):
+		return a.chroots(ctx)
+	case strings.HasPrefix(cmd, "transfer"):
+		return a.transfer(ctx)
+	case strings.HasPrefix(cmd, "events"):
+		return a.events(ctx)
+	case cmd == "support-bundle":
+		return a.support(ctx)
+	case strings.HasPrefix(cmd, "clipboard"):
+		return a.clipboard(ctx)
+	case strings.HasPrefix(cmd, "users"):
+		return a.users(ctx)
+	case strings.HasPrefix(cmd, "tools") || strings.HasPrefix(cmd, "addons"):
+		return a.catalog(ctx)
+	case cmd == "__complete":
+		return a.complete(ctx)
+	case strings.HasPrefix(cmd, "magisk"):
+		return a.magisk(ctx)
+	default:
+		return fmt.Errorf("unsupported command: %s", cmd)
+	}
+}
+
+func (a *App) resolveTarget(ctx context.Context, installedOnly bool) (string, error) {
+	rows, e := a.Services.Registry.List(ctx)
+	if e != nil {
+		return "", e
+	}
+	requested := a.Inv.Globals.Name
+	if requested != "" {
+		for _, r := range rows {
+			if r.Name == requested {
+				if installedOnly && !r.Installed {
+					return "", fmt.Errorf("chroot is not installed: %s", requested)
+				}
+				return requested, nil
+			}
+		}
+		return "", fmt.Errorf("unknown chroot: %s", requested)
+	}
+	names := []string{}
+	for _, r := range rows {
+		if !installedOnly || r.Installed {
+			names = append(names, r.Name)
+		}
+	}
+	sort.Strings(names)
+	if len(names) == 1 {
+		return names[0], nil
+	}
+	if len(names) == 0 {
+		return "", errors.New("no chroots available for selection")
+	}
+	return "", fmt.Errorf("chroot selection required; pass --name (%s)", strings.Join(names, ", "))
+}
+func (a *App) resolveUser(ctx context.Context, target, requested string, nonRoot bool) (string, error) {
+	rows, e := a.Services.Users(target).List(ctx)
+	if e != nil {
+		return "", e
+	}
+	if requested != "" {
+		for _, r := range rows {
+			if fmt.Sprint(r["username"]) == requested {
+				return requested, nil
+			}
+		}
+		return "", fmt.Errorf("unknown user: %s", requested)
+	}
+	names := []string{}
+	for _, r := range rows {
+		n := fmt.Sprint(r["username"])
+		if nonRoot && (n == "root" || fmt.Sprint(r["uid"]) == "0") {
+			continue
+		}
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	if len(names) == 1 {
+		return names[0], nil
+	}
+	if len(names) == 0 {
+		return "", errors.New("no users available for selection")
+	}
+	return "", fmt.Errorf("user selection required (%s)", strings.Join(names, ", "))
+}
+
+func (a *App) status(ctx context.Context) error {
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	v, e := a.Services.System().Status(ctx, n, a.Inv.Bool("details"))
+	if e != nil {
+		return e
+	}
+	return a.emit("Status", v)
+}
+func (a *App) doctor(ctx context.Context) error {
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	v, e := a.Services.System().Doctor(ctx, n)
+	if e != nil {
+		return e
+	}
+	return a.emit("Doctor", v)
+}
+func (a *App) mountAction(ctx context.Context, action string) error {
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	rt, e := a.Services.RuntimeFor(n, "")
+	if e != nil {
+		return e
+	}
+	var v model.OperationResult
+	switch action {
+	case "mount":
+		v = rt.Controller.Mount(ctx)
+	case "unmount":
+		v = rt.Controller.Unmount(ctx)
+	case "fix-tty":
+		v = rt.Controller.FixTTY(ctx)
+	}
+	if v.Failed > 0 {
+		return fmt.Errorf("%s failed: %s", action, strings.Join(v.Errors, "; "))
+	}
+	return a.emit(strings.Title(action), v)
+}
+func (a *App) logs(ctx context.Context) error {
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	tail := a.Inv.Int("tail", 100)
+	if a.Inv.String("tail") == "" && a.Inv.Values["tail"] == nil {
+		tail = 100
+	}
+	v, e := a.Services.System().Logs(ctx, n, tail, a.Inv.Bool("all"), a.Inv.String("level"), a.Inv.Bool("follow"))
+	if e != nil {
+		return e
+	}
+	if a.Inv.Globals.JSON {
+		return a.emit("", v)
+	}
+	for _, entry := range v.Entries {
+		fmt.Fprintln(a.Stdout, entry.Line)
+	}
+	if !a.Inv.Bool("follow") {
+		return nil
+	}
+	cfg, _ := a.Services.ConfigFor(n, "")
+	return followFile(ctx, cfg.LogFile, a.Stdout)
+}
+func followFile(ctx context.Context, path string, w io.Writer) error {
+	f, e := os.Open(path)
+	if e != nil {
+		return e
+	}
+	defer f.Close()
+	_, _ = f.Seek(0, io.SeekEnd)
+	r := bufio.NewReader(f)
+	for {
+		line, e := r.ReadString('\n')
+		if line != "" {
+			fmt.Fprint(w, line)
+		}
+		if e == nil {
+			continue
+		}
+		if e != io.EOF {
+			return e
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
+func (a *App) start(ctx context.Context, restart bool) error {
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	rt, e := a.Services.RuntimeFor(n, "")
+	if e != nil {
+		return e
+	}
+	if restart {
+		u := rt.Controller.Unmount(ctx)
+		if u.Failed > 0 {
+			return fmt.Errorf("restart unmount failed: %s", strings.Join(u.Errors, "; "))
+		}
+	}
+	x11 := a.Inv.Bool("x11")
+	if e = rt.Controller.Prepare(ctx, x11); e != nil {
+		return e
+	}
+	rootLogin := a.Inv.Bool("root_login") || !a.Inv.Bool("login")
+	user := rt.Config.Username
+	shell := rt.Config.ShellPath
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	var argv []string
+	var env map[string]string
+	if rootLogin {
+		flag := "-l"
+		if x11 {
+			flag = "-il"
+		}
+		argv = []string{"chroot", rt.Config.ChrootBase(), shell, flag}
+		env = rt.Controller.SessionEnv(true, x11, "root")
+	} else if x11 {
+		launch := "export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713; exec " + shell + " -il"
+		argv = []string{"chroot", rt.Config.ChrootBase(), "/bin/su", "-", user, "-c", launch}
+		env = rt.Controller.SessionEnv(false, true, user)
+	} else {
+		argv = []string{"chroot", rt.Config.ChrootBase(), "/bin/su", "-", user}
+		env = rt.Controller.SessionEnv(false, false, user)
+	}
+	res, e := rt.Runner.RunAttached(ctx, argv, sys.RunOptions{Env: env, ChrootEnv: true, AllowFailure: true})
+	if e != nil {
+		return e
+	}
+	a.ExitCode = res.ReturnCode
+	return nil
+}
+func (a *App) exec(ctx context.Context) error {
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	rt, e := a.Services.RuntimeFor(n, "")
+	if e != nil {
+		return e
+	}
+	if e = rt.Controller.Prepare(ctx, a.Inv.Bool("x11")); e != nil {
+		return e
+	}
+	argv := a.Inv.Strings("argv")
+	if len(argv) > 0 && argv[0] == "--" {
+		argv = argv[1:]
+	}
+	chargv, env, e := rt.Controller.ExecInvocation(a.Inv.Bool("root"), argv, a.Inv.String("exec_text"), a.Inv.Bool("x11"), "")
+	if e != nil {
+		return e
+	}
+	res, e := rt.Runner.RunAttached(ctx, chargv, sys.RunOptions{Env: env, ChrootEnv: true, AllowFailure: true})
+	if e != nil {
+		return e
+	}
+	a.ExitCode = res.ReturnCode
+	return nil
+}
+
+func (a *App) units(ctx context.Context, cmd string) error {
+	svc := a.Services.Services()
+	target := a.Inv.Globals.Name
+	if cmd == "run" && a.Inv.Bool("run_list") {
+		v, e := svc.List(ctx)
+		if e != nil {
+			return e
+		}
+		return a.emit("Services", v)
+	}
+	names := a.Inv.Strings("run_targets")
+	if cmd != "run" {
+		names = a.Inv.Strings("service_targets")
+	}
+	if cmd == "run" && a.Inv.Bool("boot") {
+		rows, e := svc.List(ctx)
+		if e != nil {
+			return e
+		}
+		for _, r := range rows {
+			if r["boot"] == "yes" {
+				_, e = svc.Start(ctx, r["service"], r["chroot"], false)
+				if e != nil {
+					return e
+				}
+			}
+		}
+		return a.emit("Services", rows)
+	}
+	if len(names) == 0 {
+		return errors.New("service target is required")
+	}
+	out := []any{}
+	for _, name := range names {
+		var v any
+		var e error
+		switch cmd {
+		case "enable":
+			v, e = svc.Enable(ctx, name, target, a.Inv.String("target"))
+		case "disable":
+			v, e = svc.Disable(ctx, name, target, a.Inv.String("target"))
+		case "journal":
+			v, e = svc.Logs(ctx, name, target, a.Inv.Int("tail", 100))
+		case "run":
+			switch {
+			case a.Inv.Bool("run_status"):
+				v, e = svc.Status(ctx, name, target)
+			case a.Inv.Bool("stop"):
+				v, e = svc.Stop(ctx, name, target)
+			case a.Inv.Bool("restart"):
+				v, e = svc.Restart(ctx, name, target)
+			case a.Inv.Bool("logs"):
+				v, e = svc.Logs(ctx, name, target, a.Inv.Int("tail", 100))
+			default:
+				v, e = svc.Start(ctx, name, target, a.Inv.Bool("foreground"))
+			}
+		}
+		if e != nil {
+			return e
+		}
+		out = append(out, v)
+	}
+	return a.emit("Services", out)
+}
+
+func (a *App) install(ctx context.Context) error {
+	distro := a.Inv.String("distro")
+	if a.Inv.Bool("wizard") {
+		if a.Inv.Globals.NonInteractive {
+			return errors.New("install wizard requires an interactive terminal")
+		}
+		var e error
+		distro, e = a.promptChoice("Distro", []string{"ubuntu", "arch"}, distro)
+		if e != nil {
+			return e
+		}
+	}
+	if distro == "" {
+		return errors.New("install requires a target distro or --name")
+	}
+	name := a.Inv.Globals.Name
+	if name == "" {
+		name = distro
+	}
+	username := a.Inv.String("username")
+	if username == "" {
+		username = a.Services.BaseConfig.Username
+	}
+	arch := a.Inv.String("arch")
+	if arch == "" {
+		arch = a.Services.BaseConfig.TargetArch
+	}
+	if a.Inv.Bool("list_versions") {
+		v, e := a.Services.Install().ListVersions(ctx, distro, name, username)
+		if e != nil {
+			return e
+		}
+		return a.emit("Available Versions", v)
+	}
+	req := model.InstallRequest{Distro: distro, Name: name, Username: username, Arch: arch, Preset: strptr(a.Inv.String("preset")), Profile: strptr(a.Inv.String("profile")), Desktop: strptr(a.Inv.String("desktop")), Release: strptr(a.Inv.String("release")), Version: strptr(a.Inv.String("version")), Mirror: strptr(a.Inv.String("mirror")), Phase: strptr(a.Inv.String("phase")), ForcePhase: a.Inv.Bool("force_phase"), Resume: a.Inv.Bool("resume"), Repair: a.Inv.Bool("repair"), Tools: a.Inv.Strings("tools"), Addons: a.Inv.Strings("addons")}
+	if a.Inv.Bool("select_tools") || a.Inv.Bool("select_addons") {
+		return errors.New("interactive catalog multi-selection is not available in the native CLI; pass repeated --tool/--addon")
+	}
+	v, e := a.Services.Install().Install(ctx, req, a.progress)
+	if e != nil {
+		return e
+	}
+	return a.emit("Install Results", v)
+}
+func (a *App) promptChoice(label string, choices []string, current string) (string, error) {
+	if current != "" {
+		return current, nil
+	}
+	fmt.Fprintf(a.Stderr, "%s (%s): ", label, strings.Join(choices, "/"))
+	line, e := bufio.NewReader(a.Stdin).ReadString('\n')
+	if e != nil && e != io.EOF {
+		return "", e
+	}
+	v := strings.TrimSpace(line)
+	for _, x := range choices {
+		if v == x {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("invalid %s: %s", strings.ToLower(label), v)
+}
+func (a *App) upgrade(ctx context.Context) error {
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	u := a.Inv.String("username")
+	if u == "" {
+		u, e = a.resolveUser(ctx, n, "", true)
+		if e != nil {
+			return e
+		}
+	}
+	v, e := a.Services.Install().Upgrade(ctx, n, u, a.progress)
+	if e != nil {
+		return e
+	}
+	return a.emit("Upgrade", v)
+}
+
+func (a *App) chroots(ctx context.Context) error {
+	switch a.Inv.Spec.Command {
+	case "chroots":
+		return errors.New("chroots subcommand is required")
+	case "chroots list":
+		v, e := a.Services.Chroots().List(ctx)
+		if e != nil {
+			return e
+		}
+		return a.emit("Installed Chroots", v)
+	case "chroots show":
+		n, e := a.resolveTarget(ctx, false)
+		if e != nil {
+			return e
+		}
+		v, e := a.Services.Chroots().Get(ctx, n)
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot Details", v)
+	case "chroots remove":
+		n, e := a.resolveTarget(ctx, false)
+		if e != nil {
+			return e
+		}
+		if e = a.confirm("Remove chroot '"+n+"'?", a.Inv.Bool("yes")); e != nil {
+			return e
+		}
+		v, e := a.Services.Chroots().Remove(ctx, n)
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot Remove", v)
+	case "chroots rename":
+		n, e := a.resolveTarget(ctx, false)
+		if e != nil {
+			return e
+		}
+		nn := a.Inv.String("new_name")
+		if nn == "" {
+			return errors.New("new chroot name is required")
+		}
+		v, e := a.Services.Chroots().Rename(ctx, n, nn)
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot Rename", v)
+	case "chroots export":
+		n, e := a.resolveTarget(ctx, false)
+		if e != nil {
+			return e
+		}
+		arc := a.Inv.String("archive")
+		if arc == "" {
+			arc = services.ManagedArchive(n, "tar.zst")
+		}
+		v, e := a.Services.Transfer().Export(ctx, n, arc, a.Inv.String("password"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot Export", v)
+	case "chroots import":
+		v, e := a.Services.Transfer().Import(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot Import", v)
+	case "chroots diff":
+		v, e := a.Services.Chroots().PackageDiff(ctx, a.Inv.String("left_name"), a.Inv.String("right_name"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot Package Diff", v)
+	case "chroots validate-import":
+		n := a.Inv.String("validate_name")
+		if n == "" {
+			var e error
+			n, e = a.resolveTarget(ctx, false)
+			if e != nil {
+				return e
+			}
+		}
+		v, e := a.Services.System().Doctor(ctx, n)
+		if e != nil {
+			return e
+		}
+		ok := true
+		for _, r := range v {
+			if r.Result == "FAIL" {
+				ok = false
+			}
+		}
+		return a.emit("Imported Chroot Validation", map[string]any{"name": n, "validation_ok": ok, "checks": v})
+	}
+	return errors.New("unsupported chroots command")
+}
+func (a *App) transfer(ctx context.Context) error {
+	switch a.Inv.Spec.Command {
+	case "transfer":
+		return errors.New("transfer subcommand is required")
+	case "transfer export":
+		n, e := a.resolveTarget(ctx, false)
+		if e != nil {
+			return e
+		}
+		arc := a.Inv.String("archive")
+		if arc == "" {
+			arc = services.ManagedArchive(n, "tar.zst")
+		}
+		v, e := a.Services.Transfer().Export(ctx, n, arc, a.Inv.String("password"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Transfer Export", v)
+	case "transfer inspect":
+		v, e := a.Services.Transfer().Inspect(ctx, a.Inv.String("archive"), a.Inv.String("password"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Transfer Inspect", v)
+	case "transfer import":
+		v, e := a.Services.Transfer().Import(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Transfer Import", v)
+	}
+	return errors.New("unsupported transfer command")
+}
+func (a *App) events(ctx context.Context) error {
+	if a.Inv.Spec.Command != "events list" {
+		return errors.New("events subcommand is required")
+	}
+	v, e := a.Services.Audit().Recent(ctx, a.Inv.Int("limit", 20))
+	if e != nil {
+		return e
+	}
+	return a.emit("Audit Events", v)
+}
+func (a *App) support(ctx context.Context) error {
+	v, e := a.Services.Support().ExportBundle(ctx, a.Inv.String("archive"), nil)
+	if e != nil {
+		return e
+	}
+	return a.emit("Support Bundle", v)
+}
+
+func (a *App) clipboard(ctx context.Context) error {
+	cfg := a.Services.BaseConfig
+	paths := clipboard.DefaultPaths(cfg)
+	if x := a.Inv.String("socket"); x != "" {
+		paths.SocketPath = x
+	}
+	if x := a.Inv.String("pid_file"); x != "" {
+		paths.PIDFile = x
+	}
+	if x := a.Inv.String("log_file"); x != "" {
+		paths.LogFile = x
+	}
+	runner := &sys.Runner{Logger: a.Services.Logger, DryRun: a.Services.DryRun}
+	switch a.Inv.Spec.Command {
+	case "clipboard", "clipboard daemon":
+		return errors.New("clipboard subcommand is required")
+	case "clipboard daemon start":
+		v, e := clipboard.StartDaemon(ctx, cfg, runner, paths)
+		if e != nil {
+			return e
+		}
+		return a.emit("", v)
+	case "clipboard daemon stop":
+		return a.emit("", clipboard.StopDaemon(paths.PIDFile))
+	case "clipboard daemon status":
+		v := clipboard.DaemonStatus(paths.PIDFile)
+		v["socket"] = paths.SocketPath
+		return a.emit("", v)
+	case "clipboard daemon run":
+		return clipboard.RunDaemon(ctx, cfg, runner, paths)
+	case "clipboard doctor":
+		return a.emit("", clipboard.Doctor(cfg, paths))
+	case "clipboard set":
+		text := strings.Join(a.Inv.Strings("text"), " ")
+		if text == "" {
+			b, e := io.ReadAll(a.Stdin)
+			if e != nil {
+				return e
+			}
+			text = string(b)
+		}
+		socket := a.Inv.String("socket")
+		if socket == "" {
+			socket = clipboard.ChrootSocket
+		}
+		v, e := clipboard.SocketSet(ctx, socket, text)
+		if e != nil {
+			return e
+		}
+		if !v.OK {
+			return errors.New(v.Error)
+		}
+		return nil
+	case "clipboard get":
+		socket := a.Inv.String("socket")
+		if socket == "" {
+			socket = clipboard.ChrootSocket
+		}
+		v, e := clipboard.SocketGet(ctx, socket)
+		if e != nil {
+			return e
+		}
+		if !v.OK {
+			return errors.New(v.Error)
+		}
+		_, e = fmt.Fprint(a.Stdout, v.Text)
+		return e
+	}
+	return errors.New("unsupported clipboard command")
+}
+
+func (a *App) users(ctx context.Context) error {
+	if a.Inv.Spec.Command == "users" {
+		return errors.New("users subcommand is required")
+	}
+	n, e := a.resolveTarget(ctx, true)
+	if e != nil {
+		return e
+	}
+	svc := a.Services.Users(n)
+	requested := a.Inv.String("username")
+	switch a.Inv.Spec.Command {
+	case "users list":
+		v, e := svc.List(ctx)
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot Users", v)
+	case "users add":
+		if requested == "" {
+			return errors.New("username is required")
+		}
+		v, e := svc.Add(ctx, requested, a.Inv.String("shell"), a.Inv.Bool("sudo"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot User Add", v)
+	case "users show", "users remove", "users password", "users shell", "users sudo", "users show-id", "users sync-id":
+		if requested == "" {
+			requested, e = a.resolveUser(ctx, n, "", a.Inv.Spec.Command == "users show-id" || a.Inv.Spec.Command == "users sync-id")
+			if e != nil {
+				return e
+			}
+		}
+	}
+	switch a.Inv.Spec.Command {
+	case "users show":
+		v, e := svc.Show(ctx, requested)
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot User", v)
+	case "users remove":
+		if e = a.confirm("Remove user '"+requested+"'?", a.Inv.Bool("yes")); e != nil {
+			return e
+		}
+		v, e := svc.Remove(ctx, requested, a.Inv.Bool("delete_home"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot User Remove", v)
+	case "users password":
+		password, e := a.readPassword()
+		if e != nil {
+			return e
+		}
+		v, e := svc.SetPassword(ctx, requested, password)
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot User Password", v)
+	case "users shell":
+		v, e := svc.SetShell(ctx, requested, a.Inv.String("shell"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot User Shell", v)
+	case "users sudo":
+		if a.Inv.Bool("enable") == a.Inv.Bool("disable") {
+			return errors.New("choose exactly one of --enable or --disable")
+		}
+		v, e := svc.SetSudo(ctx, requested, a.Inv.Bool("enable"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Chroot User Sudo", v)
+	case "users show-id":
+		v, e := svc.ShowID(ctx, requested)
+		if e != nil {
+			return e
+		}
+		return a.emit("User IDs", v)
+	case "users sync-id":
+		v, e := svc.SyncID(ctx, requested, !a.Inv.Bool("no_fix_ownership"))
+		if e != nil {
+			return e
+		}
+		return a.emit("User Sync", v)
+	}
+	return errors.New("unsupported users command")
+}
+
+func (a *App) catalog(ctx context.Context) error {
+	cmd := a.Inv.Spec.Command
+	kind := "tool"
+	group := "tools"
+	if strings.HasPrefix(cmd, "addons") {
+		kind = "addon"
+		group = "addons"
+	}
+	if cmd == group {
+		return fmt.Errorf("%s subcommand is required", group)
+	}
+	target := a.Inv.Globals.Name
+	svc := a.Services.Catalog(kind, target)
+	distro := a.Inv.String("distro")
+	category := a.Inv.String("category")
+	switch cmd {
+	case group + " categories":
+		v, e := svc.Categories(distro)
+		if e != nil {
+			return e
+		}
+		return a.emit(strings.Title(group)+" Categories", v)
+	case group + " list":
+		v, e := svc.ListEntries(distro, category)
+		if e != nil {
+			return e
+		}
+		return a.emit(strings.Title(group), v)
+	case group + " show":
+		name := a.Inv.String(kind + "_name")
+		if name == "" {
+			v, e := svc.ListEntries(distro, category)
+			if e != nil {
+				return e
+			}
+			if len(v) != 1 {
+				return errors.New(kind + " selection required")
+			}
+			name = v[0].Name
+		}
+		v, e := svc.GetEntry(name)
+		if e != nil {
+			return e
+		}
+		return a.emit(strings.Title(kind), v)
+	case group + " apply":
+		n, e := a.resolveTarget(ctx, true)
+		if e != nil {
+			return e
+		}
+		svc = a.Services.Catalog(kind, n)
+		names := a.Inv.Strings(kind + "_names")
+		if len(names) == 0 {
+			entries, e := svc.ListEntries("", category)
+			if e != nil {
+				return e
+			}
+			if len(entries) == 1 {
+				names = []string{entries[0].Name}
+			} else {
+				return errors.New(kind + " name is required")
+			}
+		}
+		v, e := svc.Apply(ctx, names, a.progress)
+		if e != nil {
+			return e
+		}
+		return a.emit(strings.Title(group)+" Apply", v)
+	}
+	return errors.New("unsupported catalog command")
+}
+
+func (a *App) complete(ctx context.Context) error {
+	topic := a.Inv.String("topic")
+	vals := a.Inv.Strings("values")
+	switch topic {
+	case "chroots", "installed-chroots", "chroot-details":
+		rows, e := a.Services.Registry.List(ctx)
+		if e != nil {
+			return e
+		}
+		if topic == "chroot-details" {
+			_, e = fmt.Fprint(a.Stdout, completion.ChrootDetails(rows))
+			return e
+		}
+		_, e = fmt.Fprint(a.Stdout, completion.ChrootNames(rows, topic == "installed-chroots"))
+		return e
+	case "chroot-preview":
+		if len(vals) == 0 {
+			return nil
+		}
+		r, e := a.Services.Registry.Get(ctx, vals[0])
+		if e != nil || r == nil {
+			return e
+		}
+		_, e = fmt.Fprintf(a.Stdout, "name: %s\ndistro: %s\nphase: %s\npath: %s\ninstalled: %v\n", r.Name, r.Distro, r.Phase, r.Path, r.Installed)
+		return e
+	case "users":
+		n := a.Inv.Globals.Name
+		if n == "" && len(vals) > 0 {
+			n = vals[0]
+		}
+		if n == "" {
+			var e error
+			n, e = a.resolveTarget(ctx, true)
+			if e != nil {
+				return nil
+			}
+		}
+		rows, e := a.Services.Users(n).List(ctx)
+		if e != nil {
+			return e
+		}
+		names := []string{}
+		for _, r := range rows {
+			names = append(names, fmt.Sprint(r["username"]))
+		}
+		sort.Strings(names)
+		_, e = fmt.Fprint(a.Stdout, strings.Join(names, "\n"))
+		return e
+	case "tools", "addons", "tool-categories", "addon-categories", "tool-details", "addon-details", "tool-preview", "addon-preview":
+		return a.completeCatalog(topic, vals)
+	}
+	return nil
+}
+func (a *App) completeCatalog(topic string, vals []string) error {
+	kind := "tool"
+	if strings.Contains(topic, "addon") {
+		kind = "addon"
+	}
+	svc := a.Services.Catalog(kind, "")
+	distro := ""
+	category := ""
+	if len(vals) > 0 {
+		distro = vals[0]
+	}
+	if len(vals) > 1 {
+		category = vals[1]
+	}
+	if strings.Contains(topic, "categories") {
+		v, e := svc.Categories(distro)
+		if e != nil {
+			return e
+		}
+		_, e = fmt.Fprint(a.Stdout, strings.Join(v, "\n"))
+		return e
+	}
+	if strings.Contains(topic, "preview") {
+		if len(vals) == 0 {
+			return nil
+		}
+		v, e := svc.GetEntry(vals[0])
+		if e != nil {
+			return e
+		}
+		_, e = fmt.Fprintf(a.Stdout, "name: %s\nkind: %s\ndistros: %s\ncategories: %s\nscript: %s\n\n%s", v.Name, v.Kind, strings.Join(v.Distros, ","), strings.Join(v.Categories, ","), v.Script, v.Description)
+		return e
+	}
+	v, e := svc.ListEntries(distro, category)
+	if e != nil {
+		return e
+	}
+	lines := []string{}
+	for _, x := range v {
+		if strings.Contains(topic, "details") {
+			cat := strings.Join(x.Categories, ",")
+			if cat == "" {
+				cat = "uncategorized"
+			}
+			lines = append(lines, strings.Join([]string{x.Name, cat, strings.Join(x.Distros, ","), x.Description}, "\t"))
+		} else {
+			lines = append(lines, x.Name)
+		}
+	}
+	_, e = fmt.Fprint(a.Stdout, strings.Join(lines, "\n"))
+	return e
+}
+
+func (a *App) confirm(prompt string, yes bool) error {
+	if yes {
+		return nil
+	}
+	if a.Inv.Globals.NonInteractive {
+		return errors.New(prompt + " confirmation required in non-interactive mode")
+	}
+	fmt.Fprint(a.Stderr, prompt+" [y/N] ")
+	line, e := bufio.NewReader(a.Stdin).ReadString('\n')
+	if e != nil && e != io.EOF {
+		return e
+	}
+	v := strings.ToLower(strings.TrimSpace(line))
+	if v != "y" && v != "yes" {
+		return errors.New("cancelled")
+	}
+	return nil
+}
+func (a *App) readPassword() (string, error) {
+	if a.Inv.Globals.NonInteractive {
+		return "", errors.New("password prompt is unavailable in non-interactive mode")
+	}
+	fmt.Fprint(a.Stderr, "Password: ")
+	tty, ok := a.Stdin.(*os.File)
+	if ok {
+		cmd := exec.Command("stty", "-echo")
+		cmd.Stdin = tty
+		cmd.Stdout = a.Stderr
+		_ = cmd.Run()
+		defer func() { c := exec.Command("stty", "echo"); c.Stdin = tty; _ = c.Run(); fmt.Fprintln(a.Stderr) }()
+	}
+	line, e := bufio.NewReader(a.Stdin).ReadString('\n')
+	if e != nil && e != io.EOF {
+		return "", e
+	}
+	v := strings.TrimSpace(line)
+	if v == "" {
+		return "", errors.New("password must not be empty")
+	}
+	return v, nil
+}
+
+func (a *App) magisk(ctx context.Context) error {
+	if a.Inv.Spec.Command == "magisk" {
+		return errors.New("magisk subcommand is required")
+	}
+	if a.Inv.Spec.Command != "magisk render" {
+		return errors.New("unsupported magisk command")
+	}
+	// GO12 replaces this transitional renderer. GO11 preserves the human command
+	// surface without changing the legacy module/runtime schema early.
+	args := []string{"-m", "chrootctl.cli", "magisk", "render", "--output", a.Inv.String("output")}
+	if x := a.Inv.String("zip_path"); x != "" {
+		args = append(args, "--zip", x)
+	}
+	if x := a.Inv.String("native_runtime_dir"); x != "" {
+		args = append(args, "--native-runtime-dir", x)
+	}
+	if a.Inv.Bool("all_installed") {
+		args = append(args, "--all-installed")
+	}
+	for _, n := range a.Inv.Strings("magisk_names") {
+		args = append(args, "--name", n)
+	}
+	cmd := exec.CommandContext(ctx, "python3", args...)
+	cmd.Stdin = a.Stdin
+	cmd.Stdout = a.Stdout
+	cmd.Stderr = a.Stderr
+	env := os.Environ()
+	if _, e := os.Stat("src/chrootctl"); e == nil {
+		env = append(env, "PYTHONPATH="+filepath.Join(mustGetwd(), "src"))
+	}
+	cmd.Env = env
+	return cmd.Run()
+}
+func mustGetwd() string { d, _ := os.Getwd(); return d }

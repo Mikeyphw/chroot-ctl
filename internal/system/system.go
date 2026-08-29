@@ -348,6 +348,84 @@ waitLoop:
 	return result, nil
 }
 
+func (r Runner) RunAttached(ctx context.Context, args []string, options RunOptions) (RunResult, error) {
+	if len(args) == 0 {
+		return RunResult{}, errors.New("command is empty")
+	}
+	r.debugf("run attached: %s", shellJoin(args))
+	if r.DryRun {
+		return RunResult{ReturnCode: 0}, nil
+	}
+	if options.Timeout < 0 {
+		return RunResult{}, errors.New("timeout must be positive")
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Env = envList(ProcessEnv(options.Env, options.CleanEnv, options.ChrootEnv))
+	if options.Cwd != "" {
+		cmd.Dir = options.Cwd
+	}
+	cmd.SysProcAttr = processAttrs(options.UID, options.GID)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return RunResult{}, err
+	}
+	identity := CaptureProcessIdentity(cmd.Process.Pid)
+	if identity != nil && r.Register != nil {
+		r.Register(*identity)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	started := time.Now()
+	ticker := time.NewTicker(PollInterval)
+	defer ticker.Stop()
+	var waitErr error
+	timedOut, cancelled := false, false
+waitLoop:
+	for {
+		select {
+		case waitErr = <-done:
+			break waitLoop
+		case <-ctx.Done():
+			cancelled = true
+			r.terminateCommand(cmd, identity)
+			waitErr = <-done
+			break waitLoop
+		case <-ticker.C:
+			if r.Cancelled != nil && r.Cancelled() {
+				cancelled = true
+				r.terminateCommand(cmd, identity)
+				waitErr = <-done
+				break waitLoop
+			}
+			if options.Timeout > 0 && time.Since(started) >= options.Timeout {
+				timedOut = true
+				r.terminateCommand(cmd, identity)
+				waitErr = <-done
+				break waitLoop
+			}
+		}
+	}
+	result := RunResult{ReturnCode: exitCode(cmd.ProcessState, waitErr), TimedOut: timedOut, Cancelled: cancelled}
+	pid := cmd.Process.Pid
+	result.PID = &pid
+	if identity != nil {
+		pgid := identity.ProcessGroupID
+		result.ProcessGroupID = &pgid
+	}
+	if !options.AllowFailure && result.ReturnCode != 0 {
+		if cancelled {
+			return result, errors.New("command cancelled")
+		}
+		if timedOut {
+			return result, fmt.Errorf("command timed out after %gs", options.Timeout.Seconds())
+		}
+		return result, fmt.Errorf("command failed with exit %d", result.ReturnCode)
+	}
+	return result, nil
+}
+
 func (r Runner) runBackground(args []string, options RunOptions) (RunResult, error) {
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Env = envList(ProcessEnv(options.Env, options.CleanEnv, options.ChrootEnv))
