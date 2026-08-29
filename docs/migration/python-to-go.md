@@ -113,10 +113,23 @@ Delivered:
   verbose behavior, and file-failure fallback;
 - `foundations.json` Python oracle fixture consumed directly by Go tests.
 
-### GO04 — Registry and transactional persistence
+### GO04 — Registry and transactional persistence — COMPLETE
 
-Port registry CRUD, events, snapshots, fs-mutation journal, artifacts, and
-transaction semantics on the GO02 SQLite choice.
+Delivered:
+
+- production Go registry package owning the GO02 SQLite compatibility handle;
+- canonical Python schema creation and legacy snapshot foreign-key repair with
+  identical orphan-row refusal behavior;
+- chroot CRUD, rename/delete cascades, and atomic preflighted mutation batches;
+- snapshot CRUD, filesystem mutation journal, artifact TTL/pruning, and audit
+  event persistence with Python-compatible ordering/defaults;
+- defensive corrupt-JSON read markers so one damaged metadata row does not
+  break registry reads;
+- `CountChroots` adapter for GO03 Android state-layout migration without making
+  config depend directly on SQL internals.
+
+The Go registry does not replace the production Python service layer yet; GO09
+performs that service cutover after controller/operation parity.
 
 ### GO05 — System runner and low-level host primitives
 
