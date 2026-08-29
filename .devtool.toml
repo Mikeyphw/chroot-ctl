@@ -1,14 +1,13 @@
 # chroot-ctl repository configuration for Devtool.
 #
-# Primary project: Python chrootctl package.
-# Package artifact: Magisk/KernelSU module produced by build.sh.
-# Secondary target: Android companion app under ./android.
+# Primary production target: Python chrootctl package.
+# Migration target: Go backend rooted at ./cmd/chrootctl.
+# Package artifact today: Magisk/KernelSU module produced by build.sh.
+# Android companion target: ./android.
 
 [project]
 kind = "python"
 python = "python3"
-run_command = "chrootctl --help"
-package_command = "bash build.sh"
 
 [execution]
 # Use native execution when available. Devtool may still be overridden with
@@ -60,6 +59,38 @@ console_scripts = ["chrootctl", "chrootctl-app"]
 enabled = false
 tools = ["pip_audit", "bandit"]
 sbom = false
+
+# ---------------------------------------------------------------------------
+# Go migration backend target
+# ---------------------------------------------------------------------------
+
+[targets.chrootctl_go]
+type = "go"
+root = "."
+execution_environment = "auto"
+
+[targets.chrootctl_go.go]
+coalesce_validation = true
+vet = true
+packages = ["./..."]
+build_targets = ["./cmd/chrootctl"]
+build_directory = ".devtool/build/go"
+package_directory = ".devtool/package/go"
+run_target = "./cmd/chrootctl"
+
+[targets.chrootctl_go.go.outputs]
+"./cmd/chrootctl" = "chrootctl"
+
+# Cross-build profile for the final Android/module backend. Keep normal
+# validation native to the current host so Go tests can execute.
+[targets.chrootctl_go.variants.android-arm64.env]
+GOOS = "android"
+GOARCH = "arm64"
+CGO_ENABLED = "0"
+
+[targets.chrootctl_go.variants.android-arm64.go]
+build_directory = ".devtool/build/go/android-arm64"
+package_directory = ".devtool/package/go/android-arm64"
 
 [targets.chrootctl_android]
 type = "android"
