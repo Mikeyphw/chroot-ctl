@@ -163,10 +163,13 @@ exact frozen zsh completion program are Go-embedded from top-level `resources/`.
 The clipboard daemon preserves token + SO_PEERCRED authentication and verified
 PID/PGID/start-time/boot-id lifecycle controls.
 
-### GO08 — Persistent operations, locking, cancellation, recovery
+### GO08 — Persistent operations, locking, cancellation, recovery — COMPLETE
 
-Port operation records/events, global/target locks, cancellation markers,
-process tracking, stale-operation reconciliation, compaction, and recovery.
+Implemented in `internal/operations` with shared `internal/redaction`: schema-v2
+records with legacy alias decoding, atomic JSON/JSONL persistence, bounded event
+compaction, global/target `flock` locks, cancellation markers, verified process
+identity signalling, explicit stale-operation reconciliation/recovery, redacted
+requests/results/progress, retry metadata, and fail-closed corrupt-record placeholders.
 
 ### GO09 — Service layer
 
