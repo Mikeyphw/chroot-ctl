@@ -155,10 +155,13 @@ bootstrap paths, pinned signature/checksum verification, phase/resume tracking,
 filesystem promotion journaling/rollback, snapshots, and foreign-architecture
 QEMU/binfmt guards.
 
-### GO07 — Users, catalog, clipboard, completion
+### GO07 — Users, catalog, clipboard, completion — COMPLETE
 
-Port user synchronization/management, embedded catalogs/scripts, Unix-socket
-clipboard bridge, interactive output, and completion contracts.
+Implemented in `internal/users`, `internal/catalog`, `internal/clipboard`,
+`internal/completion`, and `internal/output`. Built-in manifests/scripts and the
+exact frozen zsh completion program are Go-embedded from top-level `resources/`.
+The clipboard daemon preserves token + SO_PEERCRED authentication and verified
+PID/PGID/start-time/boot-id lifecycle controls.
 
 ### GO08 — Persistent operations, locking, cancellation, recovery
 

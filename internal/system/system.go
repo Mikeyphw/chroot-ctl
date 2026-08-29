@@ -87,6 +87,8 @@ type SpawnOptions struct {
 	Cwd        string
 	OutputPath string
 	Append     bool
+	UID        *int
+	GID        *int
 }
 
 func QEMUUserBinaryNames(arch string) []string {
@@ -391,7 +393,7 @@ func (r Runner) Spawn(args []string, options SpawnOptions) (int, error) {
 	if options.Cwd != "" {
 		cmd.Dir = options.Cwd
 	}
-	cmd.SysProcAttr = processAttrs(nil, nil)
+	cmd.SysProcAttr = processAttrs(options.UID, options.GID)
 	cmd.Stdin = nil
 	var output *os.File
 	if options.OutputPath != "" {

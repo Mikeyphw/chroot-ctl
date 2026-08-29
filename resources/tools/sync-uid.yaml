@@ -1,0 +1,16 @@
+name: sync-uid
+description: Sync host and chroot UID/GID for the configured user
+distro: all
+categories:
+- system
+- filesystem
+- user-management
+script: sync-uid.sh
+version: '1'
+risks:
+- filesystem-ownership
+- identity-mutation
+- package-mutation
+rollback: manual
+requires:
+- bash

@@ -1,0 +1,13 @@
+description: Install VLC media player
+distro: all
+categories:
+- media
+- desktop
+script: install-vlc.sh
+name: vlc
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

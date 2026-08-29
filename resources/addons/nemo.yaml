@@ -1,0 +1,13 @@
+description: Install Nemo file manager
+distro: all
+categories:
+- file-manager
+- desktop
+script: install-nemo.sh
+name: nemo
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

@@ -1,0 +1,13 @@
+name: diagnose-python-runtime
+description: Print chroot Python runtime and chrootctl script environment details
+distro: all
+categories:
+- diagnostics
+- development
+script: diagnose-python-runtime.py
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

@@ -52,6 +52,13 @@ def execute_cli(
     prog: str,
     apply_start_name_shorthand_fn,
 ) -> None:
+    # Static shell completion must not touch Android state, SQLite, root-only
+    # paths, or service construction.  This keeps `completion zsh` usable from
+    # an ordinary Termux shell and makes the command a true pure-output path.
+    if args.command == "completion" and args.completion_shell == "zsh":
+        sys.stdout.write(generate_zsh_completion(prog))
+        return
+
     base_config = ChrootConfig.load(args.config)
     registry = ChrootRegistry(base_config.database_path)
     if _handle_completion_command(args, base_config, registry, prog):

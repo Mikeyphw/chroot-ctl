@@ -1,0 +1,12 @@
+name: nala
+description: Install nala
+distro: ubuntu
+categories:
+- package-management
+script: install-nala.sh
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

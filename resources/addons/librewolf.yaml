@@ -1,0 +1,14 @@
+description: Install LibreWolf browser from Flatpak
+distro: all
+categories:
+- browser
+- desktop
+- privacy
+script: install-librewolf.sh
+name: librewolf
+version: '1'
+risks:
+- package-mutation
+rollback: manual
+requires:
+- bash

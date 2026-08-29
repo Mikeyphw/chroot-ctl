@@ -2,13 +2,41 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
+import tempfile
 import threading
+import uuid
 from pathlib import Path
 
 from chrootctl.config import ChrootConfig
 from chrootctl.host_clipboard import chroot_socket_path, clipboard_doctor, default_paths, run_daemon, socket_get, socket_set, start_daemon
 from chrootctl.system import ProcessIdentity
+
+
+def _short_unix_socket_path() -> Path:
+    # Linux/Android AF_UNIX pathname sockets have a small sockaddr_un path
+    # limit (typically 108 bytes). Devtool/pytest temporary roots can exceed
+    # that before the socket basename is added, especially under Termux.
+    name = f"chrootctl-clip-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    candidates: list[Path] = []
+    prefix = os.environ.get("PREFIX")
+    if prefix:
+        candidates.append(Path(prefix) / "tmp")
+    candidates.extend((Path(tempfile.gettempdir()), Path("/tmp")))
+    seen: set[Path] = set()
+    for base in candidates:
+        if base in seen:
+            continue
+        seen.add(base)
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        path = base / name
+        if os.access(base, os.W_OK) and len(os.fsencode(path)) < 100:
+            return path
+    raise RuntimeError("no AF_UNIX-safe temporary directory is available")
 
 
 def test_default_paths_use_termux_tmp_and_chroot_visible_socket(tmp_path: Path) -> None:
@@ -22,10 +50,13 @@ def test_default_paths_use_termux_tmp_and_chroot_visible_socket(tmp_path: Path) 
 
 def test_socket_set_and_get_round_trip(monkeypatch, tmp_path: Path) -> None:
     config = ChrootConfig(chroot_root=tmp_path / "chroots", termux_home=tmp_path / "termux-home", distro_name="ubuntu")
-    socket_path = tmp_path / "clipboard.sock"
+    socket_path = _short_unix_socket_path()
     pid_file = tmp_path / "clipboard.pid"
     config.termux_home.mkdir(parents=True, exist_ok=True)
-    socket_path.with_name("clipboard.token").write_text("a" * 64, encoding="utf-8")
+    token_path = socket_path.with_name("clipboard.token")
+    socket_path.unlink(missing_ok=True)
+    token_path.unlink(missing_ok=True)
+    token_path.write_text("a" * 64, encoding="utf-8")
     calls: list[tuple[str, str]] = []
 
     def fake_set(cfg, text: str) -> None:
