@@ -1,0 +1,3025 @@
+{
+  "appBridgeCommandNodeCount": 8,
+  "appBridgeCommandNodes": [
+    {
+      "arguments": [],
+      "command": "app capabilities",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "capabilities"
+      ],
+      "prog": "chrootctl app capabilities"
+    },
+    {
+      "arguments": [],
+      "command": "app state",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "state"
+      ],
+      "prog": "chrootctl app state"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "-",
+          "dest": "request_file",
+          "help": "JSON request file, or - for stdin.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--request-file"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "app query",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "query"
+      ],
+      "prog": "chrootctl app query"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "-",
+          "dest": "request_file",
+          "help": "JSON request file, or - for stdin.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--request-file"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "app preview",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "preview"
+      ],
+      "prog": "chrootctl app preview"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "-",
+          "dest": "request_file",
+          "help": "JSON request file, or - for stdin.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--request-file"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "ndjson"
+          ],
+          "const": null,
+          "default": "ndjson",
+          "dest": "events",
+          "help": "Streaming event encoding.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--events"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "app run",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "run"
+      ],
+      "prog": "chrootctl app run"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "operation_id",
+          "help": null,
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        }
+      ],
+      "command": "app operation",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "operation"
+      ],
+      "prog": "chrootctl app operation"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "operation_id",
+          "help": null,
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        }
+      ],
+      "command": "app cancel",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "cancel"
+      ],
+      "prog": "chrootctl app cancel"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "operation_id",
+          "help": null,
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        }
+      ],
+      "command": "app reconcile",
+      "description": null,
+      "epilog": null,
+      "path": [
+        "app",
+        "reconcile"
+      ],
+      "prog": "chrootctl app reconcile"
+    }
+  ],
+  "commandNodeCount": 66,
+  "commandNodes": [
+    {
+      "arguments": [
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "details",
+          "help": "Include extra filesystem checks and chroot phase details.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--details"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "status",
+      "description": "Show current mount state for the active chroot.",
+      "epilog": "examples:\n  chrootctl status\n  chrootctl status --details",
+      "path": [
+        "status"
+      ],
+      "prog": "chrootctl status"
+    },
+    {
+      "arguments": [],
+      "command": "mount",
+      "description": "Mount all required bind and virtual filesystems for the active chroot.",
+      "epilog": "examples:\n  chrootctl mount",
+      "path": [
+        "mount"
+      ],
+      "prog": "chrootctl mount"
+    },
+    {
+      "arguments": [],
+      "command": "unmount",
+      "description": "Unmount bind and virtual filesystems for the active chroot.",
+      "epilog": "examples:\n  chrootctl unmount",
+      "path": [
+        "unmount"
+      ],
+      "prog": "chrootctl unmount"
+    },
+    {
+      "arguments": [],
+      "command": "fix-tty",
+      "description": "Repair tty and related device state required for interactive sessions.",
+      "epilog": "examples:\n  chrootctl fix-tty",
+      "path": [
+        "fix-tty"
+      ],
+      "prog": "chrootctl fix-tty"
+    },
+    {
+      "arguments": [],
+      "command": "doctor",
+      "description": "Inspect host tools, chroot files, root access, mounts, and logging state.",
+      "epilog": "examples:\n  chrootctl doctor",
+      "path": [
+        "doctor"
+      ],
+      "prog": "chrootctl doctor"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "tail",
+          "help": "Number of recent log lines to show.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--tail"
+          ],
+          "required": false,
+          "type": "int"
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "all",
+          "help": "Show the entire log file instead of just the tail.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--all"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "follow",
+          "help": "Keep streaming appended log lines until interrupted.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--follow"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR",
+            "CRITICAL"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "level",
+          "help": "Only include log records at or above this severity.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--level"
+          ],
+          "required": false,
+          "type": "upper"
+        }
+      ],
+      "command": "logs",
+      "description": "Print the current log file, optionally tailing only the most recent lines.",
+      "epilog": "examples:\n  chrootctl logs\n  chrootctl logs --tail 200\n  chrootctl logs --all --level ERROR\n  chrootctl logs --follow",
+      "path": [
+        "logs"
+      ],
+      "prog": "chrootctl logs"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "login",
+          "help": "Start a login shell as the configured chroot user.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--login"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "root_login",
+          "help": "Start a login shell as root instead of the configured user.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--root-login"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "x11",
+          "help": "Prepare Termux:X11 on the host and export DISPLAY/PULSE_SERVER for the session.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--x11"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "start",
+      "description": "Start an interactive chroot session as root or as the configured user.",
+      "epilog": "examples:\n  chrootctl start\n  chrootctl --name work start --login",
+      "path": [
+        "start"
+      ],
+      "prog": "chrootctl start"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "login",
+          "help": "Restart into a login shell as the configured chroot user.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--login"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "root_login",
+          "help": "Restart into a login shell as root.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--root-login"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "x11",
+          "help": "Prepare Termux:X11 on the host and export DISPLAY/PULSE_SERVER for the session.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--x11"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "restart",
+      "description": "Unmount and then start the target chroot again.",
+      "epilog": "examples:\n  chrootctl restart\n  chrootctl --name work restart --login",
+      "path": [
+        "restart"
+      ],
+      "prog": "chrootctl restart"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "root",
+          "help": "Run the command as root inside the chroot.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--root"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "exec_text",
+          "help": "Shell command text to execute inside the chroot.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--command"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "x11",
+          "help": "Prepare Termux:X11 on the host and export DISPLAY/PULSE_SERVER for the command.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--x11"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "argv",
+          "help": "Command arguments after '--'.",
+          "metavar": null,
+          "nargs": "...",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "exec",
+      "description": "Execute a single non-interactive command inside the active chroot.",
+      "epilog": "examples:\n  chrootctl exec -- command -v python3\n  chrootctl exec --root --command \"id -u\"",
+      "path": [
+        "exec"
+      ],
+      "prog": "chrootctl exec"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "run_targets",
+          "help": "SERVICE, or CHROOT SERVICE. Omit when using --list or --boot.",
+          "metavar": "target",
+          "nargs": "*",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "run_list",
+          "help": "List available service units and their status.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--list"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "boot",
+          "help": "Start enabled units wanted by boot.target.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--boot"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "run_status",
+          "help": "Show one unit's current status.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--status"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "stop",
+          "help": "Stop one running unit.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--stop"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "restart",
+          "help": "Restart one unit.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--restart"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "logs",
+          "help": "Print one unit's journal-style log output.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--logs"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "foreground",
+          "help": "Run the unit in the foreground instead of spawning it.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--foreground"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "tail",
+          "help": "When used with --logs, show only the last N lines.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--tail"
+          ],
+          "required": false,
+          "type": "int"
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "follow",
+          "help": "When used with --logs, stream appended journal lines.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--follow"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "boot.target",
+          "dest": "target",
+          "help": "Target to use with --boot. Defaults to boot.target.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--target"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "no_parallel",
+          "help": "Start boot units sequentially instead of parallelizing independent layers.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--no-parallel"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "run",
+      "description": "Start, stop, inspect, and boot systemd-inspired chroot service units from service_dirs.",
+      "epilog": "examples:\n  chrootctl run code serve-web\n  chrootctl --name code run serve-web\n  chrootctl run --list\n  chrootctl run --boot\n  chrootctl run code serve-web --logs --tail 100\n  chrootctl journal code serve-web --follow\n  chrootctl enable code serve-web",
+      "path": [
+        "run"
+      ],
+      "prog": "chrootctl run"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "service_targets",
+          "help": "SERVICE, or CHROOT SERVICE.",
+          "metavar": "target",
+          "nargs": "+",
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "boot.target",
+          "dest": "target",
+          "help": "Target to change. Defaults to boot.target.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--target"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "enable",
+      "description": "Enable a service for a target such as boot.target.",
+      "epilog": "examples:\n  chrootctl enable serve-web\n  chrootctl enable code serve-web\n  chrootctl enable code serve-web --target boot.target",
+      "path": [
+        "enable"
+      ],
+      "prog": "chrootctl enable"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "service_targets",
+          "help": "SERVICE, or CHROOT SERVICE.",
+          "metavar": "target",
+          "nargs": "+",
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "boot.target",
+          "dest": "target",
+          "help": "Target to change. Defaults to boot.target.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--target"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "disable",
+      "description": "Disable a service for a target such as boot.target.",
+      "epilog": "examples:\n  chrootctl disable serve-web\n  chrootctl disable code serve-web\n  chrootctl disable code serve-web --target boot.target",
+      "path": [
+        "disable"
+      ],
+      "prog": "chrootctl disable"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "service_targets",
+          "help": "SERVICE, or CHROOT SERVICE.",
+          "metavar": "target",
+          "nargs": "+",
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": 100,
+          "dest": "tail",
+          "help": "Show the last N lines. Use --tail 0 for all lines.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--tail"
+          ],
+          "required": false,
+          "type": "int"
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "follow",
+          "help": "Keep streaming appended journal lines until interrupted.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--follow"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "journal",
+      "description": "Read captured stdout/stderr and lifecycle entries for a bound chroot service.",
+      "epilog": "examples:\n  chrootctl journal serve-web\n  chrootctl journal code serve-web --tail 100\n  chrootctl journal code serve-web --follow",
+      "path": [
+        "journal"
+      ],
+      "prog": "chrootctl journal"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "ubuntu",
+            "arch"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "distro",
+          "help": "Distro to install. Prompts in wizard mode when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "wizard",
+          "help": "Run a guided interactive install wizard.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--wizard"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "extract",
+            "bootstrap",
+            "desktop",
+            "finalize"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "phase",
+          "help": "Start at a specific install phase.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--phase"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "force_phase",
+          "help": "Run the requested phase even if the registry says it was already completed.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--force-phase"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "resume",
+          "help": "Resume from the detected or recorded install phase.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--resume"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "repair",
+          "help": "Attempt a repair-oriented install pass for an existing chroot.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--repair"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "list_versions",
+          "help": "List available distro versions/releases and exit.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--list-versions"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "version",
+          "help": "Requested version identifier, if the installer supports it.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--version"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "release",
+          "help": "Requested release name, if the installer supports it.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--release"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "mirror",
+          "help": "Preferred package or rootfs mirror identifier. Use auto to let the backend choose.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--mirror"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Initial non-root username to create during bootstrap/finalize.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--username"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "arm64",
+            "amd64"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "arch",
+          "help": "Target rootfs architecture. Use arm64 on amd64 hosts for phone-bound exports.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--arch"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "minimal-server",
+            "desktop-xfce",
+            "development",
+            "recovery-debug"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "preset",
+          "help": "Backend-driven install preset that resolves profile, desktop, and default package selections.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--preset"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "xfce4",
+            "plasma",
+            "none"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "desktop",
+          "help": "Optional desktop environment to configure.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--desktop"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "minimal",
+            "dev",
+            "xfce4",
+            "plasma",
+            "custom"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "profile",
+          "help": "Install profile to apply during bootstrap/desktop phases.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--profile"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_AppendAction",
+          "choices": null,
+          "const": null,
+          "default": [],
+          "dest": "tools",
+          "help": "Tool to apply after finalize. May be passed multiple times.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--tool"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_AppendAction",
+          "choices": null,
+          "const": null,
+          "default": [],
+          "dest": "addons",
+          "help": "Addon to apply after finalize. May be passed multiple times.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--addon"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "select_tools",
+          "help": "Interactively choose tool(s) to apply after finalize.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--select-tools"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "select_addons",
+          "help": "Interactively choose addon(s) to apply after finalize.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--select-addons"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "install",
+      "description": "Install a supported distro through extract, bootstrap, desktop, and finalize phases.",
+      "epilog": "examples:\n  chrootctl install --wizard\n  chrootctl install ubuntu --username devuser\n  chrootctl install ubuntu --resume --username devuser\n  chrootctl install arch --phase bootstrap --force-phase --username devuser\n  chrootctl install ubuntu --username devuser --profile dev --tool sync-uid --select-addons",
+      "path": [
+        "install"
+      ],
+      "prog": "chrootctl install"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to use for any user-aware upgrade steps.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--username"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "upgrade",
+      "description": "Run the distro-specific upgrade flow for the active installed chroot.",
+      "epilog": "examples:\n  chrootctl upgrade\n  chrootctl upgrade --username mike",
+      "path": [
+        "upgrade"
+      ],
+      "prog": "chrootctl upgrade"
+    },
+    {
+      "arguments": [],
+      "command": "completion",
+      "description": "Generate completion scripts for supported shells.",
+      "epilog": "examples:\n  chrootctl completion zsh",
+      "path": [
+        "completion"
+      ],
+      "prog": "chrootctl completion"
+    },
+    {
+      "arguments": [],
+      "command": "completion zsh",
+      "description": "Print the zsh completion script to stdout.",
+      "epilog": "examples:\n  chrootctl completion zsh > _chrootctl",
+      "path": [
+        "completion",
+        "zsh"
+      ],
+      "prog": "chrootctl completion zsh"
+    },
+    {
+      "arguments": [],
+      "command": "chroots",
+      "description": "List, inspect, remove, or rename installed chroots.",
+      "epilog": "examples:\n  chrootctl chroots list\n  chrootctl --name work chroots show\n  chrootctl --name old chroots rename new\n  chrootctl --name work chroots remove --yes",
+      "path": [
+        "chroots"
+      ],
+      "prog": "chrootctl chroots"
+    },
+    {
+      "arguments": [],
+      "command": "chroots list",
+      "description": "Show all registry entries for known chroots.",
+      "epilog": "examples:\n  chrootctl chroots list",
+      "path": [
+        "chroots",
+        "list"
+      ],
+      "prog": "chrootctl chroots list"
+    },
+    {
+      "arguments": [],
+      "command": "chroots show",
+      "description": "Show registry and configuration details for the target chroot.",
+      "epilog": "examples:\n  chrootctl --name work chroots show\n  chrootctl chroots show",
+      "path": [
+        "chroots",
+        "show"
+      ],
+      "prog": "chrootctl chroots show"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "yes",
+          "help": "Skip the confirmation prompt.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--yes"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "chroots remove",
+      "description": "Unmount and remove the target chroot directory plus its registry entry.",
+      "epilog": "examples:\n  chrootctl --name work chroots remove\n  chrootctl chroots remove --yes",
+      "path": [
+        "chroots",
+        "remove"
+      ],
+      "prog": "chrootctl chroots remove"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "new_name",
+          "help": "New chroot name to assign.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "chroots rename",
+      "description": "Rename the target chroot directory and update its registry entry.",
+      "epilog": "examples:\n  chrootctl --name old chroots rename new\n  chrootctl chroots rename new",
+      "path": [
+        "chroots",
+        "rename"
+      ],
+      "prog": "chrootctl chroots rename"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "archive",
+          "help": "Destination tar.zst path. Defaults to ./<name>.tar.zst",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "password",
+          "help": "Optional password to encrypt the archive with openssl.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--password"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "chroots export",
+      "description": "Create a tar.zst archive that can be imported on another host or phone.",
+      "epilog": "examples:\n  chrootctl --name work chroots export\n  chrootctl --name work chroots export /tmp/work.tar.zst",
+      "path": [
+        "chroots",
+        "export"
+      ],
+      "prog": "chrootctl chroots export"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "archive",
+          "help": "Source tar.zst archive.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "import_name",
+          "help": "Optional new chroot name for the imported archive.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--name"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "rename",
+            "overwrite"
+          ],
+          "const": null,
+          "default": "rename",
+          "dest": "conflict",
+          "help": "How to handle an existing target name.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--conflict"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "password",
+          "help": "Password for encrypted .enc archives.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--password"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "register",
+            "validate",
+            "fixups",
+            "shell"
+          ],
+          "const": null,
+          "default": "register",
+          "dest": "post_import",
+          "help": "Optional action to run after import registration.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--post-import"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "chroots import",
+      "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
+      "epilog": "examples:\n  chrootctl chroots import /tmp/work.tar.zst\n  chrootctl chroots import /tmp/work.tar.zst --name phone-work",
+      "path": [
+        "chroots",
+        "import"
+      ],
+      "prog": "chrootctl chroots import"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "left_name",
+          "help": "Left-hand chroot name.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "right_name",
+          "help": "Right-hand chroot name.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        }
+      ],
+      "command": "chroots diff",
+      "description": "Read package databases from two chroots and show what differs.",
+      "epilog": "examples:\n  chrootctl chroots diff work dev",
+      "path": [
+        "chroots",
+        "diff"
+      ],
+      "prog": "chrootctl chroots diff"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "validate_name",
+          "help": "Imported chroot name. Defaults to --name or the single installed chroot.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "chroots validate-import",
+      "description": "Check an imported chroot for required directories, config layout, and architecture markers.",
+      "epilog": "examples:\n  chrootctl --name work chroots validate-import\n  chrootctl chroots validate-import work",
+      "path": [
+        "chroots",
+        "validate-import"
+      ],
+      "prog": "chrootctl chroots validate-import"
+    },
+    {
+      "arguments": [],
+      "command": "transfer",
+      "description": "Move chroots between hosts with portable tar.zst archives.",
+      "epilog": "examples:\n  chrootctl --name work transfer export\n  chrootctl transfer inspect /tmp/work.tar.zst\n  chrootctl --name work transfer export /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work",
+      "path": [
+        "transfer"
+      ],
+      "prog": "chrootctl transfer"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "archive",
+          "help": "Destination tar.zst path. Defaults to ./<name>.tar.zst",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "password",
+          "help": "Optional password to encrypt the archive with openssl.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--password"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "transfer export",
+      "description": "Create a tar.zst archive for transfer to another host or phone.",
+      "epilog": "examples:\n  chrootctl --name work transfer export\n  chrootctl --name work transfer export /tmp/work.tar.zst",
+      "path": [
+        "transfer",
+        "export"
+      ],
+      "prog": "chrootctl transfer export"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "archive",
+          "help": "Source tar.zst archive to inspect.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "password",
+          "help": "Password for encrypted .enc archives.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--password"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "transfer inspect",
+      "description": "Read the embedded export manifest and preview metadata before import.",
+      "epilog": "examples:\n  chrootctl transfer inspect /tmp/work.tar.zst",
+      "path": [
+        "transfer",
+        "inspect"
+      ],
+      "prog": "chrootctl transfer inspect"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "archive",
+          "help": "Source tar.zst archive.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "import_name",
+          "help": "Optional new chroot name for the imported archive.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--name"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "rename",
+            "overwrite"
+          ],
+          "const": null,
+          "default": "rename",
+          "dest": "conflict",
+          "help": "How to handle an existing target name.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--conflict"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "password",
+          "help": "Password for encrypted .enc archives.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--password"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "register",
+            "validate",
+            "fixups",
+            "shell"
+          ],
+          "const": null,
+          "default": "register",
+          "dest": "post_import",
+          "help": "Optional action to run after import registration.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--post-import"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "transfer import",
+      "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
+      "epilog": "examples:\n  chrootctl transfer import /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work",
+      "path": [
+        "transfer",
+        "import"
+      ],
+      "prog": "chrootctl transfer import"
+    },
+    {
+      "arguments": [],
+      "command": "events",
+      "description": "Show recent install, transfer, build, and support-bundle events.",
+      "epilog": "examples:\n  chrootctl events list",
+      "path": [
+        "events"
+      ],
+      "prog": "chrootctl events"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": 20,
+          "dest": "limit",
+          "help": "Maximum number of events to show.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--limit"
+          ],
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "command": "events list",
+      "description": "Show recent audit events.",
+      "epilog": null,
+      "path": [
+        "events",
+        "list"
+      ],
+      "prog": "chrootctl events list"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "archive",
+          "help": "Managed tar.gz artifact path. Defaults to the chrootctl managed transfer directory",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": "Path"
+        }
+      ],
+      "command": "support-bundle",
+      "description": "Bundle logs, doctor output, config, and recent jobs for debugging.",
+      "epilog": null,
+      "path": [
+        "support-bundle"
+      ],
+      "prog": "chrootctl support-bundle"
+    },
+    {
+      "arguments": [],
+      "command": "clipboard",
+      "description": "Manage the host clipboard daemon and send clipboard get/set requests over the shared Unix socket.",
+      "epilog": "examples:\n  chrootctl clipboard daemon start\n  chrootctl clipboard get\n  chrootctl clipboard set \"hello from host\"",
+      "path": [
+        "clipboard"
+      ],
+      "prog": "chrootctl clipboard"
+    },
+    {
+      "arguments": [],
+      "command": "clipboard daemon",
+      "description": "Start, stop, inspect, or run the clipboard bridge daemon that serves the shared Unix socket.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "daemon"
+      ],
+      "prog": "chrootctl clipboard daemon"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "socket",
+          "help": "Override the host-side clipboard socket path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--socket"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "pid_file",
+          "help": "Override the clipboard daemon PID file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--pid-file"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "log_file",
+          "help": "Override the clipboard daemon log file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--log-file"
+          ],
+          "required": false,
+          "type": "Path"
+        }
+      ],
+      "command": "clipboard daemon start",
+      "description": "Start the clipboard daemon.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "daemon",
+        "start"
+      ],
+      "prog": "chrootctl clipboard daemon start"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "socket",
+          "help": "Override the host-side clipboard socket path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--socket"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "pid_file",
+          "help": "Override the clipboard daemon PID file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--pid-file"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "log_file",
+          "help": "Override the clipboard daemon log file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--log-file"
+          ],
+          "required": false,
+          "type": "Path"
+        }
+      ],
+      "command": "clipboard daemon stop",
+      "description": "Stop the clipboard daemon.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "daemon",
+        "stop"
+      ],
+      "prog": "chrootctl clipboard daemon stop"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "socket",
+          "help": "Override the host-side clipboard socket path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--socket"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "pid_file",
+          "help": "Override the clipboard daemon PID file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--pid-file"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "log_file",
+          "help": "Override the clipboard daemon log file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--log-file"
+          ],
+          "required": false,
+          "type": "Path"
+        }
+      ],
+      "command": "clipboard daemon status",
+      "description": "Status the clipboard daemon.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "daemon",
+        "status"
+      ],
+      "prog": "chrootctl clipboard daemon status"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "socket",
+          "help": "Override the host-side clipboard socket path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--socket"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "pid_file",
+          "help": "Override the clipboard daemon PID file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--pid-file"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "log_file",
+          "help": "Override the clipboard daemon log file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--log-file"
+          ],
+          "required": false,
+          "type": "Path"
+        }
+      ],
+      "command": "clipboard daemon run",
+      "description": "Run the clipboard daemon.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "daemon",
+        "run"
+      ],
+      "prog": "chrootctl clipboard daemon run"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "socket",
+          "help": "Override the clipboard socket path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--socket"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "text",
+          "help": "Clipboard text. Reads stdin when omitted.",
+          "metavar": null,
+          "nargs": "*",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "clipboard set",
+      "description": "Write clipboard text through the shared Unix socket. Reads stdin when no text arguments are provided.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "set"
+      ],
+      "prog": "chrootctl clipboard set"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "socket",
+          "help": "Override the clipboard socket path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--socket"
+          ],
+          "required": false,
+          "type": "Path"
+        }
+      ],
+      "command": "clipboard get",
+      "description": "Fetch clipboard text from the shared Unix socket and print it to stdout.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "get"
+      ],
+      "prog": "chrootctl clipboard get"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "socket",
+          "help": "Override the clipboard socket path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--socket"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "pid_file",
+          "help": "Override the clipboard daemon PID file.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--pid-file"
+          ],
+          "required": false,
+          "type": "Path"
+        }
+      ],
+      "command": "clipboard doctor",
+      "description": "Report Termux clipboard commands, daemon/socket state, and whether the current chroot already has clipboard wrapper tools or will auto-adapt on first start.",
+      "epilog": null,
+      "path": [
+        "clipboard",
+        "doctor"
+      ],
+      "prog": "chrootctl clipboard doctor"
+    },
+    {
+      "arguments": [],
+      "command": "users",
+      "description": "List, inspect, and update chroot users and user IDs.",
+      "epilog": "examples:\n  chrootctl --name work users list\n  chrootctl --name work users add mike --sudo\n  chrootctl --name work users remove mike --delete-home --yes\n  chrootctl --name work users sync-id mike",
+      "path": [
+        "users"
+      ],
+      "prog": "chrootctl users"
+    },
+    {
+      "arguments": [],
+      "command": "users list",
+      "description": "Show users from the chroot passwd database.",
+      "epilog": "examples:\n  chrootctl --name work users list\n  chrootctl users list",
+      "path": [
+        "users",
+        "list"
+      ],
+      "prog": "chrootctl users list"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Chroot username. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "users show",
+      "description": "Show shell, home, uid/gid, and sudo state for one chroot user.",
+      "epilog": "examples:\n  chrootctl users show mike\n  chrootctl users show",
+      "path": [
+        "users",
+        "show"
+      ],
+      "prog": "chrootctl users show"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to create.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "/bin/bash",
+          "dest": "shell",
+          "help": "Login shell to assign to the new user.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--shell"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "sudo",
+          "help": "Grant passwordless sudo to the new user.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--sudo"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "users add",
+      "description": "Create a new user inside the active chroot.",
+      "epilog": "examples:\n  chrootctl users add mike\n  chrootctl users add mike --shell /bin/zsh --sudo",
+      "path": [
+        "users",
+        "add"
+      ],
+      "prog": "chrootctl users add"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to remove. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "delete_home",
+          "help": "Delete the user's home directory.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--delete-home"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "yes",
+          "help": "Skip the confirmation prompt.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--yes"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "users remove",
+      "description": "Delete a user from the active chroot and optionally delete the home directory.",
+      "epilog": "examples:\n  chrootctl users remove mike\n  chrootctl users remove mike --delete-home --yes\n  chrootctl users remove --yes",
+      "path": [
+        "users",
+        "remove"
+      ],
+      "prog": "chrootctl users remove"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to update. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "users password",
+      "description": "Open an interactive password update flow for one chroot user.",
+      "epilog": "examples:\n  chrootctl users password mike\n  chrootctl users password",
+      "path": [
+        "users",
+        "password"
+      ],
+      "prog": "chrootctl users password"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to update. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "shell",
+          "help": "New login shell path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--shell"
+          ],
+          "required": true,
+          "type": null
+        }
+      ],
+      "command": "users shell",
+      "description": "Update the configured login shell for one chroot user.",
+      "epilog": "examples:\n  chrootctl users shell mike --shell /usr/bin/zsh",
+      "path": [
+        "users",
+        "shell"
+      ],
+      "prog": "chrootctl users shell"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to update. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "enable",
+          "help": "Enable sudo for the selected user.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--enable"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "disable",
+          "help": "Disable sudo for the selected user.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--disable"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "users sudo",
+      "description": "Update the dedicated sudoers fragment for one chroot user.",
+      "epilog": "examples:\n  chrootctl users sudo mike --enable\n  chrootctl users sudo mike --disable",
+      "path": [
+        "users",
+        "sudo"
+      ],
+      "prog": "chrootctl users sudo"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to inspect inside the chroot. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "users show-id",
+      "description": "Show current Termux host UID/GID and the selected chroot user's UID/GID.",
+      "epilog": "examples:\n  chrootctl users show-id\n  chrootctl users show-id mike",
+      "path": [
+        "users",
+        "show-id"
+      ],
+      "prog": "chrootctl users show-id"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Username to update inside the chroot. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "no_fix_ownership",
+          "help": "Do not chown the user's home and related files after syncing IDs.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--no-fix-ownership"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "users sync-id",
+      "description": "Update chroot UID/GID values to match the Termux host account.",
+      "epilog": "examples:\n  chrootctl users sync-id\n  chrootctl users sync-id mike --no-fix-ownership",
+      "path": [
+        "users",
+        "sync-id"
+      ],
+      "prog": "chrootctl users sync-id"
+    },
+    {
+      "arguments": [],
+      "command": "tools",
+      "description": "List, inspect, and apply packaged tools for installed chroots.",
+      "epilog": "examples:\n  chrootctl tools list\n  chrootctl tools show\n  chrootctl tools apply sample-name\n  chrootctl tools apply --category system",
+      "path": [
+        "tools"
+      ],
+      "prog": "chrootctl tools"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "ubuntu",
+            "arch"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "distro",
+          "help": "Only show categories supported by this distro.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--distro"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "tools categories",
+      "description": "Show normalized categories available for tools.",
+      "epilog": "examples:\n  chrootctl tools categories\n  chrootctl tools categories --distro ubuntu",
+      "path": [
+        "tools",
+        "categories"
+      ],
+      "prog": "chrootctl tools categories"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "ubuntu",
+            "arch"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "distro",
+          "help": "Only list entries supported by this distro.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--distro"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "category",
+          "help": "Only list entries in this category.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--category"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "tools list",
+      "description": "Show available tools with distro, category, and script metadata.",
+      "epilog": "examples:\n  chrootctl tools list\n  chrootctl tools list --distro ubuntu --category system",
+      "path": [
+        "tools",
+        "list"
+      ],
+      "prog": "chrootctl tools list"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "tool_name",
+          "help": "Tool name. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "tools show",
+      "description": "Show metadata for one tool.",
+      "epilog": "examples:\n  chrootctl tools show sample-name\n  chrootctl tools show",
+      "path": [
+        "tools",
+        "show"
+      ],
+      "prog": "chrootctl tools show"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "tool_names",
+          "help": "Tool names to apply. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "*",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "category",
+          "help": "Only offer entries in this category when choosing interactively.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--category"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "tools apply",
+      "description": "Apply one or more tools to the active installed chroot.",
+      "epilog": "examples:\n  chrootctl --name work tools apply sample-name\n  chrootctl --name work tools apply sample-a sample-b\n  chrootctl tools apply\n  chrootctl tools apply --category system",
+      "path": [
+        "tools",
+        "apply"
+      ],
+      "prog": "chrootctl tools apply"
+    },
+    {
+      "arguments": [],
+      "command": "addons",
+      "description": "List, inspect, and apply packaged addons for installed chroots.",
+      "epilog": "examples:\n  chrootctl addons list\n  chrootctl addons show\n  chrootctl addons apply sample-name\n  chrootctl addons apply --category system",
+      "path": [
+        "addons"
+      ],
+      "prog": "chrootctl addons"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "ubuntu",
+            "arch"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "distro",
+          "help": "Only show categories supported by this distro.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--distro"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "addons categories",
+      "description": "Show normalized categories available for addons.",
+      "epilog": "examples:\n  chrootctl addons categories\n  chrootctl addons categories --distro ubuntu",
+      "path": [
+        "addons",
+        "categories"
+      ],
+      "prog": "chrootctl addons categories"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "ubuntu",
+            "arch"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "distro",
+          "help": "Only list entries supported by this distro.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--distro"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "category",
+          "help": "Only list entries in this category.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--category"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "addons list",
+      "description": "Show available addons with distro, category, and script metadata.",
+      "epilog": "examples:\n  chrootctl addons list\n  chrootctl addons list --distro ubuntu --category system",
+      "path": [
+        "addons",
+        "list"
+      ],
+      "prog": "chrootctl addons list"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "addon_name",
+          "help": "Addon name. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "addons show",
+      "description": "Show metadata for one addon.",
+      "epilog": "examples:\n  chrootctl addons show sample-name\n  chrootctl addons show",
+      "path": [
+        "addons",
+        "show"
+      ],
+      "prog": "chrootctl addons show"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "addon_names",
+          "help": "Addon names to apply. Prompts to choose when omitted.",
+          "metavar": null,
+          "nargs": "*",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "category",
+          "help": "Only offer entries in this category when choosing interactively.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--category"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "addons apply",
+      "description": "Apply one or more addons to the active installed chroot.",
+      "epilog": "examples:\n  chrootctl --name work addons apply sample-name\n  chrootctl --name work addons apply sample-a sample-b\n  chrootctl addons apply\n  chrootctl addons apply --category system",
+      "path": [
+        "addons",
+        "apply"
+      ],
+      "prog": "chrootctl addons apply"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "chroots",
+            "installed-chroots",
+            "chroot-details",
+            "chroot-preview",
+            "users",
+            "tools",
+            "addons",
+            "tool-categories",
+            "addon-categories",
+            "tool-details",
+            "addon-details",
+            "tool-preview",
+            "addon-preview"
+          ],
+          "const": null,
+          "default": null,
+          "dest": "topic",
+          "help": "Completion topic.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "values",
+          "help": "Optional completion topic values.",
+          "metavar": null,
+          "nargs": "*",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "__complete",
+      "description": "Internal dynamic completion command.",
+      "epilog": null,
+      "path": [
+        "__complete"
+      ],
+      "prog": "chrootctl __complete"
+    },
+    {
+      "arguments": [],
+      "command": "magisk",
+      "description": "Generate a Magisk module that owns boot-time mounts/startup and a small privileged helper without embedding the Web UI stack.",
+      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl-magisk\n  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed\n  chrootctl magisk render --output /tmp/chrootctl-magisk --name work --name dev",
+      "path": [
+        "magisk"
+      ],
+      "prog": "chrootctl magisk"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "output",
+          "help": "Target directory for the generated Magisk module tree.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--output"
+          ],
+          "required": true,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "zip_path",
+          "help": "Also create a flashable Magisk/KSU zip at this path.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--zip"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "native_runtime_dir",
+          "help": "Sealed native Android runtime artifact directory; defaults to the repository build output.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--native-runtime-dir"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "all_installed",
+          "help": "Include every installed chroot in the boot startup target list.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--all-installed"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_AppendAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "magisk_names",
+          "help": "Explicit chroot name to include in the boot startup target list. Repeat as needed.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--name"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "magisk render",
+      "description": "Write a Magisk module directory with service.sh, post-fs-data.sh, and a privileged helper shim.",
+      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl-magisk\n  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed",
+      "path": [
+        "magisk",
+        "render"
+      ],
+      "prog": "chrootctl magisk render"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "bridge_args",
+          "help": "<SUPPRESS>",
+          "metavar": null,
+          "nargs": "...",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "app",
+      "description": "Machine-only JSON/NDJSON bridge. Run `chrootctl app --help` for bridge commands.",
+      "epilog": null,
+      "path": [
+        "app"
+      ],
+      "prog": "chrootctl app"
+    }
+  ],
+  "contractSchemaVersion": 1,
+  "description": "Manage Termux chroots for Ubuntu and Arch with install, runtime, user, and catalog commands.",
+  "globalArguments": [
+    {
+      "action": "_StoreAction",
+      "choices": null,
+      "const": null,
+      "default": null,
+      "dest": "config",
+      "help": "Path to a config file. Defaults to the built-in config search path.",
+      "metavar": null,
+      "nargs": null,
+      "optionStrings": [
+        "--config"
+      ],
+      "required": false,
+      "type": "Path"
+    },
+    {
+      "action": "_StoreTrueAction",
+      "choices": null,
+      "const": true,
+      "default": false,
+      "dest": "dry_run",
+      "help": "Print the actions that would run without changing the host or chroot.",
+      "metavar": null,
+      "nargs": 0,
+      "optionStrings": [
+        "--dry-run"
+      ],
+      "required": false,
+      "type": null
+    },
+    {
+      "action": "_StoreTrueAction",
+      "choices": null,
+      "const": true,
+      "default": false,
+      "dest": "verbose",
+      "help": "Enable verbose logging and richer diagnostic output.",
+      "metavar": null,
+      "nargs": 0,
+      "optionStrings": [
+        "--verbose"
+      ],
+      "required": false,
+      "type": null
+    },
+    {
+      "action": "_StoreTrueAction",
+      "choices": null,
+      "const": true,
+      "default": false,
+      "dest": "json",
+      "help": "Emit machine-readable JSON for supported status and listing commands.",
+      "metavar": null,
+      "nargs": 0,
+      "optionStrings": [
+        "--json"
+      ],
+      "required": false,
+      "type": null
+    },
+    {
+      "action": "_StoreTrueAction",
+      "choices": null,
+      "const": true,
+      "default": false,
+      "dest": "no_sudo",
+      "help": "Do not auto-reexec with sudo for commands that require root.",
+      "metavar": null,
+      "nargs": 0,
+      "optionStrings": [
+        "--no-sudo"
+      ],
+      "required": false,
+      "type": null
+    },
+    {
+      "action": "_StoreAction",
+      "choices": null,
+      "const": null,
+      "default": null,
+      "dest": "name",
+      "help": "Target chroot name. Auto-selects when exactly one installed chroot exists.",
+      "metavar": null,
+      "nargs": null,
+      "optionStrings": [
+        "--name"
+      ],
+      "required": false,
+      "type": null
+    },
+    {
+      "action": "_StoreTrueAction",
+      "choices": null,
+      "const": true,
+      "default": false,
+      "dest": "non_interactive",
+      "help": "Fail instead of opening prompts or confirmations.",
+      "metavar": null,
+      "nargs": 0,
+      "optionStrings": [
+        "--non-interactive"
+      ],
+      "required": false,
+      "type": null
+    }
+  ],
+  "program": "chrootctl",
+  "pythonBackendVersion": "0.11.0"
+}

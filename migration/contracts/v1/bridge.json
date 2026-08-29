@@ -1,0 +1,1132 @@
+{
+  "arbitraryShell": false,
+  "contractSchemaVersion": 1,
+  "operationCount": 86,
+  "operations": [
+    {
+      "description": "Return native dashboard state",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "system.dashboard",
+      "payloadFields": [
+        "details",
+        "name",
+        "tail"
+      ]
+    },
+    {
+      "description": "Return status checks for one chroot",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "system.status",
+      "payloadFields": [
+        "details",
+        "name"
+      ]
+    },
+    {
+      "description": "Return doctor checks for one chroot",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "system.doctor",
+      "payloadFields": [
+        "name"
+      ]
+    },
+    {
+      "description": "List registered chroots",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "chroots.list",
+      "payloadFields": []
+    },
+    {
+      "description": "Return one registered chroot",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "chroots.get",
+      "payloadFields": [
+        "name"
+      ]
+    },
+    {
+      "description": "Return structured storage status for one chroot",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "storage.status",
+      "payloadFields": [
+        "name"
+      ]
+    },
+    {
+      "description": "Return native install form state",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "install.form",
+      "payloadFields": [
+        "distro",
+        "name"
+      ]
+    },
+    {
+      "description": "List snapshots for one or all chroots",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "snapshots.list",
+      "payloadFields": [
+        "limit",
+        "name"
+      ]
+    },
+    {
+      "description": "List chroot users",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "users.list",
+      "payloadFields": [
+        "name"
+      ]
+    },
+    {
+      "description": "Return one chroot user with UID/GID status",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "users.get",
+      "payloadFields": [
+        "name",
+        "username"
+      ]
+    },
+    {
+      "description": "List chroot service units",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "services.list",
+      "payloadFields": [
+        "name"
+      ]
+    },
+    {
+      "description": "Return service status and journal",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "services.get",
+      "payloadFields": [
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "tail",
+        "unit"
+      ]
+    },
+    {
+      "description": "Return service journal with status context",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "services.journal",
+      "payloadFields": [
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "tail",
+        "unit"
+      ]
+    },
+    {
+      "description": "Return bounded chrootctl log entries for one chroot",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "logs.list",
+      "payloadFields": [
+        "level",
+        "name",
+        "tail"
+      ]
+    },
+    {
+      "description": "List persistent operation records",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "operations.list",
+      "payloadFields": [
+        "limit",
+        "name"
+      ]
+    },
+    {
+      "description": "Return one persistent operation with events",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "operations.get",
+      "payloadFields": [
+        "id",
+        "operationId",
+        "operation_id"
+      ]
+    },
+    {
+      "description": "Preview a native install request",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "install.preview",
+      "payloadFields": [
+        "addons",
+        "arch",
+        "desktop",
+        "distro",
+        "forcePhase",
+        "force_phase",
+        "mirror",
+        "name",
+        "phase",
+        "preset",
+        "profile",
+        "release",
+        "repair",
+        "resume",
+        "tools",
+        "username",
+        "version"
+      ]
+    },
+    {
+      "description": "Preview chroot lifecycle mutation",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "chroots.lifecycle.preview",
+      "payloadFields": [
+        "action",
+        "name"
+      ]
+    },
+    {
+      "description": "Preview removal without mutating data",
+      "destructive": true,
+      "lockScope": "target",
+      "mode": "preview",
+      "name": "chroots.remove",
+      "payloadFields": []
+    },
+    {
+      "description": "Preview a chroot export",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "chroots.export",
+      "payloadFields": [
+        "archive",
+        "name"
+      ]
+    },
+    {
+      "description": "Preview snapshot create/restore/export",
+      "destructive": true,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "snapshots.preview",
+      "payloadFields": [
+        "action",
+        "archive",
+        "name",
+        "snapshot",
+        "snapshotName",
+        "snapshot_name"
+      ]
+    },
+    {
+      "description": "Preview chroot user mutation",
+      "destructive": true,
+      "lockScope": "target",
+      "mode": "preview",
+      "name": "users.preview",
+      "payloadFields": [
+        "action",
+        "deleteHome",
+        "enabled",
+        "fixOwnership",
+        "name",
+        "shell",
+        "sudo",
+        "username"
+      ]
+    },
+    {
+      "description": "Preview service mutation",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "preview",
+      "name": "services.preview",
+      "payloadFields": [
+        "action",
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "target",
+        "unit"
+      ]
+    },
+    {
+      "description": "List native tool catalog entries",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "catalog.tools",
+      "payloadFields": [
+        "category",
+        "distro",
+        "name",
+        "q",
+        "query",
+        "targetName"
+      ]
+    },
+    {
+      "description": "List native add-on catalog entries",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "catalog.addons",
+      "payloadFields": [
+        "category",
+        "distro",
+        "name",
+        "q",
+        "query",
+        "targetName"
+      ]
+    },
+    {
+      "description": "Search native catalog entries",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "catalog.search",
+      "payloadFields": [
+        "category",
+        "distro",
+        "kind",
+        "name",
+        "q",
+        "query",
+        "targetName"
+      ]
+    },
+    {
+      "description": "Return package inventory for one chroot",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "packages.inventory",
+      "payloadFields": [
+        "limit",
+        "name"
+      ]
+    },
+    {
+      "description": "Compare package inventories between chroots",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "packages.compare",
+      "payloadFields": [
+        "left",
+        "leftName",
+        "right",
+        "rightName"
+      ]
+    },
+    {
+      "description": "Inspect a staged import archive",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "transfer.inspect_import",
+      "payloadFields": [
+        "archive",
+        "password",
+        "path"
+      ]
+    },
+    {
+      "description": "List managed transfer artifacts",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "artifacts.list",
+      "payloadFields": []
+    },
+    {
+      "description": "Preview managed transfer artifact cleanup",
+      "destructive": true,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "artifacts.cleanup_preview",
+      "payloadFields": [
+        "artifactId",
+        "artifact_id",
+        "deleteAll",
+        "delete_all",
+        "path"
+      ]
+    },
+    {
+      "description": "Return the managed transfer artifact root shared by Python and Android",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "transfer.artifact_root",
+      "payloadFields": []
+    },
+    {
+      "description": "Preview applying tools or add-ons",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "catalog.preview",
+      "payloadFields": [
+        "entries",
+        "entry",
+        "kind",
+        "name",
+        "names"
+      ]
+    },
+    {
+      "description": "Preview importing a staged archive",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "transfer.import_preview",
+      "payloadFields": [
+        "archive",
+        "conflict",
+        "name",
+        "password",
+        "path"
+      ]
+    },
+    {
+      "description": "Preview exporting a chroot archive",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "transfer.preview_export",
+      "payloadFields": [
+        "archive",
+        "name",
+        "password"
+      ]
+    },
+    {
+      "description": "Return native system runtime and host readiness",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "system.runtime",
+      "payloadFields": []
+    },
+    {
+      "description": "Return Magisk/KernelSU module status",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "system.module_status",
+      "payloadFields": []
+    },
+    {
+      "description": "Preview sanitized support bundle export",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "support.preview",
+      "payloadFields": [
+        "archive"
+      ]
+    },
+    {
+      "description": "Preview Magisk/KernelSU module build",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "system.module_build_preview",
+      "payloadFields": [
+        "allInstalled",
+        "all_installed",
+        "archive",
+        "startupTargets"
+      ]
+    },
+    {
+      "description": "Preview registry repair plan",
+      "destructive": true,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "repair.preview",
+      "payloadFields": [
+        "decisions"
+      ]
+    },
+    {
+      "description": "Preview managed temporary artifact cleanup",
+      "destructive": true,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "cleanup.temp_preview",
+      "payloadFields": [
+        "artifactId",
+        "artifact_id",
+        "deleteAll",
+        "delete_all",
+        "path"
+      ]
+    },
+    {
+      "description": "Run chroot debug workbench probes",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "debug.probes",
+      "payloadFields": [
+        "group"
+      ]
+    },
+    {
+      "description": "Return debug audit timeline",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "debug.timeline",
+      "payloadFields": [
+        "limit"
+      ]
+    },
+    {
+      "description": "Return real-device smoke suite plan",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "smoke.plan",
+      "payloadFields": [
+        "includeOptional",
+        "include_optional",
+        "name",
+        "scope",
+        "target"
+      ]
+    },
+    {
+      "description": "Preview the real-device smoke suite before execution",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "preview",
+      "name": "smoke.preview",
+      "payloadFields": [
+        "includeOptional",
+        "include_optional",
+        "name",
+        "scope",
+        "target"
+      ]
+    },
+    {
+      "description": "Return latest real-device smoke operation report",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "smoke.report",
+      "payloadFields": [
+        "limit",
+        "name",
+        "target"
+      ]
+    },
+    {
+      "description": "Return latest smoke result and support handoff guidance",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "smoke.last_result",
+      "payloadFields": [
+        "limit"
+      ]
+    },
+    {
+      "description": "Return native release readiness checklist",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "release.readiness",
+      "payloadFields": []
+    },
+    {
+      "description": "Return final native release preflight summary",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "final.preflight",
+      "payloadFields": []
+    },
+    {
+      "description": "Return final module/package audit summary",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "final.packaging_audit",
+      "payloadFields": []
+    },
+    {
+      "description": "Return final WebUI retirement regression summary",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "final.no_webui_regression",
+      "payloadFields": []
+    },
+    {
+      "description": "Return final operational release seal",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "final.release_seal",
+      "payloadFields": []
+    },
+    {
+      "description": "Retry a recorded operation after redaction checks",
+      "destructive": true,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "operations.retry",
+      "payloadFields": [
+        "id",
+        "mode",
+        "operationId",
+        "operation_id"
+      ]
+    },
+    {
+      "description": "Persist and stream a complete read-only refresh",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "operation",
+      "name": "system.refresh",
+      "payloadFields": []
+    },
+    {
+      "description": "Run real-device read-only operational smoke suite",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "smoke.run",
+      "payloadFields": [
+        "includeOptional",
+        "include_optional",
+        "name",
+        "scope",
+        "target"
+      ]
+    },
+    {
+      "description": "Persist latest smoke result into a managed JSON artifact",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "smoke.result.persist",
+      "payloadFields": [
+        "archive",
+        "limit"
+      ]
+    },
+    {
+      "description": "Export latest smoke result evidence into a managed JSON artifact",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "smoke.result.export",
+      "payloadFields": [
+        "archive",
+        "limit"
+      ]
+    },
+    {
+      "description": "Create support bundle linked to the latest smoke failure",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "smoke.failure.bundle",
+      "payloadFields": [
+        "archive",
+        "limit"
+      ]
+    },
+    {
+      "description": "Run the native install flow",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "install.run",
+      "payloadFields": [
+        "addons",
+        "arch",
+        "desktop",
+        "distro",
+        "forcePhase",
+        "force_phase",
+        "mirror",
+        "name",
+        "phase",
+        "preset",
+        "profile",
+        "release",
+        "repair",
+        "resume",
+        "tools",
+        "username",
+        "version"
+      ]
+    },
+    {
+      "description": "Start a chroot session",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "chroots.start",
+      "payloadFields": [
+        "login",
+        "name",
+        "rootLogin",
+        "root_login"
+      ]
+    },
+    {
+      "description": "Restart a chroot session",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "chroots.restart",
+      "payloadFields": [
+        "login",
+        "name",
+        "rootLogin",
+        "root_login"
+      ]
+    },
+    {
+      "description": "Upgrade a chroot after preview",
+      "destructive": true,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "chroots.upgrade",
+      "payloadFields": [
+        "name",
+        "username"
+      ]
+    },
+    {
+      "description": "Remove a chroot after typed confirmation",
+      "destructive": true,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "chroots.remove.execute",
+      "payloadFields": [
+        "confirmName",
+        "confirmation",
+        "name"
+      ]
+    },
+    {
+      "description": "Create a chroot snapshot",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "snapshots.create",
+      "payloadFields": [
+        "description",
+        "name",
+        "snapshot",
+        "snapshotName",
+        "snapshot_name"
+      ]
+    },
+    {
+      "description": "Restore a chroot snapshot",
+      "destructive": true,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "snapshots.restore",
+      "payloadFields": [
+        "confirmName",
+        "confirmation",
+        "name",
+        "snapshot",
+        "snapshotName",
+        "snapshot_name"
+      ]
+    },
+    {
+      "description": "Export a chroot snapshot",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "snapshots.export",
+      "payloadFields": [
+        "archive",
+        "name",
+        "snapshot",
+        "snapshotName",
+        "snapshot_name"
+      ]
+    },
+    {
+      "description": "Add a chroot user",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "users.add",
+      "payloadFields": [
+        "action",
+        "name",
+        "shell",
+        "sudo",
+        "username"
+      ]
+    },
+    {
+      "description": "Remove a chroot user after typed confirmation",
+      "destructive": true,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "users.remove",
+      "payloadFields": [
+        "action",
+        "confirmUsername",
+        "confirmation",
+        "deleteHome",
+        "name",
+        "username"
+      ]
+    },
+    {
+      "description": "Sync UID/GID for a chroot user",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "users.sync_uid_gid",
+      "payloadFields": [
+        "action",
+        "fixOwnership",
+        "name",
+        "username"
+      ]
+    },
+    {
+      "description": "Set a chroot user shell",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "users.set_shell",
+      "payloadFields": [
+        "action",
+        "name",
+        "shell",
+        "username"
+      ]
+    },
+    {
+      "description": "Enable or disable sudo for a chroot user",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "users.set_sudo",
+      "payloadFields": [
+        "action",
+        "enabled",
+        "name",
+        "sudo",
+        "username"
+      ]
+    },
+    {
+      "description": "Set a chroot user password with redacted request data",
+      "destructive": true,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "users.set_password",
+      "payloadFields": [
+        "action",
+        "confirmPassword",
+        "confirmUsername",
+        "confirmation",
+        "name",
+        "password",
+        "username"
+      ]
+    },
+    {
+      "description": "Start a chroot service",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "services.start",
+      "payloadFields": [
+        "action",
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "target",
+        "unit"
+      ]
+    },
+    {
+      "description": "Stop a chroot service",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "services.stop",
+      "payloadFields": [
+        "action",
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "target",
+        "unit"
+      ]
+    },
+    {
+      "description": "Restart a chroot service",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "services.restart",
+      "payloadFields": [
+        "action",
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "target",
+        "unit"
+      ]
+    },
+    {
+      "description": "Enable a chroot service",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "services.enable",
+      "payloadFields": [
+        "action",
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "target",
+        "unit"
+      ]
+    },
+    {
+      "description": "Disable a chroot service",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "services.disable",
+      "payloadFields": [
+        "action",
+        "chroot",
+        "name",
+        "service",
+        "serviceName",
+        "target",
+        "unit"
+      ]
+    },
+    {
+      "description": "Apply native tool or add-on catalog entries",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "catalog.apply",
+      "payloadFields": [
+        "entries",
+        "entry",
+        "kind",
+        "name",
+        "names"
+      ]
+    },
+    {
+      "description": "Import a staged chroot archive",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "transfer.import",
+      "payloadFields": [
+        "archive",
+        "conflict",
+        "name",
+        "password",
+        "path",
+        "postImport",
+        "post_import"
+      ]
+    },
+    {
+      "description": "Export a chroot archive to managed artifacts",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "transfer.export",
+      "payloadFields": [
+        "archive",
+        "name",
+        "password"
+      ]
+    },
+    {
+      "description": "Clean managed transfer artifacts",
+      "destructive": true,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "artifacts.cleanup",
+      "payloadFields": [
+        "artifactId",
+        "artifact_id",
+        "deleteAll",
+        "delete_all",
+        "path"
+      ]
+    },
+    {
+      "description": "Export sanitized support bundle",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "support.bundle",
+      "payloadFields": [
+        "archive"
+      ]
+    },
+    {
+      "description": "Build Magisk/KernelSU module artifact",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "system.module_build",
+      "payloadFields": [
+        "allInstalled",
+        "all_installed",
+        "archive",
+        "startupTargets"
+      ]
+    },
+    {
+      "description": "Apply selected registry repair plan",
+      "destructive": true,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "repair.apply",
+      "payloadFields": [
+        "decisions"
+      ]
+    },
+    {
+      "description": "Clean managed temporary artifacts",
+      "destructive": true,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "cleanup.temp",
+      "payloadFields": [
+        "artifactId",
+        "artifact_id",
+        "deleteAll",
+        "delete_all",
+        "path"
+      ]
+    },
+    {
+      "description": "Export debug workbench evidence bundle",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "debug.export",
+      "payloadFields": [
+        "archive",
+        "group",
+        "limit"
+      ]
+    }
+  ],
+  "protocolVersion": 1,
+  "redaction": {
+    "bearerPattern": "(?i)\\b(bearer|token)\\s+[A-Za-z0-9._~+/-]+=*",
+    "opensslPassPattern": "(?i)(-pass\\s+pass:)([^\\s,;]+)",
+    "secretAssignmentPattern": "(?i)\\b(password|passphrase|token|secret|authorization|access_token|cookie|csrf)(\\s*[:=]\\s*)([^\\s,;]+)",
+    "secretKeys": [
+      "access_token",
+      "authorization",
+      "confirmPassword",
+      "confirm_password",
+      "cookie",
+      "csrf",
+      "passphrase",
+      "password",
+      "secret",
+      "token"
+    ]
+  },
+  "request": {
+    "maxArrayLength": 2048,
+    "maxBytes": 1048576,
+    "maxJsonDepth": 24,
+    "maxObjectKeys": 512,
+    "maxStringLength": 16384,
+    "operationPattern": "^[a-z][a-z0-9_.-]{1,80}$",
+    "previewContractFields": [
+      "payloadHash",
+      "previewId",
+      "resourceRevision"
+    ],
+    "requestIdPattern": "^[A-Za-z0-9._:-]{1,128}$",
+    "topLevelKeys": [
+      "operation",
+      "payload",
+      "protocolVersion",
+      "requestId"
+    ]
+  },
+  "responseFields": [
+    "protocolVersion",
+    "requestId",
+    "ok",
+    "data",
+    "error",
+    "warnings",
+    "nextSteps"
+  ],
+  "transports": [
+    "json",
+    "ndjson"
+  ]
+}

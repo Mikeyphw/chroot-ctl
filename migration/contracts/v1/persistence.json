@@ -1,0 +1,458 @@
+{
+  "config": {
+    "androidConfigPath": "/data/adb/chrootctl/config.json",
+    "androidDatabasePath": "/data/adb/chrootctl/chroots.sqlite3",
+    "androidSnapshotDir": "/data/adb/chrootctl/snapshots",
+    "androidStateRoot": "/data/adb/chrootctl",
+    "defaultDnsServers": [
+      "8.8.8.8",
+      "1.1.1.1"
+    ],
+    "defaultMediaMounts": {
+      "/sdcard/Documents": "home/mike/Documents",
+      "/sdcard/Download": "home/mike/Downloads",
+      "/sdcard/Movies": "home/mike/Videos",
+      "/sdcard/Pictures": "home/mike/Pictures"
+    },
+    "fields": [
+      {
+        "default": "/data/local/tmp",
+        "defaultKind": "value",
+        "name": "chroot_root",
+        "type": "Path"
+      },
+      {
+        "default": "ubuntu",
+        "defaultKind": "value",
+        "name": "distro_name",
+        "type": "str"
+      },
+      {
+        "default": "mike",
+        "defaultKind": "value",
+        "name": "username",
+        "type": "str"
+      },
+      {
+        "default": "arm64",
+        "defaultKind": "value",
+        "name": "target_arch",
+        "type": "str"
+      },
+      {
+        "default": "/data/data/com.termux/files/home",
+        "defaultKind": "value",
+        "name": "termux_home",
+        "type": "Path"
+      },
+      {
+        "default": "/data/data/com.termux/files/usr",
+        "defaultKind": "value",
+        "name": "termux_prefix",
+        "type": "Path"
+      },
+      {
+        "default": "/sdcard/.logs/chrootctl.log",
+        "defaultKind": "value",
+        "name": "log_file",
+        "type": "Path"
+      },
+      {
+        "default": "_default_database_path",
+        "defaultKind": "factory",
+        "name": "database_path",
+        "type": "Path"
+      },
+      {
+        "default": "/usr/bin/zsh",
+        "defaultKind": "value",
+        "name": "shell_path",
+        "type": "str"
+      },
+      {
+        "default": true,
+        "defaultKind": "value",
+        "name": "mount_data_with_dev_suid",
+        "type": "bool"
+      },
+      {
+        "default": "256M",
+        "defaultKind": "value",
+        "name": "dev_shm_size",
+        "type": "str"
+      },
+      {
+        "default": "_default_media_mounts",
+        "defaultKind": "factory",
+        "name": "media_mounts",
+        "type": "tuple[BindMount, ...]"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "extra_bind_mounts",
+        "type": "tuple[BindMount, ...]"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "extra_packages",
+        "type": "tuple[str, ...]"
+      },
+      {
+        "default": "en_US.UTF-8",
+        "defaultKind": "value",
+        "name": "locale",
+        "type": "str"
+      },
+      {
+        "default": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ],
+        "defaultKind": "value",
+        "name": "dns_servers",
+        "type": "tuple[str, ...]"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "post_install_hooks",
+        "type": "tuple[str, ...]"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "install_profile",
+        "type": "str | None"
+      },
+      {
+        "default": "_default_snapshot_dir",
+        "defaultKind": "factory",
+        "name": "snapshot_dir",
+        "type": "Path"
+      },
+      {
+        "default": false,
+        "defaultKind": "value",
+        "name": "snapshot_before_destructive",
+        "type": "bool"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "tool_manifest_dirs",
+        "type": "tuple[Path, ...]"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "tool_script_dirs",
+        "type": "tuple[Path, ...]"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "addon_manifest_dirs",
+        "type": "tuple[Path, ...]"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "addon_script_dirs",
+        "type": "tuple[Path, ...]"
+      },
+      {
+        "default": "<lambda>",
+        "defaultKind": "factory",
+        "name": "service_dirs",
+        "type": "tuple[Path, ...]"
+      },
+      {
+        "default": "<lambda>",
+        "defaultKind": "factory",
+        "name": "service_state_dir",
+        "type": "Path"
+      },
+      {
+        "default": "<lambda>",
+        "defaultKind": "factory",
+        "name": "service_log_dir",
+        "type": "Path"
+      },
+      {
+        "default": "dict",
+        "defaultKind": "factory",
+        "name": "chroot_overrides",
+        "type": "dict[str, dict[str, Any]]"
+      }
+    ],
+    "legacyTermuxHome": "/data/data/com.termux/files/home"
+  },
+  "contractSchemaVersion": 1,
+  "operations": {
+    "activeStates": [
+      "cancelling",
+      "queued",
+      "running"
+    ],
+    "cancelPattern": "<operationId>.cancel",
+    "eventPattern": "<operationId>.events.jsonl",
+    "jsonFields": [
+      "schemaVersion",
+      "operationId",
+      "kind",
+      "title",
+      "state",
+      "targetName",
+      "parentOperationId",
+      "createdAt",
+      "startedAt",
+      "finishedAt",
+      "phase",
+      "progressPercent",
+      "progressText",
+      "pid",
+      "processGroupId",
+      "processStartTime",
+      "processBootId",
+      "childProcesses",
+      "request",
+      "resultPayload",
+      "error",
+      "errorCode",
+      "warnings",
+      "nextSteps",
+      "retry",
+      "logPath",
+      "lockKey",
+      "progressDetail",
+      "progressEvents",
+      "eventSequence",
+      "corrupt",
+      "repairNeeded",
+      "repairReason",
+      "complete"
+    ],
+    "recordFields": [
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "operation_id",
+        "type": "str"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "kind",
+        "type": "str"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "title",
+        "type": "str"
+      },
+      {
+        "default": "queued",
+        "defaultKind": "value",
+        "name": "state",
+        "type": "str"
+      },
+      {
+        "default": 2,
+        "defaultKind": "value",
+        "name": "schema_version",
+        "type": "int"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "target_name",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "parent_operation_id",
+        "type": "str | None"
+      },
+      {
+        "default": "time",
+        "defaultKind": "factory",
+        "name": "created_at",
+        "type": "float"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "started_at",
+        "type": "float | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "finished_at",
+        "type": "float | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "phase",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "progress_percent",
+        "type": "int | None"
+      },
+      {
+        "default": "Queued",
+        "defaultKind": "value",
+        "name": "progress_text",
+        "type": "str"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "pid",
+        "type": "int | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "process_group_id",
+        "type": "int | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "process_start_time",
+        "type": "int | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "process_boot_id",
+        "type": "str | None"
+      },
+      {
+        "default": "list",
+        "defaultKind": "factory",
+        "name": "child_processes",
+        "type": "list[dict[str, Any]]"
+      },
+      {
+        "default": "dict",
+        "defaultKind": "factory",
+        "name": "request",
+        "type": "dict[str, Any]"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "result_payload",
+        "type": "Any"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "error",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "error_code",
+        "type": "str | None"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "warnings",
+        "type": "tuple[str, ...]"
+      },
+      {
+        "default": [],
+        "defaultKind": "value",
+        "name": "next_steps",
+        "type": "tuple[str, ...]"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "retry",
+        "type": "dict[str, Any] | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "log_path",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "lock_key",
+        "type": "str | None"
+      },
+      {
+        "default": "dict",
+        "defaultKind": "factory",
+        "name": "progress_detail",
+        "type": "dict[str, Any]"
+      },
+      {
+        "default": "list",
+        "defaultKind": "factory",
+        "name": "progress_events",
+        "type": "list[dict[str, Any]]"
+      },
+      {
+        "default": 0,
+        "defaultKind": "value",
+        "name": "event_sequence",
+        "type": "int"
+      },
+      {
+        "default": false,
+        "defaultKind": "value",
+        "name": "corrupt",
+        "type": "bool"
+      },
+      {
+        "default": false,
+        "defaultKind": "value",
+        "name": "repair_needed",
+        "type": "bool"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "name": "repair_reason",
+        "type": "str | None"
+      }
+    ],
+    "recordPattern": "<operationId>.json",
+    "schemaVersion": 2,
+    "terminalStates": [
+      "blocked",
+      "cancelled",
+      "failed",
+      "interrupted",
+      "succeeded"
+    ]
+  },
+  "sqlite": {
+    "databaseBasename": "chroots.sqlite3",
+    "pragmas": {
+      "busy_timeout": 5000,
+      "connectTimeoutSeconds": 5.0,
+      "foreign_keys": "ON",
+      "journal_mode": "WAL",
+      "synchronous": "FULL"
+    },
+    "schemaSql": "CREATE TABLE IF NOT EXISTS chroots (\n    name TEXT PRIMARY KEY,\n    distro TEXT NOT NULL,\n    path TEXT NOT NULL,\n    arch TEXT,\n    release_name TEXT,\n    version TEXT,\n    phase TEXT NOT NULL,\n    installed INTEGER NOT NULL DEFAULT 0,\n    metadata_json TEXT NOT NULL DEFAULT '{}',\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n);\n\nCREATE TRIGGER IF NOT EXISTS chroots_updated_at\nAFTER UPDATE ON chroots\nFOR EACH ROW\nBEGIN\n    UPDATE chroots SET updated_at = CURRENT_TIMESTAMP WHERE name = OLD.name;\nEND;\n\n\nCREATE TABLE IF NOT EXISTS snapshots (\n    snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,\n    name TEXT NOT NULL,\n    chroot_name TEXT NOT NULL,\n    path TEXT NOT NULL,\n    kind TEXT NOT NULL DEFAULT 'copy',\n    note TEXT NOT NULL DEFAULT '',\n    size_bytes INTEGER NOT NULL DEFAULT 0,\n    metadata_json TEXT NOT NULL DEFAULT '{}',\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    UNIQUE(chroot_name, name),\n    FOREIGN KEY(chroot_name) REFERENCES chroots(name) ON UPDATE CASCADE ON DELETE CASCADE\n);\n\nCREATE TABLE IF NOT EXISTS events (\n    event_id INTEGER PRIMARY KEY AUTOINCREMENT,\n    event_type TEXT NOT NULL,\n    actor TEXT NOT NULL,\n    target TEXT NOT NULL DEFAULT '',\n    result TEXT NOT NULL DEFAULT 'ok',\n    message TEXT NOT NULL DEFAULT '',\n    metadata_json TEXT NOT NULL DEFAULT '{}',\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n);\n\nCREATE TABLE IF NOT EXISTS fs_mutations (\n    mutation_id TEXT PRIMARY KEY,\n    kind TEXT NOT NULL,\n    target TEXT NOT NULL DEFAULT '',\n    source_path TEXT NOT NULL DEFAULT '',\n    destination_path TEXT NOT NULL DEFAULT '',\n    state TEXT NOT NULL,\n    detail_json TEXT NOT NULL DEFAULT '{}',\n    created_at REAL NOT NULL,\n    updated_at REAL NOT NULL\n);\nCREATE INDEX IF NOT EXISTS idx_fs_mutations_state ON fs_mutations(state, updated_at);\n\nCREATE TABLE IF NOT EXISTS artifacts (\n    artifact_id TEXT PRIMARY KEY,\n    kind TEXT NOT NULL,\n    path TEXT NOT NULL UNIQUE,\n    target TEXT NOT NULL DEFAULT '',\n    size_bytes INTEGER NOT NULL DEFAULT 0,\n    created_at REAL NOT NULL,\n    expires_at REAL,\n    metadata_json TEXT NOT NULL DEFAULT '{}'\n);\nCREATE INDEX IF NOT EXISTS idx_artifacts_expires ON artifacts(expires_at);\n"
+  }
+}
