@@ -1,0 +1,899 @@
+{
+  "config": {
+    "customPayload": {
+      "chroot_overrides": {
+        "work": {
+          "extra_packages": [
+            "git-lfs"
+          ],
+          "install_profile": "dev"
+        }
+      },
+      "dev_shm_size": "64M",
+      "dns_servers": [
+        "9.9.9.9"
+      ],
+      "extra_bind_mounts": [
+        {
+          "enabled": true,
+          "source": "/srv/cache",
+          "target": "var/cache/shared"
+        }
+      ],
+      "extra_packages": [
+        "htop"
+      ],
+      "locale": "pt_BR.UTF-8",
+      "media_mounts": {
+        "/storage/shared": {
+          "read_only": true,
+          "target": "mnt/shared"
+        }
+      },
+      "mount_data_with_dev_suid": false,
+      "post_install_hooks": [
+        "echo done"
+      ],
+      "repositories": {
+        "addon_scripts": [
+          "/tmp/repo/addons/scripts"
+        ],
+        "tool_manifests": [
+          "/tmp/repo/tools"
+        ]
+      }
+    },
+    "customResolved": {
+      "addon_manifest_dirs": [],
+      "addon_script_dirs": [
+        "/tmp/repo/addons/scripts"
+      ],
+      "chroot_overrides": {
+        "work": {
+          "extra_packages": [
+            "git-lfs"
+          ],
+          "install_profile": "dev"
+        }
+      },
+      "chroot_root": "/data/local/tmp",
+      "database_path": "/tmp/base/chroots.sqlite3",
+      "derived": {
+        "chroot_base": "/data/local/tmp/ubuntu",
+        "termux_home_in_chroot": "/data/local/tmp/ubuntu/home/termux",
+        "user_home_in_chroot": "/data/local/tmp/ubuntu/home/mike"
+      },
+      "dev_shm_size": "64M",
+      "distro_name": "ubuntu",
+      "dns_servers": [
+        "9.9.9.9"
+      ],
+      "extra_bind_mounts": [
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/srv/cache",
+          "target": "var/cache/shared"
+        }
+      ],
+      "extra_packages": [
+        "htop"
+      ],
+      "install_profile": null,
+      "locale": "pt_BR.UTF-8",
+      "log_file": "/sdcard/.logs/chrootctl.log",
+      "media_mounts": [
+        {
+          "enabled": true,
+          "read_only": true,
+          "source": "/storage/shared",
+          "target": "mnt/shared"
+        }
+      ],
+      "mount_data_with_dev_suid": false,
+      "post_install_hooks": [
+        "echo done"
+      ],
+      "service_dirs": [
+        "/tmp/base/services"
+      ],
+      "service_log_dir": "/tmp/base/logs/services",
+      "service_state_dir": "/tmp/base/run/services",
+      "shell_path": "/usr/bin/zsh",
+      "snapshot_before_destructive": false,
+      "snapshot_dir": "/tmp/base/snapshots",
+      "target_arch": "arm64",
+      "termux_home": "/data/data/com.termux/files/home",
+      "termux_prefix": "/data/data/com.termux/files/usr",
+      "tool_manifest_dirs": [
+        "/tmp/repo/tools"
+      ],
+      "tool_script_dirs": [],
+      "username": "mike"
+    },
+    "defaultAndroid": {
+      "addon_manifest_dirs": [],
+      "addon_script_dirs": [],
+      "chroot_overrides": {},
+      "chroot_root": "/data/local/tmp",
+      "database_path": "/data/adb/chrootctl/chroots.sqlite3",
+      "default_config_path": "/data/adb/chrootctl/config.json",
+      "derived": {
+        "chroot_base": "/data/local/tmp/ubuntu",
+        "termux_home_in_chroot": "/data/local/tmp/ubuntu/home/termux",
+        "user_home_in_chroot": "/data/local/tmp/ubuntu/home/mike"
+      },
+      "dev_shm_size": "256M",
+      "distro_name": "ubuntu",
+      "dns_servers": [
+        "8.8.8.8",
+        "1.1.1.1"
+      ],
+      "extra_bind_mounts": [],
+      "extra_packages": [],
+      "install_profile": null,
+      "locale": "en_US.UTF-8",
+      "log_file": "/sdcard/.logs/chrootctl.log",
+      "media_mounts": [
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Documents",
+          "target": "home/mike/Documents"
+        },
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Download",
+          "target": "home/mike/Downloads"
+        },
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Pictures",
+          "target": "home/mike/Pictures"
+        },
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Movies",
+          "target": "home/mike/Videos"
+        }
+      ],
+      "mount_data_with_dev_suid": true,
+      "post_install_hooks": [],
+      "service_dirs": [
+        "/data/adb/chrootctl/services"
+      ],
+      "service_log_dir": "/data/adb/chrootctl/logs/services",
+      "service_state_dir": "/data/adb/chrootctl/run/services",
+      "shell_path": "/usr/bin/zsh",
+      "snapshot_before_destructive": false,
+      "snapshot_dir": "/data/adb/chrootctl/snapshots",
+      "target_arch": "arm64",
+      "termux_home": "/data/data/com.termux/files/home",
+      "termux_prefix": "/data/data/com.termux/files/usr",
+      "tool_manifest_dirs": [],
+      "tool_script_dirs": [],
+      "username": "mike"
+    },
+    "defaultNonAndroid": {
+      "addon_manifest_dirs": [],
+      "addon_script_dirs": [],
+      "chroot_overrides": {},
+      "chroot_root": "/data/local/tmp",
+      "database_path": "/home/tester/.local/share/chrootctl/chroots.sqlite3",
+      "default_config_path": "/home/tester/.config/chrootctl/config.json",
+      "derived": {
+        "chroot_base": "/data/local/tmp/ubuntu",
+        "termux_home_in_chroot": "/data/local/tmp/ubuntu/home/termux",
+        "user_home_in_chroot": "/data/local/tmp/ubuntu/home/mike"
+      },
+      "dev_shm_size": "256M",
+      "distro_name": "ubuntu",
+      "dns_servers": [
+        "8.8.8.8",
+        "1.1.1.1"
+      ],
+      "extra_bind_mounts": [],
+      "extra_packages": [],
+      "install_profile": null,
+      "locale": "en_US.UTF-8",
+      "log_file": "/sdcard/.logs/chrootctl.log",
+      "media_mounts": [
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Documents",
+          "target": "home/mike/Documents"
+        },
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Download",
+          "target": "home/mike/Downloads"
+        },
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Pictures",
+          "target": "home/mike/Pictures"
+        },
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/sdcard/Movies",
+          "target": "home/mike/Videos"
+        }
+      ],
+      "mount_data_with_dev_suid": true,
+      "post_install_hooks": [],
+      "service_dirs": [
+        "/home/tester/.local/share/chrootctl/services"
+      ],
+      "service_log_dir": "/home/tester/.local/share/chrootctl/logs/services",
+      "service_state_dir": "/home/tester/.local/share/chrootctl/run/services",
+      "shell_path": "/usr/bin/zsh",
+      "snapshot_before_destructive": false,
+      "snapshot_dir": "/home/tester/.local/share/chrootctl/snapshots",
+      "target_arch": "arm64",
+      "termux_home": "/data/data/com.termux/files/home",
+      "termux_prefix": "/data/data/com.termux/files/usr",
+      "tool_manifest_dirs": [],
+      "tool_script_dirs": [],
+      "username": "mike"
+    },
+    "shellResolution": {
+      "bashFallback": "/bin/bash",
+      "configured": "/usr/bin/zsh",
+      "configuredFallback": "/usr/bin/zsh"
+    },
+    "workResolved": {
+      "addon_manifest_dirs": [],
+      "addon_script_dirs": [
+        "/tmp/repo/addons/scripts"
+      ],
+      "chroot_overrides": {
+        "work": {
+          "extra_packages": [
+            "git-lfs"
+          ],
+          "install_profile": "dev"
+        }
+      },
+      "chroot_root": "/data/local/tmp",
+      "database_path": "/tmp/base/chroots.sqlite3",
+      "derived": {
+        "chroot_base": "/data/local/tmp/work",
+        "termux_home_in_chroot": "/data/local/tmp/work/home/termux",
+        "user_home_in_chroot": "/data/local/tmp/work/home/mike"
+      },
+      "dev_shm_size": "64M",
+      "distro_name": "work",
+      "dns_servers": [
+        "9.9.9.9"
+      ],
+      "extra_bind_mounts": [
+        {
+          "enabled": true,
+          "read_only": false,
+          "source": "/srv/cache",
+          "target": "var/cache/shared"
+        }
+      ],
+      "extra_packages": [
+        "git-lfs"
+      ],
+      "install_profile": "dev",
+      "locale": "pt_BR.UTF-8",
+      "log_file": "/sdcard/.logs/chrootctl.log",
+      "media_mounts": [
+        {
+          "enabled": true,
+          "read_only": true,
+          "source": "/storage/shared",
+          "target": "mnt/shared"
+        }
+      ],
+      "mount_data_with_dev_suid": false,
+      "post_install_hooks": [
+        "echo done"
+      ],
+      "service_dirs": [
+        "/tmp/base/services"
+      ],
+      "service_log_dir": "/tmp/base/logs/services",
+      "service_state_dir": "/tmp/base/run/services",
+      "shell_path": "/usr/bin/zsh",
+      "snapshot_before_destructive": false,
+      "snapshot_dir": "/tmp/base/snapshots",
+      "target_arch": "arm64",
+      "termux_home": "/data/data/com.termux/files/home",
+      "termux_prefix": "/data/data/com.termux/files/usr",
+      "tool_manifest_dirs": [
+        "/tmp/repo/tools"
+      ],
+      "tool_script_dirs": [],
+      "username": "mike"
+    }
+  },
+  "contractSchemaVersion": 1,
+  "errors": {
+    "appError": {
+      "actions": [
+        {
+          "command": null,
+          "href": "https://example.invalid/docs",
+          "label": "Open docs"
+        }
+      ],
+      "code": "config_invalid",
+      "details": {
+        "field": "username"
+      },
+      "hints": [
+        "Use a lowercase username."
+      ],
+      "message": "The configuration is invalid.",
+      "retryable": false,
+      "title": "Invalid configuration"
+    },
+    "http404": {
+      "actions": [],
+      "code": "http_404",
+      "details": {},
+      "hints": [],
+      "message": "The requested resource was not found.",
+      "retryable": false,
+      "title": "Not found"
+    },
+    "http422": {
+      "actions": [
+        {
+          "command": "chrootctl status",
+          "href": null,
+          "label": "Retry"
+        }
+      ],
+      "code": "bad_request",
+      "details": {
+        "field": "name"
+      },
+      "hints": [
+        "Pick another name."
+      ],
+      "message": "bad payload",
+      "retryable": true,
+      "title": "Validation error"
+    }
+  },
+  "logging": {
+    "handlers": [
+      {
+        "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
+        "level": "INFO",
+        "type": "StreamHandler"
+      },
+      {
+        "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
+        "level": "DEBUG",
+        "type": "FileHandler"
+      }
+    ],
+    "loggerLevel": "DEBUG",
+    "loggerName": "chrootctl",
+    "propagate": false,
+    "verboseConsoleLevel": "DEBUG"
+  },
+  "models": {
+    "fieldNames": {
+      "AppBuildResult": [
+        "artifact_name",
+        "artifact_path",
+        "output_dir",
+        "startup_targets"
+      ],
+      "AuditEvent": [
+        "event_id",
+        "event_type",
+        "actor",
+        "target",
+        "result",
+        "message",
+        "created_at",
+        "metadata"
+      ],
+      "CatalogApplyResult": [
+        "kind",
+        "name",
+        "distro",
+        "categories",
+        "applied"
+      ],
+      "CheckRow": [
+        "check",
+        "result",
+        "detail",
+        "next"
+      ],
+      "ChrootArchiveInspection": [
+        "archive",
+        "source_name",
+        "suggested_name",
+        "path_name",
+        "distro",
+        "arch",
+        "release_name",
+        "version",
+        "phase",
+        "installed",
+        "metadata",
+        "size_bytes",
+        "extracted_size_bytes",
+        "created_at",
+        "checksum",
+        "checksum_path",
+        "checksum_verified",
+        "encrypted",
+        "target_exists",
+        "conflict_strategy_options"
+      ],
+      "ChrootDetails": [
+        "name",
+        "distro",
+        "path",
+        "release_name",
+        "version",
+        "phase",
+        "installed",
+        "arch",
+        "created_at",
+        "updated_at",
+        "configured_mounts",
+        "extra_packages",
+        "locale",
+        "metadata"
+      ],
+      "ChrootExportResult": [
+        "name",
+        "archive",
+        "arch",
+        "checksum",
+        "checksum_path",
+        "encrypted"
+      ],
+      "ChrootImportResult": [
+        "name",
+        "archive",
+        "arch",
+        "path",
+        "checksum_verified",
+        "checksum_path",
+        "conflict_strategy",
+        "encrypted",
+        "validation_ok",
+        "validation_summary",
+        "post_import_action"
+      ],
+      "ChrootRecord": [
+        "name",
+        "distro",
+        "path",
+        "arch",
+        "release_name",
+        "version",
+        "phase",
+        "installed",
+        "created_at",
+        "updated_at",
+        "metadata"
+      ],
+      "ChrootRemovalResult": [
+        "name",
+        "removed",
+        "unmounted_success",
+        "unmounted_failed"
+      ],
+      "ChrootRenameResult": [
+        "old_name",
+        "new_name",
+        "renamed"
+      ],
+      "ChrootUserCreateResult": [
+        "username",
+        "shell",
+        "sudo",
+        "created"
+      ],
+      "ChrootUserDetails": [
+        "username",
+        "uid",
+        "gid",
+        "home",
+        "shell",
+        "sudo"
+      ],
+      "ChrootUserPasswordResult": [
+        "username",
+        "updated"
+      ],
+      "ChrootUserRemoveResult": [
+        "username",
+        "home_deleted",
+        "removed"
+      ],
+      "ChrootUserShellResult": [
+        "username",
+        "shell",
+        "updated"
+      ],
+      "ChrootUserSudoResult": [
+        "username",
+        "enabled"
+      ],
+      "DashboardChrootCard": [
+        "name",
+        "distro",
+        "phase",
+        "installed",
+        "running",
+        "user_count",
+        "doctor_warnings",
+        "doctor_failures"
+      ],
+      "DashboardSummary": [
+        "target_name",
+        "chroots",
+        "status_checks",
+        "doctor_checks",
+        "logs"
+      ],
+      "InstallAlreadyCompleteResult": [
+        "installed",
+        "status",
+        "phase"
+      ],
+      "InstallBootstrapResult": [
+        "username",
+        "profile",
+        "phase"
+      ],
+      "InstallDesktopResult": [
+        "desktop",
+        "snapshot",
+        "profile",
+        "phase"
+      ],
+      "InstallExtractResult": [
+        "version",
+        "release",
+        "tarball",
+        "phase"
+      ],
+      "InstallFinalizeResult": [
+        "installed",
+        "uid_sync",
+        "snapshot",
+        "status",
+        "phase"
+      ],
+      "InstallRequest": [
+        "distro",
+        "name",
+        "username",
+        "arch",
+        "preset",
+        "profile",
+        "desktop",
+        "release",
+        "version",
+        "mirror",
+        "phase",
+        "force_phase",
+        "resume",
+        "repair",
+        "tools",
+        "addons"
+      ],
+      "InstallRunResult": [
+        "chroot_name",
+        "distro",
+        "phases",
+        "tool_results",
+        "addon_results",
+        "next_steps"
+      ],
+      "InstallWizardDefaults": [
+        "distro",
+        "name",
+        "username",
+        "preset",
+        "profile",
+        "desktop",
+        "release",
+        "version",
+        "tools",
+        "addons"
+      ],
+      "LogEntry": [
+        "line",
+        "level",
+        "links"
+      ],
+      "LogLink": [
+        "label",
+        "href"
+      ],
+      "LogSnapshot": [
+        "log_file",
+        "level",
+        "lines",
+        "follow",
+        "target_name",
+        "entries",
+        "related_links"
+      ],
+      "OperationResult": [
+        "success",
+        "failed",
+        "skipped",
+        "errors"
+      ],
+      "PackageDiffResult": [
+        "left",
+        "right",
+        "left_count",
+        "right_count",
+        "only_left",
+        "only_right",
+        "common_count"
+      ],
+      "RegistryRepairResult": [
+        "scanned_paths",
+        "missing_records",
+        "missing_paths",
+        "mismatched_paths",
+        "repaired_records",
+        "removed_records",
+        "preview",
+        "next_steps"
+      ],
+      "SessionActionResult": [
+        "action",
+        "target",
+        "exit_code",
+        "next_steps"
+      ],
+      "SnapshotActionResult": [
+        "chroot_name",
+        "snapshot_name",
+        "path",
+        "action",
+        "created_at",
+        "exported_archive",
+        "next_steps"
+      ],
+      "SnapshotRecord": [
+        "snapshot_id",
+        "name",
+        "chroot_name",
+        "path",
+        "kind",
+        "created_at",
+        "note",
+        "size_bytes",
+        "metadata"
+      ],
+      "SupportBundleResult": [
+        "archive",
+        "included"
+      ],
+      "UpgradeResult": [
+        "status",
+        "snapshot",
+        "next_steps"
+      ],
+      "UserIdStatus": [
+        "username",
+        "host_uid",
+        "host_gid",
+        "chroot_uid",
+        "chroot_gid",
+        "passwd_exists",
+        "group_exists"
+      ],
+      "UserIdSyncResult": [
+        "username",
+        "uid",
+        "gid",
+        "ownership_fixed"
+      ]
+    },
+    "samples": {
+      "appBuild": {
+        "display": {
+          "artifact_name": "module.zip",
+          "artifact_path": "/tmp/module.zip",
+          "output_dir": "/tmp",
+          "startup_targets": "androidos"
+        },
+        "nextSteps": [
+          "Download artifact: module.zip"
+        ]
+      },
+      "logSnapshot": {
+        "display": {
+          "entries": "{'line': 'line one', 'level': 'INFO', 'links': ''},{'line': 'line two', 'level': 'WARN', 'links': ''}",
+          "follow": "no",
+          "level": "INFO",
+          "lines": "fallback",
+          "log_file": "/tmp/chrootctl.log",
+          "related_links": "",
+          "target_name": ""
+        },
+        "text": "line one\nline two"
+      },
+      "operationResult": {
+        "display": {
+          "failed": "1",
+          "skipped": "1",
+          "success": "1"
+        },
+        "state": {
+          "errors": [
+            "boom"
+          ],
+          "failed": 1,
+          "skipped": 1,
+          "success": 1
+        }
+      },
+      "sessionAction": {
+        "display": {
+          "action": "restart",
+          "exit_code": "0",
+          "next_steps": "inspect logs",
+          "success": "yes",
+          "target": "androidos"
+        },
+        "success": true
+      }
+    }
+  },
+  "validation": {
+    "cases": [
+      {
+        "name": "validate_chroot_name",
+        "ok": true,
+        "value": "androidos"
+      },
+      {
+        "error": "chroot name must be a safe basename",
+        "errorType": "ValueError",
+        "name": "validate_chroot_name_invalid_path",
+        "ok": false
+      },
+      {
+        "error": "chroot name must be a string",
+        "errorType": "ValueError",
+        "name": "validate_chroot_name_non_string",
+        "ok": false
+      },
+      {
+        "name": "validate_snapshot_name",
+        "ok": true,
+        "value": "pre-upgrade_1"
+      },
+      {
+        "name": "validate_catalog_name",
+        "ok": true,
+        "value": "desktop.dev"
+      },
+      {
+        "name": "validate_service_name",
+        "ok": true,
+        "value": "sshd@work.service:unit"
+      },
+      {
+        "name": "validate_username",
+        "ok": true,
+        "value": "mike"
+      },
+      {
+        "error": "invalid username: 'Mike'",
+        "errorType": "ValueError",
+        "name": "validate_username_invalid",
+        "ok": false
+      },
+      {
+        "name": "strict_bool",
+        "ok": true,
+        "value": false
+      },
+      {
+        "error": "enabled must be a JSON boolean",
+        "errorType": "ValueError",
+        "name": "strict_bool_integer",
+        "ok": false
+      },
+      {
+        "name": "bounded_int",
+        "ok": true,
+        "value": 3
+      },
+      {
+        "error": "limit must be an integer",
+        "errorType": "ValueError",
+        "name": "bounded_int_bool",
+        "ok": false
+      },
+      {
+        "error": "limit must be between 1 and 5",
+        "errorType": "ValueError",
+        "name": "bounded_int_range",
+        "ok": false
+      },
+      {
+        "name": "strict_string_list",
+        "ok": true,
+        "value": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "error": "items[1] must be a string",
+        "errorType": "ValueError",
+        "name": "strict_string_list_invalid",
+        "ok": false
+      },
+      {
+        "name": "unique_catalog_names",
+        "ok": true,
+        "value": [
+          "one",
+          "two"
+        ]
+      },
+      {
+        "error": "duplicate names item: one",
+        "errorType": "ValueError",
+        "name": "unique_catalog_names_duplicate",
+        "ok": false
+      },
+      {
+        "name": "relative_path",
+        "ok": true,
+        "value": "home/mike"
+      },
+      {
+        "name": "relative_path_normalized_input",
+        "ok": true,
+        "value": "a/./b"
+      },
+      {
+        "error": "path must not contain empty, current, or parent path segments",
+        "errorType": "ValueError",
+        "name": "relative_path_parent",
+        "ok": false
+      },
+      {
+        "error": "path must be relative to the chroot root",
+        "errorType": "ValueError",
+        "name": "relative_path_absolute",
+        "ok": false
+      },
+      {
+        "name": "safe_archive_name",
+        "ok": true,
+        "value": "backup.tar.zst"
+      },
+      {
+        "error": "archive must be a single-line value",
+        "errorType": "ValueError",
+        "name": "safe_archive_name_multiline",
+        "ok": false
+      }
+    ]
+  }
+}
