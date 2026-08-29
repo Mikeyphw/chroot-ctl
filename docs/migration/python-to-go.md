@@ -230,10 +230,13 @@ archives, validation, cross-architecture diagnostics, and release artifacts. `bu
 Python/Nuitka. Legacy Python test/development commands remain only for GO16 differential coverage
 and GO17 removal.
 
-### GO16 — Test-suite conversion
+### GO16 — Test-suite conversion ✅
 
-Map every meaningful Python test to Go/Kotlin or an explicitly retired contract.
-Keep differential tests while both implementations exist.
+The 82-file legacy Python test inventory is frozen in `migration/go16-test-map.json`. Every
+file maps to surviving Go/Kotlin tests or an explicitly retired frozen contract, and
+`internal/testseal` makes unmapped coverage a validation failure. `repoctl differential`
+is the final transition-only Python/Go oracle: it verifies byte-identical zsh completion
+and deterministic frozen-contract parity while both implementations still exist.
 
 ### GO17 — Python purge + final release seal
 

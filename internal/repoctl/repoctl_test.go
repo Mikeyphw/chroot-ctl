@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"chrootctl/internal/testseal"
+
 	chmodule "chrootctl/internal/module"
 )
 
@@ -67,4 +69,14 @@ func TestBuildSourceIsGoNativeAndDoesNotFollowSymlinks(t *testing.T) {
 		t.Fatal("go.mod missing")
 	}
 	_ = root
+}
+
+func TestGO16LegacyTestMapIsComplete(t *testing.T) {
+	root, e := repoRoot()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = testseal.Validate(root, true); e != nil {
+		t.Fatal(e)
+	}
 }

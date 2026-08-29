@@ -21,6 +21,8 @@ import (
 
 	chmodule "chrootctl/internal/module"
 	chsystem "chrootctl/internal/system"
+
+	"chrootctl/internal/testseal"
 )
 
 const defaultNDKVersion = "29.0.14206865"
@@ -452,6 +454,9 @@ func BuildSource(opts SourceOptions) (string, error) {
 func Validate() error {
 	root, e := repoRoot()
 	if e != nil {
+		return e
+	}
+	if e = testseal.Validate(root, true); e != nil {
 		return e
 	}
 	if e = run(root, nil, "go", "test", "-p", "2", "./..."); e != nil {

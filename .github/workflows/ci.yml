@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  python:
+  legacy-differential:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +24,10 @@ jobs:
         run: mypy src
       - name: Go migration contract drift
         run: PYTHONPATH=src python scripts/export-go-migration-contracts.py --check
-      - name: Pytest
+      - name: Legacy Python regression oracle
         run: pytest -q
+      - name: GO16 Python-Go differential
+        run: go run ./cmd/repoctl differential
 
   go-native:
     runs-on: ubuntu-latest

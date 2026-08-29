@@ -10,7 +10,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|release|doctor-cross-arch> [options]")
+	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|differential|release|doctor-cross-arch> [options]")
 }
 func fail(err error) { fmt.Fprintln(os.Stderr, "repoctl:", err); os.Exit(1) }
 func main() {
@@ -66,6 +66,10 @@ func main() {
 		fmt.Println(path)
 	case "validate":
 		if e := repoctl.Validate(); e != nil {
+			fail(e)
+		}
+	case "differential":
+		if e := repoctl.Differential(); e != nil {
 			fail(e)
 		}
 	case "release":

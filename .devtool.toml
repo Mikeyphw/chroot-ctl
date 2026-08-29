@@ -1,7 +1,7 @@
 # chroot-ctl repository configuration for Devtool.
 #
 # Production backend: Go chrootctl rooted at ./cmd/chrootctl.
-# Legacy Python target remains only for differential tests until GO16/GO17.
+# Legacy Python target remains only for the GO16 differential oracle and is deleted by GO17.
 # Module packaging is owned by cmd/repoctl; build.sh is a thin Go wrapper.
 # Android companion target: ./android.
 

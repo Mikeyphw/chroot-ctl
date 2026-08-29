@@ -1,0 +1,730 @@
+{
+  "schemaVersion": 1,
+  "sourceSuite": "legacy-python",
+  "sourceCount": 82,
+  "entries": [
+    {
+      "source": "tests/test_android_overlay03_04_completion_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_overlay03_04_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase00_04.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase05_07.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase08_10.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase11_13.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase14_15.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase16_17.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase18_19.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase20_21.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase22.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase23.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase24.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase25.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase26.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase27.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase28.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase29.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase29c.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase29d.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase29f.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase30_31.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase32.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase33.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase34.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase34b.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase34c.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase34d.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase35_36.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase37.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase38.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase39_40.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_android_phase41_42.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_bridge_cli_dry_run_state.py",
+      "disposition": "go",
+      "targets": [
+        "internal/bridge/bridge_test.go"
+      ],
+      "rationale": "Bridge request preflight/dry-run state behavior is covered by the native bridge tests."
+    },
+    {
+      "source": "tests/test_catalog.py",
+      "disposition": "go",
+      "targets": [
+        "internal/catalog/catalog_test.go"
+      ],
+      "rationale": "Catalog parsing, safety and apply behavior moved to internal/catalog."
+    },
+    {
+      "source": "tests/test_chroot_users.py",
+      "disposition": "go",
+      "targets": [
+        "internal/users/users_test.go"
+      ],
+      "rationale": "User lifecycle and identity behavior moved to internal/users."
+    },
+    {
+      "source": "tests/test_cli.py",
+      "disposition": "go",
+      "targets": [
+        "internal/cli/cli_test.go"
+      ],
+      "rationale": "Human CLI parsing/dispatch moved to internal/cli."
+    },
+    {
+      "source": "tests/test_cli_transfer.py",
+      "disposition": "go",
+      "targets": [
+        "internal/cli/cli_test.go",
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Transfer CLI dispatch is covered by CLI and service tests."
+    },
+    {
+      "source": "tests/test_completion.py",
+      "disposition": "go",
+      "targets": [
+        "internal/completion/completion_test.go",
+        "internal/cli/cli_test.go"
+      ],
+      "rationale": "Static/dynamic completion is native Go and contract-backed."
+    },
+    {
+      "source": "tests/test_config.py",
+      "disposition": "go",
+      "targets": [
+        "internal/config/config_test.go"
+      ],
+      "rationale": "Configuration defaults, migration and normalization moved to internal/config."
+    },
+    {
+      "source": "tests/test_controller.py",
+      "disposition": "go",
+      "targets": [
+        "internal/controller/controller_test.go"
+      ],
+      "rationale": "Controller mount/session orchestration moved to internal/controller."
+    },
+    {
+      "source": "tests/test_go02_sqlite_fixture.py",
+      "disposition": "go",
+      "targets": [
+        "internal/sqlitecompat/sqlite_cgo_test.go"
+      ],
+      "rationale": "Python\u2194Go SQLite round-trip became native SQLite compatibility tests and frozen persistence contracts."
+    },
+    {
+      "source": "tests/test_go13_compatibility_identity.py",
+      "disposition": "go",
+      "targets": [
+        "internal/contracts/contracts_test.go",
+        "internal/module/module_test.go"
+      ],
+      "rationale": "Generic backend/runtime identity is covered by contract and module tests."
+    },
+    {
+      "source": "tests/test_go14_android_go_only_runtime.py",
+      "disposition": "kotlin",
+      "targets": [
+        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/root/BridgeOutputValidatorTest.kt",
+        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/protocol/BridgeRequestTest.kt"
+      ],
+      "rationale": "Android Go-only bridge/runtime behavior is owned by Kotlin resolver/protocol tests."
+    },
+    {
+      "source": "tests/test_go15_go_native_tooling.py",
+      "disposition": "go",
+      "targets": [
+        "internal/repoctl/repoctl_test.go"
+      ],
+      "rationale": "Go-native build/release tooling is covered by internal/repoctl."
+    },
+    {
+      "source": "tests/test_go_migration_contracts.py",
+      "disposition": "go",
+      "targets": [
+        "internal/contracts/contracts_test.go"
+      ],
+      "rationale": "Frozen migration contracts are decoded and validated in Go."
+    },
+    {
+      "source": "tests/test_host_clipboard.py",
+      "disposition": "go",
+      "targets": [
+        "internal/clipboard/clipboard_test.go"
+      ],
+      "rationale": "Host/daemon clipboard behavior moved to internal/clipboard."
+    },
+    {
+      "source": "tests/test_install_service.py",
+      "disposition": "go",
+      "targets": [
+        "internal/services/services_test.go",
+        "internal/install/base_test.go"
+      ],
+      "rationale": "Install service orchestration is covered by service and installer tests."
+    },
+    {
+      "source": "tests/test_installers.py",
+      "disposition": "go",
+      "targets": [
+        "internal/install/base_test.go",
+        "internal/install/ubuntu/ubuntu_test.go",
+        "internal/install/arch/arch_test.go"
+      ],
+      "rationale": "Distro installers moved to native Go packages."
+    },
+    {
+      "source": "tests/test_interactive.py",
+      "disposition": "go",
+      "targets": [
+        "internal/system/system_test.go",
+        "internal/cli/cli_test.go"
+      ],
+      "rationale": "Interactive process/session behavior moved to system and CLI tests."
+    },
+    {
+      "source": "tests/test_magisk.py",
+      "disposition": "go",
+      "targets": [
+        "internal/module/module_test.go"
+      ],
+      "rationale": "Module tree/render/integrity behavior moved to internal/module."
+    },
+    {
+      "source": "tests/test_manage_source.py",
+      "disposition": "go",
+      "targets": [
+        "internal/repoctl/repoctl_test.go"
+      ],
+      "rationale": "Source/module/release tooling moved from manage_source.py to repoctl."
+    },
+    {
+      "source": "tests/test_module_boot.py",
+      "disposition": "go",
+      "targets": [
+        "internal/module/module_test.go",
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Module boot/runtime status is covered by module/service tests."
+    },
+    {
+      "source": "tests/test_native_module_runtime.py",
+      "disposition": "go",
+      "targets": [
+        "internal/module/module_test.go",
+        "internal/repoctl/repoctl_test.go"
+      ],
+      "rationale": "Native module runtime sealing moved to Go module/repo tooling."
+    },
+    {
+      "source": "tests/test_native_runtime.py",
+      "disposition": "go",
+      "targets": [
+        "internal/module/module_test.go",
+        "internal/repoctl/repoctl_test.go"
+      ],
+      "rationale": "Android Go runtime identity/sealing moved to Go."
+    },
+    {
+      "source": "tests/test_native_runtime_update.py",
+      "disposition": "go",
+      "targets": [
+        "internal/module/module_test.go",
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Runtime update/readiness behavior is covered by module/services."
+    },
+    {
+      "source": "tests/test_output.py",
+      "disposition": "go",
+      "targets": [
+        "internal/output/output_test.go",
+        "internal/model/models_test.go"
+      ],
+      "rationale": "Output/model presentation helpers moved to Go."
+    },
+    {
+      "source": "tests/test_overlay01_02_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay03_04_completion_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay03_04_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay05_android_state_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay06_storage_transactions_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay07_install_integrity_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay08_high_risk_features_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay09_module_runtime_packaging_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay10_support_readiness_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_overlay11_release_seal_contracts.py",
+      "disposition": "retired-contract",
+      "targets": [
+        "migration/contracts/v1/bridge.json",
+        "migration/contracts/v1/release.json"
+      ],
+      "rationale": "Historical Android/overlay source-contract gate; protocol/runtime invariants are frozen in migration contracts and covered by Kotlin/Go tests."
+    },
+    {
+      "source": "tests/test_registry.py",
+      "disposition": "go",
+      "targets": [
+        "internal/registry/registry_test.go"
+      ],
+      "rationale": "Registry schema/CRUD/transactions moved to Go."
+    },
+    {
+      "source": "tests/test_registry_repair.py",
+      "disposition": "go",
+      "targets": [
+        "internal/registry/registry_test.go",
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Registry repair is covered by registry/service tests."
+    },
+    {
+      "source": "tests/test_release_parity.py",
+      "disposition": "go",
+      "targets": [
+        "internal/contracts/contracts_test.go",
+        "internal/module/module_test.go",
+        "internal/repoctl/repoctl_test.go"
+      ],
+      "rationale": "Release identity/runtime/module parity is enforced by Go contracts and repo tooling."
+    },
+    {
+      "source": "tests/test_runtime_chroots.py",
+      "disposition": "go",
+      "targets": [
+        "internal/services/services_test.go",
+        "internal/controller/controller_test.go"
+      ],
+      "rationale": "Runtime chroot operations are service/controller behavior."
+    },
+    {
+      "source": "tests/test_runtime_clipboard.py",
+      "disposition": "go",
+      "targets": [
+        "internal/clipboard/clipboard_test.go",
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Runtime clipboard behavior moved to Go clipboard/services."
+    },
+    {
+      "source": "tests/test_runtime_commands.py",
+      "disposition": "go",
+      "targets": [
+        "internal/cli/cli_test.go",
+        "internal/system/system_test.go"
+      ],
+      "rationale": "Runtime command dispatch/execution moved to CLI/system."
+    },
+    {
+      "source": "tests/test_runtime_confirm.py",
+      "disposition": "go",
+      "targets": [
+        "internal/bridge/bridge_test.go",
+        "internal/operations/operations_test.go"
+      ],
+      "rationale": "Preview/confirmation lifecycle moved to bridge/operations."
+    },
+    {
+      "source": "tests/test_runtime_install.py",
+      "disposition": "go",
+      "targets": [
+        "internal/install/base_test.go",
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Runtime installation behavior moved to installer/services."
+    },
+    {
+      "source": "tests/test_runtime_resolution.py",
+      "disposition": "kotlin",
+      "targets": [
+        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/root/BridgeOutputValidatorTest.kt",
+        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/root/RootServiceRecoveryTest.kt"
+      ],
+      "rationale": "Android runtime resolution/recovery is owned by Kotlin root runtime tests."
+    },
+    {
+      "source": "tests/test_runtime_session.py",
+      "disposition": "go",
+      "targets": [
+        "internal/controller/controller_test.go",
+        "internal/system/system_test.go"
+      ],
+      "rationale": "Session lifecycle moved to controller/system."
+    },
+    {
+      "source": "tests/test_runtime_units.py",
+      "disposition": "go",
+      "targets": [
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Service-unit lifecycle moved to the Go service layer."
+    },
+    {
+      "source": "tests/test_runtime_users.py",
+      "disposition": "go",
+      "targets": [
+        "internal/users/users_test.go",
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Runtime user operations moved to users/services."
+    },
+    {
+      "source": "tests/test_services_layer.py",
+      "disposition": "go",
+      "targets": [
+        "internal/services/services_test.go"
+      ],
+      "rationale": "Transport-neutral backend service layer is native Go."
+    },
+    {
+      "source": "tests/test_system.py",
+      "disposition": "go",
+      "targets": [
+        "internal/system/system_test.go"
+      ],
+      "rationale": "Low-level system/process/root/mount behavior moved to Go."
+    },
+    {
+      "source": "tests/test_user_sync.py",
+      "disposition": "go",
+      "targets": [
+        "internal/users/users_test.go"
+      ],
+      "rationale": "UID/GID synchronization moved to internal/users."
+    }
+  ]
+}
