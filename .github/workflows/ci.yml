@@ -41,6 +41,14 @@ jobs:
         env:
           CHROOTCTL_GO02_REQUIRE_ANDROID: '1'
         run: bash scripts/validate-go02-sqlite-compat.sh
+      - name: Go migration tests and vet
+        run: |
+          go test ./...
+          go vet ./...
+      - name: GO10 Android bridge cgo build gate
+        env:
+          CHROOTCTL_GO10_REQUIRE_ANDROID: '1'
+        run: bash scripts/build-go10-android-bridge.sh /tmp/chrootctl-android-arm64
 
   android:
     runs-on: ubuntu-latest

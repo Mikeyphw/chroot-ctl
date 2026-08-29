@@ -179,11 +179,14 @@ preview/repair, support, lifecycle/module readiness, release evidence and servic
 unit control. GO10 and GO11 consume this layer instead of duplicating backend
 business logic in the bridge or CLI.
 
-### GO10 — Android bridge protocol-v1 parity
+### GO10 — Android bridge protocol-v1 parity — COMPLETE
 
-Port `capabilities`, `state`, `query`, `preview`, `run`, `operation`, `cancel`,
-and `reconcile`, including NDJSON streaming and all frozen error/redaction rules.
-All 86 operations must pass parity gates.
+Implemented in `internal/bridge`: strict protocol-v1 request parsing and limits,
+generated metadata for all 86 frozen operations, query/preview/run dispatch over
+the Go service layer, one-shot preview approvals, operation lifecycle/retry,
+cancel/reconcile, NDJSON streaming, redaction, and malformed-request validation
+before service/config construction. The Android build gate compiles the complete
+SQLite-backed bridge as a CGO Android/arm64 executable.
 
 ### GO11 — Human CLI parity
 

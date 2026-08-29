@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Sequence
@@ -48,15 +50,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         parsed_request: BridgeRequest | None = None
         if args.command in {"query", "preview", "run"}:
             # Fail malformed/untrusted protocol input before constructing runtime
-            # services.  Apart from being cheaper, this guarantees parse failures
+            # services. Apart from being cheaper, this guarantees parse failures,
+            # unsupported operations, mode mismatches, and unknown payload fields
             # cannot trigger registry/database/runtime side effects.
             raw_request = _read_request(args.request_file)
             parsed_request = BridgeRequest.from_json(raw_request)
+            from .registry import resolve_spec
+
+            resolve_spec(parsed_request, "operation" if args.command == "run" else args.command)
 
         from ..services import create_service_container
         from .dispatcher import BridgeDispatcher
 
-        services = create_service_container(args.config, dry_run=args.dry_run, verbose=args.verbose)
+        effective_config, dry_run_state = _effective_service_config(args.config, dry_run=args.dry_run)
+        # Keep the TemporaryDirectory owner alive for the entire dispatch. It is
+        # cleaned automatically when this invocation returns.
+        services = create_service_container(effective_config, dry_run=args.dry_run, verbose=args.verbose)
         dispatcher = BridgeDispatcher(services)
         if args.command == "state":
             response = dispatcher.state()
@@ -99,6 +108,45 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.error("unsupported bridge command")
     return 2
 
+
+
+def _effective_service_config(config_path: Path | None, *, dry_run: bool) -> tuple[Path | None, tempfile.TemporaryDirectory[str] | None]:
+    """Resolve bridge service config without requiring root for dry-run smoke checks.
+
+    Normal and explicitly configured executions preserve the real state layout. On
+    Android, the default state root lives under /data/adb and is intentionally
+    root-owned. Non-root Termux validation still needs to exercise the protocol
+    surface, so an implicit --dry-run falls back to isolated temporary state only
+    when the default state directory cannot be safely written.
+    """
+    if config_path is not None or not dry_run or _default_bridge_state_usable():
+        return config_path, None
+
+    state = tempfile.TemporaryDirectory(prefix="chrootctl-bridge-dryrun-")
+    root = Path(state.name)
+    config = root / "config.json"
+    payload = {
+        "database_path": str(root / "chroots.sqlite3"),
+        "snapshot_dir": str(root / "snapshots"),
+        "log_file": str(root / "chrootctl.log"),
+        "service_dirs": [str(root / "services")],
+        "service_state_dir": str(root / "run" / "services"),
+        "service_log_dir": str(root / "logs" / "services"),
+    }
+    config.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    return config, state
+
+
+def _default_bridge_state_usable() -> bool:
+    from ..config import ChrootConfig
+
+    root = ChrootConfig.default_config_path().parent
+    probe = root
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    # Registry initialization and WAL mode require directory write + traversal,
+    # even for read-mostly bridge queries. Never create directories just to probe.
+    return probe == root and os.access(root, os.R_OK | os.W_OK | os.X_OK)
 
 def _capabilities_response(config_path: Path | None = None) -> BridgeResponse:
     warnings: list[str] = []
