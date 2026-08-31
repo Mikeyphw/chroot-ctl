@@ -4,7 +4,7 @@
 
 The baseline contains:
 
-- `cli.json`: the 66-node human CLI tree plus the separate `chrootctl app` CLI, argument metadata, defaults, choices, and help text.
+- `cli.json`: the 68-node human CLI tree plus the separate `chrootctl app` CLI, argument metadata, defaults, choices, and help text.
 - `bridge.json`: protocol-v1 limits, redaction rules, all 86 allowlisted bridge operations, their mode/destructive/lock metadata, and accepted payload fields.
 - `persistence.json`: SQLite schema/PRAGMAs, operation journal schema and JSON fields, terminal/active states, and stable Android/legacy config locations.
 - `foundations.json`: GO03 model field names, validation outcomes/error text, deterministic config defaults/overrides, structured error payloads, and logging behavior frozen from the former implementation.

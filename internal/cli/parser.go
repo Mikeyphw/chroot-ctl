@@ -51,6 +51,44 @@ func specMap() map[string]CommandSpec {
 	return out
 }
 
+// HelpSpecForArgs returns the best command-specific help target for an invalid
+// invocation. It intentionally ignores command arguments after the longest
+// matching command path, so errors such as missing required values and
+// unexpected options can print the relevant command usage instead of only the
+// top-level placeholder.
+func HelpSpecForArgs(args []string) (CommandSpec, bool) {
+	i := 0
+	for i < len(args) {
+		switch args[i] {
+		case "--config", "--name":
+			if i+1 >= len(args) {
+				return CommandSpec{}, false
+			}
+			i += 2
+		case "--dry-run", "--verbose", "--json", "--no-sudo", "--non-interactive", "-h", "--help":
+			i++
+		default:
+			goto command
+		}
+	}
+command:
+	if i >= len(args) {
+		return CommandSpec{}, false
+	}
+	sm := specMap()
+	max := 3
+	if len(args)-i < max {
+		max = len(args) - i
+	}
+	for n := max; n >= 1; n-- {
+		key := strings.Join(args[i:i+n], " ")
+		if spec, ok := sm[key]; ok {
+			return spec, true
+		}
+	}
+	return CommandSpec{}, false
+}
+
 func Parse(args []string) (Invocation, error) {
 	inv := Invocation{Values: map[string]any{}}
 	if len(args) == 0 {

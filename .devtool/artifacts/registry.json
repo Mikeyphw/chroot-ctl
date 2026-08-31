@@ -2,6 +2,124 @@
   "schema_version": 2,
   "items": [
     {
+      "id": "1255a238af6e",
+      "name": "chrootctl",
+      "path": ".devtool/build/go/chrootctl",
+      "canonical_path": ".devtool/build/go/chrootctl",
+      "source_path": ".devtool/build/go/chrootctl",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 12513608,
+      "sha256": "d45db124a0b129c508c978b5bb7ec37deee37526d5cea4d1c4317d697891f65c",
+      "commit": "b7aa88e45bcc3f9bcb49a90e49c8f2ef4f11c881",
+      "run_id": "881fa40a7183440f8e1d03fd06752905",
+      "producer": "go",
+      "command": "build",
+      "target": "chrootctl_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "chrootctl/cmd/chrootctl",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-08-31T04:09:37.051134Z",
+      "registered_at": "2026-08-31T04:09:37.051134Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "chrootctl_go",
+        "variant": "",
+        "run_id": "881fa40a7183440f8e1d03fd06752905",
+        "path": ".devtool/build/go/chrootctl",
+        "source_path": ".devtool/build/go/chrootctl",
+        "type": "go-binary",
+        "size": 12513608,
+        "sha256": "d45db124a0b129c508c978b5bb7ec37deee37526d5cea4d1c4317d697891f65c",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "chrootctl/cmd/chrootctl",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "chrootctl/cmd/chrootctl",
+          "go_output_name": "chrootctl",
+          "go_build_info": {
+            "package_path": "chrootctl/cmd/chrootctl",
+            "go_version": "go1.27.0",
+            "module_path": "chrootctl",
+            "module_version": "v0.0.0-20260829203421-b7aa88e45bcc+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "b7aa88e45bcc3f9bcb49a90e49c8f2ef4f11c881",
+              "vcs.time": "2026-08-29T20:34:21Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "b7aa88e45bcc3f9bcb49a90e49c8f2ef4f11c881",
+            "vcs_time": "2026-08-29T20:34:21Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "chrootctl/cmd/chrootctl",
+        "go_output_name": "chrootctl",
+        "go_build_info": {
+          "package_path": "chrootctl/cmd/chrootctl",
+          "go_version": "go1.27.0",
+          "module_path": "chrootctl",
+          "module_version": "v0.0.0-20260829203421-b7aa88e45bcc+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "b7aa88e45bcc3f9bcb49a90e49c8f2ef4f11c881",
+            "vcs.time": "2026-08-29T20:34:21Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "b7aa88e45bcc3f9bcb49a90e49c8f2ef4f11c881",
+          "vcs_time": "2026-08-29T20:34:21Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "881fa40a7183440f8e1d03fd06752905:d45db124a0b129c508c978b5bb7ec37deee37526d5cea4d1c4317d697891f65c:1255a238af6e"
+    },
+    {
       "id": "3a3b4f22ca19",
       "name": "chrootctl",
       "path": ".devtool/build/go/chrootctl",
@@ -776,6 +894,6 @@
       }
     }
   ],
-  "updated_at": "2026-08-29T19:51:16.060063Z",
+  "updated_at": "2026-08-31T04:09:37.052536Z",
   "verifications": []
 }

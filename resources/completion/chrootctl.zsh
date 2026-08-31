@@ -1,4 +1,4 @@
-#compdef chrootctl
+#compdef chrootctl chc
 
 typeset -g _chrootctl_prog="chrootctl"
 
@@ -146,14 +146,26 @@ _chrootctl_complete_after_dashdash() {
 _chrootctl() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
+  _chrootctl_prog="${words[1]:-chrootctl}"
 
-  _arguments -C     '--config[Path to config file]:config:_chrootctl_complete_config_path'     '--dry-run[Do not execute commands]'     '--verbose[Enable verbose output]'     '--json[Emit machine-readable JSON for supported commands]'     '--no-sudo[Disable automatic sudo escalation]'     '--name[Target chroot name]:chroot name:_chrootctl_complete_chroot_arg'     '--non-interactive[Fail instead of prompting]'     '1:command:(status mount unmount fix-tty doctor logs start restart exec install upgrade completion chroots users tools addons)'     '*::args:->args'
+  _arguments -C     '--config[Path to config file]:config:_chrootctl_complete_config_path'     '--dry-run[Do not execute commands]'     '--verbose[Enable verbose output]'     '--json[Emit machine-readable JSON for supported commands]'     '--no-sudo[Disable automatic sudo escalation]'     '--name[Target chroot name]:chroot name:_chrootctl_complete_chroot_arg'     '--non-interactive[Fail instead of prompting]'     '1:command:(status mount unmount fix-tty doctor logs start restart exec install upgrade completion wrapper chroots users tools addons)'     '*::args:->args'
 
   case $state in
     args)
       case $words[1] in
         completion)
           _arguments '1:shell:(zsh)'
+          ;;
+        wrapper)
+          if (( CURRENT == 3 )); then
+            compadd install
+            return
+          fi
+          case $words[3] in
+            install)
+              _arguments                 '--dir[Wrapper install directory]:directory:_files -/'                 '--name[Wrapper command name]:name'                 '--completion-dir[zsh site-functions directory]:directory:_files -/'                 '--no-completion[Do not install zsh completion]'
+              ;;
+          esac
           ;;
         status)
           _arguments '--details[Show path existence and extra details]'
@@ -267,4 +279,4 @@ _chrootctl() {
   esac
 }
 
-compdef _chrootctl chrootctl
+compdef _chrootctl chrootctl chc

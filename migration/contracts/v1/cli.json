@@ -197,7 +197,7 @@
       "prog": "chrootctl app reconcile"
     }
   ],
-  "commandNodeCount": 66,
+  "commandNodeCount": 68,
   "commandNodes": [
     {
       "arguments": [
@@ -1210,6 +1210,88 @@
         "zsh"
       ],
       "prog": "chrootctl completion zsh"
+    },
+    {
+      "arguments": [],
+      "command": "wrapper",
+      "description": "Install and inspect local helper wrappers for chrootctl.",
+      "epilog": "examples:\n  chrootctl wrapper install\n  chrootctl wrapper install --name chc --dir ~/.local/bin",
+      "path": [
+        "wrapper"
+      ],
+      "prog": "chrootctl wrapper"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "wrapper_dir",
+          "help": "Directory where the wrapper should be installed. Defaults to ~/.local/bin.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--dir"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": "chc",
+          "dest": "wrapper_name",
+          "help": "Wrapper command name to install.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--name"
+          ],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "completion_dir",
+          "help": "Optional zsh site-functions directory where _chrootctl should be installed.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--completion-dir"
+          ],
+          "required": false,
+          "type": "Path"
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "no_completion",
+          "help": "Do not install zsh completion even if a local site-functions directory exists.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--no-completion"
+          ],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "wrapper install",
+      "description": "Install a local wrapper that runs chrootctl directly as root or escalates with su -c when needed.",
+      "epilog": "examples:\n  chrootctl wrapper install\n  chrootctl wrapper install --name chc --dir ~/.local/bin\n  chrootctl wrapper install --completion-dir ~/.local/share/zsh/site-functions",
+      "path": [
+        "wrapper",
+        "install"
+      ],
+      "prog": "chrootctl wrapper install"
     },
     {
       "arguments": [],

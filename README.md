@@ -17,6 +17,7 @@ Go-native Android/Termux chroot manager with a Magisk/KernelSU module runtime an
 - config-driven bind mounts, extra packages, locale, DNS, and per-chroot overrides
 - diagnostics via `doctor` and local log viewing via `logs`
 - `completion zsh` output with auto-detected `fzf`, `bat`, and `lsd` enhancements
+- `wrapper install` for a local `chc` helper that auto-escalates through `su -c` when needed
 - YAML-backed `tools` and `addons` repositories with optional `fzf` multi-select
 - rich CLI output
 
@@ -35,7 +36,8 @@ go run ./cmd/repoctl validate
 # Final deterministic release seal
 ./scripts/final-seal
 
-# shell completion
+# local wrapper and shell completion
+chrootctl wrapper install
 mkdir -p ~/.local/share/zsh/site-functions
 chrootctl completion zsh > ~/.local/share/zsh/site-functions/_chrootctl
 ```
@@ -75,6 +77,8 @@ chrootctl tools apply remove-snapd --name ubuntu
 chrootctl addons list --distro ubuntu
 chrootctl addons apply nala --name ubuntu
 source <(chrootctl completion zsh)
+chrootctl wrapper install
+chc --help
 ```
 
 

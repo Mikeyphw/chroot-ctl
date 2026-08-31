@@ -19,20 +19,27 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	inv, err := Parse(args)
 	if err != nil {
 		fmt.Fprintln(stderr, "chrootctl:", err)
-		fmt.Fprint(stderr, RootHelp())
+		if spec, ok := HelpSpecForArgs(args); ok {
+			fmt.Fprint(stderr, Help(spec))
+		} else {
+			fmt.Fprint(stderr, RootHelp())
+		}
 		return 2
 	}
 	if inv.Help && inv.Spec.Command == "" {
 		fmt.Fprint(stdout, RootHelp())
 		return 0
 	}
+	if inv.Help {
+		fmt.Fprint(stdout, Help(inv.Spec))
+		return 0
+	}
 	if inv.Spec.Command == "completion zsh" {
 		fmt.Fprint(stdout, completion.GenerateZsh())
 		return 0
 	}
-	if inv.Help {
-		fmt.Fprint(stdout, Help(inv.Spec))
-		return 0
+	if inv.Spec.Command == "wrapper install" {
+		return InstallWrapper(inv, stdout, stderr)
 	}
 	if inv.Spec.Command == "app" {
 		bargs := []string{}
@@ -139,14 +146,80 @@ func (a *App) progress(value any) error {
 }
 
 func RootHelp() string {
-	return "usage: chrootctl [--config PATH] [--dry-run] [--verbose] [--json] [--no-sudo] [--name NAME] [--non-interactive] COMMAND\n\nUse `chrootctl COMMAND --help` for command help.\n"
+	var b strings.Builder
+	b.WriteString("usage: chrootctl [global options] COMMAND [arguments]\n\n")
+	b.WriteString("global options:\n")
+	for _, a := range GlobalArguments {
+		label := strings.Join(a.Options, ", ")
+		if a.Action == "_StoreAction" {
+			label += " VALUE"
+		}
+		fmt.Fprintf(&b, "  %-28s %s\n", label, a.Help)
+	}
+	b.WriteString("\ncommands:\n")
+	groups := commandGroups()
+	for _, name := range orderedGroups(groups) {
+		entries := groups[name]
+		if name == "__complete" || name == "app" {
+			continue
+		}
+		if len(entries) == 1 && entries[0].Command == name {
+			fmt.Fprintf(&b, "  %-28s %s\n", name, entries[0].Description)
+			continue
+		}
+		parts := []string{}
+		for _, spec := range entries {
+			if spec.Command == name {
+				continue
+			}
+			parts = append(parts, strings.TrimPrefix(spec.Command, name+" "))
+		}
+		fmt.Fprintf(&b, "  %-28s %s\n", name, strings.Join(parts, ", "))
+	}
+	b.WriteString("\nUse `chrootctl COMMAND --help` for command-specific help.\n")
+	b.WriteString("Examples: `chrootctl status --help`, `chrootctl chroots list --help`, `chrootctl wrapper install --help`.\n")
+	return b.String()
+}
+
+func commandGroups() map[string][]CommandSpec {
+	groups := map[string][]CommandSpec{}
+	for _, spec := range CommandSpecs {
+		if len(spec.Path) == 0 {
+			continue
+		}
+		root := spec.Path[0]
+		groups[root] = append(groups[root], spec)
+	}
+	return groups
+}
+
+func orderedGroups(groups map[string][]CommandSpec) []string {
+	preferred := []string{"status", "doctor", "start", "restart", "exec", "install", "upgrade", "mount", "unmount", "fix-tty", "logs", "run", "enable", "disable", "journal", "chroots", "transfer", "events", "users", "tools", "addons", "clipboard", "support-bundle", "completion", "wrapper", "magisk", "app", "__complete"}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, name := range preferred {
+		if _, ok := groups[name]; ok {
+			out = append(out, name)
+			seen[name] = true
+		}
+	}
+	for name := range groups {
+		if !seen[name] {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 func Help(s CommandSpec) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "usage: chrootctl %s", s.Command)
 	for _, a := range s.Arguments {
 		if len(a.Options) > 0 {
-			fmt.Fprintf(&b, " [%s]", strings.Join(a.Options, "/"))
+			label := strings.Join(a.Options, "/")
+			if a.Action == "_StoreAction" || a.Action == "_AppendAction" {
+				label += " VALUE"
+			}
+			fmt.Fprintf(&b, " [%s]", label)
 		} else {
 			fmt.Fprintf(&b, " <%s>", a.Dest)
 		}
