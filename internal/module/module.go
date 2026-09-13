@@ -30,6 +30,9 @@ const (
 	RuntimeKind           = "go-native"
 	RuntimeABI            = "arm64-v8a"
 	RuntimeEntrypoint     = "chrootctl"
+
+	ModulePackageSchemaVersion = 1
+	ModulePackageManifestPath  = "config/chrootctl/module-package-manifest.json"
 )
 
 type Options struct {
@@ -54,6 +57,30 @@ type runtimeManifest struct {
 	BackendVersion        string        `json:"backendVersion"`
 	BridgeProtocolVersion int           `json:"bridgeProtocolVersion"`
 	Files                 []runtimeFile `json:"files"`
+}
+
+type modulePackageFile struct {
+	Path       string `json:"path"`
+	Size       int64  `json:"size"`
+	SHA256     string `json:"sha256"`
+	Mode       string `json:"mode"`
+	Executable bool   `json:"executable"`
+}
+
+type modulePackageManifest struct {
+	SchemaVersion         int                 `json:"schemaVersion"`
+	ModuleID              string              `json:"moduleId"`
+	ModuleName            string              `json:"moduleName"`
+	ModuleVersion         string              `json:"moduleVersion"`
+	ModuleVersionCode     int                 `json:"moduleVersionCode"`
+	BackendVersion        string              `json:"backendVersion"`
+	BridgeProtocolVersion int                 `json:"bridgeProtocolVersion"`
+	RuntimeSchemaVersion  int                 `json:"runtimeSchemaVersion"`
+	RuntimeKind           string              `json:"runtimeKind"`
+	RuntimeABI            string              `json:"runtimeAbi"`
+	RuntimeEntrypoint     string              `json:"runtimeEntrypoint"`
+	StartupTargets        []string            `json:"startupTargets"`
+	Files                 []modulePackageFile `json:"files"`
 }
 
 func CompatibilityPayload() map[string]any {
@@ -201,6 +228,29 @@ func ValidateRuntime(root string) error {
 	if interpreter != "/system/bin/linker64" {
 		return fmt.Errorf("native runtime Android interpreter mismatch: %q", interpreter)
 	}
+	if err := validateDynamicLibraries(ef); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateDynamicLibraries(ef *elf.File) error {
+	libs, err := ef.ImportedLibraries()
+	if err != nil {
+		return fmt.Errorf("read native runtime dynamic libraries: %w", err)
+	}
+	allowed := map[string]bool{
+		"libandroid.so": true,
+		"libc.so":       true,
+		"libdl.so":      true,
+		"liblog.so":     true,
+		"libm.so":       true,
+	}
+	for _, lib := range libs {
+		if strings.Contains(lib, "/") || !allowed[lib] {
+			return fmt.Errorf("native runtime imports unsupported dynamic library: %s", lib)
+		}
+	}
 	return nil
 }
 
@@ -210,6 +260,268 @@ func writeFile(root, rel, content string, mode fs.FileMode) error {
 		return e
 	}
 	return os.WriteFile(p, []byte(content), mode)
+}
+
+func ignoredLocalArtifact(rel string) bool {
+	base := filepath.Base(filepath.ToSlash(rel))
+	return strings.HasPrefix(base, ".chrootctl-module-") || strings.HasSuffix(base, ".zip") || strings.HasSuffix(base, ".zip.tmp")
+}
+
+func cleanManifestPath(rel string) (string, error) {
+	if rel == "" || filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, "\\") {
+		return "", fmt.Errorf("unsafe module package path: %s", rel)
+	}
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(rel)))
+	if clean == "." || clean == ModulePackageManifestPath || strings.HasPrefix(clean, "../") || clean == ".." {
+		return "", fmt.Errorf("unsafe module package path: %s", rel)
+	}
+	for _, part := range strings.Split(clean, "/") {
+		if part == "" || part == "." || part == ".." {
+			return "", fmt.Errorf("unsafe module package path: %s", rel)
+		}
+	}
+	return clean, nil
+}
+
+func moduleFiles(root string) ([]modulePackageFile, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	files := []modulePackageFile{}
+	err = filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == absRoot {
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			rel, _ := filepath.Rel(absRoot, path)
+			return fmt.Errorf("module package symlink forbidden: %s", filepath.ToSlash(rel))
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(absRoot, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == ModulePackageManifestPath || ignoredLocalArtifact(rel) {
+			return nil
+		}
+		clean, err := cleanManifestPath(rel)
+		if err != nil {
+			return err
+		}
+		st, err := safeRegular(path)
+		if err != nil {
+			return err
+		}
+		sum, err := shaFile(path)
+		if err != nil {
+			return err
+		}
+		mode := st.Mode().Perm()
+		files = append(files, modulePackageFile{Path: clean, Size: st.Size(), SHA256: sum, Mode: fmt.Sprintf("%04o", mode), Executable: mode&0111 != 0})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, nil
+}
+
+func packageManifestFor(root string, startupTargets []string) (modulePackageManifest, error) {
+	files, err := moduleFiles(root)
+	if err != nil {
+		return modulePackageManifest{}, err
+	}
+	targets := append([]string(nil), startupTargets...)
+	sort.Strings(targets)
+	return modulePackageManifest{
+		SchemaVersion:         ModulePackageSchemaVersion,
+		ModuleID:              ModuleID,
+		ModuleName:            ModuleName,
+		ModuleVersion:         ModuleVersion,
+		ModuleVersionCode:     ModuleVersionCode,
+		BackendVersion:        BackendVersion,
+		BridgeProtocolVersion: BridgeProtocolVersion,
+		RuntimeSchemaVersion:  RuntimeSchemaVersion,
+		RuntimeKind:           RuntimeKind,
+		RuntimeABI:            RuntimeABI,
+		RuntimeEntrypoint:     RuntimeEntrypoint,
+		StartupTargets:        targets,
+		Files:                 files,
+	}, nil
+}
+
+func writePackageManifest(root string, startupTargets []string) error {
+	manifest, err := packageManifestFor(root, startupTargets)
+	if err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	return writeFile(root, ModulePackageManifestPath, string(raw), 0644)
+}
+
+func readPackageManifest(root string) (modulePackageManifest, error) {
+	var got modulePackageManifest
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ModulePackageManifestPath)))
+	if err != nil {
+		return got, err
+	}
+	if err = json.Unmarshal(raw, &got); err != nil {
+		return got, fmt.Errorf("decode module package manifest: %w", err)
+	}
+	return got, nil
+}
+
+func bootTargets(root string) ([]string, error) {
+	raw, err := os.ReadFile(filepath.Join(root, "config/chrootctl/boot_targets.json"))
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		StartupTargets []string `json:"startup_targets"`
+	}
+	if err = json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	targets := append([]string(nil), payload.StartupTargets...)
+	sort.Strings(targets)
+	return targets, nil
+}
+
+func comparePackageManifests(got, want modulePackageManifest) error {
+	if got.SchemaVersion != want.SchemaVersion || got.ModuleID != want.ModuleID || got.ModuleName != want.ModuleName || got.ModuleVersion != want.ModuleVersion || got.ModuleVersionCode != want.ModuleVersionCode || got.BackendVersion != want.BackendVersion || got.BridgeProtocolVersion != want.BridgeProtocolVersion || got.RuntimeSchemaVersion != want.RuntimeSchemaVersion || got.RuntimeKind != want.RuntimeKind || got.RuntimeABI != want.RuntimeABI || got.RuntimeEntrypoint != want.RuntimeEntrypoint {
+		return errors.New("module package manifest identity mismatch")
+	}
+	if strings.Join(got.StartupTargets, "\x00") != strings.Join(want.StartupTargets, "\x00") {
+		return fmt.Errorf("module package startup targets mismatch: %v != %v", got.StartupTargets, want.StartupTargets)
+	}
+	if len(got.Files) != len(want.Files) {
+		return fmt.Errorf("module package file count mismatch: %d != %d", len(got.Files), len(want.Files))
+	}
+	for i := range got.Files {
+		if got.Files[i] != want.Files[i] {
+			return fmt.Errorf("module package file seal mismatch at %d: %+v != %+v", i, got.Files[i], want.Files[i])
+		}
+	}
+	return nil
+}
+
+func ValidatePackageManifest(root string) error {
+	got, err := readPackageManifest(root)
+	if err != nil {
+		return err
+	}
+	targets, err := bootTargets(root)
+	if err != nil {
+		return err
+	}
+	want, err := packageManifestFor(root, targets)
+	if err != nil {
+		return err
+	}
+	if err = comparePackageManifests(got, want); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, f := range got.Files {
+		seen[f.Path] = true
+	}
+	for _, required := range []string{"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh", "bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper", "config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", "runtime/" + RuntimeABI + "/runtime-manifest.json", "runtime/" + RuntimeABI + "/" + RuntimeEntrypoint} {
+		if !seen[required] {
+			return fmt.Errorf("module package manifest missing required file: %s", required)
+		}
+	}
+	return nil
+}
+
+func ValidateZipArchive(path string) error {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	type entry struct {
+		meta modulePackageFile
+		raw  []byte
+	}
+	entries := map[string]entry{}
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			return fmt.Errorf("module ZIP directory entries are forbidden: %s", f.Name)
+		}
+		if f.FileInfo().Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("module ZIP symlink forbidden: %s", f.Name)
+		}
+		clean := filepath.ToSlash(filepath.Clean(f.Name))
+		if clean != f.Name || strings.HasPrefix(clean, "../") || clean == "." || filepath.IsAbs(clean) {
+			return fmt.Errorf("unsafe module ZIP entry path: %s", f.Name)
+		}
+		if _, ok := entries[clean]; ok {
+			return fmt.Errorf("duplicate module ZIP entry: %s", clean)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return err
+		}
+		mode := f.FileInfo().Mode().Perm()
+		sum := sha256.Sum256(data)
+		entries[clean] = entry{meta: modulePackageFile{Path: clean, Size: int64(len(data)), SHA256: hex.EncodeToString(sum[:]), Mode: fmt.Sprintf("%04o", mode), Executable: mode&0111 != 0}, raw: data}
+	}
+	manifestEntry, ok := entries[ModulePackageManifestPath]
+	if !ok {
+		return fmt.Errorf("module ZIP missing %s", ModulePackageManifestPath)
+	}
+	var got modulePackageManifest
+	if err = json.Unmarshal(manifestEntry.raw, &got); err != nil {
+		return fmt.Errorf("decode module package manifest from ZIP: %w", err)
+	}
+	bootEntry, ok := entries["config/chrootctl/boot_targets.json"]
+	if !ok {
+		return errors.New("module ZIP missing config/chrootctl/boot_targets.json")
+	}
+	var bootPayload struct {
+		StartupTargets []string `json:"startup_targets"`
+	}
+	if err = json.Unmarshal(bootEntry.raw, &bootPayload); err != nil {
+		return fmt.Errorf("decode module boot targets from ZIP: %w", err)
+	}
+	bootTargets := append([]string(nil), bootPayload.StartupTargets...)
+	sort.Strings(bootTargets)
+	gotTargets := append([]string(nil), got.StartupTargets...)
+	sort.Strings(gotTargets)
+	if strings.Join(gotTargets, "\x00") != strings.Join(bootTargets, "\x00") {
+		return fmt.Errorf("module ZIP package manifest startup targets do not match boot target manifest: %v != %v", got.StartupTargets, bootPayload.StartupTargets)
+	}
+	files := make([]modulePackageFile, 0, len(entries)-1)
+	for name, ent := range entries {
+		if name == ModulePackageManifestPath {
+			continue
+		}
+		if _, err := cleanManifestPath(name); err != nil {
+			return err
+		}
+		files = append(files, ent.meta)
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	want := modulePackageManifest{SchemaVersion: ModulePackageSchemaVersion, ModuleID: ModuleID, ModuleName: ModuleName, ModuleVersion: ModuleVersion, ModuleVersionCode: ModuleVersionCode, BackendVersion: BackendVersion, BridgeProtocolVersion: BridgeProtocolVersion, RuntimeSchemaVersion: RuntimeSchemaVersion, RuntimeKind: RuntimeKind, RuntimeABI: RuntimeABI, RuntimeEntrypoint: RuntimeEntrypoint, StartupTargets: append([]string(nil), got.StartupTargets...), Files: files}
+	sort.Strings(want.StartupTargets)
+	return comparePackageManifests(got, want)
 }
 func moduleProp() string {
 	return fmt.Sprintf("id=%s\nname=%s\nversion=%s\nversionCode=%d\nauthor=chrootctl\ndescription=Self-contained chrootctl Magisk/KernelSU runtime with a bundled Android Go backend.\n", ModuleID, ModuleName, ModuleVersion, ModuleVersionCode)
@@ -240,6 +552,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     set_perm "$MODPATH/customize.sh" 0 0 0755
     set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
     set_perm "$MODPATH/service.sh" 0 0 0755
+    set_perm "$MODPATH/uninstall.sh" 0 0 0755
     set_perm "$MODPATH/bin/chrootctl-magisk-helper" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755
@@ -248,6 +561,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     chmod 0755 "$MODPATH/customize.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/post-fs-data.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/service.sh" 2>/dev/null || true
+    chmod 0755 "$MODPATH/uninstall.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/bin/chrootctl-magisk-helper" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl-magisk-helper" 2>/dev/null || true
@@ -260,6 +574,9 @@ return 0 2>/dev/null || exit 0
 }
 
 func postFS() string { return "#!/system/bin/sh\nexit 0\n" }
+func uninstall() string {
+	return "#!/system/bin/sh\nset -u\nSTATE_ROOT=/data/adb/chrootctl\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
+}
 func helper() string {
 	return "#!/system/bin/sh\nset -u\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-${0%/bin/*}}\"\nCHROOTCTL=\"$MODDIR/system/bin/chrootctl\"\n[ -x \"$CHROOTCTL\" ] || { echo \"bundled chrootctl runtime is unavailable\" >&2; exit 127; }\ncase \"$CMD\" in\n  __module-boot|__module-service)\n    rc=0\n    \"$CHROOTCTL\" clipboard daemon start >/dev/null 2>&1 || true\n    for target in \"$@\"; do\n      \"$CHROOTCTL\" --name \"$target\" mount || rc=1\n    done\n    \"$CHROOTCTL\" run --boot || rc=1\n    exit \"$rc\"\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
 }
@@ -332,7 +649,7 @@ func Render(opts Options) error {
 	files := map[string]struct {
 		c string
 		m fs.FileMode
-	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
+	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
 	for rel, v := range files {
 		if e := writeFile(out, rel, v.c, v.m); e != nil {
 			return e
@@ -370,6 +687,12 @@ func Render(opts Options) error {
 	if e := ValidateRuntime(dst); e != nil {
 		return e
 	}
+	if e := writePackageManifest(out, opts.StartupTargets); e != nil {
+		return e
+	}
+	if e := ValidateRendered(out); e != nil {
+		return e
+	}
 	if opts.ZipPath != "" {
 		return Zip(out, opts.ZipPath)
 	}
@@ -404,7 +727,11 @@ func Zip(root, path string) error {
 		if e != nil {
 			return e
 		}
-		names = append(names, filepath.ToSlash(rel))
+		relSlash := filepath.ToSlash(rel)
+		if ignoredLocalArtifact(relSlash) {
+			return nil
+		}
+		names = append(names, relSlash)
 		return nil
 	}); e != nil {
 		return e
@@ -467,11 +794,14 @@ func Zip(root, path string) error {
 	return nil
 }
 func ValidateRendered(root string) error {
-	required := []string{"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper", "config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl"}
+	required := []string{"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh", "bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper", "config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", ModulePackageManifestPath, "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl"}
 	for _, rel := range required {
 		if _, e := safeRegular(filepath.Join(root, filepath.FromSlash(rel))); e != nil {
 			return e
 		}
 	}
-	return ValidateRuntime(filepath.Join(root, "runtime", RuntimeABI))
+	if e := ValidateRuntime(filepath.Join(root, "runtime", RuntimeABI)); e != nil {
+		return e
+	}
+	return ValidatePackageManifest(root)
 }

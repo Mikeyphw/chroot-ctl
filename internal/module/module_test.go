@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -195,5 +196,146 @@ func TestCompatibilityPayloadGO13(t *testing.T) {
 	b := p["backend"].(map[string]any)
 	if b["implementation"] != "go" {
 		t.Fatalf("backend=%v", b)
+	}
+}
+
+func TestCHR15ModulePackageManifestSealsRenderedTree(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	if err := Render(Options{OutputDir: out, NativeRuntimeDir: r, StartupTargets: []string{"beta", "alpha", "alpha"}}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(out, ModulePackageManifestPath)
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest modulePackageManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.SchemaVersion != ModulePackageSchemaVersion || manifest.ModuleID != ModuleID || manifest.ModuleVersionCode != ModuleVersionCode {
+		t.Fatalf("unexpected package identity: %+v", manifest)
+	}
+	if strings.Join(manifest.StartupTargets, ",") != "alpha,beta" {
+		t.Fatalf("startup targets were not canonicalized: %v", manifest.StartupTargets)
+	}
+	seen := map[string]bool{}
+	for _, f := range manifest.Files {
+		seen[f.Path] = true
+	}
+	for _, required := range []string{"uninstall.sh", "config/chrootctl/compatibility-manifest.json", "runtime/arm64-v8a/chrootctl"} {
+		if !seen[required] {
+			t.Fatalf("package manifest missing required file %s: %+v", required, manifest.Files)
+		}
+	}
+	if err := ValidateRendered(out); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "module.prop"), []byte("id=chrootctl-magisk\nversionCode=0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRendered(out); err == nil || !strings.Contains(err.Error(), "module package") {
+		t.Fatalf("expected sealed manifest mismatch after tamper, got %v", err)
+	}
+}
+
+func TestCHR15ValidateRenderedRejectsUnsealedExtraPayload(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	if err := Render(Options{OutputDir: out, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "unexpected-root-file"), []byte("extra"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRendered(out); err == nil || !strings.Contains(err.Error(), "file count mismatch") {
+		t.Fatalf("expected unsealed extra payload rejection, got %v", err)
+	}
+}
+
+func TestCHR15ValidateZipArchiveUsesPackageSeal(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	zipPath := filepath.Join(t.TempDir(), "module.zip")
+	if err := Render(Options{OutputDir: out, ZipPath: zipPath, NativeRuntimeDir: r, StartupTargets: []string{"work"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateZipArchive(zipPath); err != nil {
+		t.Fatal(err)
+	}
+	badZip := filepath.Join(t.TempDir(), "bad.zip")
+	zf, err := os.Create(badZip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(zf)
+	w, err := zw.Create("module.prop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("id=chrootctl-magisk\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateZipArchive(badZip); err == nil || !strings.Contains(err.Error(), ModulePackageManifestPath) {
+		t.Fatalf("expected missing module package manifest rejection, got %v", err)
+	}
+
+	badTargetsZip := filepath.Join(t.TempDir(), "bad-targets.zip")
+	good, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutated, err := os.Create(badTargetsZip)
+	if err != nil {
+		good.Close()
+		t.Fatal(err)
+	}
+	mutator := zip.NewWriter(mutated)
+	for _, entry := range good.File {
+		header := entry.FileHeader
+		w, err := mutator.CreateHeader(&header)
+		if err != nil {
+			good.Close()
+			t.Fatal(err)
+		}
+		if entry.Name == "config/chrootctl/boot_targets.json" {
+			if _, err := w.Write([]byte(`{"startup_targets":["other"]}`)); err != nil {
+				good.Close()
+				t.Fatal(err)
+			}
+			continue
+		}
+		rc, err := entry.Open()
+		if err != nil {
+			good.Close()
+			t.Fatal(err)
+		}
+		_, err = io.Copy(w, rc)
+		rc.Close()
+		if err != nil {
+			good.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := mutator.Close(); err != nil {
+		good.Close()
+		t.Fatal(err)
+	}
+	if err := mutated.Close(); err != nil {
+		good.Close()
+		t.Fatal(err)
+	}
+	if err := good.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateZipArchive(badTargetsZip); err == nil || !strings.Contains(err.Error(), "startup targets") {
+		t.Fatalf("expected boot target/package manifest mismatch rejection, got %v", err)
 	}
 }

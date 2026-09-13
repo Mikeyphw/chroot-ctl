@@ -1153,36 +1153,13 @@ func (a *App) magisk(ctx context.Context) error {
 	if a.Inv.Spec.Command != "magisk render" {
 		return errors.New("unsupported magisk command")
 	}
-	rows, err := a.Services.Registry.List(ctx)
+	requested := a.Inv.Strings("magisk_names")
+	targets, err := a.Services.ModuleBuilder().ResolveStartupTargets(ctx, services.ModuleBuildRequest{
+		StartupTargets: requested,
+		AllInstalled:   len(requested) == 0 && a.Inv.Bool("all_installed"),
+	})
 	if err != nil {
 		return err
-	}
-	installed := map[string]bool{}
-	all := []string{}
-	for _, row := range rows {
-		if row.Installed {
-			installed[row.Name] = true
-			all = append(all, row.Name)
-		}
-	}
-	targets := []string{}
-	requested := a.Inv.Strings("magisk_names")
-	if len(requested) > 0 {
-		seen := map[string]bool{}
-		for _, n := range requested {
-			n = strings.TrimSpace(n)
-			if n == "" || seen[n] {
-				continue
-			}
-			if !installed[n] {
-				return fmt.Errorf("module startup targets must be installed chroots: %s", n)
-			}
-			seen[n] = true
-			targets = append(targets, n)
-		}
-	} else if a.Inv.Bool("all_installed") {
-		sort.Strings(all)
-		targets = all
 	}
 	opts := modulepkg.Options{OutputDir: a.Inv.String("output"), ZipPath: a.Inv.String("zip_path"), NativeRuntimeDir: a.Inv.String("native_runtime_dir"), StartupTargets: targets}
 	if a.Services.DryRun {

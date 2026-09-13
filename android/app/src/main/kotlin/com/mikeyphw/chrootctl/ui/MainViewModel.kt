@@ -1147,6 +1147,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         .toString()
 
     fun moduleBuildPayloadJson(): String = JSONObject()
+        .put("allInstalled", true)
         .withPreviewContract(systemSupportPane.value.moduleBuildPreview, "system.module_build")
         .toString()
 

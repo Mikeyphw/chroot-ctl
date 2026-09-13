@@ -90,7 +90,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateCatalogPackageWorkflow(root); e != nil {
 			return e
 		}
-		return ValidateClipboardPrivilegedIntegration(root)
+		if e := ValidateClipboardPrivilegedIntegration(root); e != nil {
+			return e
+		}
+		return ValidateModuleRuntimeReleaseTrust(root)
 	}); err != nil {
 		return err
 	}

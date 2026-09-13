@@ -93,3 +93,10 @@ Intermediate overlay scope. Focused local checks cover user policy classificatio
 - Clipboard daemon control state now uses the Termux-private runtime root, rejects unsafe custom parents, serializes starts, refuses live socket takeover, cleans stale socket/token state on stop, and records bounded daemon lifecycle logs.
 - Clipboard host set/get now default to the daemon host socket, preserve explicit empty text versus stdin, cap stdin at 1 MiB, and keep trailing newlines through both host CLI and generated chroot wrappers.
 - Wrapper requests now carry the installing target name; the daemon requires marked wrappers for target-scoped requests, and `clipboard doctor --name` reports target-specific enablement.
+
+## CHR15 module/runtime/release trust seal
+
+- Added `ValidateModuleRuntimeReleaseTrust` to `repoctl validate` and final-seal.
+- Focused checks for the overlay cover package manifest generation, rendered-tree and ZIP seal validation, module-runtime fail-closed readiness, real module-build preflight, shared startup-target resolution, Android module-build payload parity, rollback-capable replacement promotion, dynamic-library validation, executable production wrappers, and CHR15 audit closure.
+- This is an intermediate overlay and should be applied with `--no-validate`; full release validation remains reserved for a later gate overlay.
+

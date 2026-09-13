@@ -444,7 +444,8 @@ class BridgeRepository(
     }
 
     suspend fun previewModuleBuild(): Result<PreviewSummary> = runCatching {
-        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("system.module_build_preview").toJson())).requireData()
+        val payload = JSONObject().put("allInstalled", true)
+        val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("system.module_build_preview", payload).toJson())).requireData()
         data.toPreviewSummary("Module build preview")
     }
 

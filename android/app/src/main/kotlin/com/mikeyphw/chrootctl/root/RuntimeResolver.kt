@@ -149,7 +149,45 @@ internal object RuntimeResolver {
                         runtime.optString("entrypoint") == NATIVE_RUNTIME_ENTRYPOINT
                 }
             } == true
-        return commonCompatible && identityCompatible && isNativeRuntimeReady()
+        return commonCompatible && identityCompatible && isModulePackageSealReady() && isNativeRuntimeReady()
+    }
+
+    private fun isModulePackageSealReady(): Boolean {
+        val packageManifestFile = File(activeModuleDir, MODULE_PACKAGE_MANIFEST_PATH)
+        if (!isCanonicalModuleFile(packageManifestFile)) return false
+        val packageManifest = runCatching { JSONObject(packageManifestFile.readText()) }.getOrNull() ?: return false
+        val identityCompatible = packageManifest.optInt("schemaVersion", -1) == MODULE_PACKAGE_SCHEMA_VERSION &&
+            packageManifest.optString("moduleId") == MODULE_ID &&
+            packageManifest.optInt("moduleVersionCode", -1) >= MIN_SUPPORTED_MODULE_VERSION_CODE &&
+            packageManifest.optString("backendVersion") == EXPECTED_BACKEND_VERSION &&
+            packageManifest.optInt("bridgeProtocolVersion", -1) == BRIDGE_PROTOCOL_VERSION &&
+            packageManifest.optInt("runtimeSchemaVersion", -1) == NATIVE_RUNTIME_SCHEMA_VERSION &&
+            packageManifest.optString("runtimeKind") == NATIVE_RUNTIME_KIND &&
+            packageManifest.optString("runtimeAbi") == NATIVE_RUNTIME_ABI &&
+            packageManifest.optString("runtimeEntrypoint") == NATIVE_RUNTIME_ENTRYPOINT
+        if (!identityCompatible) return false
+        val files = packageManifest.optJSONArray("files") ?: return false
+        if (files.length() == 0) return false
+        val seen = linkedSetOf<String>()
+        for (index in 0 until files.length()) {
+            val metadata = files.optJSONObject(index) ?: return false
+            val relative = metadata.optString("path")
+            if (!isSafeModuleRelativePath(relative) || !seen.add(relative)) return false
+            val file = File(activeModuleDir, relative)
+            if (!isCanonicalModuleFile(file)) return false
+            if (metadata.optLong("size", -1L) != file.length()) return false
+            if (metadata.optString("sha256") != sha256(file)) return false
+            if (metadata.optBoolean("executable", false) != file.canExecute()) return false
+        }
+        val actual = activeModuleDir.walkTopDown()
+            .filter { it.isFile }
+            .map { it.relativeTo(activeModuleDir).invariantSeparatorsPath }
+            .filter { it != MODULE_PACKAGE_MANIFEST_PATH }
+            .toSet()
+        return actual == seen &&
+            "system/bin/chrootctl" in seen &&
+            "runtime/$NATIVE_RUNTIME_ABI/$NATIVE_RUNTIME_ENTRYPOINT" in seen &&
+            "uninstall.sh" in seen
     }
 
     private fun isNativeRuntimeReady(): Boolean {
@@ -194,9 +232,15 @@ internal object RuntimeResolver {
     }
 
     private fun isSafeNativeRelativePath(path: String): Boolean {
-        if (path.isBlank() || path.startsWith('/') || path.startsWith('\\')) return false
+        if (path.isBlank() || path.startsWith('/') || path.startsWith("\\")) return false
         val segments = path.replace('\\', '/').split('/')
         return segments.none { it.isBlank() || it == "." || it == ".." } && path != "runtime-manifest.json"
+    }
+
+    private fun isSafeModuleRelativePath(path: String): Boolean {
+        if (path.isBlank() || path == MODULE_PACKAGE_MANIFEST_PATH || path.startsWith('/') || path.startsWith("\\")) return false
+        val segments = path.replace('\\', '/').split('/')
+        return segments.none { it.isBlank() || it == "." || it == ".." }
     }
 
     private fun sha256(path: File): String = runCatching {
@@ -250,6 +294,7 @@ internal object RuntimeResolver {
                 add(activeModuleDir)
                 add(File(activeModuleDir, "module.prop"))
                 add(File(activeModuleDir, "config/chrootctl/compatibility-manifest.json"))
+                add(File(activeModuleDir, MODULE_PACKAGE_MANIFEST_PATH))
                 add(runtimeRoot)
                 if (runtimeRoot.exists()) addAll(runtimeRoot.walkTopDown().drop(1).toList())
             }.distinctBy { it.absolutePath }.sortedBy { it.absolutePath }
@@ -278,6 +323,8 @@ internal object RuntimeResolver {
     private const val NATIVE_RUNTIME_ABI = "arm64-v8a"
     private const val NATIVE_RUNTIME_ROOT = "runtime/arm64-v8a"
     private const val NATIVE_RUNTIME_ENTRYPOINT = "chrootctl"
+    private const val MODULE_PACKAGE_SCHEMA_VERSION = 1
+    private const val MODULE_PACKAGE_MANIFEST_PATH = "config/chrootctl/module-package-manifest.json"
     private const val MODULE_ID = "chrootctl-magisk"
     private const val MIN_SUPPORTED_MODULE_VERSION_CODE = 15
     private const val EXPECTED_BACKEND_IMPLEMENTATION = "go"

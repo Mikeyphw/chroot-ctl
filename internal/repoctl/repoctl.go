@@ -109,9 +109,15 @@ func replaceDir(tmp, dst string) error {
 		if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
 			return fmt.Errorf("refusing unsafe output directory: %s", dst)
 		}
-		if e = os.RemoveAll(dst); e != nil {
+		backup := dst + ".previous-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		if e = os.Rename(dst, backup); e != nil {
 			return e
 		}
+		if e = os.Rename(tmp, dst); e != nil {
+			_ = os.Rename(backup, dst)
+			return e
+		}
+		return os.RemoveAll(backup)
 	} else if !os.IsNotExist(e) {
 		return e
 	}
@@ -295,6 +301,9 @@ func BuildModule(opts ModuleOptions) (string, error) {
 		return "", e
 	}
 	if e = chmodule.Zip(out, zipPath); e != nil {
+		return "", e
+	}
+	if e = chmodule.ValidateZipArchive(zipPath); e != nil {
 		return "", e
 	}
 	if opts.Checksum {
@@ -545,6 +554,9 @@ func Validate() error {
 		return e
 	}
 	if e = ValidateClipboardPrivilegedIntegration(root); e != nil {
+		return e
+	}
+	if e = ValidateModuleRuntimeReleaseTrust(root); e != nil {
 		return e
 	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))

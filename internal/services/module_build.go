@@ -45,6 +45,42 @@ func (s *ModuleBuildService) runtimeDir() (string, error) {
 	return "", fmt.Errorf("no sealed Go-native Android runtime is available for module packaging")
 }
 
+func (s *ModuleBuildService) ResolveStartupTargets(ctx context.Context, req ModuleBuildRequest) ([]string, error) {
+	return s.targets(ctx, req)
+}
+
+func (s *ModuleBuildService) Preflight(ctx context.Context, req ModuleBuildRequest) (map[string]any, error) {
+	archive := strings.TrimSpace(req.Archive)
+	if archive == "" {
+		archive = ManagedArchive("chrootctl-magisk", "zip")
+	}
+	blocking := []map[string]string{}
+	warn := func(code, msg string) { blocking = append(blocking, map[string]string{"code": code, "message": msg}) }
+	managedRoot, err := EnsureManagedTransferRoot()
+	if err != nil {
+		warn("managed_root_unavailable", err.Error())
+	} else if abs, err := filepath.Abs(archive); err != nil {
+		warn("invalid_archive_path", err.Error())
+	} else if managed, err := contained(managedRoot, abs, "module artifact"); err != nil {
+		warn("archive_outside_managed_root", err.Error())
+	} else {
+		archive = managed
+	}
+	targets := []string{}
+	if t, err := s.targets(ctx, req); err != nil {
+		warn("invalid_startup_targets", err.Error())
+	} else {
+		targets = t
+	}
+	runtimeDir := ""
+	if r, err := s.runtimeDir(); err != nil {
+		warn("native_runtime_unavailable", err.Error())
+	} else {
+		runtimeDir = r
+	}
+	return map[string]any{"ok": len(blocking) == 0, "kind": "system.module_build", "archive": archive, "startupTargets": targets, "allInstalled": req.AllInstalled, "runtimeDir": runtimeDir, "blocking": blocking, "warnings": []string{"Module artifacts are published under the managed transfer root.", "Startup targets are resolved through the same installed-target gate used by module builds."}, "confirm": false}, nil
+}
+
 func (s *ModuleBuildService) targets(ctx context.Context, req ModuleBuildRequest) ([]string, error) {
 	rows, err := s.C.Registry.List(ctx)
 	if err != nil {
@@ -70,6 +106,13 @@ func (s *ModuleBuildService) targets(ctx context.Context, req ModuleBuildRequest
 			return nil, err
 		}
 		if !installed[name] {
+			return nil, fmt.Errorf("module startup target is not an installed chroot: %s", name)
+		}
+		resolved, err := s.C.ResolveTarget(ctx, name, true)
+		if err != nil {
+			return nil, fmt.Errorf("module startup target %s failed path validation: %w", name, err)
+		}
+		if resolved == nil || !resolved.Record.Installed {
 			return nil, fmt.Errorf("module startup target is not an installed chroot: %s", name)
 		}
 		if !seen[name] {
@@ -120,23 +163,32 @@ func (s *ModuleBuildService) Build(ctx context.Context, req ModuleBuildRequest) 
 	if err = chmodule.ValidateRendered(out); err != nil {
 		return nil, err
 	}
+	if err = chmodule.ValidateZipArchive(abs); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return nil, err
 	}
 	h := sha256.Sum256(data)
 	sha := hex.EncodeToString(h[:])
-	artifact, err := s.C.Transfer().RegisterArtifact(ctx, abs, "module-archive", "", nil, map[string]any{"sha256": sha, "startup_targets": targets, "runtime_dir": runtimeDir})
+	metadata := map[string]any{"sha256": sha, "startup_targets": targets, "runtime_dir": runtimeDir, "module_id": chmodule.ModuleID, "module_version": chmodule.ModuleVersion, "module_version_code": chmodule.ModuleVersionCode, "package_manifest": chmodule.ModulePackageManifestPath}
+	artifact, err := s.C.Transfer().RegisterArtifact(ctx, abs, "module-archive", "", nil, metadata)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"built":          true,
-		"archive":        abs,
-		"sizeBytes":      len(data),
-		"sha256":         sha,
-		"startupTargets": targets,
-		"runtimeDir":     runtimeDir,
-		"artifact":       artifact,
+		"built":                 true,
+		"archive":               abs,
+		"sizeBytes":             len(data),
+		"sha256":                sha,
+		"startupTargets":        targets,
+		"runtimeDir":            runtimeDir,
+		"moduleId":              chmodule.ModuleID,
+		"moduleVersion":         chmodule.ModuleVersion,
+		"moduleVersionCode":     chmodule.ModuleVersionCode,
+		"packageManifest":       chmodule.ModulePackageManifestPath,
+		"bridgeProtocolVersion": chmodule.BridgeProtocolVersion,
+		"artifact":              artifact,
 	}, nil
 }

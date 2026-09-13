@@ -865,21 +865,11 @@ func (b *ServicesBackend) cleanupPreview(ctx context.Context, p map[string]any, 
 func (b *ServicesBackend) moduleBuildPreview(p map[string]any) (any, error) {
 	targets := asStringSlice(p["startupTargets"])
 	all, _ := optBool(p, []string{"allInstalled", "all_installed"}, false)
-	archive := optText(p, "archive")
-	if archive == "" {
-		archive = services.ManagedArchive("chrootctl-magisk", "zip")
-	}
-	blocking := []map[string]string{}
-	if root, err := services.EnsureManagedTransferRoot(); err != nil {
-		blocking = append(blocking, map[string]string{"code": "managed_root_unavailable", "message": err.Error()})
-	} else if abs, err := filepath.Abs(archive); err != nil {
-		blocking = append(blocking, map[string]string{"code": "invalid_archive_path", "message": err.Error()})
-	} else if managed, err := containedBridgePath(root, abs, "module artifact"); err != nil {
-		blocking = append(blocking, map[string]string{"code": "archive_outside_managed_root", "message": err.Error()})
-	} else {
-		archive = managed
-	}
-	return map[string]any{"ok": len(blocking) == 0, "kind": "system.module_build", "archive": archive, "startupTargets": targets, "allInstalled": all, "blocking": blocking, "warnings": []string{"Module artifacts are published under the managed transfer root."}, "confirm": false}, nil
+	return b.Services.ModuleBuilder().Preflight(context.Background(), services.ModuleBuildRequest{
+		Archive:        optText(p, "archive"),
+		StartupTargets: targets,
+		AllInstalled:   all,
+	})
 }
 
 func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string]any, progress Progress, isCancelled func() bool) (any, error) {
