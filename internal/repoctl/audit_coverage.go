@@ -184,5 +184,30 @@ func ValidateAuditCoverage(root string) error {
 	if chr03Sources != 17 {
 		return fmt.Errorf("CHR03 source-manifestation coverage=%d, want 17", chr03Sources)
 	}
+
+	chr04 := []string{"D07", "D08", "U202", "U203", "U204", "U205", "U206", "U207", "U208", "U209", "U210", "U211"}
+	chr04Sources := 0
+	for _, id := range chr04 {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR04" || finding.Status == "planned" {
+			return fmt.Errorf("CHR04 finding %s is not marked implemented", id)
+		}
+		chr04Sources += len(finding.SourceFindings)
+	}
+	if chr04Sources != 22 {
+		return fmt.Errorf("CHR04 source-manifestation coverage=%d, want 22", chr04Sources)
+	}
+	if d02 := canonical["D02"]; d02.Status != "planned" || !containsString(d02.SupportingOverlays, "CHR04") {
+		return fmt.Errorf("CHR04 wrapper dry-run support must be recorded without prematurely closing D02")
+	}
 	return nil
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

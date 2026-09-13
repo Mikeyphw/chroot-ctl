@@ -514,6 +514,9 @@ func Validate() error {
 	if e = ValidateConfigRegistryFoundation(root); e != nil {
 		return e
 	}
+	if e = ValidatePrivilegeTrustBoundary(root); e != nil {
+		return e
+	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
 	if e != nil {
 		return e

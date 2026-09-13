@@ -11,6 +11,7 @@ import (
 
 	"chrootctl/internal/bridge"
 	"chrootctl/internal/completion"
+	"chrootctl/internal/config"
 	"chrootctl/internal/services"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/version"
@@ -73,6 +74,19 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		return signalExitCode(ctx, 0)
 	}
+	if inv.Spec.Command == "__complete" {
+		err := completion.Query(ctx, completion.QueryOptions{
+			ConfigPath: inv.Globals.ConfigPath,
+			Name:       inv.Globals.Name,
+			Topic:      inv.String("topic"),
+			Values:     inv.Strings("values"),
+		}, stdout)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "chrootctl completion:", err)
+			return 1
+		}
+		return 0
+	}
 	if inv.Spec.Command == "wrapper install" {
 		return signalExitCode(ctx, InstallWrapper(inv, stdout, stderr))
 	}
@@ -91,16 +105,17 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return signalExitCode(ctx, bridge.RunApp(ctx, bargs, stdin, stdout, stderr))
 	}
 
-	if inv.Spec.EffectivePrivilege(inv.Values) != "none" && !sys.IsRoot() {
+	if shouldReexecPrivilege(inv, sys.IsRoot()) {
 		if inv.Globals.NoSudo {
 			return writeFailure(inv, stdout, stderr, errors.New("permission error: root privileges required; rerun without --no-sudo to auto-escalate"), nil, 2)
 		}
-		argv, e := sys.ReexecArgv()
+		reexecArgs := privilegeReexecArgs(inv, args)
+		argv, e := sys.ReexecArgv(reexecArgs)
 		if e != nil {
 			return writeFailure(inv, stdout, stderr, e, nil, 1)
 		}
-		runner := sys.Runner{DryRun: inv.Globals.DryRun}
-		code, e := runner.ReexecWithRoot(ctx, argv)
+		runner := sys.Runner{}
+		code, e := runner.ReexecWithRootIO(ctx, argv, stdin, stdout, stderr)
 		if e != nil {
 			return writeFailure(inv, stdout, stderr, e, nil, 1)
 		}
@@ -125,6 +140,20 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return signalExitCode(ctx, writeFailure(inv, stdout, stderr, err, nil, 1))
 	}
 	return signalExitCode(ctx, app.ExitCode)
+}
+
+func shouldReexecPrivilege(inv Invocation, alreadyRoot bool) bool {
+	return inv.Spec.EffectivePrivilege(inv.Values) != "none" && !alreadyRoot && !inv.Globals.DryRun
+}
+
+func privilegeReexecArgs(inv Invocation, args []string) []string {
+	out := append([]string(nil), args...)
+	// Freeze the invoking user's config identity before a sudo transition can
+	// change HOME. Android defaults are likewise made explicit for parity.
+	if inv.Globals.ConfigPath == "" {
+		out = append([]string{"--config", config.DefaultConfigPath(config.DetectRuntime())}, out...)
+	}
+	return out
 }
 
 func writeFailure(inv Invocation, stdout, stderr io.Writer, err error, partial any, code int) int {

@@ -1,7 +1,6 @@
 package com.mikeyphw.chrootctl.root
 
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -15,6 +14,14 @@ internal data class BridgeProcessResult(
     val errorOutput: String = "",
     val timedOut: Boolean = false,
     val truncated: Boolean = false,
+)
+
+internal fun rootBridgeEnvironment(): Map<String, String> = linkedMapOf(
+    "HOME" to "/data/adb/chrootctl",
+    "PATH" to "/data/adb/chrootctl/bin:/system/bin:/system/xbin:/vendor/bin:/product/bin",
+    "TMPDIR" to "/data/local/tmp",
+    "LANG" to "C.UTF-8",
+    "LC_ALL" to "C.UTF-8",
 )
 
 internal class BridgeProcess(private val runtime: BridgeRuntime) {
@@ -68,21 +75,8 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
         val command = runtime.argv + arguments
         return ProcessBuilder(command)
             .apply {
-                val dataRoot = File(File.separator, "data")
-                val adbRoot = File(dataRoot, "adb")
-                val termuxRoot = File(File(dataRoot, "data"), "com.termux")
-                val termuxFiles = File(termuxRoot, "files")
-                val termuxUsrBin = File(termuxFiles, "usr/bin")
-                val termuxLocalBin = File(termuxFiles, "home/.local/bin")
-                val bridgeBin = File(adbRoot, "chrootctl/bin")
-                environment()["HOME"] = File(termuxFiles, "home").path
-                environment()["PATH"] = listOf(
-                    bridgeBin,
-                    termuxLocalBin,
-                    termuxUsrBin,
-                    File(File.separator, "system/bin"),
-                    File(File.separator, "system/xbin"),
-                ).joinToString(File.pathSeparator) { it.path }
+                environment().clear()
+                environment().putAll(rootBridgeEnvironment())
             }
             .start()
     }

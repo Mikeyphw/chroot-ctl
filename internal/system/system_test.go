@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,5 +182,25 @@ func TestDryRunAndValidation(t *testing.T) {
 		if err := RequireRoot(); err == nil || err.Error() != "root privileges required" {
 			t.Fatalf("%v", err)
 		}
+	}
+}
+
+func TestCHR04ReexecArgvUsesSuppliedArguments(t *testing.T) {
+	original := append([]string(nil), os.Args...)
+	os.Args = []string{"wrong-process-global", "wrong"}
+	defer func() { os.Args = original }()
+	got, err := ReexecArgv([]string{"status", "--details"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[1] != "status" || got[2] != "--details" {
+		t.Fatalf("reexec argv=%#v", got)
+	}
+}
+
+func TestCHR04DryRunRootReexecFailsClosedIfCalledDirectly(t *testing.T) {
+	runner := Runner{DryRun: true}
+	if _, err := runner.ReexecWithRootIO(context.Background(), []string{"chrootctl", "status"}, strings.NewReader(""), io.Discard, io.Discard); err == nil {
+		t.Fatal("dry-run root reexec must not silently report success")
 	}
 }

@@ -1698,11 +1698,27 @@
           "required": false,
           "type": null,
           "completion": ""
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "force",
+          "help": "Replace an existing non-chrootctl wrapper/completion file after collision checks.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--force"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
         }
       ],
       "command": "wrapper install",
-      "description": "Install a local wrapper that runs chrootctl directly as root or escalates with su -c when needed.",
-      "epilog": "examples:\n  chrootctl wrapper install\n  chrootctl wrapper install --name chc --dir ~/.local/bin\n  chrootctl wrapper install --completion-dir ~/.local/share/zsh/site-functions",
+      "description": "Install a provenance-marked local wrapper that delegates privilege policy to the trusted Go runtime.",
+      "epilog": "examples:\n  chrootctl wrapper install\n  chrootctl wrapper install --name chc --dir ~/.local/bin\n  chrootctl wrapper install --completion-dir ~/.local/share/zsh/site-functions\n  chrootctl wrapper install --force",
       "path": [
         "wrapper",
         "install"
@@ -1717,7 +1733,7 @@
       ],
       "streamMode": "none",
       "privilege": "none",
-      "mutability": "read",
+      "mutability": "mutate",
       "healthExitPolicy": "informational",
       "exclusiveGroups": [],
       "requireOneOfGroups": [],

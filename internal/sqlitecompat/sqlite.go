@@ -62,6 +62,47 @@ func DSN(path string) (string, error) {
 	return u.String(), nil
 }
 
+func ReadOnlyDSN(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", errors.New("sqlite database path is empty")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve sqlite path: %w", err)
+	}
+	u := &url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}
+	q := u.Query()
+	q.Set("mode", "ro")
+	q.Set("_busy_timeout", fmt.Sprintf("%d", BusyTimeoutMS))
+	q.Set("_foreign_keys", "on")
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// OpenReadOnly opens an existing SQLite database without creating files,
+// changing journal mode, or running schema migrations.
+func OpenReadOnly(path string) (*sql.DB, error) {
+	dsn, err := ReadOnlyDSN(path)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite registry read-only: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping sqlite registry read-only: %w", err)
+	}
+	if _, err := db.Exec("PRAGMA query_only = ON"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enable sqlite query_only: %w", err)
+	}
+	return db, nil
+}
+
 func Open(path string) (*sql.DB, error) {
 	dsn, err := DSN(path)
 	if err != nil {

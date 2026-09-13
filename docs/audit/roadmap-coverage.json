@@ -25,7 +25,7 @@
     {
       "id": "CHR04",
       "title": "Privilege, wrapper & completion trust boundary",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR05",
@@ -164,7 +164,9 @@
       "id": "D02",
       "title": "Global dry-run is not enforced at the mutation boundary",
       "ownerOverlay": "CHR06",
-      "supportingOverlays": [],
+      "supportingOverlays": [
+        "CHR04"
+      ],
       "status": "planned",
       "sourceFindings": [
         {
@@ -464,7 +466,7 @@
       "title": "Privilege/root escalation policy is fragmented or wrong",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI01-03",
@@ -522,7 +524,7 @@
       "title": "Root execution trusts mutable/untrusted executable search paths or runtime candidates",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-01",
@@ -6433,7 +6435,7 @@
       "title": "HIGH — dynamic shell completion is not a read-only operation",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-04",
@@ -6449,7 +6451,7 @@
       "title": "HIGH — completing `chc` executes dynamic completion through root `su`",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-05",
@@ -6465,7 +6467,7 @@
       "title": "MEDIUM/HIGH — direct dynamic completion may silently fail under the module state permissions",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-06",
@@ -6481,7 +6483,7 @@
       "title": "MEDIUM — user completion loses the selected `--name` chroot context",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-07",
@@ -6497,7 +6499,7 @@
       "title": "MEDIUM — `chc` escalates every non-root command, not only commands that need root",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-11",
@@ -6513,7 +6515,7 @@
       "title": "MEDIUM — custom wrapper names do not receive completion registration",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-13",
@@ -6529,7 +6531,7 @@
       "title": "MEDIUM/HIGH — installer overwrites unrelated target files without a provenance/force guard",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-14",
@@ -6545,7 +6547,7 @@
       "title": "MEDIUM — wrapper + completion installation is not transactional",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-15",
@@ -6561,7 +6563,7 @@
       "title": "LOW/MEDIUM — wrapper-name validation is weaker than the project's normal basename validation",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-16",
@@ -6577,7 +6579,7 @@
       "title": "LOW — completion generator silently degrades if its embedded resource cannot be read",
       "ownerOverlay": "CHR04",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI16-17",

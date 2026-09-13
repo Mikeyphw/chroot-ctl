@@ -230,6 +230,24 @@ func Open(path string) (*Registry, error) {
 	return r, nil
 }
 
+func OpenReadOnly(path string) (*Registry, error) {
+	if path == "" {
+		return nil, errors.New("registry database path is empty")
+	}
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("registry database path must be absolute: %s", path)
+	}
+	path = filepath.Clean(path)
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	db, err := sqlitecompat.OpenReadOnly(path)
+	if err != nil {
+		return nil, err
+	}
+	return &Registry{path: path, db: db, now: time.Now}, nil
+}
+
 func (r *Registry) Close() error { return r.db.Close() }
 func (r *Registry) DB() *sql.DB  { return r.db }
 func (r *Registry) Path() string { return r.path }

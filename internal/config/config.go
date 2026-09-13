@@ -241,14 +241,27 @@ func WithChrootCounter(counter ChrootCounter) LoadOption {
 }
 
 func Load(path string, options ...LoadOption) (ChrootConfig, error) {
+	return load(path, true, options...)
+}
+
+// LoadReadOnly resolves and validates configuration without performing runtime-layout
+// migration or any other filesystem mutation. It is intended for shell completion
+// and other discovery paths that must remain safe to execute on every TAB press.
+func LoadReadOnly(path string, options ...LoadOption) (ChrootConfig, error) {
+	return load(path, false, options...)
+}
+
+func load(path string, migrate bool, options ...LoadOption) (ChrootConfig, error) {
 	settings := loadSettings{runtime: DetectRuntime()}
 	for _, option := range options {
 		option(&settings)
 	}
 	settings.runtime = normalizeRuntime(settings.runtime)
 	if path == "" {
-		if err := MigrateAndroidRuntimeLayout(settings.runtime, settings.counter); err != nil {
-			return ChrootConfig{}, err
+		if migrate {
+			if err := MigrateAndroidRuntimeLayout(settings.runtime, settings.counter); err != nil {
+				return ChrootConfig{}, err
+			}
 		}
 		path = DefaultConfigPath(settings.runtime)
 	}

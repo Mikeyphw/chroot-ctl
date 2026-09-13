@@ -1,5 +1,6 @@
 package com.mikeyphw.chrootctl.root
 
+import android.system.Os
 import java.io.File
 import java.security.MessageDigest
 import org.json.JSONObject
@@ -13,11 +14,6 @@ internal data class BridgeRuntime(
 internal object RuntimeResolver {
     private val dataRoot = File(File.separator, "data")
     private val adbRoot = File(dataRoot, "adb")
-    private val termuxRoot = File(File(dataRoot, "data"), "com.termux")
-    private val termuxFiles = File(termuxRoot, "files")
-    private val termuxUsr = File(termuxFiles, "usr")
-    private val termuxHome = File(termuxFiles, "home")
-
     private val ksuRoot = File(adbRoot, "ksu")
     private val activeModuleDir = File(adbRoot, "modules/chrootctl-magisk")
     private val pendingModuleDirs = listOf(
@@ -30,8 +26,6 @@ internal object RuntimeResolver {
     private val externalExecutableCandidates = listOf(
         File(File.separator, "system/bin/chrootctl"),
         File(adbRoot, "chrootctl/bin/chrootctl"),
-        File(termuxHome, ".local/bin/chrootctl"),
-        File(termuxUsr, "bin/chrootctl"),
     )
 
     @Volatile private var cachedRuntime: BridgeRuntime? = null
@@ -44,19 +38,6 @@ internal object RuntimeResolver {
         }
         return synchronized(this) {
             cachedRuntime?.let { return@synchronized it }
-            val override = System.getenv("CHROOTCTL_EXECUTABLE")?.takeIf(String::isNotBlank)
-            var overrideFailure: String? = null
-            if (override != null) {
-                val candidate = File(override)
-                val runtime = BridgeRuntime(listOf(override, "app"), "override", override)
-                if (isExecutable(candidate) && isCompatible(runtime)) {
-                    lastDiagnostic = "Using compatible bridge runtime at $override"
-                    cachedRuntime = runtime
-                    return@synchronized runtime
-                }
-                overrideFailure = "CHROOTCTL_EXECUTABLE was incompatible; normal active-runtime discovery continued"
-            }
-
             val activeModuleClaimsAuthority = activeModuleDir.exists() &&
                 !File(activeModuleDir, "disable").exists() &&
                 !File(activeModuleDir, "remove").exists()
@@ -69,7 +50,7 @@ internal object RuntimeResolver {
                 // executing an unrelated external development runtime. GO14
                 // deliberately removed every Python-module fallback.
                 if (!activeModuleClaimsAuthority) {
-                    externalExecutableCandidates.filter(::isExecutable).forEach { executable ->
+                    externalExecutableCandidates.filter(::isTrustedRootExecutable).forEach { executable ->
                         add(BridgeRuntime(listOf(executable.path, "app"), "chrootctl", executable.path))
                     }
                 }
@@ -80,10 +61,10 @@ internal object RuntimeResolver {
                 val pendingNote = if (pending.isEmpty()) "" else " Pending module update(s) were detected but are intentionally not executable until activation after reboot."
                 val base = when {
                     activeModuleClaimsAuthority -> "An enabled chrootctl module is installed, but its sealed bundled-native runtime is unsafe, incompatible, or did not expose the protocol-1 Android bridge; external runtime fallback was refused"
-                    candidates.isEmpty() -> "No active Go chrootctl executable was found in module, system, legacy adb-root, or Termux locations"
-                    else -> "Found Go chrootctl executable candidates, but none exposed the protocol-1 Android bridge"
+                    candidates.isEmpty() -> "No active root-managed Go chrootctl executable was found in the module, /system, or /data/adb/chrootctl"
+                    else -> "Found root-managed Go chrootctl executable candidates, but none exposed the protocol-1 Android bridge"
                 }
-                lastDiagnostic = listOfNotNull(overrideFailure, base + pendingNote).joinToString(". ")
+                lastDiagnostic = base + pendingNote
             } else {
                 lastDiagnostic = "Using compatible bridge runtime at ${selected.executable}"
             }
@@ -117,7 +98,7 @@ internal object RuntimeResolver {
         return if (path.path.startsWith(activeModuleDir.path + File.separator)) {
             isActiveModuleExecutable(path)
         } else {
-            isExecutable(path)
+            isTrustedRootExecutable(path)
         }
     }
 
@@ -253,6 +234,14 @@ internal object RuntimeResolver {
         return canonical == path.absoluteFile && canonical.path.startsWith(activeCanonical.path + File.separator)
     }
 
+    private fun isTrustedRootExecutable(path: File): Boolean {
+        if (!isExecutable(path) || path.toPath().let(java.nio.file.Files::isSymbolicLink)) return false
+        val canonical = runCatching { path.canonicalFile }.getOrNull() ?: return false
+        if (canonical != path.absoluteFile) return false
+        val stat = runCatching { Os.lstat(path.path) }.getOrNull() ?: return false
+        return trustedRootExecutableMetadata(stat.st_uid.toInt(), stat.st_mode)
+    }
+
     private fun isExecutable(path: File): Boolean = path.isFile && path.canExecute()
 
     private const val PROBE_TIMEOUT_SECONDS = 45L
@@ -272,6 +261,9 @@ internal object RuntimeResolver {
     private const val EXPECTED_ANDROID_VERSION_NAME = "0.1.0-phase29"
     private const val EXPECTED_ANDROID_VERSION_CODE = 1
 }
+
+internal fun trustedRootExecutableMetadata(uid: Int, mode: Int): Boolean =
+    uid == 0 && (mode and 0x12) == 0
 
 internal fun selectCompatibleRuntime(
     candidates: List<BridgeRuntime>,

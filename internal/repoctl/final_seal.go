@@ -57,7 +57,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateBuildFoundation(root); e != nil {
 			return e
 		}
-		return ValidateConfigRegistryFoundation(root)
+		if e := ValidateConfigRegistryFoundation(root); e != nil {
+			return e
+		}
+		return ValidatePrivilegeTrustBoundary(root)
 	}); err != nil {
 		return err
 	}

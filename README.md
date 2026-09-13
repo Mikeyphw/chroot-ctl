@@ -17,7 +17,7 @@ Go-native Android/Termux chroot manager with a Magisk/KernelSU module runtime an
 - config-driven bind mounts, extra packages, locale, DNS, and per-chroot overrides
 - diagnostics via `doctor` and local log viewing via `logs`
 - zsh completion generated from the same CLI contract used by parser/help, including dynamic chroot/user/catalog candidates
-- `wrapper install` for a local `chc` helper that auto-escalates through `su -c` when needed
+- `wrapper install` for a provenance-marked `chc` launcher that selects only active/root-managed runtimes and delegates escalation to the Go CLI privilege contract
 - YAML-backed `tools` and `addons` repositories with explicit selection and single-candidate auto-selection
 - rich CLI output
 
@@ -165,7 +165,7 @@ Tool and add-on manifests live in YAML. `distro` may be a single distro, a list 
 
 Finite selectors are deterministic: chroot/user/tool/add-on values are auto-selected only when exactly one eligible candidate exists; otherwise pass the value explicitly. `--non-interactive` continues to disable the install wizard and confirmations. The CLI no longer documents an `fzf`/numbered-prompt fallback that the native backend does not implement.
 
-Zsh completion is rendered directly from the compiled CLI contract, so command families, options, choices, and completion hints cannot drift from parser/help metadata. See [`docs/cli/COMMAND_REFERENCE.md`](docs/cli/COMMAND_REFERENCE.md) for the generated exhaustive command reference.
+Zsh completion is rendered directly from the compiled CLI contract, so command families, options, choices, and completion hints cannot drift from parser/help metadata. Dynamic completion uses a read-only, non-root query path; the `chc` wrapper is a provenance-marked thin launcher and delegates all privilege decisions to the same generated CLI contract. See [`docs/cli/COMMAND_REFERENCE.md`](docs/cli/COMMAND_REFERENCE.md) for the generated exhaustive command reference.
 
 
 ## Native Android replacement foundation

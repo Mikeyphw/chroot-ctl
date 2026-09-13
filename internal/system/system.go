@@ -538,63 +538,136 @@ func RequireRoot() error {
 	}
 	return nil
 }
-func SudoAvailable() bool { _, err := exec.LookPath("sudo"); return err == nil }
-func SuAvailable() bool   { _, err := exec.LookPath("su"); return err == nil }
+func SudoAvailable() bool { return trustedSudoPath() != "" }
+func SuAvailable() bool   { return trustedSuPath() != "" }
 
-// ReexecWithRoot prefers sudo on conventional hosts and falls back to the
-// Android/Magisk/KernelSU su -c interface. It deliberately keeps the provider
-// decision in one place so CLI contract metadata can describe privilege policy
-// without duplicating host-specific escalation logic.
-func (r Runner) ReexecWithRoot(ctx context.Context, argv []string) (int, error) {
+const (
+	hostRootPath    = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	androidRootPath = "/data/adb/chrootctl/bin:/system/bin:/system/xbin:/vendor/bin:/product/bin"
+)
+
+func firstExecutable(paths ...string) string {
+	for _, path := range paths {
+		st, err := os.Stat(path)
+		if err == nil && st.Mode().IsRegular() && st.Mode()&0o111 != 0 {
+			return path
+		}
+	}
+	return ""
+}
+
+func trustedSudoPath() string { return firstExecutable("/usr/bin/sudo", "/bin/sudo") }
+func trustedSuPath() string {
+	return firstExecutable("/system/bin/su", "/system/xbin/su", "/sbin/su", "/debug_ramdisk/su")
+}
+func trustedEnvPath() string { return firstExecutable("/usr/bin/env", "/bin/env") }
+func androidHost() bool {
+	if os.Getenv("ANDROID_ROOT") != "" || os.Getenv("ANDROID_DATA") != "" {
+		return true
+	}
+	_, err := os.Stat("/system/bin/app_process")
+	return err == nil
+}
+
+// ReexecWithRootIO performs the privilege transition with caller-provided I/O.
+// Provider binaries and the root PATH are fixed, never selected from caller
+// PATH. Process-start failures are returned as errors; child exit statuses are
+// returned only after the privileged command actually ran.
+func (r Runner) ReexecWithRootIO(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	if len(argv) == 0 {
 		return 0, errors.New("re-exec argv is empty")
 	}
 	if r.DryRun {
-		provider := "sudo"
-		if !SudoAvailable() && SuAvailable() {
-			provider = "su -c"
-		}
-		r.infof("dry-run root re-exec via %s: %s", provider, shellJoin(argv))
-		return 0, nil
+		return 0, errors.New("internal error: dry-run must dispatch without privilege re-exec")
 	}
 	var cmd *exec.Cmd
-	switch {
-	case SudoAvailable():
-		cmd = exec.CommandContext(ctx, "sudo", argv...)
-	case SuAvailable():
-		cmd = exec.CommandContext(ctx, "su", "-c", shellJoin(argv))
-	default:
-		return 0, errors.New("neither sudo nor su is available and root is required")
+	if sudo := trustedSudoPath(); sudo != "" && !androidHost() {
+		envPath := trustedEnvPath()
+		if envPath == "" {
+			return 0, errors.New("trusted env executable is unavailable for sudo re-exec")
+		}
+		rootArgs := []string{envPath, "-i", "PATH=" + hostRootPath, "HOME=/root", "USER=root"}
+		if term := os.Getenv("TERM"); term != "" {
+			rootArgs = append(rootArgs, "TERM="+term)
+		}
+		rootArgs = append(rootArgs, argv...)
+		cmd = exec.CommandContext(ctx, sudo, rootArgs...)
+	} else if su := trustedSuPath(); su != "" {
+		rootPath := hostRootPath
+		home := "/root"
+		if androidHost() {
+			rootPath = androidRootPath
+			home = "/data/adb/chrootctl"
+		}
+		prefix := []string{"export PATH=" + shellQuote(rootPath), "export HOME=" + shellQuote(home), "export USER=root"}
+		command := strings.Join(prefix, "; ") + "; exec " + shellJoin(argv)
+		cmd = exec.CommandContext(ctx, su, "-c", command)
+	} else {
+		return 0, errors.New("no trusted sudo/su provider is available and root is required")
 	}
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	err := cmd.Run()
-	return exitCode(cmd.ProcessState, err), nil
+	if err == nil {
+		return 0, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode(), nil
+	}
+	return 0, fmt.Errorf("root re-exec failed: %w", err)
+}
+
+// ReexecWithRoot retains the legacy process-global I/O API for internal callers.
+func (r Runner) ReexecWithRoot(ctx context.Context, argv []string) (int, error) {
+	return r.ReexecWithRootIO(ctx, argv, os.Stdin, os.Stdout, os.Stderr)
 }
 
 func (r Runner) ReexecWithSudo(ctx context.Context, argv []string) (int, error) {
+	sudo := trustedSudoPath()
+	if sudo == "" {
+		return 0, errors.New("trusted sudo is not available and root is required")
+	}
 	if r.DryRun {
-		r.infof("dry-run sudo re-exec: %s", shellJoin(append([]string{"sudo"}, argv...)))
+		return 0, errors.New("internal error: dry-run must dispatch without privilege re-exec")
+	}
+	cmd := exec.CommandContext(ctx, sudo, argv...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err := cmd.Run()
+	if err == nil {
 		return 0, nil
 	}
-	if !SudoAvailable() {
-		return 0, errors.New("sudo is not available and root is required")
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode(), nil
 	}
-	cmd := exec.CommandContext(ctx, "sudo", argv...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	return exitCode(cmd.ProcessState, err), nil
+	return 0, fmt.Errorf("sudo re-exec failed: %w", err)
 }
-func ReexecArgv() ([]string, error) {
+
+// ReexecArgv returns an exact re-exec argv for the args supplied to cli.Run.
+// On Android, privileged re-exec is allowed only through the active/root-managed
+// production executable, never a Termux-writable development binary.
+func ReexecArgv(args []string) ([]string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	return append([]string{exe}, os.Args[1:]...), nil
+	if androidHost() {
+		trusted := firstExecutable(
+			"/system/bin/chrootctl",
+			"/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",
+			"/data/adb/ksu/modules/chrootctl-magisk/system/bin/chrootctl",
+		)
+		if trusted == "" {
+			return nil, errors.New("trusted active chrootctl runtime is unavailable for root re-exec")
+		}
+		exe = trusted
+	}
+	return append([]string{exe}, args...), nil
 }
+
+func shellQuote(arg string) string { return "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'" }
 
 func MountTable(path string) (map[[2]string]struct{}, error) {
 	if path == "" {

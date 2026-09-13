@@ -22,6 +22,32 @@ var CommandNodes = func() []string {
 // generator/contract defects are returned to the caller instead of producing a
 // successful-looking but incomplete completion program.
 func GenerateZsh() (string, error) {
+	return GenerateZshFor("chrootctl", "chc")
+}
+
+// GenerateZshFor renders completion for chrootctl plus any installed wrapper
+// aliases. Aliases are emitted only into static compdef metadata; dynamic
+// lookups still execute the command the user actually invoked, and the wrapper
+// itself delegates privilege policy to the Go CLI.
+func GenerateZshFor(commands ...string) (string, error) {
+	aliases := make([]string, 0, len(commands))
+	seenAlias := map[string]bool{}
+	for _, command := range commands {
+		command = strings.TrimSpace(command)
+		if command == "" || seenAlias[command] {
+			continue
+		}
+		for _, r := range command {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
+				return "", fmt.Errorf("invalid completion command alias %q", command)
+			}
+		}
+		aliases = append(aliases, command)
+		seenAlias[command] = true
+	}
+	if len(aliases) == 0 {
+		aliases = []string{"chrootctl"}
+	}
 	roots := []string{}
 	rootSeen := map[string]bool{}
 	children := map[string][]string{}
@@ -47,10 +73,17 @@ func GenerateZsh() (string, error) {
 	}
 
 	var b strings.Builder
-	b.WriteString("#compdef chrootctl chc\n\n")
+	b.WriteString("#compdef " + strings.Join(aliases, " ") + "\n\n")
 	b.WriteString("# Generated from migration/contracts/v1/cli.json. Do not edit.\n")
 	b.WriteString("typeset -g _chrootctl_prog=\"chrootctl\"\n")
-	b.WriteString("_chrootctl_dynamic() { \"${_chrootctl_prog}\" __complete \"$@\" 2>/dev/null }\n")
+	b.WriteString(`_chrootctl_dynamic() {
+  local -a _chrootctl_prefix
+  _chrootctl_prefix=()
+  [[ -n "${opt_args[--config]-}" ]] && _chrootctl_prefix+=(--config "${opt_args[--config]}")
+  [[ -n "${opt_args[--name]-}" ]] && _chrootctl_prefix+=(--name "${opt_args[--name]}")
+  "${_chrootctl_prog}" "${_chrootctl_prefix[@]}" __complete "$@" 2>/dev/null
+}
+`)
 	b.WriteString("_chrootctl_complete_chroots() { local -a x; x=(${(f)\"$(_chrootctl_dynamic chroots)\"}); compadd -a x }\n")
 	b.WriteString("_chrootctl_complete_installed_chroots() { local -a x; x=(${(f)\"$(_chrootctl_dynamic installed-chroots)\"}); compadd -a x }\n")
 	b.WriteString("_chrootctl_complete_users() { local -a x; x=(${(f)\"$(_chrootctl_dynamic users)\"}); compadd -a x }\n")
@@ -67,19 +100,19 @@ func GenerateZsh() (string, error) {
 	b.WriteString("  [[ $state == args ]] || return\n")
 	b.WriteString("  local -a cmdwords\n  cmdwords=(${line:#-*})\n  local key=\"${(j: :)cmdwords}\"\n")
 	// Prefer longest known command prefix. zsh line excludes already processed globals.
-	commands := make([]string, 0, len(byCommand))
+	commandNames := make([]string, 0, len(byCommand))
 	for command := range byCommand {
-		commands = append(commands, command)
+		commandNames = append(commandNames, command)
 	}
-	sort.Slice(commands, func(i, j int) bool {
-		ai, aj := len(strings.Fields(commands[i])), len(strings.Fields(commands[j]))
+	sort.Slice(commandNames, func(i, j int) bool {
+		ai, aj := len(strings.Fields(commandNames[i])), len(strings.Fields(commandNames[j]))
 		if ai == aj {
-			return commands[i] < commands[j]
+			return commandNames[i] < commandNames[j]
 		}
 		return ai > aj
 	})
 	b.WriteString("  case \"$key\" in\n")
-	for _, command := range commands {
+	for _, command := range commandNames {
 		spec := byCommand[command]
 		pattern := zshSingle(command + "*")
 		b.WriteString("    " + pattern + ")\n")
@@ -98,7 +131,7 @@ func GenerateZsh() (string, error) {
 		}
 		b.WriteString("      ;;\n")
 	}
-	b.WriteString("  esac\n}\n\ncompdef _chrootctl chrootctl chc\n")
+	b.WriteString("  esac\n}\n\ncompdef _chrootctl " + strings.Join(aliases, " ") + "\n")
 	return b.String(), nil
 }
 
