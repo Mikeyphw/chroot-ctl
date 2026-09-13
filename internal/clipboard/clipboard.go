@@ -510,8 +510,14 @@ func Doctor(cfg config.ChrootConfig, paths Paths) map[string]any {
 	get := filepath.Join(cfg.TermuxPrefix, "bin", "termux-clipboard-get")
 	wr := map[string]bool{}
 	for _, n := range []string{"termux-clip", "chrootctl-xsel", "chrootctl-xclip"} {
-		_, e := os.Stat(filepath.Join(cfg.ChrootBase(), "usr/local/bin", n))
-		wr[n] = e == nil
+		p := filepath.Join(cfg.ChrootBase(), "usr/local/bin", n)
+		st, e := os.Lstat(p)
+		ok := e == nil && st.Mode().IsRegular() && st.Mode()&os.ModeSymlink == 0 && st.Mode().Perm()&0o111 != 0
+		if ok {
+			b, readErr := os.ReadFile(p)
+			ok = readErr == nil && strings.Contains(string(b), "chrootctl-clipboard-wrapper:v1 "+n)
+		}
+		wr[n] = ok
 	}
 	ready := true
 	for _, v := range wr {

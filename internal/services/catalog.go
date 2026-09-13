@@ -58,6 +58,12 @@ func (s *CatalogService) Preflight(ctx context.Context, entry catalog.Entry) ([]
 	if e != nil {
 		return nil, e
 	}
+	if rt.Config.TargetArch != "" && rt.Config.TargetArch != sys.HostArch() && !sys.CanExecuteForeignArch(rt.Config.TargetArch) {
+		return nil, fmt.Errorf("target %s architecture %s is not executable on host %s; configure qemu/binfmt first", s.Name, rt.Config.TargetArch, sys.HostArch())
+	}
+	if e = rt.Controller.Prepare(ctx, false); e != nil {
+		return nil, fmt.Errorf("prepare catalog target: %w", e)
+	}
 	required := append([]string(nil), entry.Requires...)
 	if len(entry.Script) > 3 && entry.Script[len(entry.Script)-3:] == ".py" {
 		required = append(required, "python3")

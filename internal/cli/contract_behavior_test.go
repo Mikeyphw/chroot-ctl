@@ -136,3 +136,17 @@ func TestSignalExitCodesAreStable(t *testing.T) {
 		}
 	}
 }
+
+func TestCHR08ServiceAddressingSupportsDocumentedForms(t *testing.T) {
+	service, chroot, err := serviceAddress([]string{"serve-web"}, "code")
+	if err != nil || service != "serve-web" || chroot != "code" {
+		t.Fatalf("--name form: %q %q %v", service, chroot, err)
+	}
+	service, chroot, err = serviceAddress([]string{"code", "serve-web"}, "")
+	if err != nil || service != "serve-web" || chroot != "code" {
+		t.Fatalf("positional form: %q %q %v", service, chroot, err)
+	}
+	if _, _, err = serviceAddress([]string{"a", "b", "c"}, ""); err == nil {
+		t.Fatal("too many service positionals must fail")
+	}
+}

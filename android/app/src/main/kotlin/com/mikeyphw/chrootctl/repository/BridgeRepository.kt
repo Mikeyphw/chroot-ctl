@@ -81,6 +81,7 @@ private class RoomHomeSnapshotStore(
     override suspend fun markStale() {
         database.withTransaction {
             database.chrootDao().markAllStale()
+            database.operationDao().markAllStale()
             database.homeSnapshotDao().markStale()
         }
     }
@@ -104,12 +105,13 @@ internal class HomeRefreshCoordinator(
         val now = nowMillis()
         val chrootEntities = chrootArray.toJsonObjects().map { item -> item.toChrootEntity(now) }
         val operationEntities = operationArray.toJsonObjects().map { item -> item.toOperationEntity(now, stale = false) }
+        state.put("releaseReadiness", releaseReadiness)
         val warningCount = countWarnings(state, chrootEntities, operationEntities)
         val snapshot = HomeSnapshotEntity(
             id = HOME_SNAPSHOT_ID,
             bridgeInfoJson = bridgeInfo.toJson(),
             capabilitiesJson = capabilities.toJson(),
-            dashboardJson = state.put("releaseReadiness", releaseReadiness).toString(),
+            dashboardJson = state.toString(),
             chrootCount = chrootEntities.size,
             operationCount = operationEntities.size,
             warningCount = warningCount,
@@ -537,11 +539,19 @@ private fun HomeSnapshotEntity.toHomeSnapshot(
     val capabilities = BridgeCapabilities.fromData(JSONObject(capabilitiesJson))
     val activeOperation = operations.firstOrNull { it.state in setOf("queued", "running", "cancelling") }
     val failedOperation = operations.firstOrNull { it.state in setOf("failed", "interrupted", "blocked") }
+    val releaseReadiness = JSONObject(dashboardJson).optJSONObject("releaseReadiness").toReleaseReadinessSummary()
+    val releaseState = when {
+        releaseReadiness.rows.any { it.state == ReadinessState.Blocked } -> ReadinessState.Blocked
+        releaseReadiness.rows.any { it.state == ReadinessState.Warning } -> ReadinessState.Warning
+        releaseReadiness.rows.isEmpty() -> ReadinessState.Warning
+        else -> ReadinessState.Ready
+    }
     val rows = buildList {
         add(ReadinessRow("Root bridge", bridgeInfo.message, if (bridgeInfo.ok) ReadinessState.Ready else ReadinessState.Blocked))
         add(ReadinessRow("Backend", "${bridgeInfo.backend} · protocol ${capabilities.protocolVersion}", ReadinessState.Ready))
         add(ReadinessRow("Chroots", "${chroots.count { !it.stale }} registered", if (chroots.any { it.warningCount > 0 }) ReadinessState.Warning else ReadinessState.Ready))
         add(ReadinessRow("Operations", "${operations.count { !it.stale }} recent", if (failedOperation != null) ReadinessState.Warning else ReadinessState.Ready))
+        add(ReadinessRow("Release readiness", releaseReadiness.body, releaseState))
     }
     val action = when {
         !bridgeInfo.ok -> RecommendedAction(
@@ -578,7 +588,7 @@ private fun HomeSnapshotEntity.toHomeSnapshot(
         warningCount = warningCount,
         readinessRows = rows,
         recommendedAction = action,
-        releaseReadiness = JSONObject(dashboardJson).optJSONObject("releaseReadiness").toReleaseReadinessSummary(),
+        releaseReadiness = releaseReadiness,
         refreshedAt = lastRefreshAt,
         stale = stale,
     )
@@ -808,8 +818,16 @@ private fun countWarnings(
     dashboard: JSONObject,
     chroots: List<ChrootEntity>,
     operations: List<OperationEntity>,
-): Int = chroots.sumOf { it.warningCount } + operations.count { it.state in setOf("failed", "interrupted", "blocked") } +
-    dashboard.extractChecks(System.currentTimeMillis(), "home").count { it.severity.lowercase() in setOf("warn", "warning", "error", "failed", "blocked") }
+): Int {
+    val releaseWarnings = dashboard.optJSONObject("releaseReadiness")
+        ?.optJSONArray("checks")
+        .toJsonObjects()
+        .count { it.firstString("status").lowercase() !in setOf("pass", "ready") }
+    return chroots.sumOf { it.warningCount } +
+        operations.count { it.state in setOf("failed", "interrupted", "blocked") } +
+        dashboard.extractChecks(System.currentTimeMillis(), "home").count { it.severity.lowercase() in setOf("warn", "warning", "error", "failed", "blocked") } +
+        releaseWarnings
+}
 
 private fun JSONArray?.toJsonObjects(): List<JSONObject> {
     if (this == null) return emptyList()
@@ -944,9 +962,9 @@ private fun JSONObject.toServiceUnitDetailSummary(): ServiceUnitSummary {
         chrootName = status.firstString("chroot", "chrootName"),
         status = status.firstString("status").ifBlank { "unknown" },
         enabled = status.optBoolean("enabled", false),
-        boot = status.optJSONArray("wanted_by").toStringListLocal().contains("boot.target"),
+        boot = status.optBoolean("boot", status.optJSONArray("wanted_by").toStringListLocal().contains("boot.target")),
         description = status.firstString("description"),
-        journalText = journal.firstString("text"),
+        journalText = journal.firstString("text").ifBlank { journal.optJSONArray("lines").toStringListLocal().joinToString("\n") },
     )
 }
 

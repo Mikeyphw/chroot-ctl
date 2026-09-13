@@ -33,6 +33,9 @@ interface OperationDao {
     """)
     suspend fun pruneTerminalOperations(keep: Int = 250)
 
+    @Query("UPDATE operations SET stale = 1")
+    suspend fun markAllStale()
+
     @Query("SELECT * FROM operations ORDER BY createdAt DESC LIMIT :limit")
     fun observeRecent(limit: Int = 50): Flow<List<OperationEntity>>
 

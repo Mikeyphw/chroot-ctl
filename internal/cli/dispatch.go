@@ -148,6 +148,12 @@ func (a *App) status(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	for _, row := range v {
+		if strings.EqualFold(row.Result, "FAIL") {
+			a.ExitCode = 1
+			break
+		}
+	}
 	return a.emit("Status", v)
 }
 func (a *App) doctor(ctx context.Context) error {
@@ -266,27 +272,9 @@ func (a *App) start(ctx context.Context, restart bool) error {
 		return e
 	}
 	rootLogin := a.Inv.Bool("root_login") || !a.Inv.Bool("login")
-	user := rt.Config.Username
-	shell := rt.Config.ShellPath
-	if shell == "" {
-		shell = "/bin/bash"
-	}
-	var argv []string
-	var env map[string]string
-	if rootLogin {
-		flag := "-l"
-		if x11 {
-			flag = "-il"
-		}
-		argv = []string{"chroot", rt.Config.ChrootBase(), shell, flag}
-		env = rt.Controller.SessionEnv(true, x11, "root")
-	} else if x11 {
-		launch := "export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1:4713; exec " + shell + " -il"
-		argv = []string{"chroot", rt.Config.ChrootBase(), "/bin/su", "-", user, "-c", launch}
-		env = rt.Controller.SessionEnv(false, true, user)
-	} else {
-		argv = []string{"chroot", rt.Config.ChrootBase(), "/bin/su", "-", user}
-		env = rt.Controller.SessionEnv(false, false, user)
+	argv, env, e := rt.Controller.LoginInvocation(rootLogin, x11, rt.Config.Username)
+	if e != nil {
+		return e
 	}
 	res, e := rt.Runner.RunAttached(ctx, argv, sys.RunOptions{Env: env, ChrootEnv: true, AllowFailure: true})
 	if e != nil {
@@ -304,9 +292,6 @@ func (a *App) exec(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	if e = rt.Controller.Prepare(ctx, a.Inv.Bool("x11")); e != nil {
-		return e
-	}
 	argv := a.Inv.Strings("argv")
 	if len(argv) > 0 && argv[0] == "--" {
 		argv = argv[1:]
@@ -315,12 +300,32 @@ func (a *App) exec(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	if e = rt.Controller.Prepare(ctx, a.Inv.Bool("x11")); e != nil {
+		return e
+	}
 	res, e := rt.Runner.RunAttached(ctx, chargv, sys.RunOptions{Env: env, ChrootEnv: true, AllowFailure: true})
 	if e != nil {
 		return e
 	}
 	a.ExitCode = res.ReturnCode
 	return nil
+}
+
+func serviceAddress(values []string, globalName string) (service, chroot string, err error) {
+	if globalName != "" {
+		if len(values) != 1 {
+			return "", "", errors.New("with --name, exactly one SERVICE positional is required")
+		}
+		return values[0], globalName, nil
+	}
+	switch len(values) {
+	case 1:
+		return values[0], "", nil
+	case 2:
+		return values[1], values[0], nil
+	default:
+		return "", "", errors.New("service target must be SERVICE or CHROOT SERVICE")
+	}
 }
 
 func (a *App) units(ctx context.Context, cmd string) error {
@@ -347,49 +352,36 @@ func (a *App) units(ctx context.Context, cmd string) error {
 	if len(names) == 0 {
 		return errors.New("service target is required")
 	}
-	out := []any{}
-	for _, name := range names {
-		var v any
-		var e error
-		switch cmd {
-		case "enable":
-			v, e = svc.Enable(ctx, name, target, a.Inv.String("target"))
-		case "disable":
-			v, e = svc.Disable(ctx, name, target, a.Inv.String("target"))
-		case "journal":
-			v, e = svc.Logs(ctx, name, target, a.Inv.Int("tail", 100))
-		case "run":
-			switch {
-			case a.Inv.Bool("run_status"):
-				v, e = svc.Status(ctx, name, target)
-			case a.Inv.Bool("stop"):
-				v, e = svc.Stop(ctx, name, target)
-			case a.Inv.Bool("restart"):
-				v, e = svc.Restart(ctx, name, target)
-			case a.Inv.Bool("logs"):
-				v, e = svc.Logs(ctx, name, target, a.Inv.Int("tail", 100))
-			default:
-				v, e = svc.Start(ctx, name, target, a.Inv.Bool("foreground"))
-			}
-		}
-		if e != nil {
-			partial := append([]any(nil), out...)
-			if v != nil {
-				partial = append(partial, v)
-			}
-			exitCode := 1
-			if row, ok := v.(map[string]any); ok {
-				if raw, ok := row["exit_code"]; ok {
-					if n, ok := raw.(int); ok && n != 0 {
-						exitCode = n
-					}
-				}
-			}
-			return &PartialResultError{Err: e, Partial: partial, ExitCode: exitCode}
-		}
-		out = append(out, v)
+	name, boundTarget, e := serviceAddress(names, target)
+	if e != nil {
+		return e
 	}
-	return a.emit("Services", out)
+	var v any
+	switch cmd {
+	case "enable":
+		v, e = svc.Enable(ctx, name, boundTarget, a.Inv.String("target"))
+	case "disable":
+		v, e = svc.Disable(ctx, name, boundTarget, a.Inv.String("target"))
+	case "journal":
+		v, e = svc.Logs(ctx, name, boundTarget, a.Inv.Int("tail", 100))
+	case "run":
+		switch {
+		case a.Inv.Bool("run_status"):
+			v, e = svc.Status(ctx, name, boundTarget)
+		case a.Inv.Bool("stop"):
+			v, e = svc.Stop(ctx, name, boundTarget)
+		case a.Inv.Bool("restart"):
+			v, e = svc.Restart(ctx, name, boundTarget)
+		case a.Inv.Bool("logs"):
+			v, e = svc.Logs(ctx, name, boundTarget, a.Inv.Int("tail", 100))
+		default:
+			v, e = svc.Start(ctx, name, boundTarget, a.Inv.Bool("foreground"))
+		}
+	}
+	if e != nil {
+		return &PartialResultError{Err: e, Partial: v, ExitCode: 1}
+	}
+	return a.emit("Services", []any{v})
 }
 
 func (a *App) install(ctx context.Context) error {

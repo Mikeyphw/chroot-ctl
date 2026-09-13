@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,10 +24,12 @@ type ServiceUnit struct {
 	Name, Path, Description, Chroot, User, ExecStart, ExecStop, WorkingDirectory, Restart string
 	RestartSec                                                                            int
 	Environment                                                                           map[string]string
-	X11, Root                                                                             bool
+	X11, Root, EnabledByDefault                                                           bool
 	WantedBy, After, Requires                                                             []string
 }
 type UnitService struct{ C *Container }
+
+var serviceUnitNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]*\.service$`)
 
 func normalizeUnitName(name string) string {
 	name = strings.TrimSpace(name)
@@ -34,13 +38,73 @@ func normalizeUnitName(name string) string {
 	}
 	return name
 }
+func validateUnitName(name string) error {
+	if !serviceUnitNameRE.MatchString(name) {
+		return fmt.Errorf("invalid service unit name %q", name)
+	}
+	return nil
+}
 func splitWords(v string) []string {
 	if strings.TrimSpace(v) == "" {
 		return nil
 	}
 	return strings.Fields(v)
 }
-func parseBool(v string) bool { b, _ := strconv.ParseBool(strings.TrimSpace(v)); return b }
+func parseBoolStrict(v, field string) (bool, error) {
+	b, err := strconv.ParseBool(strings.TrimSpace(v))
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean, got %q", field, v)
+	}
+	return b, nil
+}
+func splitQuotedFields(v string) ([]string, error) {
+	out := []string{}
+	var b strings.Builder
+	var quote rune
+	escaped := false
+	flush := func() {
+		if b.Len() > 0 {
+			out = append(out, b.String())
+			b.Reset()
+		}
+	}
+	for _, r := range v {
+		if escaped {
+			b.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			} else {
+				b.WriteRune(r)
+			}
+			continue
+		}
+		if r == '\'' || r == '"' {
+			quote = r
+			continue
+		}
+		if r == ' ' || r == '\t' {
+			flush()
+			continue
+		}
+		b.WriteRune(r)
+	}
+	if escaped {
+		b.WriteRune('\\')
+	}
+	if quote != 0 {
+		return nil, errors.New("unterminated quote in Environment=")
+	}
+	flush()
+	return out, nil
+}
 func loadUnit(path string) (ServiceUnit, error) {
 	f, e := os.Open(path)
 	if e != nil {
@@ -48,6 +112,9 @@ func loadUnit(path string) (ServiceUnit, error) {
 	}
 	defer f.Close()
 	u := ServiceUnit{Name: filepath.Base(path), Path: path, Environment: map[string]string{}, Restart: "no", RestartSec: 1}
+	if err := validateUnitName(u.Name); err != nil {
+		return ServiceUnit{}, err
+	}
 	section := ""
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -59,11 +126,11 @@ func loadUnit(path string) (ServiceUnit, error) {
 			section = strings.Trim(line, "[]")
 			continue
 		}
-		p := strings.SplitN(line, "=", 2)
-		if len(p) != 2 {
-			continue
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return ServiceUnit{}, fmt.Errorf("service %s has malformed line %q", u.Name, line)
 		}
-		k, v := strings.TrimSpace(p[0]), strings.TrimSpace(p[1])
+		k, v := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 		switch section + "." + k {
 		case "Unit.Description":
 			u.Description = v
@@ -82,11 +149,23 @@ func loadUnit(path string) (ServiceUnit, error) {
 		case "Service.WorkingDirectory":
 			u.WorkingDirectory = v
 		case "Service.X11":
-			u.X11 = parseBool(v)
+			b, err := parseBoolStrict(v, "Service.X11")
+			if err != nil {
+				return ServiceUnit{}, err
+			}
+			u.X11 = b
 		case "Service.Root":
-			u.Root = parseBool(v)
+			b, err := parseBoolStrict(v, "Service.Root")
+			if err != nil {
+				return ServiceUnit{}, err
+			}
+			u.Root = b
 		case "Service.Restart":
-			u.Restart = strings.ToLower(v)
+			r := strings.ToLower(strings.TrimSpace(v))
+			if r != "no" && r != "always" && r != "on-failure" {
+				return ServiceUnit{}, fmt.Errorf("service %s has invalid Restart %q", u.Name, v)
+			}
+			u.Restart = r
 		case "Service.RestartSec":
 			n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(v), "s"))
 			if err != nil || n < 0 {
@@ -94,14 +173,25 @@ func loadUnit(path string) (ServiceUnit, error) {
 			}
 			u.RestartSec = n
 		case "Service.Environment":
-			for _, part := range strings.Fields(v) {
+			fields, err := splitQuotedFields(v)
+			if err != nil {
+				return ServiceUnit{}, fmt.Errorf("service %s: %w", u.Name, err)
+			}
+			for _, part := range fields {
 				kv := strings.SplitN(part, "=", 2)
-				if len(kv) == 2 {
-					u.Environment[kv[0]] = strings.Trim(kv[1], "\"'")
+				if len(kv) != 2 || kv[0] == "" {
+					return ServiceUnit{}, fmt.Errorf("service %s has invalid Environment token %q", u.Name, part)
 				}
+				u.Environment[kv[0]] = kv[1]
 			}
 		case "Install.WantedBy":
 			u.WantedBy = splitWords(v)
+		case "Install.Enabled":
+			b, err := parseBoolStrict(v, "Install.Enabled")
+			if err != nil {
+				return ServiceUnit{}, err
+			}
+			u.EnabledByDefault = b
 		}
 	}
 	if e = sc.Err(); e != nil {
@@ -117,6 +207,40 @@ func loadUnit(path string) (ServiceUnit, error) {
 	}
 	return u, nil
 }
+
+func trustedUnitPath(path string) error {
+	st, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !st.Mode().IsRegular() {
+		return fmt.Errorf("service unit %s must be a regular non-symlink file", path)
+	}
+	if !sys.IsRoot() {
+		return nil
+	}
+	stat, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("service unit %s ownership unavailable", path)
+	}
+	if stat.Uid != 0 {
+		return fmt.Errorf("service unit %s must be root-owned", path)
+	}
+	if st.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("service unit %s must not be group/world writable", path)
+	}
+	dir := filepath.Dir(path)
+	dst, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	ds, ok := dst.Sys().(*syscall.Stat_t)
+	if !ok || ds.Uid != 0 || dst.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("service directory %s is not a trusted root-owned directory", dir)
+	}
+	return nil
+}
+
 func (s *UnitService) units() (map[string]ServiceUnit, error) {
 	out := map[string]ServiceUnit{}
 	for _, dir := range s.C.BaseConfig.ServiceDirs {
@@ -132,13 +256,15 @@ func (s *UnitService) units() (map[string]ServiceUnit, error) {
 				continue
 			}
 			p := filepath.Join(dir, ent.Name())
-			st, e := os.Lstat(p)
-			if e != nil || !st.Mode().IsRegular() {
-				continue
+			if err := trustedUnitPath(p); err != nil {
+				return nil, err
 			}
 			u, e := loadUnit(p)
 			if e != nil {
 				return nil, e
+			}
+			if _, dup := out[u.Name]; dup {
+				return nil, fmt.Errorf("duplicate service unit %s", u.Name)
 			}
 			out[u.Name] = u
 		}
@@ -147,6 +273,9 @@ func (s *UnitService) units() (map[string]ServiceUnit, error) {
 }
 func (s *UnitService) get(name string) (ServiceUnit, error) {
 	name = normalizeUnitName(name)
+	if err := validateUnitName(name); err != nil {
+		return ServiceUnit{}, err
+	}
 	units, e := s.units()
 	if e != nil {
 		return ServiceUnit{}, e
@@ -197,6 +326,50 @@ func writeIdentity(path string, id *sys.ProcessIdentity) error {
 	b, _ := json.Marshal(id)
 	return os.WriteFile(path, b, 0600)
 }
+
+type serviceRuntimeState struct {
+	Status    string `json:"status"`
+	Detail    string `json:"detail,omitempty"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+func (s *UnitService) statePath(chroot, unit string) string {
+	return s.statePrefix(chroot, unit) + ".state.json"
+}
+func (s *UnitService) readState(chroot, unit string) serviceRuntimeState {
+	var st serviceRuntimeState
+	b, err := os.ReadFile(s.statePath(chroot, unit))
+	if err == nil {
+		_ = json.Unmarshal(b, &st)
+	}
+	return st
+}
+func (s *UnitService) writeState(chroot, unit, status, detail string) error {
+	if s.C.DryRun {
+		return nil
+	}
+	p := s.statePath(chroot, unit)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	b, err := json.Marshal(serviceRuntimeState{Status: status, Detail: detail, UpdatedAt: time.Now().Unix()})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, b, 0o600)
+}
+func wantedBy(u ServiceUnit, target string) bool {
+	for _, v := range u.WantedBy {
+		if normalizeUnitName(v) == normalizeUnitName(target) || v == target {
+			return true
+		}
+	}
+	return false
+}
+func (s *UnitService) EffectiveEnabled(u ServiceUnit, chroot, target string) bool {
+	return s.IsEnabled(chroot, u.Name, target) || (u.EnabledByDefault && wantedBy(u, target))
+}
+
 func (s *UnitService) IsEnabled(chroot, unit, target string) bool {
 	if target == "" {
 		target = "boot.target"
@@ -218,8 +391,11 @@ func (s *UnitService) List(ctx context.Context) ([]map[string]string, error) {
 	for _, n := range names {
 		u := units[n]
 		ch := u.Chroot
-		st, _ := s.Status(ctx, n, ch)
-		out = append(out, map[string]string{"service": n, "chroot": ch, "enabled": map[bool]string{true: "yes", false: "no"}[s.IsEnabled(ch, n, "boot.target")], "boot": map[bool]string{true: "yes", false: "no"}[s.IsEnabled(ch, n, "boot.target")], "wanted_by": strings.Join(u.WantedBy, ","), "after": strings.Join(u.After, ","), "requires": strings.Join(u.Requires, ","), "status": fmt.Sprint(st["status"]), "description": u.Description})
+		st, err := s.Status(ctx, n, ch)
+		if err != nil {
+			return nil, fmt.Errorf("service %s status: %w", n, err)
+		}
+		out = append(out, map[string]string{"service": n, "chroot": ch, "enabled": map[bool]string{true: "yes", false: "no"}[s.EffectiveEnabled(u, ch, "boot.target")], "boot": map[bool]string{true: "yes", false: "no"}[wantedBy(u, "boot.target")], "wanted_by": strings.Join(u.WantedBy, ","), "after": strings.Join(u.After, ","), "requires": strings.Join(u.Requires, ","), "status": fmt.Sprint(st["status"]), "description": u.Description})
 	}
 	return out, nil
 }
@@ -234,16 +410,23 @@ func (s *UnitService) Status(ctx context.Context, name, chroot string) (map[stri
 	}
 	prefix := s.statePrefix(ch, u.Name)
 	id := readIdentity(prefix + ".identity.json")
+	runtime := s.readState(ch, u.Name)
 	status := "stopped"
 	pid := 0
+	detail := runtime.Detail
 	if id != nil && sys.ProcessIdentityMatches(*id) {
 		status = "running"
 		pid = id.PID
 	} else if id != nil {
-		_ = os.Remove(prefix + ".identity.json")
-		_ = os.Remove(prefix + ".pid")
+		status = "stale"
+		detail = "recorded process identity no longer matches a live process"
+	} else if runtime.Status == "failed" {
+		status = "failed"
+	} else if runtime.Status == "running" || runtime.Status == "starting" {
+		status = "stale"
+		detail = "runtime state claims active service but process identity is missing"
 	}
-	return map[string]any{"service": u.Name, "chroot": ch, "status": status, "pid": pid, "enabled": s.IsEnabled(ch, u.Name, "boot.target"), "log_file": s.logPath(ch, u.Name)}, nil
+	return map[string]any{"service": u.Name, "chroot": ch, "status": status, "pid": pid, "enabled": s.EffectiveEnabled(u, ch, "boot.target"), "boot": wantedBy(u, "boot.target"), "wanted_by": u.WantedBy, "log_file": s.logPath(ch, u.Name), "detail": detail}, nil
 }
 func serviceShellQuote(v string) string {
 	return "'" + strings.ReplaceAll(v, "'", "'\\''") + "'"
@@ -279,7 +462,10 @@ func buildBootLayers(units map[string]ServiceUnit, enabled func(chroot, unit str
 		}
 		u, ok := units[name]
 		if !ok {
-			return nil // external/system dependency: ordering applies only to managed units
+			if name == "network-online.service" || name == "network.target.service" {
+				return nil
+			}
+			return fmt.Errorf("required service %s is neither a managed unit nor a supported host dependency", name)
 		}
 		if u.Chroot == "" {
 			return fmt.Errorf("boot service %s is not bound to a chroot", name)
@@ -358,7 +544,10 @@ func (s *UnitService) Boot(ctx context.Context, target string, parallel bool) (m
 	if err != nil {
 		return nil, err
 	}
-	layers, err := buildBootLayers(units, func(chroot, unit string) bool { return s.IsEnabled(chroot, unit, target) })
+	layers, err := buildBootLayers(units, func(chroot, unit string) bool {
+		u := units[normalizeUnitName(unit)]
+		return s.EffectiveEnabled(u, chroot, target)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -420,6 +609,40 @@ func (s *UnitService) Boot(ctx context.Context, target string, parallel bool) (m
 	return map[string]any{"target": target, "parallel": parallel, "layers": plan, "started": started, "count": len(started)}, nil
 }
 
+func serviceEnvKeys(env map[string]string) string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+func appendServiceLifecycle(path string, lines ...string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	for _, line := range lines {
+		if _, err = fmt.Fprintf(f, "%s chrootctl-service: %s\n", time.Now().UTC().Format(time.RFC3339), line); err != nil {
+			return err
+		}
+	}
+	return f.Sync()
+}
+func cleanupServiceIdentity(prefix string) error {
+	var first error
+	for _, p := range []string{prefix + ".identity.json", prefix + ".pid"} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
 func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground bool) (map[string]any, error) {
 	u, e := s.get(name)
 	if e != nil {
@@ -429,7 +652,7 @@ func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground
 	if e != nil {
 		return nil, e
 	}
-	if st, _ := s.Status(ctx, name, ch); st["status"] == "running" {
+	if st, err := s.Status(ctx, name, ch); err == nil && st["status"] == "running" {
 		return st, nil
 	}
 	rt, e := s.C.RuntimeFor(ch, u.User)
@@ -447,27 +670,80 @@ func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground
 	for k, v := range u.Environment {
 		env[k] = v
 	}
-	if e = os.MkdirAll(s.C.BaseConfig.ServiceLogDir, 0755); e != nil {
-		return nil, e
-	}
 	log := s.logPath(ch, u.Name)
+	if !s.C.DryRun {
+		if e = appendServiceLifecycle(log, "starting service="+u.Name+" chroot="+ch+" user="+u.User+" cwd="+u.WorkingDirectory, "environment_keys="+serviceEnvKeys(u.Environment)); e != nil {
+			return nil, e
+		}
+		preflight := `printf '%s\n' '--- chrootctl service preflight ---'; id; groups; printf 'HOME=%s\n' "$HOME"; pwd; { ls -la "$HOME" 2>&1 | head -20; }`
+		preArgv, preEnv, preErr := rt.Controller.ServiceInvocation(rootUser, preflight, u.X11, u.User)
+		if preErr != nil {
+			return nil, preErr
+		}
+		for k, v := range u.Environment {
+			preEnv[k] = v
+		}
+		preResult, preErr := rt.Runner.Run(ctx, preArgv, sys.RunOptions{Env: preEnv, ChrootEnv: true, MaxCaptureBytes: 64 * 1024})
+		if preErr != nil || preResult.ReturnCode != 0 {
+			if preErr == nil {
+				preErr = fmt.Errorf("service preflight exited %d: %s", preResult.ReturnCode, strings.TrimSpace(preResult.Stderr))
+			}
+			_ = s.writeState(ch, u.Name, "failed", preErr.Error())
+			return nil, preErr
+		}
+		if text := strings.TrimSpace(preResult.Stdout); text != "" {
+			if e = appendServiceLifecycle(log, strings.ReplaceAll(text, "\n", " | ")); e != nil {
+				return nil, e
+			}
+		}
+	}
 	if foreground {
-		res, runErr := rt.Runner.RunAttached(ctx, argv, sys.RunOptions{Env: env})
-		return map[string]any{"service": u.Name, "chroot": ch, "status": "exited", "exit_code": res.ReturnCode, "log_file": log, "foreground": true}, runErr
+		res, runErr := rt.Runner.RunAttached(ctx, argv, sys.RunOptions{Env: env, ChrootEnv: true})
+		status := "exited"
+		if runErr != nil {
+			status = "failed"
+		}
+		_ = s.writeState(ch, u.Name, status, fmt.Sprintf("exit_code=%d", res.ReturnCode))
+		return map[string]any{"service": u.Name, "chroot": ch, "status": status, "exit_code": res.ReturnCode, "log_file": log, "foreground": true}, runErr
 	}
 	if s.C.DryRun || rt.Runner.DryRun {
 		return map[string]any{"service": u.Name, "chroot": ch, "status": "dry-run", "pid": 0, "log_file": log, "dry_run": true}, nil
 	}
-	pid, e := rt.Runner.Spawn(argv, sys.SpawnOptions{Env: env, OutputPath: log, Append: true})
+	if e = s.writeState(ch, u.Name, "starting", ""); e != nil {
+		return nil, e
+	}
+	pid, e := rt.Runner.Spawn(argv, sys.SpawnOptions{Env: env, ChrootEnv: true, OutputPath: log, Append: true})
 	if e != nil {
+		_ = s.writeState(ch, u.Name, "failed", e.Error())
 		return nil, e
 	}
 	id := sys.CaptureProcessIdentity(pid)
 	prefix := s.statePrefix(ch, u.Name)
-	if e = writeIdentity(prefix+".identity.json", id); e != nil {
-		return nil, e
+	failAfterSpawn := func(cause error) (map[string]any, error) {
+		if id != nil {
+			_ = sys.TerminateProcessIdentity(*id, 2*time.Second)
+		}
+		_ = cleanupServiceIdentity(prefix)
+		_ = s.writeState(ch, u.Name, "failed", cause.Error())
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "failed", "pid": pid, "log_file": log}, cause
 	}
-	_ = os.WriteFile(prefix+".pid", []byte(strconv.Itoa(pid)+"\n"), 0600)
+	if id == nil {
+		return failAfterSpawn(errors.New("spawned service process identity could not be captured"))
+	}
+	if e = writeIdentity(prefix+".identity.json", id); e != nil {
+		return failAfterSpawn(fmt.Errorf("persist service identity: %w", e))
+	}
+	if e = os.WriteFile(prefix+".pid", []byte(strconv.Itoa(pid)+"\n"), 0o600); e != nil {
+		return failAfterSpawn(fmt.Errorf("persist service pid: %w", e))
+	}
+	time.Sleep(200 * time.Millisecond)
+	if !sys.ProcessIdentityMatches(*id) {
+		return failAfterSpawn(errors.New("service process exited during startup confirmation"))
+	}
+	if e = s.writeState(ch, u.Name, "running", ""); e != nil {
+		return failAfterSpawn(fmt.Errorf("persist running service state: %w", e))
+	}
+	_ = appendServiceLifecycle(log, "running pid="+strconv.Itoa(pid))
 	return map[string]any{"service": u.Name, "chroot": ch, "status": "running", "pid": pid, "log_file": log}, nil
 }
 func (s *UnitService) Stop(ctx context.Context, name, chroot string) (map[string]any, error) {
@@ -482,33 +758,65 @@ func (s *UnitService) Stop(ctx context.Context, name, chroot string) (map[string
 	prefix := s.statePrefix(ch, u.Name)
 	id := readIdentity(prefix + ".identity.json")
 	log := s.logPath(ch, u.Name)
-	if id == nil || !sys.ProcessIdentityMatches(*id) {
-		_ = os.Remove(prefix + ".identity.json")
-		_ = os.Remove(prefix + ".pid")
-		return map[string]any{"service": u.Name, "chroot": ch, "status": "stopped", "detail": "no verified process identity", "log_file": log}, nil
+	if id == nil {
+		st := s.readState(ch, u.Name)
+		if st.Status == "running" || st.Status == "starting" || st.Status == "stale" {
+			_ = s.writeState(ch, u.Name, "stale", "active state has no verifiable process identity")
+			return map[string]any{"service": u.Name, "chroot": ch, "status": "stale", "log_file": log}, errors.New("service process identity is missing; refusing to report stopped")
+		}
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "stopped", "detail": "no recorded process identity", "log_file": log}, nil
 	}
+	if !sys.ProcessIdentityMatches(*id) {
+		_ = s.writeState(ch, u.Name, "stale", "recorded process identity no longer matches")
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "stale", "pid": id.PID, "log_file": log}, errors.New("service process identity is stale; refusing to discard recovery evidence")
+	}
+	_ = appendServiceLifecycle(log, "stopping pid="+strconv.Itoa(id.PID))
+	var stopHookErr error
 	if u.ExecStop != "" {
-		rt, _ := s.C.RuntimeFor(ch, u.User)
-		rootUser := u.Root || strings.EqualFold(u.User, "root")
-		argv, env, _ := rt.Controller.ServiceInvocation(rootUser, u.ExecStop, u.X11, u.User)
-		_, _ = rt.Runner.Run(ctx, argv, sys.RunOptions{Env: env, AllowFailure: true, MaxCaptureBytes: 128 * 1024, Timeout: 30 * time.Second})
+		rt, err := s.C.RuntimeFor(ch, u.User)
+		if err != nil {
+			stopHookErr = err
+		} else {
+			rootUser := u.Root || strings.EqualFold(u.User, "root")
+			argv, env, err := rt.Controller.ServiceInvocation(rootUser, u.ExecStop, u.X11, u.User)
+			if err != nil {
+				stopHookErr = err
+			} else {
+				for k, v := range u.Environment {
+					env[k] = v
+				}
+				res, err := rt.Runner.Run(ctx, argv, sys.RunOptions{Env: env, ChrootEnv: true, AllowFailure: true, MaxCaptureBytes: 128 * 1024, Timeout: 30 * time.Second})
+				if err != nil {
+					stopHookErr = err
+				} else if res.ReturnCode != 0 {
+					stopHookErr = fmt.Errorf("ExecStop exited %d: %s", res.ReturnCode, strings.TrimSpace(res.Stderr))
+				}
+			}
+		}
 	}
-	_ = sys.SignalProcessIdentity(*id, syscall.SIGTERM)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && sys.ProcessIdentityMatches(*id) {
-		time.Sleep(100 * time.Millisecond)
+	if !sys.TerminateProcessIdentity(*id, 2*time.Second) {
+		_ = s.writeState(ch, u.Name, "failed", "process tree survived termination")
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "failed", "pid": id.PID, "log_file": log}, errors.New("service process tree survived TERM/KILL; identity state retained")
 	}
-	if sys.ProcessIdentityMatches(*id) {
-		_ = sys.SignalProcessIdentity(*id, syscall.SIGKILL)
+	if e = cleanupServiceIdentity(prefix); e != nil {
+		_ = s.writeState(ch, u.Name, "stale", e.Error())
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "stale", "pid": id.PID, "log_file": log}, e
 	}
-	_ = os.Remove(prefix + ".identity.json")
-	_ = os.Remove(prefix + ".pid")
-	return map[string]any{"service": u.Name, "chroot": ch, "status": "stopped", "pid": id.PID, "log_file": log}, nil
+	if e = s.writeState(ch, u.Name, "stopped", ""); e != nil {
+		return map[string]any{"service": u.Name, "chroot": ch, "status": "stopped", "pid": id.PID, "log_file": log}, e
+	}
+	_ = appendServiceLifecycle(log, "stopped")
+	row := map[string]any{"service": u.Name, "chroot": ch, "status": "stopped", "pid": id.PID, "log_file": log}
+	if stopHookErr != nil {
+		row["exec_stop_error"] = stopHookErr.Error()
+		return row, stopHookErr
+	}
+	return row, nil
 }
 func (s *UnitService) Restart(ctx context.Context, name, chroot string) (map[string]any, error) {
 	st, e := s.Stop(ctx, name, chroot)
 	if e != nil {
-		return nil, e
+		return map[string]any{"stopped": st}, e
 	}
 	start, e := s.Start(ctx, name, chroot, false)
 	return map[string]any{"stopped": st, "started": start}, e
@@ -523,7 +831,14 @@ func (s *UnitService) Logs(ctx context.Context, name, chroot string, tail int) (
 		return nil, e
 	}
 	p := s.logPath(ch, u.Name)
-	b, _ := os.ReadFile(p)
+	b, e := os.ReadFile(p)
+	if os.IsNotExist(e) {
+		b = nil
+		e = nil
+	}
+	if e != nil {
+		return nil, fmt.Errorf("read service journal %s: %w", p, e)
+	}
 	lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		lines = nil
@@ -531,8 +846,9 @@ func (s *UnitService) Logs(ctx context.Context, name, chroot string, tail int) (
 	if tail > 0 && len(lines) > tail {
 		lines = lines[len(lines)-tail:]
 	}
-	return map[string]any{"service": u.Name, "chroot": ch, "log_file": p, "lines": lines}, nil
+	return map[string]any{"service": u.Name, "chroot": ch, "log_file": p, "lines": lines, "text": strings.Join(lines, "\n")}, nil
 }
+
 func (s *UnitService) Enable(ctx context.Context, name, chroot, target string) (map[string]any, error) {
 	u, e := s.get(name)
 	if e != nil {
@@ -568,6 +884,8 @@ func (s *UnitService) Disable(ctx context.Context, name, chroot, target string) 
 		target = "boot.target"
 	}
 	p := filepath.Join(s.C.BaseConfig.ServiceStateDir, "targets", safeArtifactName(target)+".wants", safeArtifactName(ch)+"-"+safeArtifactName(u.Name)+".enabled")
-	_ = os.Remove(p)
+	if e = os.Remove(p); e != nil && !os.IsNotExist(e) {
+		return nil, e
+	}
 	return map[string]any{"service": u.Name, "chroot": ch, "enabled": false, "target": target}, nil
 }

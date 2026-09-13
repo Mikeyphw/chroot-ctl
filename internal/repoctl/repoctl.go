@@ -526,6 +526,9 @@ func Validate() error {
 	if e = ValidateCRUDAtomicity(root); e != nil {
 		return e
 	}
+	if e = ValidateMountServiceRuntime(root); e != nil {
+		return e
+	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
 	if e != nil {
 		return e

@@ -244,6 +244,22 @@ func ValidateAuditCoverage(root string) error {
 	if d41 := canonical["D41"]; d41.OwnerOverlay != "CHR10" || d41.Status != "planned" || !containsString(d41.SupportingOverlays, "CHR07") {
 		return fmt.Errorf("CHR07 must support D41 durability without prematurely closing CHR10-owned D41")
 	}
+
+	chr08 := []string{"D13", "D25", "D26", "U116", "U117", "U118", "U119", "U120", "U121", "U122", "U123", "U124", "U125", "U126", "U127", "U128", "U129", "U130", "U131", "U132", "U225"}
+	chr08Sources := 0
+	for _, id := range chr08 {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR08" || finding.Status == "planned" {
+			return fmt.Errorf("CHR08 finding %s is not marked implemented", id)
+		}
+		chr08Sources += len(finding.SourceFindings)
+	}
+	if chr08Sources != 49 {
+		return fmt.Errorf("CHR08 source-manifestation coverage=%d, want 49", chr08Sources)
+	}
+	if d12 := canonical["D12"]; d12.OwnerOverlay != "CHR16" || d12.Status != "planned" {
+		return fmt.Errorf("CHR08 must not prematurely close CHR16-owned log retrieval/retention root cause D12")
+	}
 	return nil
 }
 

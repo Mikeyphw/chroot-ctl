@@ -742,26 +742,68 @@ func ReexecArgv(args []string) ([]string, error) {
 
 func shellQuote(arg string) string { return "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'" }
 
-func MountTable(path string) (map[[2]string]struct{}, error) {
+type MountRecord struct {
+	Source  string
+	Target  string
+	FSType  string
+	Options map[string]bool
+}
+
+func decodeProcMountField(value string) string {
+	replacer := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
+	return replacer.Replace(value)
+}
+
+func ParseMountTableDetailed(data string) []MountRecord {
+	out := []MountRecord{}
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		opts := map[string]bool{}
+		for _, opt := range strings.Split(fields[3], ",") {
+			opt = strings.TrimSpace(opt)
+			if opt != "" {
+				opts[opt] = true
+			}
+		}
+		out = append(out, MountRecord{
+			Source:  decodeProcMountField(fields[0]),
+			Target:  decodeProcMountField(fields[1]),
+			FSType:  decodeProcMountField(fields[2]),
+			Options: opts,
+		})
+	}
+	return out
+}
+
+func MountTableDetailed(path string) ([]MountRecord, error) {
 	if path == "" {
 		path = "/proc/mounts"
 	}
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return map[[2]string]struct{}{}, nil
-	}
 	if err != nil {
 		return nil, err
 	}
-	return ParseMountTable(string(data)), nil
+	return ParseMountTableDetailed(string(data)), nil
+}
+
+func MountTable(path string) (map[[2]string]struct{}, error) {
+	records, err := MountTableDetailed(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[[2]string]struct{}{}
+	for _, record := range records {
+		out[[2]string{record.Source, record.Target}] = struct{}{}
+	}
+	return out, nil
 }
 func ParseMountTable(data string) map[[2]string]struct{} {
 	out := map[[2]string]struct{}{}
-	for _, line := range strings.Split(data, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			out[[2]string{fields[0], fields[1]}] = struct{}{}
-		}
+	for _, record := range ParseMountTableDetailed(data) {
+		out[[2]string{record.Source, record.Target}] = struct{}{}
 	}
 	return out
 }

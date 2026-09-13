@@ -90,43 +90,49 @@ class ChrootOperationService : Service() {
         cancelRequested = false
         notifications.startForeground(this, notifications.build(operation.replace('.', ' '), "Queued"))
         activeJob = scope.launch {
-            val repository = (application as ChrootCtlApplication).container.bridgeRepository
-            var terminalSeen = false
-            repository.startBridgeOperation(operation, payload, requestId) { event ->
-                activeOperationId = event.optString("operationId").takeIf(String::isNotBlank) ?: activeOperationId
-                activeOperationId?.let { operationId -> state.edit { putString(KEY_OPERATION_ID, operationId) } }
-                val type = event.optString("type")
-                terminalSeen = terminalSeen || isTerminal(type)
-                notifications.update(event, activeOperationId)
-                if (cancelRequested) {
-                    activeOperationId?.let { id -> repository.cancelOperation(id) }
+            var terminalConfirmed = false
+            var recoveryError: Throwable? = null
+            try {
+                val repository = (application as ChrootCtlApplication).container.bridgeRepository
+                var terminalSeen = false
+                repository.startBridgeOperation(operation, payload, requestId) { event ->
+                    activeOperationId = event.optString("operationId").takeIf(String::isNotBlank) ?: activeOperationId
+                    activeOperationId?.let { operationId -> state.edit { putString(KEY_OPERATION_ID, operationId) } }
+                    val type = event.optString("type")
+                    terminalSeen = terminalSeen || isTerminal(type)
+                    notifications.update(event, activeOperationId)
+                    if (cancelRequested) activeOperationId?.let { id -> repository.cancelOperation(id) }
+                }.onFailure { error ->
+                    recoveryError = error
+                    notifications.update(
+                        JSONObject().put("type", "bridge_stream_interrupted")
+                            .put("operationId", activeOperationId ?: "")
+                            .put("payload", JSONObject().put("message", error.message ?: error.javaClass.simpleName)),
+                        activeOperationId,
+                    )
                 }
-            }.onFailure { error ->
+                if (terminalSeen) {
+                    terminalConfirmed = true
+                } else {
+                    val operationId = activeOperationId ?: discoverOperationId(requestId, repository)
+                    if (!operationId.isNullOrBlank()) {
+                        activeOperationId = operationId
+                        state.edit { putString(KEY_OPERATION_ID, operationId) }
+                        reconcileUntilTerminal(operationId, repository)
+                        terminalConfirmed = true
+                    }
+                }
+            } catch (error: Throwable) {
+                recoveryError = error
                 notifications.update(
-                    JSONObject()
-                        .put("type", "bridge_stream_interrupted")
+                    JSONObject().put("type", "bridge_stream_interrupted")
                         .put("operationId", activeOperationId ?: "")
                         .put("payload", JSONObject().put("message", error.message ?: error.javaClass.simpleName)),
                     activeOperationId,
                 )
+            } finally {
+                if (terminalConfirmed) finishOperation() else preserveForRecovery(recoveryError)
             }
-            if (!terminalSeen) {
-                val operationId = activeOperationId ?: discoverOperationId(requestId, repository)
-                if (operationId.isNullOrBlank()) {
-                    notifications.update(
-                        JSONObject()
-                            .put("type", "operation_failed")
-                            .put("operationId", "")
-                            .put("payload", JSONObject().put("message", "Operation stream ended before the persisted request could be reconciled with the backend journal.")),
-                        null,
-                    )
-                } else {
-                    activeOperationId = operationId
-                    state.edit { putString(KEY_OPERATION_ID, operationId) }
-                    reconcileUntilTerminal(operationId, repository)
-                }
-            }
-            finishOperation()
         }
     }
 
@@ -142,23 +148,30 @@ class ChrootOperationService : Service() {
         activeOperationId = persistedOperationId
         notifications.startForeground(this, notifications.build(operation.replace('.', ' '), "Reconnecting…", persistedOperationId))
         activeJob = scope.launch {
-            val repository = (application as ChrootCtlApplication).container.bridgeRepository
-            val operationId = persistedOperationId ?: discoverOperationId(requestId.orEmpty(), repository)
-            if (operationId.isNullOrBlank()) {
-                notifications.update(
-                    JSONObject()
-                        .put("type", "operation_failed")
-                        .put("operationId", "")
-                        .put("payload", JSONObject().put("message", "Could not reconcile the persisted operation request with the backend journal.")),
-                    null,
-                )
-                finishOperation()
-                return@launch
+            var terminalConfirmed = false
+            var recoveryError: Throwable? = null
+            try {
+                val repository = (application as ChrootCtlApplication).container.bridgeRepository
+                val operationId = persistedOperationId ?: discoverOperationId(requestId.orEmpty(), repository)
+                if (operationId.isNullOrBlank()) {
+                    recoveryError = IllegalStateException("Could not reconcile the persisted operation request with the backend journal.")
+                    notifications.update(
+                        JSONObject().put("type", "bridge_stream_interrupted")
+                            .put("operationId", "")
+                            .put("payload", JSONObject().put("message", recoveryError?.message)),
+                        null,
+                    )
+                } else {
+                    activeOperationId = operationId
+                    state.edit { putString(KEY_OPERATION_ID, operationId) }
+                    reconcileUntilTerminal(operationId, repository)
+                    terminalConfirmed = true
+                }
+            } catch (error: Throwable) {
+                recoveryError = error
+            } finally {
+                if (terminalConfirmed) finishOperation() else preserveForRecovery(recoveryError)
             }
-            activeOperationId = operationId
-            state.edit { putString(KEY_OPERATION_ID, operationId) }
-            reconcileUntilTerminal(operationId, repository)
-            finishOperation()
         }
     }
 
@@ -198,6 +211,21 @@ class ChrootOperationService : Service() {
         }
     }
 
+    private fun preserveForRecovery(error: Throwable?) {
+        activeJob = null
+        val operationId = activeOperationId
+        notifications.update(
+            JSONObject().put("type", "bridge_stream_interrupted")
+                .put("operationId", operationId ?: "")
+                .put("payload", JSONObject().put("message", error?.message ?: "Operation state preserved for reconciliation.")),
+            operationId,
+        )
+        scope.launch {
+            delay(RECONCILE_INTERVAL_MS)
+            if (activeJob?.isActive != true) resumePersistedOperation(null)
+        }
+    }
+
     private fun finishOperation() {
         state.edit { clear() }
         cancelRequested = false
@@ -233,10 +261,18 @@ class ChrootOperationService : Service() {
             // Keep the foreground service alive until the durable backend journal
             // reaches a terminal state instead of firing cancel and stopping blind.
             activeJob = scope.launch {
-                val repository = (application as ChrootCtlApplication).container.bridgeRepository
-                repository.cancelOperation(operationId)
-                reconcileUntilTerminal(operationId, repository)
-                finishOperation()
+                var terminalConfirmed = false
+                var recoveryError: Throwable? = null
+                try {
+                    val repository = (application as ChrootCtlApplication).container.bridgeRepository
+                    repository.cancelOperation(operationId)
+                    reconcileUntilTerminal(operationId, repository)
+                    terminalConfirmed = true
+                } catch (error: Throwable) {
+                    recoveryError = error
+                } finally {
+                    if (terminalConfirmed) finishOperation() else preserveForRecovery(recoveryError)
+                }
             }
         }
     }

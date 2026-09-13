@@ -294,9 +294,13 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 	if e != nil {
 		return model.ChrootExportResult{}, e
 	}
-	for _, m := range rt.Controller.Status(true) {
-		if strings.EqualFold(m["mounted"], "yes") {
-			return model.ChrootExportResult{}, fmt.Errorf("export requires the chroot to be fully unmounted")
+	mountRows, mountErr := rt.Controller.StatusChecked(true)
+	if mountErr != nil {
+		return model.ChrootExportResult{}, fmt.Errorf("verify export mount state: %w", mountErr)
+	}
+	for _, m := range mountRows {
+		if !strings.EqualFold(m["mounted"], "no") {
+			return model.ChrootExportResult{}, fmt.Errorf("export requires the chroot to be fully and verifiably unmounted (%s)", m["mounted"])
 		}
 	}
 	if archive == "" {
@@ -740,9 +744,13 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		if err != nil {
 			return model.ChrootImportResult{}, err
 		}
-		for _, m := range rt.Controller.Status(true) {
-			if strings.EqualFold(m["mounted"], "yes") {
-				return model.ChrootImportResult{}, fmt.Errorf("overwrite import requires the existing chroot to be fully unmounted")
+		mountRows, mountErr := rt.Controller.StatusChecked(true)
+		if mountErr != nil {
+			return model.ChrootImportResult{}, fmt.Errorf("verify overwrite mount state: %w", mountErr)
+		}
+		for _, m := range mountRows {
+			if !strings.EqualFold(m["mounted"], "no") {
+				return model.ChrootImportResult{}, fmt.Errorf("overwrite import requires the existing chroot to be fully and verifiably unmounted (%s)", m["mounted"])
 			}
 		}
 	}

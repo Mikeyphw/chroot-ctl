@@ -70,6 +70,8 @@ func (s *InstallService) ValidateRequest(req model.InstallRequest) map[string]an
 		mode = "extract-only"
 		if sys.CanExecuteForeignArch(arch) {
 			mode = "foreign-ready"
+		} else if arch == "arm64" || arch == "amd64" {
+			blocking = append(blocking, map[string]string{"code": "foreign_arch_not_ready", "message": "Target architecture " + arch + " requires qemu/binfmt execution support before installation can proceed."})
 		}
 	}
 	return map[string]any{"ok": len(blocking) == 0, "blocking": blocking, "distro": req.Distro, "name": req.Name, "username": req.Username, "arch": arch, "execution_mode": mode, "requirements": map[string]any{"username_required": true, "default_username": s.C.BaseConfig.Username}}

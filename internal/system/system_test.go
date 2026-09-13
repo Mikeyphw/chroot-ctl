@@ -160,9 +160,8 @@ func TestHostHelpers(t *testing.T) {
 	if uid < 0 || gid < 0 {
 		t.Fatal("invalid uid/gid")
 	}
-	mounts, err := MountTable(filepath.Join(t.TempDir(), "missing"))
-	if err != nil || len(mounts) != 0 {
-		t.Fatalf("%#v %v", mounts, err)
+	if _, err := MountTable(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("missing mount table must fail closed")
 	}
 }
 
@@ -293,5 +292,22 @@ func TestCHR05TimeoutTerminatesWholeProcessGroup(t *testing.T) {
 	}
 	if processGroupAlive(*result.ProcessGroupID) {
 		t.Fatalf("process group %d survived timeout", *result.ProcessGroupID)
+	}
+}
+
+func TestCHR08ParseMountTableDecodesEscapesAndOptions(t *testing.T) {
+	data := `/dev/block/dm-0 /data/local\040tmp ext4 rw,nosuid,nodev 0 0
+/dev/fuse /storage/My\040Drive fuse rw,ro,nodev 0 0
+source\134name /target\011tab ext4 rw 0 0
+`
+	records := ParseMountTableDetailed(data)
+	if len(records) != 3 {
+		t.Fatalf("records=%#v", records)
+	}
+	if records[0].Target != "/data/local tmp" || records[0].FSType != "ext4" || !records[0].Options["nosuid"] {
+		t.Fatalf("decoded record=%#v", records[0])
+	}
+	if records[2].Source != `source\name` || records[2].Target != "/target\ttab" {
+		t.Fatalf("escape decoding=%#v", records[2])
 	}
 }

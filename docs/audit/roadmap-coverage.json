@@ -45,7 +45,7 @@
     {
       "id": "CHR08",
       "title": "Mount, session & service runtime",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR09",
@@ -889,9 +889,9 @@
     {
       "id": "D13",
       "title": "Status/doctor/health can report false success or hide failures",
-      "ownerOverlay": "CHR16",
+      "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH20-08",
@@ -1713,7 +1713,7 @@
       "title": "Service-unit lifecycle/state/journal semantics are not reliable",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH04-04",
@@ -1792,7 +1792,7 @@
       "title": "Mount/session lifecycle is non-transactional or misvalidated",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI04-01",
@@ -5053,7 +5053,7 @@
       "title": "HIGH — Global `/data` remount is best-effort, silent, and never restored",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI04-05",
@@ -5069,7 +5069,7 @@
       "title": "inherited from CLI20 — Escaped `/proc/mounts` paths are not decoded",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI04-09",
@@ -5085,7 +5085,7 @@
       "title": "MEDIUM — `exec` performs privileged preparation before validating that a command exists",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI05-02",
@@ -5101,7 +5101,7 @@
       "title": "HIGH — documented `CHROOT SERVICE` positional form is broken",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV01",
@@ -5117,7 +5117,7 @@
       "title": "HIGH — `Start()` can return an error after leaving a background service running unmanaged",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV02",
@@ -5133,7 +5133,7 @@
       "title": "HIGH — `Stop()` can report `stopped` and delete state while the process remains alive",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV03",
@@ -5149,7 +5149,7 @@
       "title": "HIGH — standalone `journal` is not root-escalated and read errors are silently converted to an empty journal",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV04",
@@ -5165,7 +5165,7 @@
       "title": "HIGH/MEDIUM — service execution skips the chroot environment sanitization used by normal `start`/`exec`",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV05",
@@ -5181,7 +5181,7 @@
       "title": "MEDIUM/HIGH — documented “journal-style lifecycle + preflight” behavior does not exist",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV08",
@@ -5197,7 +5197,7 @@
       "title": "MEDIUM — unit parser silently accepts malformed booleans and restart policies",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV11",
@@ -5213,7 +5213,7 @@
       "title": "MEDIUM — `Environment=` parsing breaks quoted values containing spaces",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV12",
@@ -5229,7 +5229,7 @@
       "title": "MEDIUM — service/state filename sanitization is collision-prone because unit names are not validated",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV13",
@@ -5245,7 +5245,7 @@
       "title": "MEDIUM — unit trust/permission boundary is not enforced",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV14",
@@ -5261,7 +5261,7 @@
       "title": "MEDIUM — `Start()` returns “running” without confirming the process survived startup",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV15",
@@ -5277,7 +5277,7 @@
       "title": "MEDIUM — `run --list` suppresses per-unit status errors",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV16",
@@ -5293,7 +5293,7 @@
       "title": "MEDIUM — README's `[Install] Enabled=true` example is ignored",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV18",
@@ -5309,7 +5309,7 @@
       "title": "MEDIUM — external `Requires=` entries are not requirement checks",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV19",
@@ -6803,7 +6803,7 @@
       "title": "MEDIUM — `/proc/mounts` parser does not decode mount escapes",
       "ownerOverlay": "CHR08",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH20-04",

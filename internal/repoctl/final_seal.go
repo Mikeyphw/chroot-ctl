@@ -69,7 +69,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateMutationEngineGateA(root); e != nil {
 			return e
 		}
-		return ValidateCRUDAtomicity(root)
+		if e := ValidateCRUDAtomicity(root); e != nil {
+			return e
+		}
+		return ValidateMountServiceRuntime(root)
 	}); err != nil {
 		return err
 	}

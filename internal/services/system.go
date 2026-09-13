@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 )
 
 var logLevelRE = regexp.MustCompile(`\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b`)
@@ -46,9 +47,16 @@ func (s *SystemService) Dashboard(ctx context.Context, target string, details bo
 	d := model.DashboardSummary{Chroots: rows, StatusChecks: []model.CheckRow{}, DoctorChecks: []model.CheckRow{}}
 	if target != "" {
 		d.TargetName = &target
-		d.StatusChecks, _ = s.Status(ctx, target, details)
-		d.DoctorChecks, _ = s.Doctor(ctx, target)
-		logs, _ := s.Logs(ctx, target, tail, false, "", false)
+		if d.StatusChecks, e = s.Status(ctx, target, details); e != nil {
+			return model.DashboardSummary{}, e
+		}
+		if d.DoctorChecks, e = s.Doctor(ctx, target); e != nil {
+			return model.DashboardSummary{}, e
+		}
+		logs, logErr := s.Logs(ctx, target, tail, false, "", false)
+		if logErr != nil {
+			return model.DashboardSummary{}, logErr
+		}
 		d.Logs = &logs
 	}
 	return d, nil
@@ -58,25 +66,44 @@ func (s *SystemService) Status(ctx context.Context, name string, details bool) (
 	if e != nil {
 		return nil, e
 	}
+	mountRows, e := rt.Controller.StatusChecked(details)
+	if e != nil {
+		return nil, fmt.Errorf("mount status unavailable: %w", e)
+	}
 	out := []model.CheckRow{}
-	for _, r := range rt.Controller.Status(details) {
-		target := r["target"]
+	for _, r := range mountRows {
 		mounted := strings.EqualFold(r["mounted"], "yes")
-		out = append(out, model.CheckRow{Check: target, Result: map[bool]string{true: "PASS", false: "WARN"}[mounted], Detail: target, Next: map[bool]string{true: "", false: "chrootctl mount"}[mounted]})
+		result := "WARN"
+		next := "chrootctl mount"
+		detail := r["target"]
+		if mounted {
+			result = "PASS"
+			next = ""
+		} else if r["mounted"] == "mismatch" || r["mounted"] == "error" {
+			result = "FAIL"
+			if r["error"] != "" {
+				detail = r["error"]
+			}
+		}
+		out = append(out, model.CheckRow{Check: r["target"], Result: result, Detail: detail, Next: next})
 	}
 	if details {
-		if r, _ := s.C.Registry.Get(ctx, name); r != nil {
-			result := "WARN"
-			next := "chrootctl install --resume"
-			if r.Installed {
-				result = "PASS"
-				next = "chrootctl status --details"
-				if r.Phase == "finalize" {
-					next = "chrootctl start"
-				}
-			}
-			out = append(out, model.CheckRow{Check: "chroot", Result: result, Detail: fmt.Sprintf("phase=%s installed=%v", r.Phase, r.Installed), Next: next})
+		r, err := s.C.Registry.Get(ctx, name)
+		if err != nil {
+			return nil, fmt.Errorf("registry status: %w", err)
 		}
+		if r == nil {
+			return nil, fmt.Errorf("registered chroot %s disappeared during status", name)
+		}
+		result, next := "WARN", "chrootctl install --resume"
+		if r.Installed {
+			result = "PASS"
+			next = "chrootctl status --details"
+			if r.Phase == "finalize" {
+				next = "chrootctl start"
+			}
+		}
+		out = append(out, model.CheckRow{Check: "chroot", Result: result, Detail: fmt.Sprintf("phase=%s installed=%v", r.Phase, r.Installed), Next: next})
 	}
 	return out, nil
 }
@@ -85,8 +112,12 @@ func (s *SystemService) Doctor(ctx context.Context, name string) ([]model.CheckR
 	if e != nil {
 		return nil, e
 	}
+	rows, e := rt.Controller.DoctorChecked()
+	if e != nil {
+		return nil, fmt.Errorf("target doctor mount evidence unavailable: %w", e)
+	}
 	out := []model.CheckRow{}
-	for _, r := range rt.Controller.Doctor() {
+	for _, r := range rows {
 		status := strings.ToLower(r["status"])
 		result := "FAIL"
 		if status == "ok" {
@@ -106,17 +137,46 @@ func (s *SystemService) Doctor(ctx context.Context, name string) ([]model.CheckR
 		}
 		out = append(out, model.CheckRow{Check: r["check"], Result: result, Detail: r["detail"], Next: next})
 	}
-	if r, _ := s.C.Registry.Get(ctx, name); r != nil {
+	for _, r := range s.HostDoctor(ctx) {
+		r.Check = "host_" + r.Check
+		out = append(out, r)
+	}
+	r, err := s.C.Registry.Get(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("registry doctor: %w", err)
+	}
+	if r == nil {
+		out = append(out, model.CheckRow{Check: "registry", Result: "FAIL", Detail: "target missing from registry", Next: "chrootctl chroots list"})
+	} else {
 		out = append(out, model.CheckRow{Check: "registry", Result: "PASS", Detail: fmt.Sprintf("phase=%s installed=%v", r.Phase, r.Installed)})
 	}
-	result := "WARN"
-	next := "chrootctl logs --all"
-	if exists(rt.Config.LogFile) {
-		result = "PASS"
-		next = ""
-	}
-	out = append(out, model.CheckRow{Check: "log_file", Result: result, Detail: rt.Config.LogFile, Next: next})
+	logResult, logDetail, logNext := checkLogFile(rt.Config.LogFile)
+	out = append(out, model.CheckRow{Check: "log_file", Result: logResult, Detail: logDetail, Next: logNext})
 	return out, nil
+}
+func checkLogFile(path string) (result, detail, next string) {
+	st, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		if pathWritableWithoutMutation(filepath.Dir(path)) {
+			return "WARN", path + " (not created yet)", "Run a command that produces logs."
+		}
+		return "FAIL", path + " (missing and parent not writable)", "Fix log directory permissions."
+	}
+	if err != nil {
+		return "FAIL", err.Error(), "Fix log path access."
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() {
+		return "FAIL", path + " is not a regular non-symlink file", "Replace the log path with a regular file."
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "FAIL", err.Error(), "Fix log readability."
+	}
+	_ = f.Close()
+	if !pathWritableWithoutMutation(path) {
+		return "FAIL", path + " is not writable by the current identity", "Fix log file permissions."
+	}
+	return "PASS", path, ""
 }
 func (s *SystemService) HostDoctor(ctx context.Context) []model.CheckRow {
 	r := s.C.BaseConfig
@@ -148,7 +208,7 @@ func (s *SystemService) HostDoctor(ctx context.Context) []model.CheckRow {
 	}
 	checks = append(checks, model.CheckRow{Check: "root_access", Result: rootResult, Detail: map[bool]string{true: "Root access is available.", false: "Current process is not running as root."}[sys.IsRoot()], Next: next})
 	for name, path := range map[string]string{"chroot_root": r.ChrootRoot, "log_file_dir": filepath.Dir(r.LogFile), "database_dir": filepath.Dir(r.DatabasePath)} {
-		ok := ensureWritable(path)
+		ok := pathWritableWithoutMutation(path)
 		result := "PASS"
 		if !ok {
 			result = "FAIL"
@@ -157,18 +217,26 @@ func (s *SystemService) HostDoctor(ctx context.Context) []model.CheckRow {
 	}
 	return checks
 }
-func ensureWritable(path string) bool {
-	if os.MkdirAll(path, 0755) != nil {
-		return false
+func pathWritableWithoutMutation(path string) bool {
+	candidate := filepath.Clean(path)
+	for {
+		st, err := os.Stat(candidate)
+		if err == nil {
+			if !st.IsDir() && candidate != path {
+				candidate = filepath.Dir(candidate)
+				continue
+			}
+			return syscall.Access(candidate, 2) == nil
+		}
+		if !os.IsNotExist(err) {
+			return false
+		}
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			return false
+		}
+		candidate = parent
 	}
-	f, e := os.CreateTemp(path, ".chrootctl-write-*")
-	if e != nil {
-		return false
-	}
-	n := f.Name()
-	f.Close()
-	os.Remove(n)
-	return true
 }
 func (s *SystemService) CrossArchRows(target, host string) []model.CheckRow {
 	if host == "" {

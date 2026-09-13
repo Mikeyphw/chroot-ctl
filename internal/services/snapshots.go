@@ -99,9 +99,13 @@ func (s *SnapshotService) requireUnmounted(name string) error {
 	if e != nil {
 		return e
 	}
-	for _, r := range rt.Controller.Status(true) {
-		if strings.EqualFold(r["mounted"], "yes") {
-			return fmt.Errorf("chroot must be fully unmounted: %s", name)
+	rows, err := rt.Controller.StatusChecked(true)
+	if err != nil {
+		return fmt.Errorf("verify chroot mount state: %w", err)
+	}
+	for _, r := range rows {
+		if !strings.EqualFold(r["mounted"], "no") {
+			return fmt.Errorf("chroot must be fully and verifiably unmounted: %s (%s)", name, r["mounted"])
 		}
 	}
 	return nil

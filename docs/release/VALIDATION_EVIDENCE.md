@@ -62,3 +62,7 @@ Evidence is written through a same-directory temporary file, file `fsync`, atomi
 ## CHR07 destructive CRUD seal
 
 `repoctl validate` and final-seal now execute `ValidateCRUDAtomicity` after Gate A. The CHR07 seal preserves registry-authoritative destructive targeting, mounted/live-service guards, atomic per-chroot override publication, rootfs/snapshot/service namespace migration, strict registry/snapshot `RowsAffected` semantics, crash recovery by old/new rename identity, import-backup ordering, and exact 9-canonical/21-source audit closure. General privileged-output publication remains CHR10-owned.
+
+## CHR08 mount/session/service-runtime seal
+
+`repoctl validate` and final-seal execute `ValidateMountServiceRuntime`. The CHR08 gate requires option-aware decoded mount evidence, transactional mount rollback and `/data` flag restoration, shared start/exec session construction, fail-closed status/doctor checks, strict trusted service-unit parsing/execution, durable process-state lifecycle semantics, Android operation reconciliation markers, and exact audit closure of D13/D25/D26 plus U116–U132/U225 (21 canonical findings / 49 source manifestations). D12 remains reserved for CHR16's logging/diagnostics closure.

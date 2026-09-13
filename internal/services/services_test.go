@@ -1,6 +1,7 @@
 package services
 
 import (
+	sys "chrootctl/internal/system"
 	"context"
 	"os"
 	"path/filepath"
@@ -157,5 +158,73 @@ func TestServiceStartCommandHonorsWorkingDirectoryAndRestart(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("command %q missing %q", got, want)
 		}
+	}
+}
+
+func TestCHR08ServiceUnitParserStrictAndQuotedEnvironment(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "quoted.service")
+	text := "[Service]\nChroot=work\nExecStart=echo ok\nEnvironment=FOO=bar TITLE=\"hello world\" ESCAPED=hello\\ world\nRestart=on-failure\nX11=false\nRoot=false\n[Install]\nWantedBy=boot.target\nEnabled=true\n"
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	u, err := loadUnit(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Environment["TITLE"] != "hello world" || u.Environment["ESCAPED"] != "hello world" || !u.EnabledByDefault {
+		t.Fatalf("unit=%+v", u)
+	}
+	bad := filepath.Join(t.TempDir(), "bad.service")
+	if err := os.WriteFile(bad, []byte("[Service]\nExecStart=true\nX11=maybe\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadUnit(bad); err == nil {
+		t.Fatal("invalid boolean must be rejected")
+	}
+	if err := os.WriteFile(bad, []byte("[Service]\nExecStart=true\nRestart=sometimes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadUnit(bad); err == nil {
+		t.Fatal("invalid restart policy must be rejected")
+	}
+}
+
+func TestCHR08BootRejectsUnknownRequiredUnit(t *testing.T) {
+	units := map[string]ServiceUnit{"web.service": {Name: "web.service", Chroot: "work", Requires: []string{"typo-database.service"}}}
+	if _, err := buildBootLayers(units, func(chroot, unit string) bool { return true }); err == nil {
+		t.Fatal("unknown Requires= must fail closed")
+	}
+}
+
+func TestCHR08InstallEnabledIsDistinctFromBootMembership(t *testing.T) {
+	u := ServiceUnit{Name: "demo.service", WantedBy: []string{"boot.target"}, EnabledByDefault: true}
+	if !wantedBy(u, "boot.target") || wantedBy(u, "other.target") {
+		t.Fatalf("wanted_by mismatch: %+v", u)
+	}
+}
+
+func TestCHR08TrustedUnitRejectsWritablePrivilegedDefinition(t *testing.T) {
+	if !sys.IsRoot() {
+		t.Skip("root trust rule is enforced only for privileged execution")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "unsafe.service")
+	if err := os.WriteFile(p, []byte("[Service]\nExecStart=true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := trustedUnitPath(p); err == nil {
+		t.Fatal("group/world writable unit must be rejected")
+	}
+}
+
+func TestCHR08HostWritableProbeDoesNotCreatePath(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "does", "not", "exist")
+	_ = pathWritableWithoutMutation(target)
+	if _, err := os.Lstat(filepath.Join(root, "does")); !os.IsNotExist(err) {
+		t.Fatalf("readiness probe created state: %v", err)
 	}
 }

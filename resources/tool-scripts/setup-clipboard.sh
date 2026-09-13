@@ -20,6 +20,7 @@ install -d /usr/local/bin
 
 cat >/usr/local/bin/termux-clip <<'EOF_INNER'
 #!/bin/sh
+# chrootctl-clipboard-wrapper:v1 termux-clip
 set -eu
 
 SOCKET_PATH=/tmp/chrootctl/clipboard.sock
@@ -61,6 +62,7 @@ EOF_INNER
 
 cat >/usr/local/bin/chrootctl-xsel <<'EOF_INNER'
 #!/bin/sh
+# chrootctl-clipboard-wrapper:v1 chrootctl-xsel
 set -eu
 
 mode="set"
@@ -100,6 +102,7 @@ EOF_INNER
 
 cat >/usr/local/bin/chrootctl-xclip <<'EOF_INNER'
 #!/bin/sh
+# chrootctl-clipboard-wrapper:v1 chrootctl-xclip
 set -eu
 
 mode="set"

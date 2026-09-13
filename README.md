@@ -188,3 +188,9 @@ printf '%s' '{"protocolVersion":1,"requestId":"refresh-1","operation":"system.re
 ```
 
 See `docs/android/WEBUI_PARITY_MATRIX.md` for the native replacement gate and `docs/android/ANDROID_APP_ARCHITECTURE.md` for the process and security boundaries.
+
+### Transactional mounts and service runtime
+
+CHR08 makes mount/session and service state evidence-driven rather than optimistic. Mount operations validate source/type/options, decode `/proc/mounts` escapes, reject duplicate or mismatched targets, unwind partial mounts, and restore any temporary `/data` `dev,suid` remount before returning. Status and doctor fail closed when mount evidence cannot be read or required mounts are incomplete.
+
+Service units now use strict names/booleans/restart policies and quoted `Environment=` parsing; privileged execution validates unit ownership/write permissions, runs with the sanitized chroot environment, confirms startup liveness, proves process-tree termination before reporting stopped, and surfaces stale/failed state and journal errors. The documented `chrootctl run CHROOT SERVICE` / `journal CHROOT SERVICE` forms are normalized by the same service contract. See [`docs/audit/CHR08_MOUNT_SERVICE_RUNTIME.md`](docs/audit/CHR08_MOUNT_SERVICE_RUNTIME.md).

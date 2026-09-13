@@ -56,8 +56,8 @@ func (s *ChrootService) requireFullyUnmounted(resolved *ResolvedTarget) error {
 		return err
 	}
 	for _, row := range crudMountStatus(rt) {
-		if strings.EqualFold(row["mounted"], "yes") {
-			return fmt.Errorf("chroot must be fully unmounted before identity mutation: %s", resolved.Record.Name)
+		if !strings.EqualFold(row["mounted"], "no") {
+			return fmt.Errorf("chroot must be fully and verifiably unmounted before identity mutation: %s (%s)", resolved.Record.Name, row["mounted"])
 		}
 	}
 	return nil

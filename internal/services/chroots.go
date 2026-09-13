@@ -384,14 +384,26 @@ func (s *ChrootService) StorageStatus(ctx context.Context, name string) (map[str
 	}
 	cache := filepath.Join(root, "var", "cache")
 	total, used, free := diskUsage(root)
-	rows := rt.Controller.Status(true)
-	mounted := 0
+	rows, mountErr := rt.Controller.StatusChecked(true)
+	if mountErr != nil {
+		return nil, fmt.Errorf("read storage mount state: %w", mountErr)
+	}
+	mounted, mismatched := 0, 0
 	for _, x := range rows {
-		if strings.EqualFold(x["mounted"], "yes") {
+		switch strings.ToLower(x["mounted"]) {
+		case "yes":
 			mounted++
+		case "mismatch":
+			mismatched++
 		}
 	}
-	return map[string]any{"name": name, "rootfsPath": root, "rootfsExists": exists(root), "rootfsBytes": directorySize(root), "cachePath": cache, "cacheExists": exists(cache), "cacheBytes": directorySize(cache), "freeBytes": free, "usedBytes": used, "totalBytes": total, "mountState": map[bool]string{true: "mounted", false: "not-mounted"}[mounted > 0], "mountedCount": mounted, "mountCount": len(rows), "snapshotDirectory": rt.Config.SnapshotDir}, nil
+	mountState := "not-mounted"
+	if mismatched > 0 {
+		mountState = "mismatch"
+	} else if mounted > 0 {
+		mountState = "mounted"
+	}
+	return map[string]any{"name": name, "rootfsPath": root, "rootfsExists": exists(root), "rootfsBytes": directorySize(root), "cachePath": cache, "cacheExists": exists(cache), "cacheBytes": directorySize(cache), "freeBytes": free, "usedBytes": used, "totalBytes": total, "mountState": mountState, "mountedCount": mounted, "mismatchedMountCount": mismatched, "mountCount": len(rows), "snapshotDirectory": rt.Config.SnapshotDir}, nil
 }
 func (s *ChrootService) DeletePreview(ctx context.Context, name string) (map[string]any, error) {
 	r, e := s.C.Registry.Get(ctx, name)
@@ -401,12 +413,61 @@ func (s *ChrootService) DeletePreview(ctx context.Context, name string) (map[str
 		}
 		return nil, e
 	}
-	rt, _ := s.C.RuntimeFor(name, "")
+	rt, e := s.C.RuntimeFor(name, "")
+	if e != nil {
+		return nil, e
+	}
 	root, e := contained(rt.Config.ChrootRoot, r.Path, "registered chroot path")
 	if e != nil {
 		return nil, e
 	}
-	return map[string]any{"ok": true, "kind": "delete", "name": name, "path": root, "reclaim_bytes": directorySize(root)}, nil
+	mountRows, e := rt.Controller.StatusChecked(true)
+	if e != nil {
+		return nil, fmt.Errorf("delete preview mount status: %w", e)
+	}
+	mounted := 0
+	mismatched := 0
+	for _, row := range mountRows {
+		if row["mounted"] == "yes" {
+			mounted++
+		} else if row["mounted"] == "mismatch" {
+			mismatched++
+		}
+	}
+	serviceRows, e := s.C.Services().List(ctx)
+	if e != nil {
+		return nil, fmt.Errorf("delete preview service status: %w", e)
+	}
+	activeServices := []string{}
+	attentionServices := []string{}
+	for _, row := range serviceRows {
+		if row["chroot"] != name {
+			continue
+		}
+		switch strings.ToLower(row["status"]) {
+		case "running":
+			activeServices = append(activeServices, row["service"])
+		case "stale", "failed":
+			attentionServices = append(attentionServices, row["service"])
+		}
+	}
+	snaps, e := s.C.Snapshots().List(ctx, name, 10000)
+	if e != nil {
+		return nil, e
+	}
+	snapshotBytes := int64(0)
+	for _, snap := range snaps {
+		snapshotBytes += directorySize(snap.Path)
+	}
+	blocking := []map[string]string{}
+	if mounted > 0 || mismatched > 0 {
+		blocking = append(blocking, map[string]string{"code": "target_mounted", "message": fmt.Sprintf("%d mount(s) active and %d mismatched; unmount before removal", mounted, mismatched)})
+	}
+	if len(activeServices) > 0 || len(attentionServices) > 0 {
+		blocking = append(blocking, map[string]string{"code": "service_state_active", "message": "stop/reconcile service state before removal: " + strings.Join(append(activeServices, attentionServices...), ",")})
+	}
+	_, hasOverride := s.C.BaseConfig.ChrootOverrides[name]
+	return map[string]any{"ok": len(blocking) == 0, "kind": "delete", "name": name, "path": root, "reclaim_bytes": directorySize(root), "mounted_count": mounted, "mount_count": len(mountRows), "mount_mismatch_count": mismatched, "running_services": activeServices, "service_attention": attentionServices, "snapshot_count": len(snaps), "snapshot_bytes": snapshotBytes, "config_override": hasOverride, "blocking": blocking}, nil
 }
 func (s *ChrootService) ExportPreview(ctx context.Context, name, archive string) (map[string]any, error) {
 	r, e := s.C.Registry.Get(ctx, name)
@@ -489,6 +550,13 @@ func (s *ChrootService) packageInventory(ctx context.Context, name string) (map[
 	r, rt, root, e := s.requireRunnable(ctx, name)
 	if e != nil {
 		return nil, e
+	}
+	arch := rt.Config.TargetArch
+	if r.Arch != nil && *r.Arch != "" {
+		arch = *r.Arch
+	}
+	if arch != "" && arch != sys.HostArch() && !sys.CanExecuteForeignArch(arch) {
+		return nil, fmt.Errorf("package inventory for %s requires foreign-architecture execution support for %s", name, arch)
 	}
 	var cmd string
 	if r.Distro == "ubuntu" {

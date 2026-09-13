@@ -275,6 +275,10 @@ func (s *ReleaseReadinessService) Status() map[string]any {
 		}
 		checks = append(checks, map[string]any{"id": req.ID, "label": req.Label, "status": status, "detail": detail, "command": stringValue(item["command"]), "provenance": stringValue(item["provenance"]), "exitCode": item["exitCode"], "recordedAt": item["recordedAt"]})
 	}
+	// CHR08 makes unverified adaptive/localization readiness visible instead of
+	// allowing Home to report a green release state. CHR20 owns the final proof.
+	checks = append(checks, map[string]any{"id": "android_localization_rtl", "label": "Android localization/RTL proof", "status": "pending", "detail": "Final localization/RTL release evidence is required by CHR20."})
+	pending++
 	return map[string]any{"schemaVersion": releaseEvidenceSchemaVersion, "evidencePath": path, "evidencePresent": problem == "" && exists(path), "evidenceProblem": nilIfEmpty(problem), "generatedAt": payload["generatedAt"], "validationRunId": stringValue(payload["validationRunId"]), "sourceCommit": stringValue(payload["sourceCommit"]), "sourceTree": stringValue(payload["sourceTree"]), "checks": checks, "passCount": pass, "failCount": fail, "pendingCount": pending, "ready": fail == 0 && pending == 0 && pass == len(readinessRequirements)}
 }
 func (s *ReleaseReadinessService) Check(status map[string]any, id string) map[string]any {
