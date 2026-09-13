@@ -22,7 +22,7 @@ import org.json.JSONObject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class RootServiceClient(private val context: Context) {
+class RootServiceClient(private val context: Context) : BridgeTransport {
     private data class BoundService(
         val service: IChrootRootService,
         val binder: IBinder,
@@ -41,19 +41,19 @@ class RootServiceClient(private val context: Context) {
     @Volatile private var activeConnection: ServiceConnection? = null
     @Volatile private var lastDisconnectReason: String = "The privileged service has not connected yet"
 
-    suspend fun serviceInfo(): String = call("Service status", BinderReplayPolicy.SAFE_READ_ONLY) { it.serviceInfo() }
-    suspend fun capabilities(): String = call("Capabilities", BinderReplayPolicy.SAFE_READ_ONLY) { it.capabilities() }
-    suspend fun query(requestJson: String): String = call("Query", BinderReplayPolicy.SAFE_READ_ONLY) { it.query(requestJson) }
-    suspend fun preview(requestJson: String): String = call("Preview", BinderReplayPolicy.SAFE_READ_ONLY) { it.preview(requestJson) }
-    suspend fun operationState(operationId: String): String = call("Operation status", BinderReplayPolicy.SAFE_READ_ONLY) { it.operationState(operationId) }
-    suspend fun reconcileOperation(operationId: String): String = call("Reconcile operation", BinderReplayPolicy.NEVER) { it.reconcileOperation(operationId) }
-    suspend fun cancelOperation(operationId: String): String = call("Cancel operation", BinderReplayPolicy.NEVER) { it.cancelOperation(operationId) }
-    suspend fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String =
+    override suspend fun serviceInfo(): String = call("Service status", BinderReplayPolicy.SAFE_READ_ONLY) { it.serviceInfo() }
+    override suspend fun capabilities(): String = call("Capabilities", BinderReplayPolicy.SAFE_READ_ONLY) { it.capabilities() }
+    override suspend fun query(requestJson: String): String = call("Query", BinderReplayPolicy.SAFE_READ_ONLY) { it.query(requestJson) }
+    override suspend fun preview(requestJson: String): String = call("Preview", BinderReplayPolicy.SAFE_READ_ONLY) { it.preview(requestJson) }
+    override suspend fun operationState(operationId: String): String = call("Operation status", BinderReplayPolicy.SAFE_READ_ONLY) { it.operationState(operationId) }
+    override suspend fun reconcileOperation(operationId: String): String = call("Reconcile operation", BinderReplayPolicy.NEVER) { it.reconcileOperation(operationId) }
+    override suspend fun cancelOperation(operationId: String): String = call("Cancel operation", BinderReplayPolicy.NEVER) { it.cancelOperation(operationId) }
+    override suspend fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String =
         call("Import transfer", BinderReplayPolicy.NEVER, TRANSFER_TIMEOUT_MS) { it.transferFromDescriptor(requestJson, input) }
-    suspend fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String =
+    override suspend fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String =
         call("Export transfer", BinderReplayPolicy.NEVER, TRANSFER_TIMEOUT_MS) { it.transferToDescriptor(requestJson, output) }
 
-    suspend fun streamOperation(requestJson: String, onEvent: suspend (String) -> Unit): String {
+    override suspend fun streamOperation(requestJson: String, onEvent: suspend (String) -> Unit): String {
         val pipe = ParcelFileDescriptor.createPipe()
         val readSide = pipe[0]
         val writeSide = pipe[1]
@@ -149,7 +149,7 @@ class RootServiceClient(private val context: Context) {
         "operation_interrupted",
     )
 
-    fun close() {
+    override fun close() {
         val connection = clearConnection("The Android client closed the privileged service connection")
         connection?.let(::postUnbind)
     }

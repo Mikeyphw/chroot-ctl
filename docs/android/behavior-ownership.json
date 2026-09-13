@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "policy": "behavior-not-file",
+  "surfaces": [
+    {
+      "path": "android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/chroots/ChrootsScreen.kt",
+      "behaviors": [
+        {"id": "chroots.list-selection", "ownerOverlay": "CHR19"},
+        {"id": "chroots.lifecycle-destructive", "ownerOverlay": "CHR07"},
+        {"id": "chroots.snapshots", "ownerOverlay": "CHR09"},
+        {"id": "chroots.storage-logs", "ownerOverlay": "CHR19"},
+        {"id": "chroots.users", "ownerOverlay": "CHR12"},
+        {"id": "chroots.services", "ownerOverlay": "CHR08"},
+        {"id": "chroots.capabilities", "ownerOverlay": "CHR17"},
+        {"id": "chroots.adaptive-accessibility", "ownerOverlay": "CHR20"}
+      ]
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/MainViewModel.kt",
+      "behaviors": [
+        {"id": "viewmodel.home-refresh", "ownerOverlay": "CHR01", "directTest": "HomeRefreshCoordinatorTest"},
+        {"id": "viewmodel.selection-stale-state", "ownerOverlay": "CHR19"},
+        {"id": "viewmodel.operations", "ownerOverlay": "CHR18"},
+        {"id": "viewmodel.install-upgrade", "ownerOverlay": "CHR11"},
+        {"id": "viewmodel.snapshots", "ownerOverlay": "CHR09"},
+        {"id": "viewmodel.users", "ownerOverlay": "CHR12"},
+        {"id": "viewmodel.services", "ownerOverlay": "CHR08"},
+        {"id": "viewmodel.catalog-packages", "ownerOverlay": "CHR13"},
+        {"id": "viewmodel.transfer-artifacts", "ownerOverlay": "CHR10"},
+        {"id": "viewmodel.support-evidence", "ownerOverlay": "CHR16"},
+        {"id": "viewmodel.debug-repair-smoke", "ownerOverlay": "CHR19"}
+      ]
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/mikeyphw/chrootctl/repository/BridgeRepository.kt",
+      "behaviors": [
+        {"id": "repository.home-refresh", "ownerOverlay": "CHR01", "directTest": "HomeRefreshCoordinatorTest"},
+        {"id": "repository.chroot-detail", "ownerOverlay": "CHR19"},
+        {"id": "repository.operations-room", "ownerOverlay": "CHR18"},
+        {"id": "repository.install-upgrade", "ownerOverlay": "CHR11"},
+        {"id": "repository.snapshots", "ownerOverlay": "CHR09"},
+        {"id": "repository.users", "ownerOverlay": "CHR12"},
+        {"id": "repository.services", "ownerOverlay": "CHR08"},
+        {"id": "repository.catalog-packages", "ownerOverlay": "CHR13"},
+        {"id": "repository.transfer-artifacts", "ownerOverlay": "CHR10"},
+        {"id": "repository.support-debug-smoke", "ownerOverlay": "CHR16"},
+        {"id": "repository.protocol-capabilities", "ownerOverlay": "CHR17"}
+      ]
+    }
+  ]
+}

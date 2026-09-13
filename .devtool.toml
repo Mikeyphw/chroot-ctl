@@ -1,11 +1,11 @@
 # chroot-ctl repository configuration for Devtool.
 #
-# Production backend: Go chrootctl rooted at ./cmd/chrootctl.
-# Module packaging/release: cmd/repoctl.
-# Android companion target: ./android.
+# Product boundaries are explicit: the normal Go CLI, the Android companion,
+# and the repoctl release/module pipeline are independent Devtool targets.
 
 [project]
-kind = "go"
+runner = "go"
+platform = "workspace"
 
 [execution]
 environment = "auto"
@@ -15,19 +15,35 @@ chroot_name = "androidos"
 manager = "none"
 
 [build]
-max_workers = 2
+max_workers = 4
 
 # ---------------------------------------------------------------------------
-# Go production backend target
+# Normal human-facing Go CLI/backend.  Intentionally omit root="." so MP07
+# affected-target ownership is driven by the explicit inputs below instead of
+# conservatively claiming Android-only changes.  The Go runner still resolves
+# its project root to the repository root.
 # ---------------------------------------------------------------------------
 
 [targets.chrootctl_go]
-type = "go"
-root = "."
+runner = "go"
+platform = "cli"
 execution_environment = "auto"
+inputs = [
+  ".devtool.toml",
+  "go.mod",
+  "go.sum",
+  "cmd/chrootctl/**",
+  "cmd/sqlite-compat/**",
+  "internal/**",
+  "resources/**",
+  "migration/**",
+]
+outputs = [
+  ".devtool/build/go/**",
+  ".devtool/package/go/**",
+]
 
 [targets.chrootctl_go.go]
-coalesce_validation = true
 vet = true
 packages = ["./..."]
 build_targets = ["./cmd/chrootctl"]
@@ -38,22 +54,33 @@ run_target = "./cmd/chrootctl"
 [targets.chrootctl_go.go.outputs]
 "./cmd/chrootctl" = "chrootctl"
 
-# Shipping Android/module backend profile. SQLite requires CGO; native Termux clang or an Android NDK compiler must be available.
-# Keep normal validation native to the current host so Go tests can execute.
-[targets.chrootctl_go.variants.android-arm64.env]
-GOOS = "android"
-GOARCH = "arm64"
-CGO_ENABLED = "1"
+# Android/ARM64 release runtime builds intentionally do not use a host-sensitive
+# Go variant.  cmd/repoctl build-runtime is the sole release-authoritative path
+# because it resolves the Termux/NDK compiler explicitly for CGO/SQLite.
 
-[targets.chrootctl_go.variants.android-arm64.go]
-build_directory = ".devtool/build/go/android-arm64"
-package_directory = ".devtool/package/go/android-arm64"
+# ---------------------------------------------------------------------------
+# Android companion app
+# ---------------------------------------------------------------------------
 
 [targets.chrootctl_android]
-type = "android"
+runner = "android"
+platform = "android"
 root = "android"
 execution_environment = "chroot"
 chroot_name = "androidos"
+# Inputs outside the Android root are explicit scheduler read scopes.  Android
+# sources themselves are owned by root="android" for affected-target selection.
+inputs = [
+  ".",
+  "../.devtool.toml",
+  "../migration/contracts/v1/**",
+]
+outputs = [
+  ".gradle/**",
+  ".kotlin/**",
+  "build/**",
+  "app/build/**",
+]
 
 [targets.chrootctl_android.android]
 variant = "debug"
@@ -64,21 +91,12 @@ prefer_native_termux = false
 [targets.chrootctl_android.gradle]
 version = "9.7.1"
 provider = "auto"
-max_workers = 2
-parallel = true
 no_daemon = false
 daemon_idle_timeout_ms = 900000
 build_cache = true
 structured_events = false
 fail_fast = true
 offline = false
-args = [
-  "--no-configuration-cache",
-  "-Dorg.gradle.parallel=true",
-  "-Dorg.gradle.vfs.watch=false",
-  "-Pkotlin.incremental=true",
-  "-Pkotlin.compiler.execution.strategy=in-process",
-]
 
 [targets.chrootctl_android.tasks]
 build = [":app:assembleDebug"]
@@ -90,116 +108,67 @@ clean = [":app:clean"]
 required = true
 external_verification = "auto"
 
-# Keep Gradle memory bounded for Termux/ARM64 while leaving enough metaspace for
-# AGP 9.3.1, Kotlin 2.4.10, KSP/Room, Compose, packaging, and lint.
+# Resource policy lives in one place.  Command-line Devtool resource flags may
+# override it without Gradle's JVM being artificially capped to two processors.
 [targets.chrootctl_android.validation]
 android_safe = false
-split_gradle = true
-max_workers = 2
-cpu_limit = 2
+split_gradle = false
+max_workers = 4
+cpu_limit = 4
 parallel = true
 no_daemon = false
 stop_daemon_after_phase = false
 low_priority = false
-memory_guard_mb = 512
-gradle_heap_mb = 1152
-gradle_metaspace_mb = 640
-gradle_packaging_metaspace_mb = 640
-gradle_lint_metaspace_mb = 640
-affected_module_lint = true
+memory_guard_mb = 0
+gradle_heap_mb = 2048
+gradle_metaspace_mb = 768
+affected_module_lint = false
 
-[targets.chrootctl_android.validation.phase_profiles.preflight]
-max_workers = 1
-cpu_limit = 1
-gradle_heap_mb = 768
-gradle_metaspace_mb = 640
-memory_guard_mb = 384
-no_daemon = false
-low_priority = false
-
-[targets.chrootctl_android.validation.phase_profiles.compile]
-max_workers = 2
-cpu_limit = 2
-gradle_heap_mb = 1152
-gradle_metaspace_mb = 640
-memory_guard_mb = 512
-no_daemon = false
-low_priority = false
-
-[targets.chrootctl_android.validation.phase_profiles.resources]
-max_workers = 2
-cpu_limit = 2
-gradle_heap_mb = 1152
-gradle_metaspace_mb = 640
-memory_guard_mb = 512
-no_daemon = false
-low_priority = false
-
-[targets.chrootctl_android.validation.phase_profiles.unit-test]
-max_workers = 2
-cpu_limit = 2
-gradle_heap_mb = 1152
-gradle_metaspace_mb = 640
-memory_guard_mb = 512
-no_daemon = false
-low_priority = false
-
-[targets.chrootctl_android.validation.phase_profiles.package]
-max_workers = 2
-cpu_limit = 2
-gradle_heap_mb = 1152
-gradle_metaspace_mb = 640
-memory_guard_mb = 640
-no_daemon = false
-low_priority = false
-
-[targets.chrootctl_android.validation.phase_profiles.lint]
-max_workers = 1
-cpu_limit = 2
-gradle_heap_mb = 1152
-gradle_metaspace_mb = 640
-memory_guard_mb = 640
-no_daemon = false
-low_priority = false
-
-[targets.chrootctl_android.validation.phase_profiles.instrumentation]
-max_workers = 1
-cpu_limit = 2
-gradle_heap_mb = 1024
-gradle_metaspace_mb = 640
-memory_guard_mb = 512
-no_daemon = false
-low_priority = false
-
+# Compile/resources are transitively covered by test/package.  Keeping them
+# empty lets Devtool prune redundant Gradle phases and coalesce useful tasks.
 [targets.chrootctl_android.validation.phases]
-preflight = [
-  "help",
-]
-compile = [
-  ":app:compileDebugSources",
-]
-resources = [
-  ":app:processDebugResources",
-]
-unit-test = [
-  ":app:testDebugUnitTest",
-]
-package = [
-  ":app:assembleDebug",
-]
-lint = [
-  ":app:lintDebug",
-]
+preflight = [":verifyStableToolchainBaseline"]
+dependencies = []
+compile = []
+resources = []
+unit-test = [":app:testDebugUnitTest"]
+package = [":app:assembleDebug"]
+lint = [":app:lintDebug"]
 
 # ---------------------------------------------------------------------------
-# Go-native module/release command target
+# repoctl release/module pipeline.  This target deliberately does not duplicate
+# the normal CLI target.
 # ---------------------------------------------------------------------------
 
 [targets.chrootctl]
-type = "command"
-root = "."
+runner = "command"
+platform = "release"
 execution_environment = "host"
-run_command = "go run ./cmd/chrootctl --help"
-test_command = "go test -p 2 ./..."
+inputs = [
+  ".devtool.toml",
+  "go.mod",
+  "go.sum",
+  "cmd/repoctl/**",
+  "internal/repoctl/**",
+  "internal/contracts/**",
+  "internal/module/**",
+  "internal/testseal/**",
+  "internal/system/**",
+  "migration/contracts/**",
+  "docs/release/**",
+  "scripts/**",
+  "build.sh",
+]
+outputs = [
+  "out/**",
+  "dist/**",
+  "chrootctl-magisk.zip",
+  "chrootctl-magisk.zip.sha256",
+]
+run_command = "go run ./cmd/repoctl host"
+test_command = "go run ./cmd/repoctl validate"
 build_command = "go run ./cmd/repoctl build-runtime"
 package_command = "go run ./cmd/repoctl build-module"
+
+[targets.chrootctl.workflows]
+validate = ["runner:command#test"]

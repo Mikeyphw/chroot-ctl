@@ -50,6 +50,14 @@ func FinalSeal(opts FinalSealOptions) error {
 	}); err != nil {
 		return err
 	}
+	if err = recordCheck(checks, "audit_coverage", "repoctl audit-coverage + build-foundation", "internal-check", func() error {
+		if e := ValidateAuditCoverage(root); e != nil {
+			return e
+		}
+		return ValidateBuildFoundation(root)
+	}); err != nil {
+		return err
+	}
 
 	bundle, err := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
 	if err != nil {
@@ -83,19 +91,17 @@ func FinalSeal(opts FinalSealOptions) error {
 	}
 
 	androidRoot := filepath.Join(root, "android")
-	androidChecks := []struct{ id, task string }{
-		{"android_compileDebugKotlin", ":app:compileDebugKotlin"},
-		{"android_testDebugUnitTest", ":app:testDebugUnitTest"},
-		{"android_lintDebug", ":app:lintDebug"},
-	}
-	for _, gate := range androidChecks {
-		gate := gate
-		command := "./gradlew --no-daemon " + gate.task
-		if err = recordCheck(checks, gate.id, command, "subprocess", func() error {
-			return run(androidRoot, nil, "./gradlew", "--no-daemon", gate.task)
-		}); err != nil {
-			return err
-		}
+	androidCommand := "./gradlew --no-daemon --continue :chrootctlDebugValidation"
+	if err = recordCheckGroup(
+		checks,
+		[]string{"android_compileDebugKotlin", "android_testDebugUnitTest", "android_lintDebug"},
+		androidCommand,
+		"subprocess",
+		func() error {
+			return run(androidRoot, nil, "./gradlew", "--no-daemon", "--continue", ":chrootctlDebugValidation")
+		},
+	); err != nil {
+		return err
 	}
 
 	work := opts.WorkDir

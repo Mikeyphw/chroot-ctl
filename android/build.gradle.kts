@@ -4,15 +4,33 @@ plugins {
     alias(libs.plugins.ksp) apply false
 }
 
+val stableVersionsFile = layout.projectDirectory.file("gradle/libs.versions.toml")
+val stableAppBuildFile = layout.projectDirectory.file("app/build.gradle.kts")
+val stableWrapperFile = layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.properties")
+val stableDevtoolFile = layout.projectDirectory.file("../.devtool.toml")
+val stableGradlePropertiesFile = layout.projectDirectory.file("gradle.properties")
+val stableBaselineStamp = layout.buildDirectory.file("verification/stable-toolchain-baseline.txt")
+
 val verifyStableToolchainBaseline = tasks.register("verifyStableToolchainBaseline") {
     group = "verification"
     description = "Verifies the fleet-wide stable Android/Java toolchain baseline."
 
+    inputs.files(
+        stableVersionsFile,
+        stableAppBuildFile,
+        stableWrapperFile,
+        stableDevtoolFile,
+        stableGradlePropertiesFile,
+    )
+    outputs.file(stableBaselineStamp)
+    outputs.cacheIf { true }
+
     doLast {
-        val versionsText = file("gradle/libs.versions.toml").readText()
-        val appBuildText = file("app/build.gradle.kts").readText()
-        val wrapperText = file("gradle/wrapper/gradle-wrapper.properties").readText()
-        val devtoolText = file("../.devtool.toml").readText()
+        val versionsText = stableVersionsFile.asFile.readText()
+        val appBuildText = stableAppBuildFile.asFile.readText()
+        val wrapperText = stableWrapperFile.asFile.readText()
+        val devtoolText = stableDevtoolFile.asFile.readText()
+        val gradlePropertiesText = stableGradlePropertiesFile.asFile.readText()
 
         val requiredVersions = listOf(
             "agp" to "9.3.1",
@@ -51,6 +69,12 @@ val verifyStableToolchainBaseline = tasks.register("verifyStableToolchainBaselin
         check("version = \"9.7.1\"" in devtoolGradleSection) {
             "Stable toolchain drift: Devtool must request Gradle 9.7.1"
         }
+        check("--no-configuration-cache" !in devtoolText) {
+            "Stable toolchain drift: Devtool must not disable Gradle configuration cache"
+        }
+        check("ActiveProcessorCount" !in gradlePropertiesText && "org.gradle.workers.max" !in gradlePropertiesText) {
+            "Stable toolchain drift: Gradle must not hard-cap CPU/worker count below Devtool resource policy"
+        }
 
         val versionsSection = versionsText.substringAfter("[versions]").substringBefore("[libraries]")
         val prerelease = Regex(
@@ -65,7 +89,26 @@ val verifyStableToolchainBaseline = tasks.register("verifyStableToolchainBaselin
                     "Prerelease dependency/tool version is forbidden: $line"
                 }
             }
+
+        val stamp = stableBaselineStamp.get().asFile
+        stamp.parentFile.mkdirs()
+        stamp.writeText(
+            "schema=1\n" +
+                "gradle=9.7.1\n" +
+                "java=21\n" +
+                "compileSdk=36\n" +
+                "buildTools=36.0.0\n" +
+                "ndk=29.0.14206865\n"
+        )
     }
+}
+
+// One graph, one Gradle process: CI/repoctl/Devtool share the same Android gate.
+tasks.register("chrootctlDebugValidation") {
+    group = "verification"
+    description = "Runs stable-toolchain verification, debug unit tests, packaging and lint in one Gradle invocation."
+    dependsOn(verifyStableToolchainBaseline)
+    dependsOn(":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug")
 }
 
 tasks.register<Delete>("clean") {

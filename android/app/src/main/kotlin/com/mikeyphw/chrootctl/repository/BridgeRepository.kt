@@ -38,6 +38,7 @@ import com.mikeyphw.chrootctl.protocol.BridgeCapabilities
 import com.mikeyphw.chrootctl.protocol.BridgeEnvelope
 import com.mikeyphw.chrootctl.protocol.BridgeRequest
 import com.mikeyphw.chrootctl.protocol.RootBridgeInfo
+import com.mikeyphw.chrootctl.root.BridgeTransport
 import com.mikeyphw.chrootctl.root.RootServiceClient
 import android.os.ParcelFileDescriptor
 import androidx.room.withTransaction
@@ -49,10 +50,89 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 
+internal interface HomeSnapshotStore {
+    suspend fun replace(
+        chroots: List<ChrootEntity>,
+        operations: List<OperationEntity>,
+        checks: List<CheckResultEntity>,
+        snapshot: HomeSnapshotEntity,
+    )
+
+    suspend fun markStale()
+}
+
+private class RoomHomeSnapshotStore(
+    private val database: ChrootCtlDatabase,
+) : HomeSnapshotStore {
+    override suspend fun replace(
+        chroots: List<ChrootEntity>,
+        operations: List<OperationEntity>,
+        checks: List<CheckResultEntity>,
+        snapshot: HomeSnapshotEntity,
+    ) {
+        database.withTransaction {
+            database.chrootDao().replaceSnapshot(chroots)
+            operations.forEach { operation -> database.operationDao().persistOperation(operation) }
+            database.checkDao().replaceScope("home", checks)
+            database.homeSnapshotDao().upsert(snapshot)
+        }
+    }
+
+    override suspend fun markStale() {
+        database.withTransaction {
+            database.chrootDao().markAllStale()
+            database.homeSnapshotDao().markStale()
+        }
+    }
+}
+
+/** Directly-tested orchestration slice for the highest-traffic Home refresh. */
+internal class HomeRefreshCoordinator(
+    private val transport: BridgeTransport,
+    private val store: HomeSnapshotStore,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+) {
+    suspend fun refresh(): Result<HomeSnapshot> = runCatching {
+        val bridgeInfo = RootBridgeInfo.fromJson(transport.serviceInfo())
+        check(bridgeInfo.ok) { bridgeInfo.message }
+        val capabilities = BridgeCapabilities.fromEnvelope(transport.capabilities())
+        check(!capabilities.arbitraryShell) { "Unsafe arbitrary-shell capability was reported" }
+        val state = BridgeEnvelope.fromJson(transport.query(BridgeRequest("system.dashboard").toJson())).requireData()
+        val releaseReadiness = BridgeEnvelope.fromJson(transport.query(BridgeRequest("release.readiness").toJson())).requireData()
+        val chrootArray = BridgeEnvelope.fromJson(transport.query(BridgeRequest("chroots.list").toJson())).requireArray()
+        val operationArray = BridgeEnvelope.fromJson(transport.query(BridgeRequest("operations.list").toJson())).requireArray()
+        val now = nowMillis()
+        val chrootEntities = chrootArray.toJsonObjects().map { item -> item.toChrootEntity(now) }
+        val operationEntities = operationArray.toJsonObjects().map { item -> item.toOperationEntity(now, stale = false) }
+        val warningCount = countWarnings(state, chrootEntities, operationEntities)
+        val snapshot = HomeSnapshotEntity(
+            id = HOME_SNAPSHOT_ID,
+            bridgeInfoJson = bridgeInfo.toJson(),
+            capabilitiesJson = capabilities.toJson(),
+            dashboardJson = state.put("releaseReadiness", releaseReadiness).toString(),
+            chrootCount = chrootEntities.size,
+            operationCount = operationEntities.size,
+            warningCount = warningCount,
+            lastRefreshAt = now,
+            stale = false,
+        )
+        store.replace(
+            chroots = chrootEntities,
+            operations = operationEntities,
+            checks = state.extractChecks(now, "home"),
+            snapshot = snapshot,
+        )
+        snapshot.toHomeSnapshot(chrootEntities, operationEntities)
+    }.onFailure {
+        store.markStale()
+    }
+}
+
 class BridgeRepository(
     private val rootClient: RootServiceClient,
     private val database: ChrootCtlDatabase,
 ) {
+    private val homeRefresh = HomeRefreshCoordinator(rootClient, RoomHomeSnapshotStore(database))
     val cachedHome: Flow<Loadable<HomeSnapshot>> = combine(
         database.homeSnapshotDao().observe(),
         database.chrootDao().observeAll(),
@@ -88,43 +168,7 @@ class BridgeRepository(
         database.operationDao().observeById(operationId).map { row -> row?.toSummary() }
     }
 
-    suspend fun refreshHome(): Result<HomeSnapshot> = runCatching {
-        val bridgeInfo = RootBridgeInfo.fromJson(rootClient.serviceInfo())
-        check(bridgeInfo.ok) { bridgeInfo.message }
-        val capabilities = BridgeCapabilities.fromEnvelope(rootClient.capabilities())
-        check(!capabilities.arbitraryShell) { "Unsafe arbitrary-shell capability was reported" }
-        val state = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("system.dashboard").toJson())).requireData()
-        val releaseReadiness = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("release.readiness").toJson())).requireData()
-        val chrootArray = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("chroots.list").toJson())).requireArray()
-        val operationArray = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("operations.list").toJson())).requireArray()
-        val now = System.currentTimeMillis()
-        val chrootEntities = chrootArray.toJsonObjects().map { item -> item.toChrootEntity(now) }
-        val operationEntities = operationArray.toJsonObjects().map { item -> item.toOperationEntity(now, stale = false) }
-        val warningCount = countWarnings(state, chrootEntities, operationEntities)
-        val snapshot = HomeSnapshotEntity(
-            id = HOME_SNAPSHOT_ID,
-            bridgeInfoJson = bridgeInfo.toJson(),
-            capabilitiesJson = capabilities.toJson(),
-            dashboardJson = state.put("releaseReadiness", releaseReadiness).toString(),
-            chrootCount = chrootEntities.size,
-            operationCount = operationEntities.size,
-            warningCount = warningCount,
-            lastRefreshAt = now,
-            stale = false,
-        )
-        database.withTransaction {
-            database.chrootDao().replaceSnapshot(chrootEntities)
-            operationEntities.forEach { operation -> database.operationDao().persistOperation(operation) }
-            database.checkDao().replaceScope("home", state.extractChecks(now, "home"))
-            database.homeSnapshotDao().upsert(snapshot)
-        }
-        snapshot.toHomeSnapshot(chrootEntities, operationEntities)
-    }.onFailure {
-        database.withTransaction {
-            database.chrootDao().markAllStale()
-            database.homeSnapshotDao().markStale()
-        }
-    }
+    suspend fun refreshHome(): Result<HomeSnapshot> = homeRefresh.refresh()
 
     suspend fun refreshChrootDetail(name: String): Result<Unit> = runCatching {
         val now = System.currentTimeMillis()

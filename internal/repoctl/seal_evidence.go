@@ -42,6 +42,20 @@ func recordCheck(checks map[string]validationCheck, id, command, provenance stri
 	return err
 }
 
+func recordCheckGroup(checks map[string]validationCheck, ids []string, command, provenance string, fn func() error) error {
+	err := fn()
+	item := validationCheck{Status: "pass", Command: command, Provenance: provenance, ExitCode: 0, RecordedAt: time.Now().Unix()}
+	if err != nil {
+		item.Status = "fail"
+		item.ExitCode = 1
+		item.Detail = err.Error()
+	}
+	for _, id := range ids {
+		checks[id] = item
+	}
+	return err
+}
+
 func validationRunID() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err == nil {
@@ -64,7 +78,7 @@ func validationEvidencePath(root, requested string) string {
 }
 
 func writeFinalSealEvidence(root, path string, checks map[string]validationCheck) (string, error) {
-	required := []string{"go_test", "go_vet", "go_contracts", "repo_purity", "source_package", "android_compileDebugKotlin", "android_testDebugUnitTest", "android_lintDebug", "module_render", "module_zip", "module_shell", "source_no_webui"}
+	required := []string{"go_test", "go_vet", "go_contracts", "repo_purity", "audit_coverage", "source_package", "android_compileDebugKotlin", "android_testDebugUnitTest", "android_lintDebug", "module_render", "module_zip", "module_shell", "source_no_webui"}
 	for _, id := range required {
 		item, ok := checks[id]
 		if !ok || item.Status != "pass" || item.ExitCode != 0 {
