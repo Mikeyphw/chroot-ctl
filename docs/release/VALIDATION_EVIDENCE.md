@@ -58,3 +58,7 @@ scripts/final-seal --go02-evidence /path/to/go02-evidence.json
 On Android/arm64 the `--go02-evidence` argument is not required because the probe runs directly. `scripts/release` invokes the same final seal before creating release artifacts, so release packaging cannot bypass these gates.
 
 Evidence is written through a same-directory temporary file, file `fsync`, atomic rename, and mode `0600`. This is an execution/provenance and source-identity seal, not a public-key signature scheme; an actor with arbitrary write access as the evidence owner/root can still replace local bytes outside chrootctl.
+
+## CHR07 destructive CRUD seal
+
+`repoctl validate` and final-seal now execute `ValidateCRUDAtomicity` after Gate A. The CHR07 seal preserves registry-authoritative destructive targeting, mounted/live-service guards, atomic per-chroot override publication, rootfs/snapshot/service namespace migration, strict registry/snapshot `RowsAffected` semantics, crash recovery by old/new rename identity, import-backup ordering, and exact 9-canonical/21-source audit closure. General privileged-output publication remains CHR10-owned.

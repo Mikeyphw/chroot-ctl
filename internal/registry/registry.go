@@ -734,6 +734,13 @@ func (r *Registry) FindByPath(ctx context.Context, path string) (*Chroot, error)
 	return &item, nil
 }
 func (r *Registry) Rename(ctx context.Context, oldName, newName string, newPath *string) error {
+	return r.RenameIdentity(ctx, oldName, newName, newPath, "", "")
+}
+
+// RenameIdentity updates the registry identity and every snapshot path in one
+// SQLite transaction. snapshotOldRoot/snapshotNewRoot may be empty when no
+// physical snapshot namespace migration is required.
+func (r *Registry) RenameIdentity(ctx context.Context, oldName, newName string, newPath *string, snapshotOldRoot, snapshotNewRoot string) error {
 	oldSafe, err := validation.ChrootName(oldName)
 	if err != nil {
 		return err
@@ -770,19 +777,67 @@ func (r *Registry) Rename(ctx context.Context, oldName, newName string, newPath 
 	if err == nil {
 		return fmt.Errorf("chroot path %s is already owned by %s", path, owner)
 	}
+	type snapshotPath struct {
+		id   int64
+		path string
+	}
+	var snapshots []snapshotPath
+	if snapshotOldRoot != "" || snapshotNewRoot != "" {
+		if snapshotOldRoot == "" || snapshotNewRoot == "" {
+			return fmt.Errorf("both snapshot namespace roots are required")
+		}
+		rows, qerr := tx.QueryContext(ctx, "SELECT snapshot_id,path FROM snapshots WHERE chroot_name = ? ORDER BY snapshot_id", oldSafe)
+		if qerr != nil {
+			return qerr
+		}
+		for rows.Next() {
+			var item snapshotPath
+			if qerr = rows.Scan(&item.id, &item.path); qerr != nil {
+				rows.Close()
+				return qerr
+			}
+			snapshots = append(snapshots, item)
+		}
+		if qerr = rows.Err(); qerr != nil {
+			rows.Close()
+			return qerr
+		}
+		rows.Close()
+		for i := range snapshots {
+			rel, relErr := filepath.Rel(filepath.Clean(snapshotOldRoot), filepath.Clean(snapshots[i].path))
+			if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("snapshot %d path escapes old namespace: %s", snapshots[i].id, snapshots[i].path)
+			}
+			snapshots[i].path = filepath.Join(snapshotNewRoot, rel)
+		}
+	}
 	result, err := tx.ExecContext(ctx, "UPDATE chroots SET name = ?, path = ?, updated_at = STRFTIME('%Y-%m-%d %H:%M:%f','now') WHERE name = ?", newSafe, path, oldSafe)
 	if err != nil {
 		return err
 	}
-	rows, err := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-	if rows != 1 {
+	if rowsAffected != 1 {
 		return fmt.Errorf("%w: %s", ErrNotFound, oldSafe)
+	}
+	for _, snap := range snapshots {
+		result, err = tx.ExecContext(ctx, "UPDATE snapshots SET path = ? WHERE snapshot_id = ?", snap.path, snap.id)
+		if err != nil {
+			return err
+		}
+		n, rowErr := result.RowsAffected()
+		if rowErr != nil {
+			return rowErr
+		}
+		if n != 1 {
+			return fmt.Errorf("%w: snapshot %d", ErrNotFound, snap.id)
+		}
 	}
 	return tx.Commit()
 }
+
 func (r *Registry) Delete(ctx context.Context, name string) error {
 	safe, err := validation.ChrootName(name)
 	if err != nil {

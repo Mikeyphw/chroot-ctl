@@ -40,7 +40,7 @@
     {
       "id": "CHR07",
       "title": "CRUD atomicity & destructive safety",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR08",
@@ -285,7 +285,7 @@
       "supportingOverlays": [
         "CHR06"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-08",
@@ -5581,7 +5581,7 @@
       "title": "CRITICAL data-loss guard missing — remove/rename allow the registered path to equal the configured chroot root",
       "ownerOverlay": "CHR07",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CRUD-04",
@@ -5597,7 +5597,7 @@
       "title": "HIGH — rename does not require the chroot to be unmounted",
       "ownerOverlay": "CHR07",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CRUD-06",
@@ -5613,7 +5613,7 @@
       "title": "HIGH — per-chroot config overrides are not migrated on rename",
       "ownerOverlay": "CHR07",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CRUD-10",
@@ -5631,7 +5631,7 @@
       "supportingOverlays": [
         "CHR09"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CRUD-12",
@@ -5647,7 +5647,7 @@
       "title": "MEDIUM — config errors are discarded inside rename",
       "ownerOverlay": "CHR07",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CRUD-15",
@@ -5663,7 +5663,7 @@
       "title": "LOW/MEDIUM — `chroots list` output is labeled \"Installed Chroots\" but includes every registry row",
       "ownerOverlay": "CHR07",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CRUD-16",
@@ -5681,7 +5681,7 @@
       "supportingOverlays": [
         "CHR09"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI09-18",
@@ -5699,7 +5699,7 @@
       "supportingOverlays": [
         "CHR09"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI09-20",

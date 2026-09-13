@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"chrootctl/internal/config"
 	"chrootctl/internal/registry"
 )
 
@@ -283,5 +284,151 @@ func TestRecoveryRecognizesCommittedSnapshotCreate(t *testing.T) {
 	}
 	if len(rows) != 0 {
 		t.Fatalf("snapshot mutation still pending: %+v", rows)
+	}
+}
+
+func TestCHR07RecoveryCompletesCommittedRenameNamespaceAndOverride(t *testing.T) {
+	ctx := context.Background()
+	r := testRegistry(t)
+	root := t.TempDir()
+	src := filepath.Join(root, "old")
+	dst := filepath.Join(root, "new")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	putChroot(t, r, "old", src, nil)
+	oldMove := filepath.Join(root, "state", "old-demo.state")
+	newMove := filepath.Join(root, "state", "new-demo.state")
+	if err := os.MkdirAll(filepath.Dir(oldMove), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldMove, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"chroot_overrides":{"old":{"locale":"pt_BR.UTF-8"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, err := r.BeginFSMutation(ctx, "chroot-rename", "old", src, dst, map[string]any{"new_name": "new", "namespace_moves": []map[string]any{{"from": oldMove, "to": newMove}}, "config_override": true, "config_path": cfgPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Rename(ctx, "old", "new", &dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UpdateFSMutation(ctx, id, registry.FSMutationCommitted, map[string]any{"new_name": "new", "namespace_moves": []map[string]any{{"from": oldMove, "to": newMove}}, "config_override": true, "config_path": cfgPath}); err != nil {
+		t.Fatal(err)
+	}
+	e := New(r, filepath.Join(root, "ops"), false)
+	if _, err = e.RecoverLocked(ctx, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(newMove); err != nil {
+		t.Fatalf("namespace move not completed: %v", err)
+	}
+	cfg, err := config.LoadReadOnly(cfgPath, config.WithRuntime(config.RuntimeContext{Home: root}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.ChrootOverrides["new"]; !ok {
+		t.Fatal("override not recovered")
+	}
+	if _, ok := cfg.ChrootOverrides["old"]; ok {
+		t.Fatal("old override remains")
+	}
+}
+
+func TestCHR07RecoveryRollsBackRenameNamespaceBeforeRegistryCommit(t *testing.T) {
+	ctx := context.Background()
+	r := testRegistry(t)
+	root := t.TempDir()
+	src := filepath.Join(root, "old")
+	dst := filepath.Join(root, "new")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	putChroot(t, r, "old", src, nil)
+	oldMove := filepath.Join(root, "state", "old-demo.state")
+	newMove := filepath.Join(root, "state", "new-demo.state")
+	if err := os.MkdirAll(filepath.Dir(newMove), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newMove, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"chroot_overrides":{"new":{"locale":"pt_BR.UTF-8"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, err := r.BeginFSMutation(ctx, "chroot-rename", "old", src, dst, map[string]any{"new_name": "new", "namespace_moves": []map[string]any{{"from": oldMove, "to": newMove}}, "config_override": true, "config_path": cfgPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UpdateFSMutation(ctx, id, registry.FSMutationPromoting, map[string]any{"new_name": "new", "namespace_moves": []map[string]any{{"from": oldMove, "to": newMove}}, "config_override": true, "config_path": cfgPath}); err != nil {
+		t.Fatal(err)
+	}
+	e := New(r, filepath.Join(root, "ops"), false)
+	if _, err = e.RecoverLocked(ctx, "old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatalf("root not rolled back: %v", err)
+	}
+	if _, err := os.Stat(oldMove); err != nil {
+		t.Fatalf("namespace not rolled back: %v", err)
+	}
+	cfg, err := config.LoadReadOnly(cfgPath, config.WithRuntime(config.RuntimeContext{Home: root}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.ChrootOverrides["old"]; !ok {
+		t.Fatal("config override was not rolled back to old identity")
+	}
+	if _, ok := cfg.ChrootOverrides["new"]; ok {
+		t.Fatal("new config override remains after rollback")
+	}
+}
+
+func TestCHR07RecoveryFinishesCommittedRemoveNamespaceAndOverride(t *testing.T) {
+	ctx := context.Background()
+	r := testRegistry(t)
+	root := t.TempDir()
+	src := filepath.Join(root, "old")
+	tomb := filepath.Join(root, ".old.remove")
+	if err := os.MkdirAll(tomb, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	putChroot(t, r, "old", src, nil)
+	staged := filepath.Join(root, "old-demo.state.chrootctl-remove-x")
+	if err := os.WriteFile(staged, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"chroot_overrides":{"old":{"locale":"pt_BR.UTF-8"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, err := r.BeginFSMutation(ctx, "chroot-remove", "old", src, tomb, map[string]any{"namespace_moves": []map[string]any{{"from": filepath.Join(root, "old-demo.state"), "to": staged}}, "config_override": true, "config_path": cfgPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Delete(ctx, "old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UpdateFSMutation(ctx, id, registry.FSMutationCommitted, map[string]any{"namespace_moves": []map[string]any{{"from": filepath.Join(root, "old-demo.state"), "to": staged}}, "config_override": true, "config_path": cfgPath}); err != nil {
+		t.Fatal(err)
+	}
+	e := New(r, filepath.Join(root, "ops"), false)
+	if _, err = e.RecoverLocked(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if exists(tomb) || exists(staged) {
+		t.Fatal("committed remove cleanup debt remains")
+	}
+	cfg, err := config.LoadReadOnly(cfgPath, config.WithRuntime(config.RuntimeContext{Home: root}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.ChrootOverrides["old"]; ok {
+		t.Fatal("removed override remains")
 	}
 }

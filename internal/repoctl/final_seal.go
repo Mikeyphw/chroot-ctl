@@ -66,7 +66,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateProcessTransportBoundary(root); e != nil {
 			return e
 		}
-		return ValidateMutationEngineGateA(root)
+		if e := ValidateMutationEngineGateA(root); e != nil {
+			return e
+		}
+		return ValidateCRUDAtomicity(root)
 	}); err != nil {
 		return err
 	}

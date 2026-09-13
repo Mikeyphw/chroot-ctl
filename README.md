@@ -157,6 +157,8 @@ The Web UI also exposes a Services module at `/services` for listing units, star
 
 By default, new chroots are created under `/data/local/tmp/<name>`. Set `chroot_root` in the config file to change the **creation default**. Once a chroot is registered, its canonical `chroots.path` registry value is the authoritative filesystem identity; changing `chroot_root` does not silently relocate existing chroots.
 
+`chroots rename` and `chroots remove` use that exact registered identity. Rename refuses mounted targets or active/unverifiable managed services and migrates the rootfs, managed snapshot namespace, per-chroot override, and external service state/log markers as one recoverable identity transaction. Remove stages those namespaces before deleting the registry row so a failed commit can be rolled back instead of leaving a half-deleted chroot.
+
 Configuration is fail-closed for privileged paths: host paths must resolve to non-empty absolute paths (with supported `~` expansion), unknown keys are rejected, and per-chroot overrides cannot replace target identity or process-global database/snapshot/log/state roots. Default media bind targets follow the configured username unless the media mounts were explicitly supplied. Registry writes also enforce one canonical path owner per chroot identity. See [`docs/audit/CHR03_CONFIG_REGISTRY_IDENTITY.md`](docs/audit/CHR03_CONFIG_REGISTRY_IDENTITY.md) for the exact invariants and migration behavior.
 
 Plain `chrootctl install ubuntu` uses the `minimal` profile and keeps Ubuntu Base as the rootfs source. Desktop environments are explicit via `--profile xfce4`, `--profile plasma`, or desktop add-ons.

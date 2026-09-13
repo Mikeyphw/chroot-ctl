@@ -349,3 +349,58 @@ func TestCHR03AndroidMigrationFailsClosedOnRegistryInspectionError(t *testing.T)
 		t.Fatalf("stable DB overwritten: %q", data)
 	}
 }
+
+func TestRewriteChrootOverrideRenameAndRemoveAreAtomic(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.json")
+	original := `{"username":"mike","chroot_overrides":{"old":{"locale":"pt_BR.UTF-8","extra_packages":["git"]}},"dns_servers":["1.1.1.1"]}`
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := RewriteChrootOverride(path, "old", "new", false)
+	if err != nil || !changed {
+		t.Fatalf("rename changed=%v err=%v", changed, err)
+	}
+	cfg, err := LoadReadOnly(path, WithRuntime(RuntimeContext{Home: root}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.ChrootOverrides["old"]; ok {
+		t.Fatal("old override remains")
+	}
+	if got := cfg.ChrootOverrides["new"]["locale"]; got != "pt_BR.UTF-8" {
+		t.Fatalf("new locale=%v", got)
+	}
+	changed, err = RewriteChrootOverride(path, "new", "", true)
+	if err != nil || !changed {
+		t.Fatalf("remove changed=%v err=%v", changed, err)
+	}
+	cfg, err = LoadReadOnly(path, WithRuntime(RuntimeContext{Home: root}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ChrootOverrides) != 0 {
+		t.Fatalf("overrides=%v", cfg.ChrootOverrides)
+	}
+	if st, err := os.Stat(path); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode=%v err=%v", st.Mode().Perm(), err)
+	}
+}
+
+func TestRewriteChrootOverrideRejectsDestinationCollisionWithoutChangingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	before := []byte(`{"chroot_overrides":{"old":{"locale":"en_US.UTF-8"},"new":{"locale":"pt_BR.UTF-8"}}}`)
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RewriteChrootOverride(path, "old", "new", false); err == nil {
+		t.Fatal("expected collision")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("config changed on rejected migration: %s", after)
+	}
+}

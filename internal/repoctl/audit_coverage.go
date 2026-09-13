@@ -226,8 +226,23 @@ func ValidateAuditCoverage(root string) error {
 	if chr06Sources != 19 {
 		return fmt.Errorf("CHR06 source-manifestation coverage=%d, want 19", chr06Sources)
 	}
-	if d04 := canonical["D04"]; d04.OwnerOverlay != "CHR07" || d04.Status != "planned" || !containsString(d04.SupportingOverlays, "CHR06") {
-		return fmt.Errorf("CHR06 must provide D04 transaction/recovery foundation without prematurely closing CHR07-owned D04")
+	chr07 := []string{"D04", "U149", "U150", "U151", "U152", "U153", "U154", "U155", "U156"}
+	chr07Sources := 0
+	for _, id := range chr07 {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR07" || finding.Status == "planned" {
+			return fmt.Errorf("CHR07 finding %s is not marked implemented", id)
+		}
+		chr07Sources += len(finding.SourceFindings)
+	}
+	if chr07Sources != 21 {
+		return fmt.Errorf("CHR07 source-manifestation coverage=%d, want 21", chr07Sources)
+	}
+	if d04 := canonical["D04"]; !containsString(d04.SupportingOverlays, "CHR06") {
+		return fmt.Errorf("CHR07 D04 closure must retain CHR06 mutation-engine foundation")
+	}
+	if d41 := canonical["D41"]; d41.OwnerOverlay != "CHR10" || d41.Status != "planned" || !containsString(d41.SupportingOverlays, "CHR07") {
+		return fmt.Errorf("CHR07 must support D41 durability without prematurely closing CHR10-owned D41")
 	}
 	return nil
 }

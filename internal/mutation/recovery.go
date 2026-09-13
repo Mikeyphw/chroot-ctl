@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"chrootctl/internal/config"
 	"chrootctl/internal/registry"
 )
 
@@ -33,7 +34,13 @@ func (e *Engine) RecoverLocked(ctx context.Context, target string) (RecoveryRepo
 	}
 	for _, m := range rows {
 		if target != "" && m.Target != target {
-			continue
+			// Rename cleanup debt is recorded under the old identity because that
+			// is the lock/target that existed when the transaction began. Once
+			// the registry commit succeeds, subsequent commands address the new
+			// identity, so allow that identity to drive recovery as well.
+			if m.Kind != "chroot-rename" || detailString(m, "new_name") != target {
+				continue
+			}
 		}
 		state, err := e.recoverOne(ctx, m)
 		if err != nil {
@@ -77,14 +84,13 @@ func detailBool(m registry.FSMutation, key string) bool {
 	return b
 }
 func removeIfExists(path string) error {
-	if path == "" {
+	if path == "" || !exists(path) {
 		return nil
 	}
-	err := os.RemoveAll(path)
-	if os.IsNotExist(err) {
-		return nil
+	if err := os.RemoveAll(path); err != nil {
+		return err
 	}
-	return err
+	return SyncDir(filepath.Dir(path))
 }
 func renameIfPossible(from, to string) error {
 	if from == "" || to == "" {
@@ -102,6 +108,87 @@ func renameIfPossible(from, to string) error {
 	return SyncDir(filepath.Dir(to))
 }
 
+type recoveryMove struct{ From, To string }
+
+func detailMoves(m registry.FSMutation) []recoveryMove {
+	raw, _ := m.Detail["namespace_moves"].([]any)
+	out := make([]recoveryMove, 0, len(raw))
+	for _, item := range raw {
+		obj, _ := item.(map[string]any)
+		from := strings.TrimSpace(fmt.Sprint(obj["from"]))
+		to := strings.TrimSpace(fmt.Sprint(obj["to"]))
+		if from != "" && to != "" {
+			out = append(out, recoveryMove{from, to})
+		}
+	}
+	return out
+}
+func finishRecoveryMoves(moves []recoveryMove) error {
+	for _, mv := range moves {
+		fromExists, toExists := exists(mv.From), exists(mv.To)
+		switch {
+		case toExists && !fromExists:
+			continue
+		case fromExists && !toExists:
+			if err := os.MkdirAll(filepath.Dir(mv.To), 0755); err != nil {
+				return err
+			}
+			if err := os.Rename(mv.From, mv.To); err != nil {
+				return err
+			}
+			if err := SyncDir(filepath.Dir(mv.To)); err != nil {
+				return err
+			}
+		case fromExists && toExists:
+			return fmt.Errorf("recovery namespace has both source and destination: %s / %s", mv.From, mv.To)
+		}
+	}
+	return nil
+}
+func rollbackRecoveryMoves(moves []recoveryMove) error {
+	for i := len(moves) - 1; i >= 0; i-- {
+		mv := moves[i]
+		fromExists, toExists := exists(mv.From), exists(mv.To)
+		if fromExists && !toExists {
+			continue
+		}
+		if !fromExists && toExists {
+			if err := os.MkdirAll(filepath.Dir(mv.From), 0755); err != nil {
+				return err
+			}
+			if err := os.Rename(mv.To, mv.From); err != nil {
+				return err
+			}
+			if err := SyncDir(filepath.Dir(mv.From)); err != nil {
+				return err
+			}
+			continue
+		}
+		if fromExists && toExists {
+			return fmt.Errorf("rollback namespace has both source and destination: %s / %s", mv.From, mv.To)
+		}
+	}
+	return nil
+}
+func cleanupRecoveryMoves(moves []recoveryMove) error {
+	for _, mv := range moves {
+		if err := removeIfExists(mv.To); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func recoverConfigOverride(m registry.FSMutation, oldName, newName string, remove bool) error {
+	if !detailBool(m, "config_override") {
+		return nil
+	}
+	path := detailString(m, "config_path")
+	if path == "" {
+		return fmt.Errorf("mutation is missing config path for persisted override")
+	}
+	_, err := config.RewriteChrootOverride(path, oldName, newName, remove)
+	return err
+}
 func (e *Engine) recoverOne(ctx context.Context, m registry.FSMutation) (string, error) {
 	if m.State == registry.FSMutationRepairRequired {
 		return registry.FSMutationRepairRequired, nil
@@ -141,17 +228,24 @@ func (e *Engine) recoverRemove(ctx context.Context, m registry.FSMutation) (stri
 	if err != nil {
 		return "", err
 	}
+	moves := detailMoves(m)
 	if m.State == registry.FSMutationCommitted || m.State == registry.FSMutationCleanupDebt || rec == nil {
 		if err := removeIfExists(tomb); err != nil {
-			if persistErr := e.Registry.UpdateFSMutation(ctx, m.MutationID, registry.FSMutationCleanupDebt, map[string]any{"cleanup_error": err.Error()}); persistErr != nil {
-				return "", errors.Join(err, persistErr)
-			}
-			return registry.FSMutationCleanupDebt, nil
+			return registry.FSMutationCleanupDebt, err
+		}
+		if err := cleanupRecoveryMoves(moves); err != nil {
+			return registry.FSMutationCleanupDebt, err
+		}
+		if err := recoverConfigOverride(m, m.Target, "", true); err != nil {
+			return registry.FSMutationCleanupDebt, err
 		}
 		if err := e.Registry.UpdateFSMutation(ctx, m.MutationID, registry.FSMutationComplete, map[string]any{"recovered": true}); err != nil {
 			return "", err
 		}
 		return registry.FSMutationComplete, nil
+	}
+	if err := rollbackRecoveryMoves(moves); err != nil {
+		return "", err
 	}
 	if exists(tomb) {
 		if exists(src) {
@@ -181,13 +275,30 @@ func (e *Engine) recoverRename(ctx context.Context, m registry.FSMutation) (stri
 			return "", err
 		}
 	}
+	moves := detailMoves(m)
 	if newRec != nil && filepath.Clean(newRec.Path) == filepath.Clean(dst) && exists(dst) {
+		if err := finishRecoveryMoves(moves); err != nil {
+			return "", err
+		}
+		if err := recoverConfigOverride(m, m.Target, newName, false); err != nil {
+			return registry.FSMutationCleanupDebt, err
+		}
 		if err := e.Registry.UpdateFSMutation(ctx, m.MutationID, registry.FSMutationComplete, map[string]any{"recovered": true}); err != nil {
 			return "", err
 		}
 		return registry.FSMutationComplete, nil
 	}
 	if oldRec != nil {
+		// Configuration may already have crossed the old->new boundary even
+		// though the registry commit did not. Reverse it before restoring the
+		// old filesystem namespace. RewriteChrootOverride is idempotent when the
+		// new key was never published.
+		if err := recoverConfigOverride(m, newName, m.Target, false); err != nil {
+			return "", err
+		}
+		if err := rollbackRecoveryMoves(moves); err != nil {
+			return "", err
+		}
 		if exists(dst) && !exists(src) {
 			if err := renameIfPossible(dst, src); err != nil {
 				return "", err

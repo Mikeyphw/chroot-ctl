@@ -34,6 +34,7 @@ type ResolvedTarget struct {
 
 type Container struct {
 	BaseConfig config.ChrootConfig
+	ConfigPath string
 	Registry   *registry.Registry
 	Logger     *logging.Logger
 	Operations *operations.Manager
@@ -42,6 +43,10 @@ type Container struct {
 }
 
 func New(configPath string, dryRun, verbose bool) (*Container, error) {
+	effectiveConfigPath := configPath
+	if effectiveConfigPath == "" {
+		effectiveConfigPath = config.DefaultConfigPath(config.DetectRuntime())
+	}
 	load := config.Load
 	if dryRun {
 		load = config.LoadReadOnly
@@ -81,7 +86,7 @@ func New(configPath string, dryRun, verbose bool) (*Container, error) {
 			return nil, err
 		}
 	}
-	return &Container{BaseConfig: cfg, Registry: reg, Logger: logger, Operations: ops, Mutations: mutation.New(reg, opRoot, dryRun), DryRun: dryRun}, nil
+	return &Container{BaseConfig: cfg, ConfigPath: effectiveConfigPath, Registry: reg, Logger: logger, Operations: ops, Mutations: mutation.New(reg, opRoot, dryRun), DryRun: dryRun}, nil
 }
 func NewWith(cfg config.ChrootConfig, reg *registry.Registry, logger *logging.Logger, dryRun bool) (*Container, error) {
 	if reg == nil {

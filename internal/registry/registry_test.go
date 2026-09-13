@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -302,5 +303,68 @@ INSERT INTO snapshots(name,chroot_name,owner,path) VALUES('s','ubuntu','ubuntu',
 	}
 	if !found {
 		t.Fatal("exact snapshots(chroot_name)->chroots(name) cascade FK missing after migration")
+	}
+}
+
+func TestCHR07RenameIdentityMovesSnapshotPathsInSameTransaction(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	r, err := Open(filepath.Join(root, "registry.sqlite3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	oldRoot := filepath.Join(root, "chroots", "old")
+	newRoot := filepath.Join(root, "chroots", "new")
+	oldSnaps := filepath.Join(root, "chroots", ".snapshots", "old")
+	newSnaps := filepath.Join(root, "chroots", ".snapshots", "new")
+	if err := os.MkdirAll(filepath.Join(oldSnaps, "s1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Upsert(ctx, ChrootInput{Name: "old", Distro: "ubuntu", Path: oldRoot, Phase: "finalize", Installed: true}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := r.AddSnapshot(ctx, SnapshotInput{Name: "s1", ChrootName: "old", Path: filepath.Join(oldSnaps, "s1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RenameIdentity(ctx, "old", "new", &newRoot, oldSnaps, newSnaps); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.GetSnapshot(ctx, snap.SnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChrootName != "new" || got.Path != filepath.Join(newSnaps, "s1") {
+		t.Fatalf("snapshot=%+v", got)
+	}
+}
+
+func TestCHR07RenameIdentityRejectsSnapshotOutsideNamespaceWithoutChangingRegistry(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	r, err := Open(filepath.Join(root, "registry.sqlite3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	oldRoot := filepath.Join(root, "chroots", "old")
+	newRoot := filepath.Join(root, "chroots", "new")
+	oldSnaps := filepath.Join(root, "snaps", "old")
+	newSnaps := filepath.Join(root, "snaps", "new")
+	if err := r.Upsert(ctx, ChrootInput{Name: "old", Distro: "ubuntu", Path: oldRoot}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.AddSnapshot(ctx, SnapshotInput{Name: "bad", ChrootName: "old", Path: filepath.Join(root, "elsewhere", "bad")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RenameIdentity(ctx, "old", "new", &newRoot, oldSnaps, newSnaps); err == nil {
+		t.Fatal("expected namespace rejection")
+	}
+	if row, err := r.Get(ctx, "old"); err != nil || row == nil {
+		t.Fatalf("old row lost: %+v %v", row, err)
+	}
+	if row, err := r.Get(ctx, "new"); err != nil || row != nil {
+		t.Fatalf("new row created: %+v %v", row, err)
 	}
 }

@@ -484,7 +484,7 @@ func (a *App) chroots(ctx context.Context) error {
 		if e != nil {
 			return e
 		}
-		return a.emit("Installed Chroots", v)
+		return a.emit("Known Chroots", v)
 	case "chroots show":
 		n, e := a.resolveTarget(ctx, false)
 		if e != nil {
