@@ -5,6 +5,7 @@ import (
 	sys "chrootctl/internal/system"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -83,8 +84,14 @@ func writeCHR08FakeBusybox(t *testing.T, mounts string) string {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	script := `#!/usr/bin/env python3
-import os,sys
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		python, err = exec.LookPath("python")
+	}
+	if err != nil {
+		t.Skip("CHR08 fake busybox requires python in PATH")
+	}
+	script := "#!" + python + "\n" + `import os,sys
 mounts=os.environ['CHR08_MOUNTS']
 log=os.environ.get('CHR08_LOG','')
 args=sys.argv[1:]
@@ -167,6 +174,9 @@ func TestCHR08MountRollsBackEarlierMountOnFailure(t *testing.T) {
 }
 
 func TestCHR08MountRestoresDataFlags(t *testing.T) {
+	oldRequireRoot := controllerRequireRoot
+	controllerRequireRoot = func(*sys.Runner) error { return nil }
+	t.Cleanup(func() { controllerRequireRoot = oldRequireRoot })
 	cfg := testCfg(t)
 	cfg.MediaMounts = nil
 	cfg.ExtraBindMounts = nil

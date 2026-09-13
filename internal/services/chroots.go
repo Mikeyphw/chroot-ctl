@@ -145,7 +145,7 @@ func (s *ChrootService) Remove(ctx context.Context, name string) (model.ChrootRe
 	if e != nil {
 		return model.ChrootRemovalResult{}, e
 	}
-	un := rt.Controller.Unmount(ctx)
+	un := crudUnmountTarget(ctx, rt)
 	if un.Failed > 0 {
 		return model.ChrootRemovalResult{Name: name, UnmountedSuccess: un.Success, UnmountedFailed: un.Failed}, fmt.Errorf("failed to unmount chroot")
 	}
@@ -486,11 +486,18 @@ func (s *ChrootService) ExportPreview(ctx context.Context, name, archive string)
 	if e != nil {
 		return nil, e
 	}
+	blocking := []map[string]string{}
 	if archive == "" {
-		archive = filepath.Clean("./" + name + ".tar.zst")
+		archive = ManagedArchive(name, "tar.zst")
 	}
 	archive, _ = filepath.Abs(archive)
-	blocking := []map[string]string{}
+	if managedRoot, err := EnsureManagedTransferRoot(); err != nil {
+		blocking = append(blocking, map[string]string{"code": "managed_root_unavailable", "message": err.Error()})
+	} else if managedArchive, err := contained(managedRoot, archive, "managed transfer artifact"); err != nil {
+		blocking = append(blocking, map[string]string{"code": "archive_outside_managed_root", "message": err.Error()})
+	} else {
+		archive = managedArchive
+	}
 	if rel, _ := filepath.Rel(source, archive); rel != "" && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
 		blocking = append(blocking, map[string]string{"code": "archive_inside_source", "message": "archive path must be outside the chroot source"})
 	}
@@ -501,6 +508,101 @@ func (s *ChrootService) ExportPreview(ctx context.Context, name, archive string)
 	}
 	return map[string]any{"ok": len(blocking) == 0, "kind": "export", "name": name, "archive": archive, "size_bytes": size, "required_bytes": size, "free_bytes": free, "enough_space": free >= uint64(size), "blocking": blocking, "warnings": []any{}}, nil
 }
+func (s *ChrootService) ValidateImport(ctx context.Context, name string) (map[string]any, error) {
+	name, err := validation.ChrootNameField(name, "imported chroot name")
+	if err != nil {
+		return nil, err
+	}
+	r, err := s.C.Registry.Get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, fmt.Errorf("unknown chroot: %s", name)
+	}
+	checks := []map[string]string{}
+	blocking := []map[string]string{}
+	add := func(id, result, detail string) {
+		row := map[string]string{"id": id, "result": result, "detail": detail}
+		checks = append(checks, row)
+		if result == "FAIL" {
+			blocking = append(blocking, row)
+		}
+	}
+	root, pathErr := validateRegisteredTargetPath(s.C.BaseConfig.ChrootRoot, name, r.Path)
+	if pathErr != nil {
+		add("registry.path", "FAIL", pathErr.Error())
+	} else if root, pathErr = contained(s.C.BaseConfig.ChrootRoot, root, "registered chroot path"); pathErr != nil {
+		add("registry.path", "FAIL", pathErr.Error())
+	} else {
+		add("registry.path", "PASS", root)
+		st, statErr := os.Lstat(root)
+		switch {
+		case statErr != nil:
+			add("root.exists", "FAIL", statErr.Error())
+		case st.Mode()&os.ModeSymlink != 0:
+			add("root.symlink", "FAIL", "registered root must not be a symlink")
+		case !st.IsDir():
+			add("root.directory", "FAIL", "registered root must be a directory")
+		default:
+			add("root.directory", "PASS", "registered root is a real directory")
+			if st.Mode().Perm()&0o002 != 0 {
+				add("root.mode", "FAIL", fmt.Sprintf("registered root is world-writable: %s", st.Mode().Perm()))
+			} else {
+				add("root.mode", "PASS", st.Mode().Perm().String())
+			}
+			if _, err := os.Stat(filepath.Join(root, "etc")); err != nil {
+				add("root.etc", "WARN", "rootfs has no etc directory yet")
+			} else {
+				add("root.etc", "PASS", "etc directory exists")
+			}
+			if _, err := os.Stat(filepath.Join(root, "bin")); err != nil {
+				if _, usrErr := os.Stat(filepath.Join(root, "usr", "bin")); usrErr != nil {
+					add("root.bin", "WARN", "rootfs has no bin or usr/bin directory yet")
+				} else {
+					add("root.bin", "PASS", "usr/bin directory exists")
+				}
+			} else {
+				add("root.bin", "PASS", "bin directory exists")
+			}
+		}
+	}
+	switch r.Distro {
+	case "ubuntu", "arch":
+		add("registry.distro", "PASS", r.Distro)
+	default:
+		add("registry.distro", "FAIL", "unsupported distro: "+r.Distro)
+	}
+	arch := ptrText(r.Arch)
+	if arch == "" {
+		arch = s.C.BaseConfig.TargetArch
+	}
+	switch arch {
+	case "", "arm64", "amd64":
+		add("registry.arch", "PASS", arch)
+	default:
+		add("registry.arch", "FAIL", "unsupported architecture: "+arch)
+	}
+	validPhase := map[string]bool{"registered": true, "extract": true, "bootstrap": true, "desktop": true, "finalize": true, "ready": true}
+	if !validPhase[r.Phase] {
+		add("registry.phase", "FAIL", "unsupported phase: "+r.Phase)
+	} else {
+		add("registry.phase", "PASS", r.Phase)
+	}
+	if r.Installed && r.Phase != "finalize" && r.Phase != "ready" {
+		add("registry.installed_phase", "FAIL", "installed chroot must be finalize or ready")
+	} else {
+		add("registry.installed_phase", "PASS", fmt.Sprintf("installed=%v phase=%s", r.Installed, r.Phase))
+	}
+	if _, ok := r.Metadata["_chrootctl_mutation_id"]; ok {
+		add("registry.import_marker", "PASS", "mutation marker recorded")
+	} else {
+		add("registry.import_marker", "WARN", "no import mutation marker recorded")
+	}
+	ok := len(blocking) == 0
+	return map[string]any{"name": name, "path": r.Path, "validation_ok": ok, "checks": checks, "blocking": blocking}, nil
+}
+
 func (s *ChrootService) PackageDiff(ctx context.Context, left, right string) (model.PackageDiffResult, error) {
 	a, e := s.packageInventory(ctx, left)
 	if e != nil {

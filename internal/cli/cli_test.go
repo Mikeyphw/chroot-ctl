@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestContractCommandSurfaceHas74Nodes(t *testing.T) {
-	if len(CommandSpecs) != 74 {
+func TestContractCommandSurfaceHas78Nodes(t *testing.T) {
+	if len(CommandSpecs) != 78 {
 		t.Fatalf("nodes=%d", len(CommandSpecs))
 	}
 	seen := map[string]bool{}
@@ -30,7 +30,7 @@ func TestContractCommandSurfaceHas74Nodes(t *testing.T) {
 	if e = json.Unmarshal(raw, &c); e != nil {
 		t.Fatal(e)
 	}
-	if c.CommandNodeCount != 74 || len(c.CommandNodes) != 74 {
+	if c.CommandNodeCount != 78 || len(c.CommandNodes) != 78 {
 		t.Fatalf("contract=%d/%d", c.CommandNodeCount, len(c.CommandNodes))
 	}
 	for _, n := range c.CommandNodes {

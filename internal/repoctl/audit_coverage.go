@@ -241,8 +241,8 @@ func ValidateAuditCoverage(root string) error {
 	if d04 := canonical["D04"]; !containsString(d04.SupportingOverlays, "CHR06") {
 		return fmt.Errorf("CHR07 D04 closure must retain CHR06 mutation-engine foundation")
 	}
-	if d41 := canonical["D41"]; d41.OwnerOverlay != "CHR10" || d41.Status != "planned" || !containsString(d41.SupportingOverlays, "CHR07") {
-		return fmt.Errorf("CHR07 must support D41 durability without prematurely closing CHR10-owned D41")
+	if d41 := canonical["D41"]; d41.OwnerOverlay != "CHR10" || !containsString(d41.SupportingOverlays, "CHR07") {
+		return fmt.Errorf("CHR07 durability support must remain recorded on CHR10-owned D41")
 	}
 
 	chr08 := []string{"D13", "D25", "D26", "U116", "U117", "U118", "U119", "U120", "U121", "U122", "U123", "U124", "U125", "U126", "U127", "U128", "U129", "U130", "U131", "U132", "U225"}
@@ -285,11 +285,17 @@ func ValidateAuditCoverage(root string) error {
 			return fmt.Errorf("CHR09 Android snapshot support must remain recorded on CHR19-owned %s", id)
 		}
 	}
-	for _, id := range []string{"U152", "U155", "U156"} {
+	chr10 := []string{"D18", "D19", "D39", "D41", "U054", "U055", "U056", "U057", "U058", "U059", "U060", "U157", "U158", "U159", "U160", "U161", "U162", "U163", "U164", "U165", "U166", "U167", "U168", "U169"}
+	chr10Sources := 0
+	for _, id := range chr10 {
 		finding := canonical[id]
-		if finding.OwnerOverlay != "CHR07" || !containsString(finding.SupportingOverlays, "CHR09") {
-			return fmt.Errorf("CHR09 snapshot integration must retain CHR07-owned %s", id)
+		if finding.OwnerOverlay != "CHR10" || finding.Status == "planned" {
+			return fmt.Errorf("CHR10 finding %s is not marked implemented", id)
 		}
+		chr10Sources += len(finding.SourceFindings)
+	}
+	if chr10Sources != 49 {
+		return fmt.Errorf("CHR10 source-manifestation coverage=%d, want 49", chr10Sources)
 	}
 	return nil
 }

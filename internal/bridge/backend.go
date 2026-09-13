@@ -456,7 +456,7 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		}
 		return s.Transfer().Inspect(ctx, a, optText(p, "password"))
 	case "artifacts.list":
-		return s.Registry.ListArtifacts(ctx, false, 500)
+		return s.Transfer().TempState(ctx)
 	case "transfer.artifact_root":
 		return s.Transfer().ArtifactRoot(), nil
 	case "system.runtime":
@@ -614,9 +614,19 @@ func (b *ServicesBackend) preview(ctx context.Context, op string, p map[string]a
 	case "support.preview":
 		archive := optText(p, "archive")
 		if archive == "" {
-			archive = filepath.Join(services.ManagedTransferRoot(), "chrootctl-support.tar.gz")
+			archive = services.ManagedArchive("chrootctl-support", "zip")
 		}
-		return map[string]any{"ok": true, "kind": "support.bundle", "archive": archive, "warnings": []string{"Support bundles are sanitized before export."}, "blocking": []any{}, "confirm": false}, nil
+		blocking := []map[string]string{}
+		if root, err := services.EnsureManagedTransferRoot(); err != nil {
+			blocking = append(blocking, map[string]string{"code": "managed_root_unavailable", "message": err.Error()})
+		} else if abs, err := filepath.Abs(archive); err != nil {
+			blocking = append(blocking, map[string]string{"code": "invalid_archive_path", "message": err.Error()})
+		} else if managed, err := containedBridgePath(root, abs, "support bundle artifact"); err != nil {
+			blocking = append(blocking, map[string]string{"code": "archive_outside_managed_root", "message": err.Error()})
+		} else {
+			archive = managed
+		}
+		return map[string]any{"ok": len(blocking) == 0, "kind": "support.bundle", "archive": archive, "warnings": []string{"Support bundles are sanitized before export and published only under the managed artifact root."}, "blocking": blocking, "confirm": false}, nil
 	case "system.module_build_preview":
 		return b.moduleBuildPreview(p)
 	case "repair.preview":
@@ -784,9 +794,19 @@ func (b *ServicesBackend) moduleBuildPreview(p map[string]any) (any, error) {
 	all, _ := optBool(p, []string{"allInstalled", "all_installed"}, false)
 	archive := optText(p, "archive")
 	if archive == "" {
-		archive = "./chrootctl-magisk.zip"
+		archive = services.ManagedArchive("chrootctl-magisk", "zip")
 	}
-	return map[string]any{"ok": true, "kind": "system.module_build", "archive": archive, "startupTargets": targets, "allInstalled": all, "blocking": []any{}, "warnings": []string{}, "confirm": false}, nil
+	blocking := []map[string]string{}
+	if root, err := services.EnsureManagedTransferRoot(); err != nil {
+		blocking = append(blocking, map[string]string{"code": "managed_root_unavailable", "message": err.Error()})
+	} else if abs, err := filepath.Abs(archive); err != nil {
+		blocking = append(blocking, map[string]string{"code": "invalid_archive_path", "message": err.Error()})
+	} else if managed, err := containedBridgePath(root, abs, "module artifact"); err != nil {
+		blocking = append(blocking, map[string]string{"code": "archive_outside_managed_root", "message": err.Error()})
+	} else {
+		archive = managed
+	}
+	return map[string]any{"ok": len(blocking) == 0, "kind": "system.module_build", "archive": archive, "startupTargets": targets, "allInstalled": all, "blocking": blocking, "warnings": []string{"Module artifacts are published under the managed transfer root."}, "confirm": false}, nil
 }
 
 func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string]any, progress Progress, isCancelled func() bool) (any, error) {
@@ -1194,28 +1214,7 @@ func (b *ServicesBackend) cleanup(ctx context.Context, p map[string]any, temp bo
 	}
 	path := optText(p, "path")
 	all, _ := optBool(p, []string{"deleteAll", "delete_all"}, false)
-	if temp {
-		return b.Services.Transfer().DeleteTemp(ctx, id, path, all)
-	}
-	arts, e := b.Services.Registry.ListArtifacts(ctx, true, 500)
-	if e != nil {
-		return nil, e
-	}
-	deleted := []string{}
-	for _, a := range arts {
-		match := all || (id != "" && a.ArtifactID == id) || (path != "" && a.Path == path)
-		if !match {
-			continue
-		}
-		if !b.Services.DryRun {
-			_ = os.Remove(a.Path)
-			if e = b.Services.Registry.DeleteArtifact(ctx, a.ArtifactID); e != nil {
-				return nil, e
-			}
-		}
-		deleted = append(deleted, a.ArtifactID)
-	}
-	return map[string]any{"deleted": deleted, "count": len(deleted), "dry_run": b.Services.DryRun}, nil
+	return b.Services.Transfer().DeleteTemp(ctx, id, path, all)
 }
 func (b *ServicesBackend) moduleBuild(ctx context.Context, p map[string]any, progress Progress, cancel func() bool) (any, error) {
 	prev, _ := b.moduleBuildPreview(p)
@@ -1308,6 +1307,23 @@ func max(a, b int) int {
 	}
 	return b
 }
+
+func containedBridgePath(root, target, label string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s escapes managed transfer root: %s", label, target)
+	}
+	return absTarget, nil
+}
+
 func errText(e error) any {
 	if e == nil {
 		return nil
@@ -1346,16 +1362,29 @@ func (b *ServicesBackend) smokeArtifact(ctx context.Context, p map[string]any, k
 	last := b.smokeLast(p)
 	archive := optText(p, "archive")
 	if archive == "" {
-		archive = filepath.Join(services.ManagedTransferRoot(), "smoke-result-"+kind+".json")
+		archive = services.ManagedArchive("smoke-result-"+kind, "json")
 	}
-	if !b.Services.DryRun {
-		if e := os.MkdirAll(filepath.Dir(archive), 0o755); e != nil {
-			return nil, e
-		}
-		data, _ := json.MarshalIndent(last, "", "  ")
-		if e := os.WriteFile(archive, append(data, '\n'), 0o600); e != nil {
-			return nil, e
-		}
+	root, err := services.EnsureManagedTransferRoot()
+	if err != nil {
+		return nil, err
+	}
+	abs, err := filepath.Abs(archive)
+	if err != nil {
+		return nil, err
+	}
+	archive, err = containedBridgePath(root, abs, "smoke artifact")
+	if err != nil {
+		return nil, err
+	}
+	if b.Services.DryRun {
+		return map[string]any{"dry_run": true, "archive": archive, "artifact": nil, "result": last}, nil
+	}
+	if e := os.MkdirAll(filepath.Dir(archive), 0o700); e != nil {
+		return nil, e
+	}
+	data, _ := json.MarshalIndent(last, "", "  ")
+	if e := os.WriteFile(archive, append(data, '\n'), 0o600); e != nil {
+		return nil, e
 	}
 	a, e := b.Services.Transfer().RegisterArtifact(ctx, archive, "smoke-result", "", nil, map[string]any{"kind": kind})
 	return map[string]any{"archive": archive, "artifact": a, "result": last}, e

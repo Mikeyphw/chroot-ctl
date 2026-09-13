@@ -84,13 +84,21 @@ func (s *ModuleBuildService) targets(ctx context.Context, req ModuleBuildRequest
 func (s *ModuleBuildService) Build(ctx context.Context, req ModuleBuildRequest) (map[string]any, error) {
 	archive := strings.TrimSpace(req.Archive)
 	if archive == "" {
-		archive = "./chrootctl-magisk.zip"
+		archive = ManagedArchive("chrootctl-magisk", "zip")
+	}
+	managedRoot, err := EnsureManagedTransferRoot()
+	if err != nil {
+		return nil, err
 	}
 	abs, err := filepath.Abs(archive)
 	if err != nil {
 		return nil, err
 	}
-	if err = os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+	abs, err = contained(managedRoot, abs, "module artifact")
+	if err != nil {
+		return nil, err
+	}
+	if err = os.MkdirAll(filepath.Dir(abs), 0o700); err != nil {
 		return nil, err
 	}
 	targets, err := s.targets(ctx, req)
@@ -117,12 +125,18 @@ func (s *ModuleBuildService) Build(ctx context.Context, req ModuleBuildRequest) 
 		return nil, err
 	}
 	h := sha256.Sum256(data)
+	sha := hex.EncodeToString(h[:])
+	artifact, err := s.C.Transfer().RegisterArtifact(ctx, abs, "module-archive", "", nil, map[string]any{"sha256": sha, "startup_targets": targets, "runtime_dir": runtimeDir})
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"built":          true,
 		"archive":        abs,
 		"sizeBytes":      len(data),
-		"sha256":         hex.EncodeToString(h[:]),
+		"sha256":         sha,
 		"startupTargets": targets,
 		"runtimeDir":     runtimeDir,
+		"artifact":       artifact,
 	}, nil
 }

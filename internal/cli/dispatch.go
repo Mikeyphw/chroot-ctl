@@ -55,6 +55,8 @@ func (a *App) Dispatch(ctx context.Context) error {
 		return a.snapshots(ctx)
 	case "transfer":
 		return a.transfer(ctx)
+	case "artifacts":
+		return a.artifacts(ctx)
 	case "events":
 		return a.events(ctx)
 	case "support":
@@ -551,20 +553,14 @@ func (a *App) chroots(ctx context.Context) error {
 				return e
 			}
 		}
-		v, e := a.Services.System().Doctor(ctx, n)
+		v, e := a.Services.Chroots().ValidateImport(ctx, n)
 		if e != nil {
 			return e
 		}
-		ok := true
-		for _, r := range v {
-			if r.Result == "FAIL" {
-				ok = false
-			}
-		}
-		if !ok {
+		if ok, _ := v["validation_ok"].(bool); !ok {
 			a.ExitCode = 1
 		}
-		return a.emit("Imported Chroot Validation", map[string]any{"name": n, "validation_ok": ok, "checks": v})
+		return a.emit("Imported Chroot Validation", v)
 	}
 	return errors.New("unsupported chroots command")
 }
@@ -654,6 +650,45 @@ func (a *App) transfer(ctx context.Context) error {
 	}
 	return errors.New("unsupported transfer command")
 }
+func (a *App) artifacts(ctx context.Context) error {
+	switch a.Inv.Spec.Command {
+	case "artifacts":
+		return errors.New("artifacts subcommand is required")
+	case "artifacts list":
+		v, e := a.Services.Transfer().TempState(ctx)
+		if e != nil {
+			return e
+		}
+		return a.emit("Managed Artifacts", v)
+	case "artifacts root":
+		return a.emit("Managed Artifact Root", a.Services.Transfer().ArtifactRoot())
+	case "artifacts cleanup":
+		id := a.Inv.String("artifact_id")
+		path := a.Inv.String("path")
+		all := a.Inv.Bool("all") || a.Inv.Bool("delete_all")
+		if !all && id == "" && path == "" {
+			return errors.New("artifacts cleanup requires --all, --artifact-id, or --path")
+		}
+		label := "Clean managed artifact(s)?"
+		if all {
+			label = "Clean all managed transfer artifacts?"
+		} else if id != "" {
+			label = "Clean managed artifact '" + id + "'?"
+		} else if path != "" {
+			label = "Clean managed artifact at '" + path + "'?"
+		}
+		if e := a.confirm(label, a.Inv.Bool("yes")); e != nil {
+			return e
+		}
+		v, e := a.Services.Transfer().DeleteTemp(ctx, id, path, all)
+		if e != nil {
+			return e
+		}
+		return a.emit("Managed Artifact Cleanup", v)
+	}
+	return errors.New("unsupported artifacts command")
+}
+
 func (a *App) events(ctx context.Context) error {
 	if a.Inv.Spec.Command != "events list" {
 		return errors.New("events subcommand is required")

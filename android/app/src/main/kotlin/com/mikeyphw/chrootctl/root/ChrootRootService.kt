@@ -12,6 +12,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -201,9 +202,9 @@ class ChrootRootService : RootService() {
             return failure(requestId, "DESCRIPTOR_DUPLICATION_FAILED", error.message ?: "Unable to duplicate transfer descriptor")
         }
         descriptor.close()
-        if (readTransferState(requestId)?.optString("state") in TERMINAL_TRANSFER_STATES) {
+        if (readTransferState(requestId) != null) {
             owned.close()
-            return failure(requestId, "TRANSFER_REQUEST_REUSED", "Transfer request id $requestId already has a terminal result")
+            return failure(requestId, "TRANSFER_REQUEST_REUSED", "Transfer request id $requestId already exists; create a new request id for each transfer")
         }
         val cancel = AtomicBoolean(false)
         val handle = TransferHandle(cancel, owned)
@@ -270,11 +271,51 @@ class ChrootRootService : RootService() {
             }
             if (cancel.get()) throw TransferCancelledException()
             check(partial.renameTo(target)) { "Unable to atomically publish staged import" }
+            Os.chmod(target.path, 0x180) // 0600
+            val checksum = sha256(target)
+            val checksumPath = publishChecksumSidecar(target, checksum)
             syncDirectory(directory)
+            return JSONObject()
+                .put("stagingId", stagingId)
+                .put("path", target.path)
+                .put("archive", target.path)
+                .put("filename", target.name)
+                .put("bytes", target.length())
+                .put("checksum", checksum)
+                .put("checksumPath", checksumPath.path)
+                .put("checksum_path", checksumPath.path)
         } finally {
             partial.delete()
         }
-        return JSONObject().put("stagingId", stagingId).put("path", target.path).put("archive", target.path).put("filename", target.name).put("bytes", target.length())
+    }
+
+    private fun publishChecksumSidecar(archive: File, checksum: String): File {
+        val sidecar = File(archive.parentFile, archive.name + ".sha256")
+        val partial = File(archive.parentFile, ".${archive.name}.sha256.partial-${System.nanoTime()}")
+        try {
+            FileOutputStream(partial).use { out ->
+                out.write((checksum + "  " + archive.name + "\n").toByteArray(Charsets.UTF_8))
+                out.fd.sync()
+            }
+            check(partial.renameTo(sidecar)) { "Unable to publish checksum sidecar" }
+            Os.chmod(sidecar.path, 0x180) // 0600
+            return sidecar
+        } finally {
+            partial.delete()
+        }
+    }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(256 * 1024)
+        FileInputStream(file).use { input ->
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count > 0) digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun copyExport(request: JSONObject, output: ParcelFileDescriptor, cancel: AtomicBoolean, state: JSONObject): JSONObject {

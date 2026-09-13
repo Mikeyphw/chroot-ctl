@@ -34,7 +34,7 @@ The exact check IDs are:
 
 A passing check carries `status: pass`, `exitCode: 0`, a non-empty `command`, a positive `recordedAt`, and provenance of either `subprocess` or `internal-check`. Missing, extra, malformed, or failed checks make release readiness fail closed.
 
-`go_contracts` validates the retained GO16 test map, the frozen GO00 fixtures, and the live 74-node CLI / 86-operation bridge metadata. `source_package` builds the source archive twice and requires identical SHA-256 values. `module_zip` likewise packages the module twice and requires byte-for-byte deterministic ZIP output. The three Android checks execute the exact Gradle tasks rather than accepting caller assertions. `source_no_webui` scans the current runtime source for retired WebUI dependencies/surfaces.
+`go_contracts` validates the retained GO16 test map, the frozen GO00 fixtures, and the live 78-node CLI / 86-operation bridge metadata. `source_package` builds the source archive twice and requires identical SHA-256 values. `module_zip` likewise packages the module twice and requires byte-for-byte deterministic ZIP output. The three Android checks execute the exact Gradle tasks rather than accepting caller assertions. `source_no_webui` scans the current runtime source for retired WebUI dependencies/surfaces.
 
 Repository-internal validation also seals the CHR01–CHR03 roadmap foundations before final evidence can pass: build/Devtool configuration, generated CLI-contract freshness, the complete 609→272 audit ledger, and CHR03 configuration/registry/Room identity invariants.
 

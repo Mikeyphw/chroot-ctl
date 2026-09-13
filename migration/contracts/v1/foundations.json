@@ -686,7 +686,8 @@
       ],
       "SupportBundleResult": [
         "archive",
-        "included"
+        "included",
+        "artifact_id"
       ],
       "UpgradeResult": [
         "status",

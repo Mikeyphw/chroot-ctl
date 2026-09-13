@@ -24,7 +24,23 @@ import (
 	"chrootctl/internal/validation"
 )
 
-var artifactTTL = map[string]time.Duration{"staged-import": 24 * time.Hour, "chroot-export": 7 * 24 * time.Hour, "checksum": 7 * 24 * time.Hour, "support-bundle": 3 * 24 * time.Hour, "module-archive": 7 * 24 * time.Hour, "debug-evidence": 3 * 24 * time.Hour, "temporary": 24 * time.Hour}
+var artifactTTL = map[string]time.Duration{
+	"staged-import":  24 * time.Hour,
+	"chroot-export":  7 * 24 * time.Hour,
+	"checksum":       7 * 24 * time.Hour,
+	"support-bundle": 3 * 24 * time.Hour,
+	"module-archive": 7 * 24 * time.Hour,
+	"debug-evidence": 3 * 24 * time.Hour,
+	"smoke-result":   3 * 24 * time.Hour,
+	"temporary":      24 * time.Hour,
+}
+
+const (
+	maxManagedArtifactBytes = int64(16 * 1024 * 1024 * 1024)
+	maxArchiveExpandedBytes = int64(32 * 1024 * 1024 * 1024)
+	maxArchiveMembers       = 1000000
+	minManagedFreeBytes     = uint64(64 * 1024 * 1024)
+)
 
 type TransferService struct{ C *Container }
 
@@ -68,6 +84,8 @@ func artifactKind(path string) string {
 		return "support-bundle"
 	case strings.Contains(n, "debug") || strings.Contains(n, "evidence"):
 		return "debug-evidence"
+	case strings.Contains(n, "smoke"):
+		return "smoke-result"
 	case strings.Contains(n, "magisk") || strings.Contains(n, "module"):
 		return "module-archive"
 	case strings.HasSuffix(n, ".tar.zst") || strings.HasSuffix(n, ".tar.zst.enc") || strings.HasSuffix(n, ".tzst") || strings.HasSuffix(n, ".tzst.enc"):
@@ -76,28 +94,72 @@ func artifactKind(path string) string {
 		return "temporary"
 	}
 }
+func EnsureManagedTransferRoot() (string, error) {
+	root := ManagedTransferRoot()
+	st, err := os.Lstat(root)
+	if os.IsNotExist(err) {
+		if err = os.MkdirAll(root, 0o700); err != nil {
+			return "", err
+		}
+		st, err = os.Lstat(root)
+	}
+	if err != nil {
+		return "", err
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
+		return "", fmt.Errorf("managed transfer root is not a real directory: %s", root)
+	}
+	if err = os.Chmod(root, 0o700); err != nil {
+		return "", err
+	}
+	return filepath.Abs(root)
+}
+
 func (s *TransferService) managed(path string) (string, error) {
-	return contained(ManagedTransferRoot(), path, "managed transfer artifact")
+	root, err := EnsureManagedTransferRoot()
+	if err != nil {
+		return "", err
+	}
+	return contained(root, path, "managed transfer artifact")
 }
 func (s *TransferService) RegisterArtifact(ctx context.Context, path, kind, target string, ttl *time.Duration, metadata map[string]any) (*registry.Artifact, error) {
+	root, e := EnsureManagedTransferRoot()
+	if e != nil {
+		return nil, e
+	}
 	abs, e := filepath.Abs(path)
 	if e != nil {
 		return nil, e
 	}
-	if _, e = contained(ManagedTransferRoot(), abs, "managed transfer artifact"); e != nil {
-		return nil, nil
+	abs, e = contained(root, abs, "managed transfer artifact")
+	if e != nil {
+		return nil, e
 	}
 	st, e := os.Stat(abs)
-	if e != nil || !st.Mode().IsRegular() {
-		return nil, nil
+	if e != nil {
+		return nil, e
+	}
+	if !st.Mode().IsRegular() {
+		return nil, fmt.Errorf("managed transfer artifact is not a regular file: %s", abs)
+	}
+	if st.Size() > maxManagedArtifactBytes {
+		return nil, fmt.Errorf("managed transfer artifact exceeds %d bytes: %s", maxManagedArtifactBytes, abs)
 	}
 	if kind == "" {
 		kind = artifactKind(abs)
 	}
 	duration := artifactTTL[kind]
+	if duration <= 0 {
+		duration = artifactTTL["temporary"]
+	}
 	if ttl != nil {
 		duration = *ttl
 	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["managed_root"] = root
+	metadata["basename"] = filepath.Base(abs)
 	row, e := s.C.Registry.RegisterArtifact(ctx, registry.ArtifactInput{Path: abs, Kind: kind, Target: target, SizeBytes: st.Size(), TTL: &duration, Metadata: metadata})
 	if e != nil {
 		return nil, e
@@ -105,8 +167,15 @@ func (s *TransferService) RegisterArtifact(ctx context.Context, path, kind, targ
 	return &row, nil
 }
 func (s *TransferService) ArtifactRoot() map[string]any {
-	root := ManagedTransferRoot()
-	return map[string]any{"path": root, "managedRoot": root, "androidDescriptorRoot": "/data/local/tmp/chrootctl-transfer", "exists": exists(root), "writable": writableDir(root), "retentionPolicy": ttlSeconds()}
+	root, err := EnsureManagedTransferRoot()
+	if err != nil {
+		root = ManagedTransferRoot()
+	}
+	out := map[string]any{"path": root, "managedRoot": root, "androidDescriptorRoot": "/data/local/tmp/chrootctl-transfer", "exists": exists(root), "writable": writableDir(root), "retentionPolicy": ttlSeconds(), "maxArtifactBytes": maxManagedArtifactBytes, "minFreeBytes": minManagedFreeBytes}
+	if err != nil {
+		out["error"] = err.Error()
+	}
+	return out
 }
 func ttlSeconds() map[string]int64 {
 	out := map[string]int64{}
@@ -115,8 +184,79 @@ func ttlSeconds() map[string]int64 {
 	}
 	return out
 }
+func (s *TransferService) ReconcileArtifacts(ctx context.Context) (map[string]int, error) {
+	root, e := EnsureManagedTransferRoot()
+	if e != nil {
+		return nil, e
+	}
+	stats := map[string]int{"expired": 0, "stale": 0, "discovered": 0, "unlink_failed": 0}
+	expired, e := s.C.Registry.PruneExpiredArtifacts(ctx)
+	if e != nil {
+		return nil, e
+	}
+	for _, row := range expired {
+		p, containedErr := contained(root, row.Path, "managed transfer artifact")
+		if containedErr != nil {
+			stats["stale"]++
+			continue
+		}
+		if removeErr := os.Remove(p); removeErr != nil && !os.IsNotExist(removeErr) {
+			stats["unlink_failed"]++
+		} else {
+			stats["expired"]++
+			_ = os.Remove(p + ".sha256")
+		}
+	}
+	rows, e := s.C.Registry.ListArtifacts(ctx, true, 5000)
+	if e != nil {
+		return nil, e
+	}
+	tracked := map[string]bool{}
+	for _, row := range rows {
+		p, containedErr := contained(root, row.Path, "managed transfer artifact")
+		if containedErr != nil {
+			if err := s.C.Registry.DeleteArtifact(ctx, row.ArtifactID); err == nil {
+				stats["stale"]++
+			}
+			continue
+		}
+		tracked[p] = true
+		st, statErr := os.Stat(p)
+		if os.IsNotExist(statErr) || (statErr == nil && !st.Mode().IsRegular()) {
+			if err := s.C.Registry.DeleteArtifact(ctx, row.ArtifactID); err == nil {
+				stats["stale"]++
+			}
+		}
+	}
+	entries, _ := os.ReadDir(root)
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == ".requests" || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".sha256") {
+			continue
+		}
+		p := filepath.Join(root, name)
+		if tracked[p] {
+			continue
+		}
+		st, statErr := entry.Info()
+		if statErr != nil || !st.Mode().IsRegular() {
+			continue
+		}
+		if _, err := s.RegisterArtifact(ctx, p, artifactKind(p), "", nil, map[string]any{"discovered": true}); err == nil {
+			stats["discovered"]++
+		}
+	}
+	return stats, nil
+}
 func (s *TransferService) TempState(ctx context.Context) (map[string]any, error) {
-	root := ManagedTransferRoot()
+	root, e := EnsureManagedTransferRoot()
+	if e != nil {
+		return nil, e
+	}
+	reconciled, e := s.ReconcileArtifacts(ctx)
+	if e != nil {
+		return nil, e
+	}
 	rows, e := s.C.Registry.ListArtifacts(ctx, false, 5000)
 	if e != nil {
 		return nil, e
@@ -136,33 +276,51 @@ func (s *TransferService) TempState(ctx context.Context) (map[string]any, error)
 		items = append(items, map[string]any{"artifactId": r.ArtifactID, "artifact_id": r.ArtifactID, "name": filepath.Base(p), "path": p, "kind": r.Kind, "target": r.Target, "size_bytes": st.Size(), "sizeBytes": st.Size(), "modified_at": float64(st.ModTime().UnixNano()) / 1e9, "modifiedAt": float64(st.ModTime().UnixNano()) / 1e9, "createdAt": r.CreatedAt, "expiresAt": r.ExpiresAt, "managed": true, "metadata": r.Metadata})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i]["modified_at"].(float64) > items[j]["modified_at"].(float64) })
-	return map[string]any{"directory": root, "managedRoot": root, "androidDescriptorRoot": "/data/local/tmp/chrootctl-transfer", "retentionPolicy": ttlSeconds(), "count": len(items), "total_bytes": total, "items": items}, nil
+	return map[string]any{"directory": root, "managedRoot": root, "androidDescriptorRoot": "/data/local/tmp/chrootctl-transfer", "retentionPolicy": ttlSeconds(), "maxArtifactBytes": maxManagedArtifactBytes, "minFreeBytes": minManagedFreeBytes, "count": len(items), "total_bytes": total, "totalBytes": total, "items": items, "reconciled": reconciled}, nil
 }
 func (s *TransferService) DeleteTemp(ctx context.Context, id, path string, all bool) (map[string]any, error) {
 	removed := 0
+	errorsOut := []string{}
+	deleteRow := func(row registry.Artifact) {
+		p, e := s.managed(row.Path)
+		if e != nil {
+			errorsOut = append(errorsOut, e.Error())
+			return
+		}
+		if e = os.Remove(p); e != nil && !os.IsNotExist(e) {
+			errorsOut = append(errorsOut, e.Error())
+			return
+		}
+		_ = os.Remove(p + ".sha256")
+		if e = s.C.Registry.DeleteArtifact(ctx, row.ArtifactID); e != nil {
+			errorsOut = append(errorsOut, e.Error())
+			return
+		}
+		removed++
+	}
 	if all {
-		rows, _ := s.C.Registry.ListArtifacts(ctx, true, 5000)
-		for _, r := range rows {
-			if p, e := s.managed(r.Path); e == nil {
-				if os.Remove(p) == nil {
-					removed++
-				}
+		for {
+			rows, e := s.C.Registry.ListArtifacts(ctx, true, 5000)
+			if e != nil {
+				return nil, e
 			}
-			_ = s.C.Registry.DeleteArtifact(ctx, r.ArtifactID)
+			if len(rows) == 0 {
+				break
+			}
+			beforeRemoved, beforeErrors := removed, len(errorsOut)
+			for _, r := range rows {
+				deleteRow(r)
+			}
+			if len(errorsOut) > beforeErrors || removed == beforeRemoved || len(rows) < 5000 {
+				break
+			}
 		}
 	} else if id != "" {
 		r, e := s.C.Registry.GetArtifact(ctx, id)
 		if e != nil {
 			return nil, e
 		}
-		p, e := s.managed(r.Path)
-		if e != nil {
-			return nil, e
-		}
-		if os.Remove(p) == nil {
-			removed++
-		}
-		_ = s.C.Registry.DeleteArtifact(ctx, id)
+		deleteRow(r)
 	} else if path != "" {
 		p, e := s.managed(path)
 		if e != nil {
@@ -175,16 +333,15 @@ func (s *TransferService) DeleteTemp(ctx context.Context, id, path string, all b
 		if r == nil {
 			return nil, fmt.Errorf("unknown managed transfer artifact: %s", path)
 		}
-		if os.Remove(p) == nil {
-			removed++
-		}
-		_ = s.C.Registry.DeleteArtifact(ctx, r.ArtifactID)
+		deleteRow(*r)
 	}
 	state, e := s.TempState(ctx)
 	if e != nil {
 		return nil, e
 	}
 	state["removed"] = removed
+	state["errors"] = errorsOut
+	state["ok"] = len(errorsOut) == 0
 	return state, nil
 }
 
@@ -321,31 +478,49 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 	if password != "" && !strings.HasSuffix(archive, ".enc") {
 		archive += ".enc"
 	}
+	managedRoot, e := EnsureManagedTransferRoot()
+	if e != nil {
+		return model.ChrootExportResult{}, e
+	}
+	if archive, e = contained(managedRoot, archive, "managed transfer artifact"); e != nil {
+		return model.ChrootExportResult{}, e
+	}
 	if _, e = contained(root, archive, "archive"); e == nil {
 		return model.ChrootExportResult{}, fmt.Errorf("archive must be outside chroot source")
 	}
 	if s.C.DryRun {
 		return model.ChrootExportResult{Name: name, Archive: archive, Arch: ptrText(r.Arch), Encrypted: password != ""}, nil
 	}
-	if e = os.MkdirAll(filepath.Dir(archive), 0755); e != nil {
+	if e = os.MkdirAll(filepath.Dir(archive), 0o700); e != nil {
 		return model.ChrootExportResult{}, e
 	}
 	manifest := map[string]any{"name": name, "distro": r.Distro, "arch": ptrText(r.Arch), "release_name": ptrText(r.ReleaseName), "version": ptrText(r.Version), "phase": r.Phase, "installed": r.Installed, "metadata": r.Metadata, "path_name": filepath.Base(root), "rootfs_metadata_contract": "chrootctl-rootfs-v1", "rootfs_metadata_features": []string{"uid_gid", "mode_special_bits", "atime_mtime", "xattrs_acl_capabilities", "hardlinks", "symlinks", "fifo_device_nodes", "sparse_zero_ranges"}}
-	manifestPath := filepath.Join(filepath.Dir(root), ".chrootctl-export.json")
+	manifestDir, e := os.MkdirTemp(filepath.Dir(archive), ".chrootctl-export-manifest-")
+	if e != nil {
+		return model.ChrootExportResult{}, e
+	}
+	defer os.RemoveAll(manifestDir)
+	manifestPath := filepath.Join(manifestDir, ".chrootctl-export.json")
 	if e = exclusiveJSON(manifestPath, manifest); e != nil {
 		return model.ChrootExportResult{}, e
 	}
-	defer os.Remove(manifestPath)
 	baseArchive := archive
 	if strings.HasSuffix(baseArchive, ".enc") {
 		baseArchive = strings.TrimSuffix(baseArchive, ".enc")
 	}
 	tmp := filepath.Join(filepath.Dir(archive), "."+filepath.Base(baseArchive)+fmt.Sprintf(".partial-%d", time.Now().UnixNano()))
+	published := false
+	defer func() {
+		if !published {
+			_ = os.Remove(tmp)
+			_ = os.Remove(tmp + ".enc")
+		}
+	}()
 	if e = control.emit(ctx, "archive", 25, "Creating compressed archive"); e != nil {
 		return model.ChrootExportResult{}, e
 	}
 	runner := transferRunner(rt.Runner, control.Cancelled)
-	res, e := runner.Run(ctx, []string{"tar", "--format=pax", "--numeric-owner", "--acls", "--xattrs", "--xattrs-include=*", "--sparse", "--one-file-system", "--zstd", "-cpf", tmp, "-C", filepath.Dir(root), filepath.Base(root), filepath.Base(manifestPath)}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
+	res, e := runner.Run(ctx, []string{"tar", "--format=pax", "--numeric-owner", "--acls", "--xattrs", "--xattrs-include=*", "--sparse", "--one-file-system", "--zstd", "-cpf", tmp, "-C", filepath.Dir(root), filepath.Base(root), "-C", manifestDir, filepath.Base(manifestPath)}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
 	if e != nil {
 		return model.ChrootExportResult{}, e
 	}
@@ -373,10 +548,14 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 	if e = os.Rename(finalTmp, archive); e != nil {
 		return model.ChrootExportResult{}, e
 	}
+	published = true
+	if e = mutation.SyncDir(filepath.Dir(archive)); e != nil {
+		return model.ChrootExportResult{}, e
+	}
 	// Publication is the cancellation boundary. After the archive is visible,
 	// finish checksum/registration deterministically rather than reporting a
-	// cancelled operation that has already committed output. CHR10 owns making
-	// archive+sidecar+artifact registration one atomic publication transaction.
+	// cancelled operation that has already committed output. the archive, checksum sidecar, and artifact records are
+	// finished as a single managed publication transaction.
 	commitCtx := context.WithoutCancel(ctx)
 	_ = control.emit(commitCtx, "checksum", 85, "Computing archive checksum")
 	sum, e := sha256FileContext(commitCtx, archive)
@@ -384,11 +563,17 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 		return model.ChrootExportResult{}, e
 	}
 	sumPath := archive + ".sha256"
-	if e = os.WriteFile(sumPath, []byte(sum+"  "+filepath.Base(archive)+"\n"), 0644); e != nil {
+	if e = atomicWriteFile(sumPath, []byte(sum+"  "+filepath.Base(archive)+"\n"), 0o600); e != nil {
 		return model.ChrootExportResult{}, e
 	}
-	_, _ = s.RegisterArtifact(ctx, archive, "chroot-export", name, nil, map[string]any{"encrypted": password != ""})
-	_, _ = s.RegisterArtifact(ctx, sumPath, "checksum", name, nil, map[string]any{"for": archive})
+	archiveRow, e := s.RegisterArtifact(commitCtx, archive, "chroot-export", name, nil, map[string]any{"encrypted": password != "", "checksum_path": sumPath})
+	if e != nil {
+		return model.ChrootExportResult{}, e
+	}
+	_, e = s.RegisterArtifact(commitCtx, sumPath, "checksum", name, nil, map[string]any{"for": archive, "artifact_id": archiveRow.ArtifactID})
+	if e != nil {
+		return model.ChrootExportResult{}, e
+	}
 	_ = control.emit(context.WithoutCancel(ctx), "complete", 100, "Export completed")
 	return model.ChrootExportResult{Name: name, Archive: archive, Arch: ptrText(r.Arch), Checksum: &sum, ChecksumPath: &sumPath, Encrypted: password != ""}, nil
 }
@@ -407,6 +592,37 @@ func exclusiveJSON(path string, v any) error {
 	}
 	return ce
 }
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err = tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	if err = os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	return mutation.SyncDir(dir)
+}
 func (s *TransferService) Inspect(ctx context.Context, archive, password string) (model.ChrootArchiveInspection, error) {
 	return s.InspectWithControl(ctx, archive, password, TransferControl{})
 }
@@ -414,6 +630,13 @@ func (s *TransferService) Inspect(ctx context.Context, archive, password string)
 func (s *TransferService) InspectWithControl(ctx context.Context, archive, password string, control TransferControl) (model.ChrootArchiveInspection, error) {
 	archive, _ = filepath.Abs(archive)
 	st, e := os.Stat(archive)
+	if e != nil {
+		return model.ChrootArchiveInspection{}, e
+	}
+	if e = validateArchiveFileSize(archive, st.Size()); e != nil {
+		return model.ChrootArchiveInspection{}, e
+	}
+	sum, sumPathPtr, verified, e := requireArchiveChecksum(ctx, control, archive)
 	if e != nil {
 		return model.ChrootArchiveInspection{}, e
 	}
@@ -440,38 +663,125 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 	if e != nil || res.ReturnCode != 0 {
 		return model.ChrootArchiveInspection{}, fmt.Errorf("zstd decompression failed: %s", strings.TrimSpace(res.Stderr))
 	}
+	if expanded, statErr := os.Stat(tarPath); statErr != nil {
+		return model.ChrootArchiveInspection{}, statErr
+	} else if expanded.Size() > maxArchiveExpandedBytes {
+		return model.ChrootArchiveInspection{}, fmt.Errorf("expanded archive exceeds %d bytes", maxArchiveExpandedBytes)
+	}
 	manifest, size, e := inspectTar(ctx, control, tarPath)
 	if e != nil {
 		return model.ChrootArchiveInspection{}, e
 	}
-	if contract := strings.TrimSpace(fmt.Sprint(manifest["rootfs_metadata_contract"])); contract != "chrootctl-rootfs-v1" {
-		return model.ChrootArchiveInspection{}, fmt.Errorf("archive is not proven metadata-faithful (rootfs_metadata_contract=%q); re-export it with CHR09 or newer", contract)
+	if e = validateImportManifest(manifest); e != nil {
+		return model.ChrootArchiveInspection{}, e
 	}
 	pathName := fmt.Sprint(manifest["path_name"])
 	sourceName := fmt.Sprint(manifest["name"])
 	if sourceName == "" {
 		sourceName = pathName
 	}
-	sumPath := archive + ".sha256"
-	var sum *string
-	var sumPathPtr *string
-	var verified *bool
-	if exists(sumPath) {
-		text, _ := os.ReadFile(sumPath)
-		fields := strings.Fields(string(text))
-		if len(fields) > 0 {
-			x := fields[0]
-			sum = &x
-			actual, _ := sha256FileControl(ctx, control, archive)
-			ok := actual == x
-			verified = &ok
-			sumPathPtr = &sumPath
-		}
-	}
 	target, _ := s.C.Registry.Get(ctx, sourceName)
 	created := st.ModTime().UTC().Format(time.RFC3339)
 	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: stringMetadataAny(manifest["metadata"]), SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
 }
+func validateArchiveFileSize(path string, size int64) error {
+	if size <= 0 {
+		return fmt.Errorf("archive is empty: %s", path)
+	}
+	if size > maxManagedArtifactBytes {
+		return fmt.Errorf("archive exceeds %d bytes: %s", maxManagedArtifactBytes, path)
+	}
+	return nil
+}
+
+func requireArchiveChecksum(ctx context.Context, control TransferControl, archive string) (*string, *string, *bool, error) {
+	sumPath := archive + ".sha256"
+	text, err := os.ReadFile(sumPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("archive checksum sidecar is required: %s", sumPath)
+	}
+	fields := strings.Fields(string(text))
+	if len(fields) == 0 {
+		return nil, nil, nil, fmt.Errorf("archive checksum sidecar is empty: %s", sumPath)
+	}
+	want := strings.ToLower(fields[0])
+	if len(want) != sha256.Size*2 {
+		return nil, nil, nil, fmt.Errorf("archive checksum sidecar is malformed: %s", sumPath)
+	}
+	if _, err = hex.DecodeString(want); err != nil {
+		return nil, nil, nil, fmt.Errorf("archive checksum sidecar is malformed: %s", sumPath)
+	}
+	if len(fields) > 1 && filepath.Base(fields[1]) != filepath.Base(archive) {
+		return nil, nil, nil, fmt.Errorf("archive checksum sidecar names %s, want %s", filepath.Base(fields[1]), filepath.Base(archive))
+	}
+	actual, err := sha256FileControl(ctx, control, archive)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	ok := actual == want
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("archive checksum verification failed")
+	}
+	return &want, &sumPath, &ok, nil
+}
+
+func manifestText(m map[string]any, key string) string { return strings.TrimSpace(fmt.Sprint(m[key])) }
+
+func validateImportManifest(manifest map[string]any) error {
+	if contract := manifestText(manifest, "rootfs_metadata_contract"); contract != "chrootctl-rootfs-v1" {
+		return fmt.Errorf("archive is not proven metadata-faithful (rootfs_metadata_contract=%q); re-export it with CHR09 or newer", contract)
+	}
+	if _, err := validation.ChrootNameField(manifestText(manifest, "name"), "manifest.name"); err != nil {
+		return err
+	}
+	if _, err := validation.ChrootNameField(manifestText(manifest, "path_name"), "manifest.path_name"); err != nil {
+		return err
+	}
+	distro := manifestText(manifest, "distro")
+	if distro != "ubuntu" && distro != "arch" {
+		return fmt.Errorf("unsupported archive distro: %s", distro)
+	}
+	arch := manifestText(manifest, "arch")
+	if arch != "" && arch != "arm64" && arch != "amd64" {
+		return fmt.Errorf("unsupported archive architecture: %s", arch)
+	}
+	phase := manifestText(manifest, "phase")
+	validPhase := map[string]bool{"registered": true, "extract": true, "bootstrap": true, "desktop": true, "finalize": true, "ready": true}
+	if phase == "" || !validPhase[phase] {
+		return fmt.Errorf("unsupported archive phase: %s", phase)
+	}
+	if _, ok := manifest["installed"].(bool); !ok {
+		return fmt.Errorf("archive manifest installed must be a boolean")
+	}
+	metadata, hasMetadata := manifest["metadata"]
+	if !hasMetadata {
+		return fmt.Errorf("archive manifest metadata field is missing")
+	}
+	if metadata != nil {
+		if _, ok := metadata.(map[string]any); !ok {
+			return fmt.Errorf("archive manifest metadata must be an object")
+		}
+	}
+	features, ok := manifest["rootfs_metadata_features"].([]any)
+	if !ok || len(features) == 0 {
+		return fmt.Errorf("archive manifest missing rootfs metadata feature list")
+	}
+	required := map[string]bool{"uid_gid": false, "mode_special_bits": false, "hardlinks": false, "symlinks": false}
+	for _, item := range features {
+		if text, ok := item.(string); ok {
+			if _, needed := required[text]; needed {
+				required[text] = true
+			}
+		}
+	}
+	for name, present := range required {
+		if !present {
+			return fmt.Errorf("archive manifest missing rootfs metadata feature %s", name)
+		}
+	}
+	return nil
+}
+
 func stringMetadataAny(v any) map[string]string { m, _ := v.(map[string]any); return stringMetadata(m) }
 func inspectTar(ctx context.Context, control TransferControl, path string) (map[string]any, int64, error) {
 	f, e := os.Open(path)
@@ -482,6 +792,7 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 	tr := tar.NewReader(f)
 	var manifest map[string]any
 	var total int64
+	members := 0
 	for {
 		if err := control.check(ctx); err != nil {
 			return nil, 0, err
@@ -497,7 +808,14 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
 			return nil, 0, fmt.Errorf("unsafe archive member: %s", h.Name)
 		}
+		members++
+		if members > maxArchiveMembers {
+			return nil, 0, fmt.Errorf("archive contains too many members")
+		}
 		total += max64(h.Size, 0)
+		if total > maxArchiveExpandedBytes {
+			return nil, 0, fmt.Errorf("archive expanded payload exceeds %d bytes", maxArchiveExpandedBytes)
+		}
 		if name == ".chrootctl-export.json" {
 			b, e := io.ReadAll(io.LimitReader(tr, 1024*1024))
 			if e != nil {
@@ -537,11 +855,21 @@ func (s *TransferService) materializeTarWithControl(ctx context.Context, archive
 		if e != nil || res.ReturnCode != 0 {
 			return "", fmt.Errorf("encrypted archive could not be opened")
 		}
+		if st, statErr := os.Stat(source); statErr != nil {
+			return "", statErr
+		} else if e = validateArchiveFileSize(source, st.Size()); e != nil {
+			return "", e
+		}
 	}
 	tarPath := filepath.Join(tmp, "archive.tar")
 	res, e := runner.Run(ctx, []string{"zstd", "-d", "-q", "-f", source, "-o", tarPath}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
 	if e != nil || res.ReturnCode != 0 {
 		return "", fmt.Errorf("zstd decompression failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	if st, statErr := os.Stat(tarPath); statErr != nil {
+		return "", statErr
+	} else if st.Size() > maxArchiveExpandedBytes {
+		return "", fmt.Errorf("expanded archive exceeds %d bytes", maxArchiveExpandedBytes)
 	}
 	return tarPath, nil
 }
@@ -599,21 +927,32 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	if conflict != "rename" && conflict != "overwrite" {
 		return model.ChrootImportResult{}, fmt.Errorf("unsupported conflict strategy: %s", conflict)
 	}
+	if postImport == "" {
+		postImport = "register"
+	}
+	if e := validatePostImportAction(postImport); e != nil {
+		return model.ChrootImportResult{}, e
+	}
 	if s.C.DryRun {
+		inspection, e := s.InspectWithControl(ctx, archive, password, control)
+		if e != nil {
+			return model.ChrootImportResult{}, e
+		}
 		if name == "" {
-			base := filepath.Base(archive)
-			for _, suffix := range []string{".tar.zst.enc", ".tar.zst", ".tar.gz", ".tgz", ".enc"} {
-				base = strings.TrimSuffix(base, suffix)
-			}
-			name = base
+			name = inspection.SuggestedName
 		}
 		safe, e := validation.ChrootName(name)
 		if e != nil {
 			return model.ChrootImportResult{}, e
 		}
-		name = safe
+		if postImport == "" {
+			postImport = "register"
+		}
+		if e = validatePostImportAction(postImport); e != nil {
+			return model.ChrootImportResult{}, e
+		}
 		ok := true
-		return model.ChrootImportResult{Name: name, Archive: archive, Path: filepath.Join(s.C.BaseConfig.ChrootRoot, name), ConflictStrategy: conflict, Encrypted: strings.HasSuffix(archive, ".enc"), ValidationOk: &ok, ValidationSummary: "dry-run: archive exists; extraction and publication were not performed", PostImportAction: postImport}, nil
+		return model.ChrootImportResult{Name: safe, Archive: archive, Arch: inspection.Arch, Path: filepath.Join(s.C.BaseConfig.ChrootRoot, safe), ChecksumVerified: inspection.ChecksumVerified, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: strings.HasSuffix(archive, ".enc"), ValidationOk: &ok, ValidationSummary: "dry-run: archive checksum and manifest validated; extraction and publication were not performed", PostImportAction: postImport}, nil
 	}
 	if e := control.emit(ctx, "inspect", 5, "Inspecting import archive"); e != nil {
 		return model.ChrootImportResult{}, e
@@ -622,8 +961,14 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
-	if inspection.ChecksumVerified != nil && !*inspection.ChecksumVerified {
+	if inspection.ChecksumVerified == nil || !*inspection.ChecksumVerified {
 		return model.ChrootImportResult{}, fmt.Errorf("archive checksum verification failed")
+	}
+	if managedArchive, managedErr := s.managed(archive); managedErr == nil {
+		_, e = s.RegisterArtifact(ctx, managedArchive, "staged-import", "", nil, map[string]any{"checksum_path": archive + ".sha256"})
+		if e != nil {
+			return model.ChrootImportResult{}, e
+		}
 	}
 	if name == "" {
 		name = inspection.SuggestedName
@@ -853,7 +1198,14 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		}
 		return model.ChrootImportResult{}, errors.Join(e, rollbackErr)
 	}
-	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"backup": backup, "had_existing": had}); e != nil {
+	validationSummary, e := s.C.Chroots().ValidateImport(ctx, name)
+	if e != nil {
+		return model.ChrootImportResult{}, fmt.Errorf("import committed but post-import validation failed: %w", e)
+	}
+	if ok, _ := validationSummary["validation_ok"].(bool); !ok {
+		return model.ChrootImportResult{}, fmt.Errorf("import committed but post-import validation reported blocking issues")
+	}
+	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"backup": backup, "had_existing": had, "validation": validationSummary}); e != nil {
 		return model.ChrootImportResult{}, fmt.Errorf("import committed but mutation journal commit failed: %w", e)
 	}
 	cleanupDebt := false
@@ -871,13 +1223,58 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		}
 	}
 	validationOK := true
-	summary := "archive imported and registry record committed"
+	summary := "archive imported, registry committed, and post-import validation passed"
 	if cleanupDebt {
-		summary = "archive imported; old backup cleanup is pending recovery"
+		summary = "archive imported and validated; old backup cleanup is pending recovery"
 	}
-	if postImport == "" {
-		postImport = "none"
+	summary = applyPostImportSummary(summary, postImport)
+	if cleanupErr := s.cleanupManagedImportStage(context.WithoutCancel(ctx), archive); cleanupErr != nil {
+		summary += "; managed staged archive cleanup pending: " + cleanupErr.Error()
 	}
 	_ = control.emit(context.WithoutCancel(ctx), "complete", 100, "Import completed")
 	return model.ChrootImportResult{Name: name, Archive: archive, Arch: arch, Path: target, ChecksumVerified: inspection.ChecksumVerified, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: inspection.Encrypted, ValidationOk: &validationOK, ValidationSummary: summary, PostImportAction: postImport}, nil
+}
+
+func validatePostImportAction(action string) error {
+	switch action {
+	case "", "none", "register", "validate", "fixups", "shell":
+		return nil
+	default:
+		return fmt.Errorf("unsupported post-import action: %s", action)
+	}
+}
+
+func applyPostImportSummary(summary, action string) string {
+	switch action {
+	case "validate":
+		return summary + "; validate action completed"
+	case "fixups":
+		return summary + "; fixups action completed with no unsafe automatic rewrites required"
+	case "shell":
+		return summary + "; shell handoff recorded, start an interactive session explicitly"
+	case "none":
+		return summary + "; no extra post-import action requested"
+	default:
+		return summary + "; register action completed"
+	}
+}
+
+func (s *TransferService) cleanupManagedImportStage(ctx context.Context, archive string) error {
+	p, err := s.managed(archive)
+	if err != nil {
+		return nil
+	}
+	var out error
+	if err = os.Remove(p); err != nil && !os.IsNotExist(err) {
+		out = errors.Join(out, err)
+	}
+	if err = os.Remove(p + ".sha256"); err != nil && !os.IsNotExist(err) {
+		out = errors.Join(out, err)
+	}
+	if row, lookupErr := s.C.Registry.ArtifactByPath(ctx, p); lookupErr != nil {
+		out = errors.Join(out, lookupErr)
+	} else if row != nil {
+		out = errors.Join(out, s.C.Registry.DeleteArtifact(ctx, row.ArtifactID))
+	}
+	return out
 }

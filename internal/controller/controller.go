@@ -39,6 +39,10 @@ func New(cfg config.ChrootConfig, runner *sys.Runner, logger Logger) *Controller
 	return &Controller{Config: cfg, Runner: runner, Logger: logger, MountsPath: "/proc/mounts"}
 }
 
+var controllerRequireRoot = func(r *sys.Runner) error {
+	return r.RequireRoot()
+}
+
 func (c *Controller) resolvedShell() string {
 	available := map[string]bool{}
 	if _, err := os.Stat(filepath.Join(c.Config.ChrootBase(), strings.TrimPrefix(c.Config.ShellPath, "/"))); err == nil {
@@ -250,7 +254,7 @@ func (c *Controller) Mount(ctx context.Context) model.OperationResult {
 		result.AddFailure("controller runner is nil")
 		return result
 	}
-	if err := c.Runner.RequireRoot(); err != nil {
+	if err := controllerRequireRoot(c.Runner); err != nil {
 		result.AddFailure(err.Error())
 		return result
 	}
@@ -345,7 +349,7 @@ func (c *Controller) Unmount(ctx context.Context) model.OperationResult {
 		result.AddFailure("controller runner is nil")
 		return result
 	}
-	if err := c.Runner.RequireRoot(); err != nil {
+	if err := controllerRequireRoot(c.Runner); err != nil {
 		result.AddFailure(err.Error())
 		return result
 	}

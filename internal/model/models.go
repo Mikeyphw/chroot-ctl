@@ -126,8 +126,9 @@ type AuditEvent struct {
 }
 
 type SupportBundleResult struct {
-	Archive  string   `json:"archive"`
-	Included []string `json:"included"`
+	Archive    string   `json:"archive"`
+	Included   []string `json:"included"`
+	ArtifactID string   `json:"artifact_id,omitempty"`
 }
 
 type ChrootUserDetails struct {

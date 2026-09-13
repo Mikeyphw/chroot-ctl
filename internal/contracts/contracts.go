@@ -10,7 +10,7 @@ import (
 
 const (
 	ContractSchemaVersion              = 1
-	ExpectedCommandNodeCount           = 74
+	ExpectedCommandNodeCount           = 78
 	ExpectedAppBridgeCommandNodeCount  = 8
 	ExpectedBridgeOperationCount       = 86
 	ExpectedBridgeProtocolVersion      = 1

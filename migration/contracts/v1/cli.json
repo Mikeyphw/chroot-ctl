@@ -197,7 +197,7 @@
       "prog": "chrootctl app reconcile"
     }
   ],
-  "commandNodeCount": 74,
+  "commandNodeCount": 78,
   "commandNodes": [
     {
       "arguments": [],
@@ -1914,7 +1914,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Destination tar.zst path. Defaults to ./<name>.tar.zst",
+          "help": "Destination tar.zst path under the managed transfer artifact root. Defaults to the managed artifact root.",
           "metavar": null,
           "nargs": "?",
           "optionStrings": [],
@@ -1941,7 +1941,7 @@
       ],
       "command": "chroots export",
       "description": "Create a tar.zst archive that can be imported on another host or phone.",
-      "epilog": "examples:\n  chrootctl --name work chroots export\n  chrootctl --name work chroots export /tmp/work.tar.zst",
+      "epilog": "examples:\n  chrootctl --name work chroots export\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work chroots export /tmp/chrootctl-transfer/work.tar.zst",
       "path": [
         "chroots",
         "export"
@@ -1972,7 +1972,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive.",
+          "help": "Source tar.zst archive with a required .sha256 sidecar.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2037,7 +2037,8 @@
             "register",
             "validate",
             "fixups",
-            "shell"
+            "shell",
+            "none"
           ],
           "const": null,
           "default": "register",
@@ -2424,7 +2425,7 @@
       "arguments": [],
       "command": "transfer",
       "description": "Move chroots between hosts with portable tar.zst archives.",
-      "epilog": "examples:\n  chrootctl --name work transfer export\n  chrootctl transfer inspect /tmp/work.tar.zst\n  chrootctl --name work transfer export /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work",
+      "epilog": "examples:\n  chrootctl --name work transfer export\n  chrootctl transfer inspect /tmp/chrootctl-transfer/work.tar.zst\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work transfer export /tmp/chrootctl-transfer/work.tar.zst\n  chrootctl transfer import /tmp/chrootctl-transfer/work.tar.zst --name phone-work",
       "path": [
         "transfer"
       ],
@@ -2454,7 +2455,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Destination tar.zst path. Defaults to ./<name>.tar.zst",
+          "help": "Destination tar.zst path under the managed transfer artifact root. Defaults to the managed artifact root.",
           "metavar": null,
           "nargs": "?",
           "optionStrings": [],
@@ -2480,8 +2481,8 @@
         }
       ],
       "command": "transfer export",
-      "description": "Create a tar.zst archive for transfer to another host or phone.",
-      "epilog": "examples:\n  chrootctl --name work transfer export\n  chrootctl --name work transfer export /tmp/work.tar.zst",
+      "description": "Create a metadata-faithful tar.zst archive inside the managed transfer artifact root.",
+      "epilog": "examples:\n  chrootctl --name work transfer export\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work transfer export /tmp/chrootctl-transfer/work.tar.zst",
       "path": [
         "transfer",
         "export"
@@ -2512,7 +2513,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive to inspect.",
+          "help": "Source tar.zst archive with a required .sha256 sidecar.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2538,7 +2539,7 @@
         }
       ],
       "command": "transfer inspect",
-      "description": "Read the embedded export manifest and preview metadata before import.",
+      "description": "Verify archive checksum sidecar and embedded manifest before import.",
       "epilog": "examples:\n  chrootctl transfer inspect /tmp/work.tar.zst",
       "path": [
         "transfer",
@@ -2570,7 +2571,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive.",
+          "help": "Source tar.zst archive with a required .sha256 sidecar.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2635,7 +2636,8 @@
             "register",
             "validate",
             "fixups",
-            "shell"
+            "shell",
+            "none"
           ],
           "const": null,
           "default": "register",
@@ -2669,6 +2671,179 @@
       ],
       "streamMode": "none",
       "privilege": "mutate-root",
+      "mutability": "mutate",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": []
+    },
+    {
+      "arguments": [],
+      "command": "artifacts",
+      "description": "List, inspect, and clean the managed transfer artifact root.",
+      "epilog": "examples:\n  chrootctl artifacts list\n  chrootctl artifacts root\n  chrootctl artifacts cleanup --all --yes",
+      "path": [
+        "artifacts"
+      ],
+      "prog": "chrootctl artifacts",
+      "handler": "artifacts",
+      "group": true,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "none",
+      "mutability": "read",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": []
+    },
+    {
+      "arguments": [],
+      "command": "artifacts list",
+      "description": "Show registered and discovered managed transfer artifacts.",
+      "epilog": "examples:\n  chrootctl artifacts list --json",
+      "path": [
+        "artifacts",
+        "list"
+      ],
+      "prog": "chrootctl artifacts list",
+      "handler": "artifacts",
+      "group": false,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "none",
+      "mutability": "read",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": []
+    },
+    {
+      "arguments": [],
+      "command": "artifacts root",
+      "description": "Show the managed transfer artifact root and retention policy.",
+      "epilog": "examples:\n  chrootctl artifacts root",
+      "path": [
+        "artifacts",
+        "root"
+      ],
+      "prog": "chrootctl artifacts root",
+      "handler": "artifacts",
+      "group": false,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "none",
+      "mutability": "read",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": []
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "artifact_id",
+          "help": "Managed artifact id to delete.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--artifact-id"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "path",
+          "help": "Managed artifact path to delete.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--path"
+          ],
+          "required": false,
+          "type": "Path",
+          "completion": "path"
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "all",
+          "help": "Delete all managed transfer artifacts.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--all",
+            "--delete-all"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "yes",
+          "help": "Do not prompt for cleanup confirmation.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--yes"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
+        }
+      ],
+      "command": "artifacts cleanup",
+      "description": "Remove one or all managed transfer artifacts and their checksum sidecars.",
+      "epilog": "examples:\n  chrootctl artifacts cleanup --artifact-id art_123 --yes\n  chrootctl artifacts cleanup --all --yes",
+      "path": [
+        "artifacts",
+        "cleanup"
+      ],
+      "prog": "chrootctl artifacts cleanup",
+      "handler": "artifacts",
+      "group": false,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "none",
       "mutability": "mutate",
       "healthExitPolicy": "informational",
       "exclusiveGroups": [],
@@ -2756,7 +2931,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Managed tar.gz artifact path. Defaults to the chrootctl managed transfer directory",
+          "help": "Managed .zip artifact path. Defaults to the chrootctl managed transfer directory.",
           "metavar": null,
           "nargs": "?",
           "optionStrings": [],

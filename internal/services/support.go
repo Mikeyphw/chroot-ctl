@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"chrootctl/internal/model"
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/redaction"
 )
 
@@ -18,7 +19,19 @@ type SupportService struct{ C *Container }
 
 func (s *SupportService) ExportBundle(ctx context.Context, archive string, extra map[string]any) (model.SupportBundleResult, error) {
 	if archive == "" {
-		archive = filepath.Join(os.TempDir(), fmt.Sprintf("chrootctl-support-%d.zip", time.Now().Unix()))
+		archive = ManagedArchive(fmt.Sprintf("chrootctl-support-%d", time.Now().Unix()), "zip")
+	}
+	managedRoot, err := EnsureManagedTransferRoot()
+	if err != nil {
+		return model.SupportBundleResult{}, err
+	}
+	archive, err = filepath.Abs(archive)
+	if err != nil {
+		return model.SupportBundleResult{}, err
+	}
+	archive, err = contained(managedRoot, archive, "support bundle artifact")
+	if err != nil {
+		return model.SupportBundleResult{}, err
 	}
 	if s.C.DryRun {
 		included := []string{"chroots.json", "host-doctor.json", "lifecycle.json", "module-runtime.json"}
@@ -30,13 +43,16 @@ func (s *SupportService) ExportBundle(ctx context.Context, archive string, extra
 		}
 		return model.SupportBundleResult{Archive: archive, Included: included}, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(archive), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(archive), 0o700); err != nil {
 		return model.SupportBundleResult{}, err
 	}
-	f, err := os.OpenFile(archive, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	tmp, err := os.CreateTemp(filepath.Dir(archive), "."+filepath.Base(archive)+".partial-")
 	if err != nil {
 		return model.SupportBundleResult{}, err
 	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	f := tmp
 	zw := zip.NewWriter(f)
 	included := []string{}
 	addJSON := func(name string, v any) error {
@@ -76,9 +92,23 @@ func (s *SupportService) ExportBundle(ctx context.Context, archive string, extra
 		f.Close()
 		return model.SupportBundleResult{}, e
 	}
+	if e := f.Sync(); e != nil {
+		f.Close()
+		return model.SupportBundleResult{}, e
+	}
 	if e := f.Close(); e != nil {
 		return model.SupportBundleResult{}, e
 	}
-	return model.SupportBundleResult{Archive: archive, Included: included}, nil
+	if e := os.Rename(tmpName, archive); e != nil {
+		return model.SupportBundleResult{}, e
+	}
+	if e := mutation.SyncDir(filepath.Dir(archive)); e != nil {
+		return model.SupportBundleResult{}, e
+	}
+	artifact, e := s.C.Transfer().RegisterArtifact(ctx, archive, "support-bundle", "", nil, map[string]any{"included": included})
+	if e != nil {
+		return model.SupportBundleResult{}, e
+	}
+	return model.SupportBundleResult{Archive: archive, Included: included, ArtifactID: artifact.ArtifactID}, nil
 }
 func sanitizeText(s string) string { return strings.TrimSpace(redaction.String(s)) }

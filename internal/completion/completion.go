@@ -94,7 +94,9 @@ func GenerateZshFor(commands ...string) (string, error) {
 	b.WriteString("_chrootctl() {\n  local curcontext=\"$curcontext\" state line\n  typeset -A opt_args\n  _chrootctl_prog=\"${words[1]:-chrootctl}\"\n")
 	b.WriteString("  _arguments -C \\\n")
 	for _, g := range clicontract.GlobalArguments {
-		b.WriteString("    " + zshArgument(g) + " \\\n")
+		for _, rendered := range zshArguments(g) {
+			b.WriteString("    " + rendered + " \\\n")
+		}
 	}
 	b.WriteString("    '1:command:(" + strings.Join(roots, " ") + ")' \\\n    '*::args:->args'\n")
 	b.WriteString("  [[ $state == args ]] || return\n")
@@ -123,7 +125,7 @@ func GenerateZshFor(commands ...string) (string, error) {
 		args := []string{}
 		for _, a := range spec.Arguments {
 			if a.Help != "<SUPPRESS>" {
-				args = append(args, zshArgument(a))
+				args = append(args, zshArguments(a)...)
 			}
 		}
 		if len(args) > 0 {
@@ -135,26 +137,29 @@ func GenerateZshFor(commands ...string) (string, error) {
 	return b.String(), nil
 }
 
-func zshArgument(a clicontract.ArgumentSpec) string {
+func zshArguments(a clicontract.ArgumentSpec) []string {
 	help := strings.ReplaceAll(strings.ReplaceAll(a.Help, "[", "("), "]", ")")
 	if len(a.Options) == 0 {
 		label := a.Dest
 		suffix := zshCompletion(a)
 		switch fmt.Sprint(a.NArgs) {
 		case "*", "+", "...":
-			return zshSingle("*:" + label + ":" + suffix)
+			return []string{zshSingle("*:" + label + ":" + suffix)}
 		case "?":
-			return zshSingle("1:" + label + ":" + suffix)
+			return []string{zshSingle("1:" + label + ":" + suffix)}
 		default:
-			return zshSingle("1:" + label + ":" + suffix)
+			return []string{zshSingle("1:" + label + ":" + suffix)}
 		}
 	}
-	option := a.Options[0]
 	value := ""
 	if a.Action == "_StoreAction" || a.Action == "_AppendAction" {
 		value = ":" + a.Dest + ":" + zshCompletion(a)
 	}
-	return zshSingle(option + "[" + help + "]" + value)
+	out := make([]string, 0, len(a.Options))
+	for _, option := range a.Options {
+		out = append(out, zshSingle(option+"["+help+"]"+value))
+	}
+	return out
 }
 
 func zshCompletion(a clicontract.ArgumentSpec) string {

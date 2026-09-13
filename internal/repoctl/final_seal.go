@@ -75,7 +75,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateMountServiceRuntime(root); e != nil {
 			return e
 		}
-		return ValidateSnapshotFidelity(root)
+		if e := ValidateSnapshotFidelity(root); e != nil {
+			return e
+		}
+		return ValidateTransferArtifactPlane(root)
 	}); err != nil {
 		return err
 	}

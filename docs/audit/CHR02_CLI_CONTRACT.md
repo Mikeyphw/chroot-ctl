@@ -16,7 +16,7 @@ The roadmap ledger marks only this CHR02-owned set implemented. D02/D07/D11 and 
 
 ## Contract authority
 
-`migration/contracts/v1/cli.json` now declares 74 normal CLI nodes (including first-class `version`) and 8 globals. Each command carries handler identity, output modes, stream mode, privilege, mutability, health exit policy, mutual-exclusion/require-one groups, JSON incompatibilities, privilege override rules, completion exposure, and completion hints. Integer arguments can declare minimum/maximum bounds.
+`migration/contracts/v1/cli.json` now declares 78 normal CLI nodes (including first-class `version`) and 8 globals. Each command carries handler identity, output modes, stream mode, privilege, mutability, health exit policy, mutual-exclusion/require-one groups, JSON incompatibilities, privilege override rules, completion exposure, and completion hints. Integer arguments can declare minimum/maximum bounds.
 
 `cmd/cli-contract-gen` deterministically generates `internal/clicontract/specs_generated.go` and `docs/cli/COMMAND_REFERENCE.md`. `repoctl validate` executes the generator in check mode through `contractgen.Check`; source-contract edits that are not regenerated fail validation.
 
