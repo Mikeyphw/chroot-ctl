@@ -474,7 +474,11 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		if e != nil {
 			return nil, e
 		}
-		return s.Audit().Recent(ctx, lim)
+		events, e := s.Audit().Recent(ctx, lim)
+		if e != nil {
+			return nil, e
+		}
+		return map[string]any{"schemaVersion": 2, "events": normalizeTimelineEvents(events), "count": len(events), "limit": lim}, nil
 	case "smoke.plan":
 		return b.smokePlan(ctx, p)
 	case "smoke.report":
@@ -1304,8 +1308,22 @@ func (b *ServicesBackend) debugProbes(ctx context.Context, group string) (any, e
 	if group == "" {
 		group = "all"
 	}
-	rows := []map[string]any{{"group": "runtime", "name": "lifecycle", "result": b.Services.Lifecycle().Status()}, {"group": "runtime", "name": "module", "result": b.Services.ModuleRuntime().Status()}, {"group": "host", "name": "doctor", "result": b.Services.Doctor().HostReadiness(ctx)}}
-	return map[string]any{"group": group, "probes": rows}, nil
+	generatedAt := float64(time.Now().UnixNano()) / 1e9
+	rows := []map[string]any{
+		debugProbe("runtime", "lifecycle", "Lifecycle runtime", b.Services.Lifecycle().Status(), "Review module/runtime readiness if this is not ready."),
+		debugProbe("runtime", "module", "Module runtime", b.Services.ModuleRuntime().Status(), "Build/install the module before expecting boot integration."),
+		debugProbe("host", "doctor", "Host readiness", b.Services.Doctor().HostReadiness(ctx), "Open the readiness detail before running state-changing actions."),
+	}
+	if group != "all" {
+		filtered := []map[string]any{}
+		for _, row := range rows {
+			if asString(row["group"]) == group {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+	}
+	return map[string]any{"schemaVersion": 2, "group": group, "probes": rows, "count": len(rows), "generatedAt": generatedAt}, nil
 }
 func (b *ServicesBackend) debugExport(ctx context.Context, p map[string]any) (any, error) {
 	probes, e := b.debugProbes(ctx, optText(p, "group"))
@@ -1318,13 +1336,49 @@ func (b *ServicesBackend) debugExport(ctx context.Context, p map[string]any) (an
 func smokeSteps(target string) []map[string]any {
 	return []map[string]any{{"id": "runtime", "label": "Runtime readiness", "required": true}, {"id": "module", "label": "Module status", "required": true}, {"id": "registry", "label": "Registry read", "required": true}, {"id": "dashboard", "label": "Dashboard state", "required": true}, {"id": "target", "label": "Target status", "required": target != ""}}
 }
+
+func debugProbe(group, code, detail string, result any, next string) map[string]any {
+	status := "info"
+	summary := detail
+	if m, ok := result.(map[string]any); ok {
+		if v := asString(m["status"]); v != "" {
+			status = v
+		}
+		if v := asString(m["state"]); v != "" && status == "info" {
+			status = v
+		}
+		if v := asString(m["summary"]); v != "" {
+			summary = v
+		}
+	}
+	return map[string]any{"schemaVersion": 2, "group": group, "code": code, "name": code, "status": status, "detail": summary, "next": next, "result": result}
+}
+
+func normalizeTimelineEvents(events []model.AuditEvent) []map[string]any {
+	out := make([]map[string]any, 0, len(events))
+	for _, ev := range events {
+		row := map[string]any{
+			"event_id":   ev.EventId,
+			"eventType":  ev.EventType,
+			"target":     ev.Target,
+			"result":     ev.Result,
+			"message":    ev.Message,
+			"actor":      ev.Actor,
+			"created_at": ev.CreatedAt,
+			"metadata":   ev.Metadata,
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 func (b *ServicesBackend) smokePlan(ctx context.Context, p map[string]any) (any, error) {
 	target := optText(p, "name")
 	if target == "" {
 		target = optText(p, "target")
 	}
 	optional, _ := optBool(p, []string{"includeOptional", "include_optional"}, false)
-	return map[string]any{"ok": true, "target": emptyNil(target), "scope": defaultText(optText(p, "scope"), "read-only"), "includeOptional": optional, "steps": smokeSteps(target), "destructive": false}, nil
+	return map[string]any{"schemaVersion": 2, "ok": true, "target": emptyNil(target), "scope": defaultText(optText(p, "scope"), "read-only"), "includeOptional": optional, "steps": smokeSteps(target), "stepCount": len(smokeSteps(target)), "destructive": false}, nil
 }
 func (b *ServicesBackend) smokeRun(ctx context.Context, p map[string]any, progress Progress, cancel func() bool) (any, error) {
 	plan, _ := b.smokePlan(ctx, p)
@@ -1408,7 +1462,19 @@ func (b *ServicesBackend) smokeReport(p map[string]any) (any, error) {
 			out = append(out, r)
 		}
 	}
-	return map[string]any{"operations": out, "count": len(out)}, nil
+	latest := any(nil)
+	status := "missing"
+	failed := 0
+	if len(out) > 0 {
+		latest = out[0]
+		status = out[0].State
+	}
+	for _, row := range out {
+		if row.State == "failed" || row.State == "blocked" || row.State == "interrupted" {
+			failed++
+		}
+	}
+	return map[string]any{"schemaVersion": 2, "ok": status == "succeeded" || len(out) > 0, "status": status, "operations": out, "count": len(out), "failed": failed, "latest": latest}, nil
 }
 func (b *ServicesBackend) smokeLast(p map[string]any) any {
 	report, e := b.smokeReport(p)
@@ -1417,9 +1483,13 @@ func (b *ServicesBackend) smokeLast(p map[string]any) any {
 	}
 	rows, _ := report.(map[string]any)["operations"].([]operations.Record)
 	if len(rows) == 0 {
-		return map[string]any{"ok": false, "status": "missing", "nextSteps": []string{"Run the smoke suite before requesting the latest result."}}
+		return map[string]any{"schemaVersion": 2, "ok": false, "status": "missing", "operation": nil, "result": nil, "recovery": []string{"Run the smoke suite before requesting the latest result."}, "nextSteps": []string{"Run the smoke suite before requesting the latest result."}}
 	}
-	return map[string]any{"ok": rows[0].State == "succeeded", "status": rows[0].State, "operation": rows[0]}
+	recovery := []string{}
+	if rows[0].State != "succeeded" {
+		recovery = append(recovery, "Open the operation details and export a support bundle if the failure needs handoff.")
+	}
+	return map[string]any{"schemaVersion": 2, "ok": rows[0].State == "succeeded", "status": rows[0].State, "operation": rows[0], "result": rows[0].ResultPayload, "recovery": recovery, "nextSteps": recovery}
 }
 func (b *ServicesBackend) smokeArtifact(ctx context.Context, p map[string]any, kind string) (any, error) {
 	last := b.smokeLast(p)

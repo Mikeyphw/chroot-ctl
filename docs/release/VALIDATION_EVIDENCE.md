@@ -108,3 +108,17 @@ Intermediate overlay validation performed in the sandbox:
 
 Full device validation remains deferred to a later gate overlay per the current roadmap workflow.
 
+## CHR17 — Bridge protocol V2 convergence
+
+Status: intermediate overlay, focused local checks only. Full validation is reserved for a later gate overlay.
+
+Focused checks used during overlay construction:
+
+```bash
+go run ./cmd/cli-contract-gen --check
+go test ./internal/bridge ./internal/repoctl -run 'CHR17|BridgeProtocolV2|ResponseSchema|Timeline|ValidateBridgeProtocolV2Convergence' -count=1
+go test ./... -run '^$' -count=1
+```
+
+The sandbox used a temporary sqlite module stub for compile/focused checks only; the overlay does not modify `go.mod` and keeps the real sqlite dependency for Termux validation.
+

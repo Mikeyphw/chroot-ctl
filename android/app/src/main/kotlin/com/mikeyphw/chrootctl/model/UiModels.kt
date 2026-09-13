@@ -105,6 +105,7 @@ data class OperationDetail(
 data class ToolCapabilityGroup(
     val title: String,
     val operations: List<String>,
+    val details: List<String> = emptyList(),
 )
 
 data class InstallDraft(
@@ -379,6 +380,7 @@ data class DebugProbeSummary(
     val status: String,
     val detail: String,
     val next: String,
+    val rawResult: String = "",
 )
 
 data class DebugTimelineSummary(

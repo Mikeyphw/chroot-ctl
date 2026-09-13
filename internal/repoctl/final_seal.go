@@ -96,7 +96,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateModuleRuntimeReleaseTrust(root); e != nil {
 			return e
 		}
-		return ValidateLoggingDiagnosticsAuditEvidence(root)
+		if e := ValidateLoggingDiagnosticsAuditEvidence(root); e != nil {
+			return e
+		}
+		return ValidateBridgeProtocolV2Convergence(root)
 	}); err != nil {
 		return err
 	}

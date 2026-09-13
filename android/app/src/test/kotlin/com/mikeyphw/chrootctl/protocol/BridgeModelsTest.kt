@@ -102,4 +102,59 @@ class BridgeModelsTest {
         assertEquals("Legacy bridge capability", capabilities.operationCapabilities.first().description)
         assertFalse(capabilities.arbitraryShell)
     }
+    @Test
+    fun `capabilities preserve response schemas and tags`() {
+        val capabilities = BridgeCapabilities.fromData(
+            JSONObject()
+                .put("protocolVersion", 1)
+                .put("backendVersion", "go")
+                .put("arbitraryShell", false)
+                .put(
+                    "operations",
+                    JSONArray().put(
+                        JSONObject()
+                            .put("name", "debug.timeline")
+                            .put("mode", "query")
+                            .put("description", "timeline")
+                            .put("destructive", false)
+                            .put("lockScope", "none")
+                            .put("responseKind", "object")
+                            .put("responseFields", JSONArray().put("events").put("count"))
+                            .put("capabilityTags", JSONArray().put("debug").put("timeline"))
+                            .put("requiresPreview", false),
+                    ),
+                ),
+        )
+
+        val timeline = capabilities.operationCapabilities.single()
+        assertEquals("object", timeline.responseKind)
+        assertEquals(listOf("events", "count"), timeline.responseFields)
+        assertEquals(listOf("debug", "timeline"), timeline.capabilityTags)
+        assertFalse(timeline.requiresPreview)
+    }
+
+    @Test
+    fun `envelope preserves structured error details`() {
+        val envelope = BridgeEnvelope.fromJson(
+            JSONObject()
+                .put("protocolVersion", 1)
+                .put("requestId", "err")
+                .put("ok", false)
+                .put("data", JSONObject.NULL)
+                .put(
+                    "error",
+                    JSONObject()
+                        .put("code", "UNKNOWN_PAYLOAD_FIELD")
+                        .put("message", "bad payload")
+                        .put("details", JSONObject().put("fields", JSONArray().put("surprise"))),
+                )
+                .put("warnings", JSONArray())
+                .put("nextSteps", JSONArray())
+                .toString(),
+        )
+
+        assertEquals("UNKNOWN_PAYLOAD_FIELD", envelope.errorCode)
+        assertEquals("surprise", envelope.errorDetails!!.getJSONArray("fields").getString(0))
+    }
+
 }

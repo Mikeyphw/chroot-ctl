@@ -44,6 +44,10 @@ data class BridgeOperationCapability(
     val description: String,
     val destructive: Boolean,
     val lockScope: String,
+    val responseKind: String = "object",
+    val responseFields: List<String> = emptyList(),
+    val capabilityTags: List<String> = emptyList(),
+    val requiresPreview: Boolean = false,
 )
 
 data class BridgeCapabilities(
@@ -65,6 +69,10 @@ data class BridgeCapabilities(
                     .put("description", capability.description)
                     .put("destructive", capability.destructive)
                     .put("lockScope", capability.lockScope)
+                    .put("responseKind", capability.responseKind)
+                    .put("responseFields", JSONArray(capability.responseFields))
+                    .put("capabilityTags", JSONArray(capability.capabilityTags))
+                    .put("requiresPreview", capability.requiresPreview)
             }),
         )
         .put("arbitraryShell", arbitraryShell)
@@ -85,6 +93,10 @@ data class BridgeCapabilities(
                                 description = item.optString("description", ""),
                                 destructive = item.optBoolean("destructive", false),
                                 lockScope = item.optString("lockScope", "none"),
+                                responseKind = item.optString("responseKind", "object"),
+                                responseFields = item.optJSONArray("responseFields").toStringList(),
+                                capabilityTags = item.optJSONArray("capabilityTags").toStringList(),
+                                requiresPreview = item.optBoolean("requiresPreview", false),
                             ),
                         )
                         is String -> add(
@@ -94,6 +106,10 @@ data class BridgeCapabilities(
                                 description = "Legacy bridge capability",
                                 destructive = false,
                                 lockScope = "none",
+                                responseKind = "object",
+                                responseFields = emptyList(),
+                                capabilityTags = listOf("legacy"),
+                                requiresPreview = false,
                             ),
                         )
                     }
@@ -119,6 +135,7 @@ data class BridgeEnvelope(
     val dataType: String?,
     val errorCode: String?,
     val errorMessage: String?,
+    val errorDetails: JSONObject?,
     val warnings: List<String>,
     val nextSteps: List<String>,
 ) {
@@ -175,6 +192,7 @@ data class BridgeEnvelope(
                 dataType = rawData.bridgeJsonType(),
                 errorCode = error?.optString("code")?.takeIf(String::isNotBlank),
                 errorMessage = error?.optString("message")?.takeIf(String::isNotBlank),
+                errorDetails = error?.optJSONObject("details"),
                 warnings = json.optJSONArray("warnings").toStringList(),
                 nextSteps = json.optJSONArray("nextSteps").toStringList(),
             )

@@ -471,17 +471,17 @@ class BridgeRepository(
     suspend fun previewSmokePlan(): Result<PreviewSummary> = runCatching {
         val payload = JSONObject().put("scope", "real-device").put("includeOptional", true)
         val data = BridgeEnvelope.fromJson(rootClient.preview(BridgeRequest("smoke.preview", payload).toJson())).requireData()
-        data.toPreviewSummary("Real-device smoke plan")
+        data.toSmokePlanSummary()
     }
 
     suspend fun refreshSmokeReport(): Result<PreviewSummary> = runCatching {
         val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("smoke.report").toJson())).requireData()
-        data.toPreviewSummary("Real-device smoke report")
+        data.toSmokeReportSummary()
     }
 
     suspend fun refreshSmokeLastResult(): Result<PreviewSummary> = runCatching {
         val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("smoke.last_result").toJson())).requireData()
-        data.toPreviewSummary("Last smoke result")
+        data.toSmokeLastResultSummary()
     }
 
     suspend fun startBridgeOperation(
@@ -522,7 +522,17 @@ class BridgeRepository(
                 else -> "Bridge"
             }
         }
-        return grouped.toSortedMap().map { (title, values) -> ToolCapabilityGroup(title, values.map { it.name }.sorted()) }
+        return grouped.toSortedMap().map { (title, values) ->
+            val sorted = values.sortedBy { it.name }
+            ToolCapabilityGroup(
+                title = title,
+                operations = sorted.map { it.name },
+                details = sorted.map { capability ->
+                    val tags = capability.capabilityTags.joinToString(",").takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()
+                    "${capability.name}: ${capability.mode}, ${capability.responseKind}${tags}"
+                },
+            )
+        }
     }
 
     fun close() = rootClient.close()
@@ -937,6 +947,54 @@ private fun JSONObject.toPreviewSummary(title: String): PreviewSummary {
     )
 }
 
+private fun JSONObject.toSmokePlanSummary(): PreviewSummary {
+    val steps = optJSONArray("steps").toJsonObjects()
+    val required = steps.count { it.optBoolean("required", false) }
+    val optional = steps.size - required
+    return PreviewSummary(
+        title = "Real-device smoke plan",
+        ok = optBoolean("ok", false),
+        body = "${steps.size} checks planned · $required required · $optional optional · ${firstString("scope").ifBlank { "read-only" }}",
+        blocking = optJSONArray("blocking").messagesFromObjects(),
+        warnings = optJSONArray("warnings").toStringListLocal(),
+        rawJson = toString(),
+        previewId = optString("previewId"),
+        payloadHash = optString("payloadHash"),
+        resourceRevision = optString("resourceRevision"),
+        actionOperation = optString("actionOperation"),
+        expiresAt = optDouble("expiresAt", 0.0),
+    )
+}
+
+private fun JSONObject.toSmokeReportSummary(): PreviewSummary {
+    val count = optInt("count", optJSONArray("operations")?.length() ?: 0)
+    val failed = optInt("failed", 0)
+    val status = firstString("status").ifBlank { if (count > 0) "available" else "missing" }
+    return PreviewSummary(
+        title = "Real-device smoke report",
+        ok = optBoolean("ok", count > 0 && failed == 0),
+        body = "$count smoke run(s) · status $status · failed/interrupted $failed",
+        blocking = if (count == 0) listOf("No smoke run is available yet.") else emptyList(),
+        warnings = optJSONArray("warnings").toStringListLocal(),
+        rawJson = toString(),
+    )
+}
+
+private fun JSONObject.toSmokeLastResultSummary(): PreviewSummary {
+    val status = firstString("status").ifBlank { "missing" }
+    val recovery = optJSONArray("recovery").toStringListLocal().ifEmpty { optJSONArray("nextSteps").toStringListLocal() }
+    val operation = optJSONObject("operation")
+    val opId = operation?.firstString("operationId", "operation_id")
+    return PreviewSummary(
+        title = "Last smoke result",
+        ok = optBoolean("ok", false),
+        body = listOfNotNull(status, opId?.takeIf(String::isNotBlank)).joinToString(" · ").ifBlank { "No smoke result is available." },
+        blocking = if (status == "missing") listOf("Run the smoke suite before requesting the latest result.") else emptyList(),
+        warnings = recovery,
+        rawJson = toString(),
+    )
+}
+
 private fun JSONObject.toSnapshotSummary(): SnapshotSummary = SnapshotSummary(
     name = firstString("name", "snapshot", "snapshotName"),
     chrootName = firstString("chrootName", "chroot_name", "targetName"),
@@ -1129,13 +1187,17 @@ private fun JSONObject.toRepairItemSummaries(): List<RepairItemSummary> {
     }.filter { it.itemId.isNotBlank() }
 }
 
-private fun JSONObject.toDebugProbeSummary(): DebugProbeSummary = DebugProbeSummary(
-    group = firstString("group").ifBlank { "general" },
-    code = firstString("code", "id", "name"),
-    status = firstString("status", "state").ifBlank { "unknown" },
-    detail = firstString("detail", "message", "summary"),
-    next = firstString("next", "nextStep", "next_step"),
-)
+private fun JSONObject.toDebugProbeSummary(): DebugProbeSummary {
+    val result = opt("result").takeUnless { it == JSONObject.NULL }
+    return DebugProbeSummary(
+        group = firstString("group").ifBlank { "general" },
+        code = firstString("code", "id", "name"),
+        status = firstString("status", "state").ifBlank { "unknown" },
+        detail = firstString("detail", "message", "summary").ifBlank { result?.toString().orEmpty() },
+        next = firstString("next", "nextStep", "next_step"),
+        rawResult = result?.toString().orEmpty(),
+    )
+}
 
 private fun JSONObject.toDebugTimelineSummary(): DebugTimelineSummary = DebugTimelineSummary(
     eventType = firstString("eventType", "event_type", "type").ifBlank { "event" },

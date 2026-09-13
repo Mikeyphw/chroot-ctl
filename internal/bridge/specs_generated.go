@@ -3,12 +3,15 @@ package bridge
 import "sort"
 
 type OperationSpec struct {
-	Name          string              `json:"name"`
-	Mode          string              `json:"mode"`
-	Description   string              `json:"description"`
-	Destructive   bool                `json:"destructive"`
-	LockScope     string              `json:"lockScope"`
-	PayloadFields map[string]struct{} `json:"-"`
+	Name           string              `json:"name"`
+	Mode           string              `json:"mode"`
+	Description    string              `json:"description"`
+	Destructive    bool                `json:"destructive"`
+	LockScope      string              `json:"lockScope"`
+	PayloadFields  map[string]struct{} `json:"-"`
+	ResponseKind   string              `json:"responseKind,omitempty"`
+	ResponseFields []string            `json:"responseFields,omitempty"`
+	CapabilityTags []string            `json:"capabilityTags,omitempty"`
 }
 
 func fieldSet(values ...string) map[string]struct{} {
@@ -119,7 +122,20 @@ var Specs = func() map[string]OperationSpec {
 func Capabilities() []map[string]any {
 	out := make([]map[string]any, 0, len(orderedSpecs))
 	for _, s := range orderedSpecs {
-		out = append(out, map[string]any{"name": s.Name, "mode": s.Mode, "description": s.Description, "destructive": s.Destructive, "lockScope": s.LockScope})
+		schema := ResponseSchemaFor(s.Name)
+		fields := append([]string{}, schema.Fields...)
+		tags := append([]string{}, schema.CapabilityTags...)
+		out = append(out, map[string]any{
+			"name":            s.Name,
+			"mode":            s.Mode,
+			"description":     s.Description,
+			"destructive":     s.Destructive,
+			"lockScope":       s.LockScope,
+			"responseKind":    schema.Kind,
+			"responseFields":  fields,
+			"capabilityTags":  tags,
+			"requiresPreview": schema.RequiresPreview,
+		})
 	}
 	return out
 }
@@ -168,6 +184,10 @@ func ContractSpecs() []OperationSpec {
 			fields[field] = struct{}{}
 		}
 		spec.PayloadFields = fields
+		schema := ResponseSchemaFor(spec.Name)
+		spec.ResponseKind = schema.Kind
+		spec.ResponseFields = append([]string{}, schema.Fields...)
+		spec.CapabilityTags = append([]string{}, schema.CapabilityTags...)
 		out = append(out, spec)
 	}
 	return out

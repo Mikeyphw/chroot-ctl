@@ -40,4 +40,7 @@ CHR15 makes module packaging, runtime readiness, Android selection, and release 
 ## CHR16 — logging, diagnostics, audit & evidence
 
 Overlay 16 of 20 hardens the diagnostic plane: private/redacted logs, bounded operation/event journals, support bundles as managed tar.gz artifacts, sanitized audit events, correct severity thresholds, follow-mode filtering, and Android import-password clearing after dispatch.
+### CHR17 bridge protocol V2 convergence
+
+Overlay 17 of 20 adds response-shape metadata to bridge capabilities, wraps debug timeline/report data into Android-ready objects, preserves structured error details, and keeps smoke/debug workspaces from treating result/report payloads as generic previews. Apply it as an intermediate overlay with `--no-validate`; full validation belongs in a later gate overlay.
 

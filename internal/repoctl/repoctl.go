@@ -562,6 +562,9 @@ func Validate() error {
 	if e = ValidateLoggingDiagnosticsAuditEvidence(root); e != nil {
 		return e
 	}
+	if e = ValidateBridgeProtocolV2Convergence(root); e != nil {
+		return e
+	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
 	if e != nil {
 		return e

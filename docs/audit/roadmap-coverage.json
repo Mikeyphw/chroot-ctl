@@ -90,7 +90,7 @@
     {
       "id": "CHR17",
       "title": "Bridge protocol V2 convergence",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR18",
@@ -2099,7 +2099,7 @@
       "title": "Bridge request/response schemas and repository mapping are drifting",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-02",
@@ -2171,7 +2171,7 @@
       "title": "Preview/approval/confirmation gating is inconsistent or stale",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH04-02",
@@ -3142,7 +3142,7 @@
       "supportingOverlays": [
         "CHR19"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH08-05",
@@ -4171,7 +4171,7 @@
       "title": "HIGH \u2014 Response-schema tests are missing",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SHARED-03",
@@ -4187,7 +4187,7 @@
       "title": "HIGH \u2014 Support preview and execution target different artifacts",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH13-01",
@@ -4203,7 +4203,7 @@
       "title": "HIGH \u2014 Runtime/module mapping hides actual health and warnings",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH13-06",
@@ -4219,7 +4219,7 @@
       "title": "HIGH \u2014 Previewing selected repair items makes unselected candidates disappear",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH13-09",
@@ -4235,7 +4235,7 @@
       "title": "HIGH \u2014 Repair UI drops the exact path/diff and destructive warning contract",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH13-10",
@@ -4251,7 +4251,7 @@
       "title": "HIGH \u2014 Repair appears target-scoped inside Chroots but is global",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH13-11",
@@ -4267,7 +4267,7 @@
       "title": "CRITICAL/HIGH \u2014 Tools \"Logs\" workspace does not query the log API",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-01",
@@ -4283,7 +4283,7 @@
       "title": "HIGH \u2014 Debug probes are fetched but never displayed",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-03",
@@ -4299,7 +4299,7 @@
       "title": "HIGH \u2014 Probe grouping is non-functional end-to-end",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-04",
@@ -4315,7 +4315,7 @@
       "title": "HIGH \u2014 Debug evidence export has no preview despite Help promising one",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-06",
@@ -4331,7 +4331,7 @@
       "title": "HIGH \u2014 Smoke preview discards the actual plan",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-08",
@@ -4347,7 +4347,7 @@
       "title": "HIGH \u2014 UI description promises smoke coverage the backend does not perform",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-09",
@@ -4363,7 +4363,7 @@
       "title": "HIGH \u2014 Smoke report is mapped as a failed PreviewSummary",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-10",
@@ -4379,7 +4379,7 @@
       "title": "MEDIUM/HIGH \u2014 Last smoke result discards result/recovery detail",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-11",
@@ -4395,7 +4395,7 @@
       "title": "MEDIUM/HIGH \u2014 Persist/export/failure-bundle actions are enabled without a valid smoke result",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-12",
@@ -4411,7 +4411,7 @@
       "title": "HIGH \u2014 Help text is materially ahead of actual behavior",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-14",
@@ -4427,7 +4427,7 @@
       "title": "MEDIUM \u2014 \"Bridge API reference\" drops most capability metadata",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH14-15",
@@ -4443,7 +4443,7 @@
       "title": "Turn Help/API copy into tested contract",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "HELP-01",
@@ -4459,7 +4459,7 @@
       "title": "Smoke report is forced through an incompatible preview model \u2014 MEDIUM/HIGH",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH15-09",
@@ -4475,7 +4475,7 @@
       "title": "Envelope error contract is degraded on Android \u2014 MEDIUM/HIGH",
       "ownerOverlay": "CHR17",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH15-10",
