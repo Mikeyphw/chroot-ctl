@@ -86,3 +86,10 @@ Intermediate overlay scope. Focused local checks cover user policy classificatio
 - Scope: catalog/package preflight, risk/state propagation, external catalog trust, Android catalog controls, package inventory truncation truth.
 - Intermediate policy: apply with `--no-validate`; full gate validation remains reserved for the next sensible seal overlay.
 - Focused source gate: `ValidateCatalogPackageWorkflow`.
+
+## CHR14 clipboard privileged integration
+
+- Added `ValidateClipboardPrivilegedIntegration` source gate to repoctl and the final seal.
+- Clipboard daemon control state now uses the Termux-private runtime root, rejects unsafe custom parents, serializes starts, refuses live socket takeover, cleans stale socket/token state on stop, and records bounded daemon lifecycle logs.
+- Clipboard host set/get now default to the daemon host socket, preserve explicit empty text versus stdin, cap stdin at 1 MiB, and keep trailing newlines through both host CLI and generated chroot wrappers.
+- Wrapper requests now carry the installing target name; the daemon requires marked wrappers for target-scoped requests, and `clipboard doctor --name` reports target-specific enablement.

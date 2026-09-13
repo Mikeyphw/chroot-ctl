@@ -734,12 +734,14 @@ func (a *App) clipboard(ctx context.Context) error {
 		return a.emit("", v)
 	case "clipboard daemon stop":
 		if a.Services.DryRun {
-			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.daemon.stop", "pidFile": paths.PIDFile})
+			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.daemon.stop", "pidFile": paths.PIDFile, "socket": paths.SocketPath})
 		}
-		return a.emit("", clipboard.StopDaemon(paths.PIDFile))
+		return a.emit("", clipboard.StopDaemon(paths))
 	case "clipboard daemon status":
 		v := clipboard.DaemonStatus(paths.PIDFile)
 		v["socket"] = paths.SocketPath
+		v["pid_file"] = paths.PIDFile
+		v["log_file"] = paths.LogFile
 		return a.emit("", v)
 	case "clipboard daemon run":
 		if a.Services.DryRun {
@@ -747,22 +749,25 @@ func (a *App) clipboard(ctx context.Context) error {
 		}
 		return clipboard.RunDaemon(ctx, cfg, runner, paths)
 	case "clipboard doctor":
-		return a.emit("", clipboard.Doctor(cfg, paths))
-	case "clipboard set":
-		text := strings.Join(a.Inv.Strings("text"), " ")
-		if text == "" {
-			b, e := io.ReadAll(a.Stdin)
+		if a.Inv.Globals.Name != "" {
+			var e error
+			cfg, e = a.Services.ConfigFor(a.Inv.Globals.Name, "")
 			if e != nil {
 				return e
 			}
-			text = string(b)
+		}
+		return a.emit("", clipboard.Doctor(cfg, paths))
+	case "clipboard set":
+		text, e := clipboardSetText(a.Inv, a.Stdin)
+		if e != nil {
+			return e
 		}
 		socket := a.Inv.String("socket")
 		if socket == "" {
-			socket = clipboard.ChrootSocket
+			socket = paths.SocketPath
 		}
 		if a.Services.DryRun {
-			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.set", "socket": socket, "bytes": len(text)})
+			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.set", "socket": socket, "bytes": len([]byte(text))})
 		}
 		v, e := clipboard.SocketSet(ctx, socket, text)
 		if e != nil {
@@ -775,7 +780,7 @@ func (a *App) clipboard(ctx context.Context) error {
 	case "clipboard get":
 		socket := a.Inv.String("socket")
 		if socket == "" {
-			socket = clipboard.ChrootSocket
+			socket = paths.SocketPath
 		}
 		v, e := clipboard.SocketGet(ctx, socket)
 		if e != nil {
@@ -788,6 +793,21 @@ func (a *App) clipboard(ctx context.Context) error {
 		return e
 	}
 	return errors.New("unsupported clipboard command")
+}
+
+func clipboardSetText(inv Invocation, stdin io.Reader) (string, error) {
+	if values := inv.Strings("text"); len(values) > 0 {
+		return strings.Join(values, " "), nil
+	}
+	limited := &io.LimitedReader{R: stdin, N: clipboard.MaxClipboardTextBytes + 1}
+	b, err := io.ReadAll(limited)
+	if err != nil {
+		return "", err
+	}
+	if len(b) > clipboard.MaxClipboardTextBytes {
+		return "", fmt.Errorf("clipboard stdin exceeds 1 MiB")
+	}
+	return string(b), nil
 }
 
 func (a *App) users(ctx context.Context) error {

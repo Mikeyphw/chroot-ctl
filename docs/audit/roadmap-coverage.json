@@ -75,7 +75,7 @@
     {
       "id": "CHR14",
       "title": "Clipboard privileged integration",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR15",
@@ -1950,7 +1950,7 @@
       "title": "Clipboard daemon/host-bridge lifecycle and trust model are inconsistent",
       "ownerOverlay": "CHR14",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI01-15",

@@ -30,3 +30,7 @@ User operations are protected by the CHR12 safety model. `users list` and Androi
 CHR13 adds executable catalog state to tools and add-ons. Catalog entries now expose source, script SHA-256, rollback, risks, risk level, destructive intent, confirmation requirement, and target state. `sync-uid` remains documented but is blocked from catalog execution because UID/GID mutation must use the host-managed user service.
 
 External catalog files are read only after parent-directory, symlink, permissions, owner, and stable-read checks. Package inventory responses distinguish total package count from returned package rows and set `truncated=true` when a bridge limit cuts the list. Android catalog screens now use real category filters, installed-target chips, blocked-state rows, and preview-gated apply actions.
+### CHR14 clipboard privileged integration
+
+CHR14 makes clipboard integration target-aware and lifecycle-safe: daemon state lives under the Termux-private runtime root, custom control paths must already be private, starts are locked, stale/corrupt PID/socket/token state is cleaned or rejected safely, host `set/get` use the daemon host socket by default, stdin is bounded while preserving trailing newlines, and generated wrappers carry the installing target identity so the daemon can reject requests from targets where clipboard was not enabled.
+

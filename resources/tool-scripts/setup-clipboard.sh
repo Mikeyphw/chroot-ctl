@@ -18,6 +18,9 @@ esac
 
 install -d /usr/local/bin
 
+target_name="${CHROOTCTL_NAME:?}"
+target_escaped=$(printf '%s' "$target_name" | sed "s/'/'\\''/g")
+
 cat >/usr/local/bin/termux-clip <<'EOF_INNER'
 #!/bin/sh
 # chrootctl-clipboard-wrapper:v1 termux-clip
@@ -25,6 +28,8 @@ set -eu
 
 SOCKET_PATH=/tmp/chrootctl/clipboard.sock
 TOKEN_PATH=/tmp/chrootctl/clipboard.token
+TARGET_NAME='__CHROOTCTL_NAME__'
+MAX_CLIPBOARD_BYTES=1048576
 
 [ -S "$SOCKET_PATH" ] || { echo "clipboard socket is unavailable: $SOCKET_PATH" >&2; exit 1; }
 [ -r "$TOKEN_PATH" ] || { echo "clipboard token is unavailable: $TOKEN_PATH" >&2; exit 1; }
@@ -39,14 +44,20 @@ elif [ "${1:-}" = "-i" ] || [ "${1:-}" = "--input" ]; then
 fi
 
 if [ "$mode" = get ]; then
-  request=$(jq -cn --arg token "$token" '{action:"get",token:$token}')
+  request=$(jq -cn --arg token "$token" --arg target "$TARGET_NAME" '{action:"get",token:$token,target:$target}')
 else
   if [ "$#" -gt 0 ]; then
-    text="$*"
+    byte_count=$(printf '%s' "$*" | wc -c | tr -d ' ')
+    [ "$byte_count" -le "$MAX_CLIPBOARD_BYTES" ] || { echo "clipboard text exceeds 1 MiB" >&2; exit 1; }
+    request=$(printf '%s' "$*" | jq -Rs --arg token "$token" --arg target "$TARGET_NAME" '{action:"set",token:$token,target:$target,text:.}')
   else
-    text=$(cat)
+    tmp=$(mktemp)
+    trap 'rm -f "$tmp"' EXIT HUP INT TERM
+    cat >"$tmp"
+    byte_count=$(wc -c <"$tmp" | tr -d ' ')
+    [ "$byte_count" -le "$MAX_CLIPBOARD_BYTES" ] || { echo "clipboard text exceeds 1 MiB" >&2; exit 1; }
+    request=$(jq -Rs --arg token "$token" --arg target "$TARGET_NAME" '{action:"set",token:$token,target:$target,text:.}' <"$tmp")
   fi
-  request=$(jq -cn --arg token "$token" --arg text "$text" '{action:"set",token:$token,text:$text}')
 fi
 
 response=$(printf '%s' "$request" | socat - "UNIX-CONNECT:$SOCKET_PATH")
@@ -59,6 +70,7 @@ if [ "$mode" = get ]; then
   printf '%s' "$response" | jq -rj '.text // ""'
 fi
 EOF_INNER
+sed -i "s|__CHROOTCTL_NAME__|$target_escaped|g" /usr/local/bin/termux-clip
 
 cat >/usr/local/bin/chrootctl-xsel <<'EOF_INNER'
 #!/bin/sh
