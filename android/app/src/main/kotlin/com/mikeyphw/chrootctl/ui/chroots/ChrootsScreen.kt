@@ -365,7 +365,7 @@ private fun Phase32ChrootCard(
                         Text(stringResource(R.string.action_preview_start))
                     }
                 }
-                OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                OutlinedButton(onClick = { onSelect(); onPreviewSnapshotCreate(chroot.name) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                     Text(stringResource(R.string.action_preview_snapshot))
                 }
             }
@@ -471,7 +471,8 @@ private fun ChrootWorkspaceScreen(
                     }
                 },
             )
-        } else when (effectiveTab) {
+        }
+        when (effectiveTab) {
             ChrootWorkspaceTab.Overview -> WorkspaceOverviewTab(
                 chroot = chroot,
                 checks = checks,
@@ -1229,13 +1230,19 @@ private fun StoragePanel(
             if (paneState == WorkspacePaneState.Ready && summary != null) {
                 if (!summary.rootfsExists) StatusPill(stringResource(R.string.storage_missing_rootfs), StatusTone.Danger)
                 DetailRow(stringResource(R.string.storage_rootfs_path), summary.rootfsPath)
-                DetailRow(stringResource(R.string.storage_rootfs_size), formatStorageBytes(summary.rootfsBytes))
+                DetailRow(stringResource(R.string.storage_rootfs_size), workspaceSizeLabel(summary.rootfsBytes, summary.rootfsBytesReliable, summary.rootfsByteErrorCount, summary.rootfsSkippedMounts))
                 DetailRow(stringResource(R.string.storage_cache_path), summary.cachePath)
-                DetailRow(stringResource(R.string.storage_cache_size), formatStorageBytes(summary.cacheBytes))
-                DetailRow(stringResource(R.string.storage_mount_state), "${summary.mountState} · ${summary.mountedCount}/${summary.mountCount}")
+                DetailRow(stringResource(R.string.storage_cache_size), workspaceSizeLabel(summary.cacheBytes, summary.cacheBytesReliable, summary.cacheByteErrorCount, summary.cacheSkippedMounts))
+                DetailRow(stringResource(R.string.storage_mount_state), "${summary.mountState} · mounted ${summary.mountedCount}/${summary.mountCount} · mismatched ${summary.mismatchedMountCount}")
                 DetailRow(stringResource(R.string.storage_disk_free), "${formatStorageBytes(summary.freeBytes)} / ${formatStorageBytes(summary.totalBytes)}")
-                DetailRow(stringResource(R.string.storage_snapshot_footprint), formatStorageBytes(snapshotBytes))
+                DetailRow(stringResource(R.string.storage_snapshot_footprint), workspaceSizeLabel(summary.snapshotBytes.takeIf { it > 0L } ?: snapshotBytes, summary.snapshotBytesReliable, summary.snapshotByteErrorCount, summary.snapshotSkippedMounts))
                 DetailRow(stringResource(R.string.storage_snapshot_directory), summary.snapshotDirectory)
+                if (!summary.rootfsBytesReliable || !summary.cacheBytesReliable || !summary.snapshotBytesReliable) {
+                    StatusCard(
+                        title = stringResource(R.string.storage_size_estimate_title),
+                        body = stringResource(R.string.storage_size_estimate_body),
+                    )
+                }
             }
         }
     }
@@ -1312,13 +1319,19 @@ private fun LogsPanel(
                 errorMessage = pane.errorMessage,
                 onRetry = { onRefreshLogs(chroot.name, bridgeLevel) },
             )
-            if (paneState == WorkspacePaneState.Ready && pane.logFile.isNotBlank()) DetailRow(stringResource(R.string.logs_file_label), pane.logFile)
+            if (paneState == WorkspacePaneState.Ready && pane.logFile.isNotBlank()) {
+                DetailRow(stringResource(R.string.logs_file_label), pane.logFile)
+                DetailRow(stringResource(R.string.logs_snapshot_count_label), "${pane.count}/${pane.tail.takeIf { it > 0 } ?: MAX_VISIBLE_LOG_LINES}")
+                if (pane.truncated || pane.stale) {
+                    StatusPill(stringResource(if (pane.truncated) R.string.logs_snapshot_truncated else R.string.status_cached_data), StatusTone.Warning)
+                }
+            }
             if (paneState == WorkspacePaneState.Ready && entries.isEmpty()) {
                 Text(stringResource(R.string.logs_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (paneState == WorkspacePaneState.Ready) {
                 entries.takeLast(MAX_VISIBLE_LOG_LINES).forEach { entry ->
                     Text(
-                        if (entry.level.isBlank()) entry.line else "${entry.level} · ${entry.line}",
+                        logEntryDisplay(entry),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -1353,6 +1366,23 @@ private fun LogsPanel(
             }
         }
     }
+}
+
+private fun workspaceSizeLabel(bytes: Long, reliable: Boolean, errors: Int, skippedMounts: Int): String {
+    val suffix = buildList {
+        if (!reliable) add("estimate")
+        if (errors > 0) add("$errors read error(s)")
+        if (skippedMounts > 0) add("$skippedMounts mount(s) skipped")
+    }.joinToString(" · ")
+    return if (suffix.isBlank()) formatStorageBytes(bytes) else "${formatStorageBytes(bytes)} · $suffix"
+}
+
+private fun logEntryDisplay(entry: com.mikeyphw.chrootctl.model.ChrootLogEntrySummary): String {
+    val level = entry.level.trim()
+    val line = entry.line.trimEnd()
+    if (level.isBlank()) return line
+    val normalized = line.trimStart().uppercase()
+    return if (normalized.startsWith(level.uppercase())) line else "$level · $line"
 }
 
 @Composable

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 )
 
 var logLevelRE = regexp.MustCompile(`\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b`)
@@ -341,10 +342,14 @@ func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll
 		return model.LogSnapshot{}, fmt.Errorf("tail must be non-negative")
 	}
 	lines := []string{}
+	matched := 0
+	readErr := ""
 	f, e := os.Open(cfg.LogFile)
 	if e != nil {
-		if !os.IsNotExist(e) {
-			return model.LogSnapshot{}, fmt.Errorf("read log file %s: %w", cfg.LogFile, e)
+		if os.IsNotExist(e) {
+			readErr = "log file has not been created yet"
+		} else {
+			readErr = e.Error()
 		}
 	} else {
 		defer f.Close()
@@ -355,6 +360,7 @@ func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll
 			line := redaction.String(scan.Text())
 			sev := logSeverityValue(logLineSeverity(line))
 			if threshold == 0 || sev >= threshold {
+				matched++
 				lines = append(lines, line)
 				if !showAll && tail > 0 && len(lines) > tail {
 					copy(lines, lines[len(lines)-tail:])
@@ -363,7 +369,7 @@ func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll
 			}
 		}
 		if e := scan.Err(); e != nil {
-			return model.LogSnapshot{}, fmt.Errorf("scan log file %s: %w", cfg.LogFile, e)
+			readErr = e.Error()
 		}
 	}
 	if !showAll && tail > 0 && len(lines) > tail {
@@ -397,7 +403,7 @@ func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll
 		target = &name
 		related = []model.LogLink{{Label: "Chroot · " + name, Href: "/chroots/" + name}, {Label: "Users · " + name, Href: "/chroots/" + name + "/users"}, {Label: "Status · " + name, Href: "/status?name=" + name}, {Label: "Doctor · " + name, Href: "/doctor?name=" + name}}
 	}
-	return model.LogSnapshot{LogFile: cfg.LogFile, Level: lp, Lines: lines, Follow: follow, TargetName: target, Entries: entries, RelatedLinks: related}, nil
+	return model.LogSnapshot{LogFile: cfg.LogFile, Level: lp, Lines: lines, Follow: follow, Tail: tail, Count: matched, Truncated: !showAll && tail > 0 && matched > len(lines), ReadError: readErr, RefreshedAt: time.Now().UTC().Format(time.RFC3339Nano), TargetName: target, Entries: entries, RelatedLinks: related}, nil
 }
 
 type DoctorService struct{ C *Container }

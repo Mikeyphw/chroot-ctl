@@ -17,6 +17,7 @@ import com.mikeyphw.chrootctl.model.RepairItemSummary
 import com.mikeyphw.chrootctl.model.SnapshotSummary
 import com.mikeyphw.chrootctl.model.StorageSummary
 import com.mikeyphw.chrootctl.model.ChrootLogEntrySummary
+import com.mikeyphw.chrootctl.model.LogsPane
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
 import com.mikeyphw.chrootctl.model.UserSummary
 import com.mikeyphw.chrootctl.model.Loadable
@@ -285,8 +286,9 @@ class BridgeRepository(
         data.toStorageSummary()
     }
 
-    suspend fun refreshLogs(name: String, level: String? = null): Result<Pair<String, List<ChrootLogEntrySummary>>> = runCatching {
-        val payload = JSONObject().put("name", name).put("tail", 200)
+    suspend fun refreshLogs(name: String, level: String? = null): Result<LogsPane> = runCatching {
+        val tail = 200
+        val payload = JSONObject().put("name", name).put("tail", tail)
         level?.takeIf(String::isNotBlank)?.let { payload.put("level", it) }
         val data = BridgeEnvelope.fromJson(
             rootClient.query(BridgeRequest("logs.list", payload).toJson()),
@@ -297,7 +299,19 @@ class BridgeRepository(
                 level = row.firstString("level", "severity").ifBlank { "INFO" },
             )
         }
-        data.firstString("logFile", "log_file") to entries
+        LogsPane(
+            targetName = data.firstString("name").ifBlank { name },
+            logFile = data.firstString("logFile", "log_file"),
+            level = data.firstString("level").ifBlank { level.orEmpty() },
+            tail = data.optInt("tail", tail),
+            count = data.optInt("count", entries.size),
+            truncated = data.optBoolean("truncated", false),
+            entries = entries,
+            refreshing = false,
+            errorMessage = data.firstString("readError", "read_error").takeIf(String::isNotBlank),
+            refreshedAt = data.optEpochMillis("refreshedAt", "refreshed_at") ?: System.currentTimeMillis(),
+            stale = false,
+        )
     }
 
     suspend fun previewSnapshotCreate(name: String, snapshot: String): Result<PreviewSummary> = runCatching {
@@ -574,33 +588,38 @@ private fun HomeSnapshotEntity.toHomeSnapshot(
             title = "Repair root bridge",
             body = bridgeInfo.message,
             actionLabel = "Open diagnostics",
+            destination = "tools",
         )
         activeOperation != null -> RecommendedAction(
             title = "Review active operation",
             body = activeOperation.progressText,
             actionLabel = "Open activity",
+            destination = "activity",
         )
         failedOperation != null -> RecommendedAction(
             title = "Review last failure",
             body = failedOperation.errorMessage ?: failedOperation.progressText,
             actionLabel = "Open activity",
+            destination = "activity",
         )
         chroots.none { !it.stale } -> RecommendedAction(
             title = "Create first chroot",
             body = "No registered chroots were returned by the backend.",
             actionLabel = "Start install flow",
+            destination = "install",
         )
         else -> RecommendedAction(
             title = "Refresh environment",
             body = "The app can refresh dashboard, chroot and operation state from the bridge.",
             actionLabel = "Refresh",
+            destination = "refresh",
         )
     }
     return HomeSnapshot(
         bridgeInfo = bridgeInfo,
         capabilities = capabilities,
-        chrootCount = chrootCount,
-        operationCount = operationCount,
+        chrootCount = chroots.count { !it.stale },
+        operationCount = operations.count { !it.stale },
         warningCount = warningCount,
         readinessRows = rows,
         recommendedAction = action,
@@ -691,16 +710,30 @@ private fun JSONObject.toStorageSummary(): StorageSummary = StorageSummary(
     rootfsPath = firstString("rootfsPath", "rootfs_path", "path"),
     rootfsExists = optBoolean("rootfsExists", optBoolean("rootfs_exists", false)),
     rootfsBytes = optLong("rootfsBytes", optLong("rootfs_bytes", 0L)),
+    rootfsBytesReliable = optBoolean("rootfsBytesReliable", optBoolean("rootfs_bytes_reliable", true)),
+    rootfsByteErrorCount = optInt("rootfsByteErrorCount", optInt("rootfs_byte_error_count", 0)),
+    rootfsSkippedMounts = optInt("rootfsSkippedMounts", optInt("rootfs_skipped_mounts", 0)),
     cachePath = firstString("cachePath", "cache_path"),
     cacheExists = optBoolean("cacheExists", optBoolean("cache_exists", false)),
     cacheBytes = optLong("cacheBytes", optLong("cache_bytes", 0L)),
+    cacheBytesReliable = optBoolean("cacheBytesReliable", optBoolean("cache_bytes_reliable", true)),
+    cacheByteErrorCount = optInt("cacheByteErrorCount", optInt("cache_byte_error_count", 0)),
+    cacheSkippedMounts = optInt("cacheSkippedMounts", optInt("cache_skipped_mounts", 0)),
     freeBytes = optLong("freeBytes", optLong("free_bytes", 0L)),
     usedBytes = optLong("usedBytes", optLong("used_bytes", 0L)),
     totalBytes = optLong("totalBytes", optLong("total_bytes", 0L)),
     mountState = firstString("mountState", "mount_state").ifBlank { "unknown" },
     mountedCount = optInt("mountedCount", optInt("mounted_count", 0)),
+    mismatchedMountCount = optInt("mismatchedMountCount", optInt("mismatched_mount_count", 0)),
     mountCount = optInt("mountCount", optInt("mount_count", 0)),
     snapshotDirectory = firstString("snapshotDirectory", "snapshot_directory"),
+    snapshotBytes = optLong("snapshotBytes", optLong("snapshot_bytes", 0L)),
+    snapshotCount = optInt("snapshotCount", optInt("snapshot_count", 0)),
+    snapshotBytesReliable = optBoolean("snapshotBytesReliable", optBoolean("snapshot_bytes_reliable", true)),
+    snapshotByteErrorCount = optInt("snapshotByteErrorCount", optInt("snapshot_byte_error_count", 0)),
+    snapshotSkippedMounts = optInt("snapshotSkippedMounts", optInt("snapshot_skipped_mounts", 0)),
+    refreshedAt = optEpochMillis("refreshedAt", "refreshed_at") ?: System.currentTimeMillis(),
+    stale = optBoolean("stale", false),
 )
 
 private fun JSONObject.toOperationEntity(now: Long, stale: Boolean): OperationEntity {
@@ -1090,7 +1123,9 @@ private fun JSONObject.toServiceUnitDetailSummary(): ServiceUnitSummary {
         enabled = status.optBoolean("enabled", false),
         boot = status.optBoolean("boot", status.optJSONArray("wanted_by").toStringListLocal().contains("boot.target")),
         description = status.firstString("description"),
-        journalText = journal.firstString("text").ifBlank { journal.optJSONArray("lines").toStringListLocal().joinToString("\n") },
+        journalText = journal.firstString("text").ifBlank {
+            journal.optJSONArray("lines").toStringListLocal().joinToString("\n")
+        }.ifBlank { journal.firstString("error", "readError", "read_error") },
     )
 }
 

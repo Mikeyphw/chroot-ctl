@@ -102,7 +102,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateBridgeProtocolV2Convergence(root); e != nil {
 			return e
 		}
-		return ValidateAndroidOperationRoomRecovery(root)
+		if e := ValidateAndroidOperationRoomRecovery(root); e != nil {
+			return e
+		}
+		return ValidateAndroidProductWorkspaceCorrectness(root)
 	}); err != nil {
 		return err
 	}

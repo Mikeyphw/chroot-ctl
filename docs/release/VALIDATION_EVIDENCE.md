@@ -129,3 +129,10 @@ The sandbox used a temporary sqlite module stub for compile/focused checks only;
 - Source gate: `repoctl` now calls `ValidateAndroidOperationRoomRecovery`.
 - Focused checks: Android recovery policy tests and operation recovery contract tests cover retry gating, interrupted mapping, and cancel gating.
 - Full Android/Go validation is intentionally reserved for a later gate overlay.
+
+## CHR19 Android product/workspace correctness
+
+- Overlay: 19 of 20.
+- Source gate: `ValidateAndroidProductWorkspaceCorrectness`.
+- Focused local checks: `go test ./internal/services ./internal/bridge ./internal/repoctl -run 'CHR19|AndroidProductWorkspace|StorageStatus|Logs' -count=1`; `go test ./... -run '^$' -count=1`.
+- Android Gradle validation remains deferred to the final gate overlay per intermediate-overlay policy.

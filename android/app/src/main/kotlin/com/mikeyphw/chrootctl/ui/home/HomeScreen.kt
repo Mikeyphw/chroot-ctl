@@ -312,8 +312,21 @@ private fun HomeHero(
                     )
                 }
             }
+            val recommendedActionLabel = snapshot.recommendedAction.actionLabel
+                .takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.home_action_open_chroots)
             ActionFlowRow {
                 Button(
+                    onClick = when (snapshot.recommendedAction.destination) {
+                        "activity" -> onOpenActivity
+                        "chroots" -> onOpenChroots
+                        "install" -> onOpenInstall
+                        "refresh" -> onRefresh
+                        else -> onOpenChroots
+                    },
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) { Text(recommendedActionLabel) }
+                OutlinedButton(
                     onClick = onOpenInstall,
                     modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
                 ) { Text(stringResource(R.string.home_action_new_chroot)) }

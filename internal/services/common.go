@@ -15,20 +15,56 @@ func ptrText(p *string) string {
 	}
 	return *p
 }
-func directorySize(root string) int64 {
-	var total int64
+
+type DirectoryUsage struct {
+	Bytes         int64
+	Errors        int
+	SkippedMounts int
+}
+
+func (u DirectoryUsage) Reliable() bool { return u.Errors == 0 && u.SkippedMounts == 0 }
+
+func directorySize(root string) int64 { return directoryUsage(root).Bytes }
+
+func directoryUsage(root string) DirectoryUsage {
+	var usage DirectoryUsage
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			usage.Errors++
+		}
+		return usage
+	}
+	rootStat, _ := rootInfo.Sys().(*syscall.Stat_t)
+	var rootDevice uint64
+	if rootStat != nil {
+		rootDevice = uint64(rootStat.Dev)
+	}
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, e error) error {
 		if e != nil {
+			usage.Errors++
 			return nil
 		}
-		if d.Type().IsRegular() {
-			if i, e := d.Info(); e == nil {
-				total += i.Size()
+		info, e := d.Info()
+		if e != nil {
+			usage.Errors++
+			if d.IsDir() && path != root {
+				return filepath.SkipDir
 			}
+			return nil
+		}
+		if path != root && d.IsDir() && rootDevice != 0 {
+			if st, ok := info.Sys().(*syscall.Stat_t); ok && uint64(st.Dev) != rootDevice {
+				usage.SkippedMounts++
+				return filepath.SkipDir
+			}
+		}
+		if info.Mode().IsRegular() {
+			usage.Bytes += info.Size()
 		}
 		return nil
 	})
-	return total
+	return usage
 }
 func contained(root, target, label string) (string, error) {
 	a, e := filepath.Abs(root)

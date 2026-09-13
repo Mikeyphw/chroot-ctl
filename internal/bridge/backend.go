@@ -386,7 +386,7 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 			}
 			entries = append(entries, map[string]any{"line": x.Line, "level": lv})
 		}
-		return map[string]any{"name": n, "logFile": snap.LogFile, "level": level, "tail": tail, "entries": entries}, nil
+		return map[string]any{"name": n, "logFile": snap.LogFile, "level": level, "tail": snap.Tail, "count": snap.Count, "truncated": snap.Truncated, "readError": snap.ReadError, "refreshedAt": snap.RefreshedAt, "entries": entries}, nil
 	case "operations.list":
 		lim, e := bounded(p, "limit", 50, 0, 1000, "INVALID_OPERATION_LIMIT")
 		if e != nil {

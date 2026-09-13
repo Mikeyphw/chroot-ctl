@@ -568,6 +568,9 @@ func Validate() error {
 	if e = ValidateAndroidOperationRoomRecovery(root); e != nil {
 		return e
 	}
+	if e = ValidateAndroidProductWorkspaceCorrectness(root); e != nil {
+		return e
+	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
 	if e != nil {
 		return e

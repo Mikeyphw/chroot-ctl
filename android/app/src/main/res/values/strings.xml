@@ -469,6 +469,10 @@
     <string name="storage_disk_free">Free / total filesystem space</string>
     <string name="storage_snapshot_footprint">Loaded snapshot footprint</string>
     <string name="storage_snapshot_directory">Snapshot directory</string>
+    <string name="storage_size_estimate_title">Storage size is an estimate</string>
+    <string name="storage_size_estimate_body">One or more mount points or unreadable files were skipped so the total does not cross live bind mounts or silently pretend to be exact.</string>
+    <string name="logs_snapshot_count_label">Log snapshot</string>
+    <string name="logs_snapshot_truncated">Log snapshot was truncated to the current tail limit</string>
 
     <string name="logs_workspace_title">Logs</string>
     <string name="logs_workspace_body">Read bounded chroot logs, recent operation state and service journals without exposing a shell.</string>

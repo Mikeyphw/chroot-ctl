@@ -320,6 +320,11 @@ type LogSnapshot struct {
 	Level        *string    `json:"level"`
 	Lines        []string   `json:"lines"`
 	Follow       bool       `json:"follow"`
+	Tail         int        `json:"tail"`
+	Count        int        `json:"count"`
+	Truncated    bool       `json:"truncated"`
+	ReadError    string     `json:"read_error,omitempty"`
+	RefreshedAt  string     `json:"refreshed_at"`
 	TargetName   *string    `json:"target_name"`
 	Entries      []LogEntry `json:"entries"`
 	RelatedLinks []LogLink  `json:"related_links"`

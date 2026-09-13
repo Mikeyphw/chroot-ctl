@@ -383,6 +383,8 @@ func (s *ChrootService) StorageStatus(ctx context.Context, name string) (map[str
 		return nil, e
 	}
 	cache := filepath.Join(root, "var", "cache")
+	rootUsage := directoryUsage(root)
+	cacheUsage := directoryUsage(cache)
 	total, used, free := diskUsage(root)
 	rows, mountErr := rt.Controller.StatusChecked(true)
 	if mountErr != nil {
@@ -407,7 +409,41 @@ func (s *ChrootService) StorageStatus(ctx context.Context, name string) (map[str
 	if snapshotErr != nil {
 		return nil, snapshotErr
 	}
-	return map[string]any{"name": name, "rootfsPath": root, "rootfsExists": exists(root), "rootfsBytes": directorySize(root), "cachePath": cache, "cacheExists": exists(cache), "cacheBytes": directorySize(cache), "freeBytes": free, "usedBytes": used, "totalBytes": total, "mountState": mountState, "mountedCount": mounted, "mismatchedMountCount": mismatched, "mountCount": len(rows), "snapshotDirectory": snapshotDirectory}, nil
+	snapshotUsage := directoryUsage(snapshotDirectory)
+	snapshotCount := 0
+	if snaps, listErr := s.C.Snapshots().List(ctx, name, 1000); listErr == nil {
+		snapshotCount = len(snaps)
+	}
+	return map[string]any{
+		"name":                   name,
+		"rootfsPath":             root,
+		"rootfsExists":           exists(root),
+		"rootfsBytes":            rootUsage.Bytes,
+		"rootfsBytesReliable":    rootUsage.Reliable(),
+		"rootfsByteErrorCount":   rootUsage.Errors,
+		"rootfsSkippedMounts":    rootUsage.SkippedMounts,
+		"cachePath":              cache,
+		"cacheExists":            exists(cache),
+		"cacheBytes":             cacheUsage.Bytes,
+		"cacheBytesReliable":     cacheUsage.Reliable(),
+		"cacheByteErrorCount":    cacheUsage.Errors,
+		"cacheSkippedMounts":     cacheUsage.SkippedMounts,
+		"freeBytes":              free,
+		"usedBytes":              used,
+		"totalBytes":             total,
+		"mountState":             mountState,
+		"mountedCount":           mounted,
+		"mismatchedMountCount":   mismatched,
+		"mountCount":             len(rows),
+		"snapshotDirectory":      snapshotDirectory,
+		"snapshotBytes":          snapshotUsage.Bytes,
+		"snapshotCount":          snapshotCount,
+		"snapshotBytesReliable":  snapshotUsage.Reliable(),
+		"snapshotByteErrorCount": snapshotUsage.Errors,
+		"snapshotSkippedMounts":  snapshotUsage.SkippedMounts,
+		"refreshedAt":            time.Now().UTC().Format(time.RFC3339Nano),
+		"stale":                  false,
+	}, nil
 }
 func (s *ChrootService) DeletePreview(ctx context.Context, name string) (map[string]any, error) {
 	r, e := s.C.Registry.Get(ctx, name)

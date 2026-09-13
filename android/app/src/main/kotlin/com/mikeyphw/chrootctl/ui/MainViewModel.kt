@@ -139,6 +139,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private var artifactCleanupPreviewRequestPayload: String? = null
     private val systemSupportPane = MutableStateFlow(SystemSupportPane())
     private val debugPane = MutableStateFlow(DebugPane())
+    private var logsRefreshSerial: Long = 0L
 
     private val selectedChrootDetail = combine(
         repository.chroots,
@@ -283,7 +284,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         viewModelScope.launch {
             repository.chroots.collect { rows ->
                 val selected = selectedChrootName.value ?: return@collect
-                if (rows.none { it.name == selected && !it.stale }) clearSelectedChroot(selected)
+                if (rows.none { it.name == selected }) clearSelectedChroot(selected)
             }
         }
         refresh()
@@ -499,13 +500,23 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         viewModelScope.launch {
             storagePane.value = storagePane.value.copy(targetName = name, refreshing = true, errorMessage = null)
             repository.refreshStorage(name)
-                .onSuccess { summary -> if (isCurrentTarget(name) && storagePane.value.targetName == name) storagePane.value = StoragePane(targetName = name, summary = summary) }
+                .onSuccess { summary ->
+                    if (isCurrentTarget(name) && storagePane.value.targetName == name) {
+                        storagePane.value = StoragePane(
+                            targetName = name,
+                            summary = summary,
+                            refreshedAt = summary.refreshedAt,
+                            stale = summary.stale,
+                        )
+                    }
+                }
                 .onFailure { error ->
                     if (isCurrentTarget(name) && storagePane.value.targetName == name) {
                         storagePane.value = storagePane.value.copy(
                             targetName = name,
                             refreshing = false,
                             errorMessage = error.message ?: error.javaClass.simpleName,
+                            stale = storagePane.value.summary != null,
                         )
                     }
                 }
@@ -513,6 +524,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     }
 
     fun refreshLogs(name: String, level: String? = null) {
+        val requestSerial = ++logsRefreshSerial
         viewModelScope.launch {
             val normalizedLevel = level?.takeIf(String::isNotBlank)
             logsPane.value = logsPane.value.copy(
@@ -522,22 +534,18 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
                 errorMessage = null,
             )
             repository.refreshLogs(name, normalizedLevel)
-                .onSuccess { (logFile, entries) ->
-                    if (isCurrentTarget(name) && logsPane.value.targetName == name && logsPane.value.level == normalizedLevel.orEmpty()) {
-                        logsPane.value = LogsPane(
-                            targetName = name,
-                            logFile = logFile,
-                            level = normalizedLevel.orEmpty(),
-                            entries = entries,
-                        )
+                .onSuccess { snapshot ->
+                    if (requestSerial == logsRefreshSerial && isCurrentTarget(name) && logsPane.value.targetName == name && logsPane.value.level == normalizedLevel.orEmpty()) {
+                        logsPane.value = snapshot.copy(stale = false)
                     }
                 }
                 .onFailure { error ->
-                    if (isCurrentTarget(name) && logsPane.value.targetName == name) {
+                    if (requestSerial == logsRefreshSerial && isCurrentTarget(name) && logsPane.value.targetName == name) {
                         logsPane.value = logsPane.value.copy(
                             targetName = name,
                             refreshing = false,
                             errorMessage = error.message ?: error.javaClass.simpleName,
+                            stale = logsPane.value.entries.isNotEmpty(),
                         )
                     }
                 }

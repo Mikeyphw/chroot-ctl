@@ -34,6 +34,7 @@ data class RecommendedAction(
     val title: String,
     val body: String,
     val actionLabel: String,
+    val destination: String = "chroots",
 )
 
 data class ReleaseReadinessSummary(
@@ -195,16 +196,30 @@ data class StorageSummary(
     val rootfsPath: String,
     val rootfsExists: Boolean,
     val rootfsBytes: Long,
+    val rootfsBytesReliable: Boolean = true,
+    val rootfsByteErrorCount: Int = 0,
+    val rootfsSkippedMounts: Int = 0,
     val cachePath: String,
     val cacheExists: Boolean,
     val cacheBytes: Long,
+    val cacheBytesReliable: Boolean = true,
+    val cacheByteErrorCount: Int = 0,
+    val cacheSkippedMounts: Int = 0,
     val freeBytes: Long,
     val usedBytes: Long,
     val totalBytes: Long,
     val mountState: String,
     val mountedCount: Int,
+    val mismatchedMountCount: Int = 0,
     val mountCount: Int,
     val snapshotDirectory: String,
+    val snapshotBytes: Long = 0L,
+    val snapshotCount: Int = 0,
+    val snapshotBytesReliable: Boolean = true,
+    val snapshotByteErrorCount: Int = 0,
+    val snapshotSkippedMounts: Int = 0,
+    val refreshedAt: Long = 0L,
+    val stale: Boolean = false,
 )
 
 data class StoragePane(
@@ -212,6 +227,8 @@ data class StoragePane(
     val summary: StorageSummary? = null,
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
+    val refreshedAt: Long = 0L,
+    val stale: Boolean = false,
 )
 
 data class ChrootLogEntrySummary(
@@ -223,9 +240,14 @@ data class LogsPane(
     val targetName: String? = null,
     val logFile: String = "",
     val level: String = "",
+    val tail: Int = 0,
+    val count: Int = 0,
+    val truncated: Boolean = false,
     val entries: List<ChrootLogEntrySummary> = emptyList(),
     val refreshing: Boolean = false,
     val errorMessage: String? = null,
+    val refreshedAt: Long = 0L,
+    val stale: Boolean = false,
 )
 
 data class UserSummary(
