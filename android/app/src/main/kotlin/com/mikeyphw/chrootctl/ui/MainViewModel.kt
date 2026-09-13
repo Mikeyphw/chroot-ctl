@@ -1195,7 +1195,9 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     fun smokeFailureBundlePayloadJson(): String = JSONObject().put("includeSmokeEvidence", true).toString()
 
     override fun onCleared() {
-        repository.close()
+        // RootServiceClient is application-scoped and is also used by the
+        // foreground ChrootOperationService. Activity/ViewModel teardown must
+        // not unbind a connection owned by the process.
         super.onCleared()
     }
 

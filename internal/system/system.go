@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -65,10 +66,22 @@ type Runner struct {
 	Cancelled func() bool
 }
 
+type OutputPolicy string
+
+const (
+	OutputCapture OutputPolicy = "capture"
+	OutputInherit OutputPolicy = "inherit"
+	OutputDiscard OutputPolicy = "discard"
+)
+
 type RunOptions struct {
-	Env             map[string]string
-	CleanEnv        bool
-	ChrootEnv       bool
+	Env       map[string]string
+	CleanEnv  bool
+	ChrootEnv bool
+	// OutputPolicy is the authoritative stdout/stderr behavior. NoCapture is
+	// retained for compatibility and maps to OutputDiscard for both foreground
+	// and background processes.
+	OutputPolicy    OutputPolicy
 	NoCapture       bool
 	Cwd             string
 	Input           string
@@ -195,11 +208,20 @@ func SignalProcessIdentity(identity ProcessIdentity, sig syscall.Signal) bool {
 	return true
 }
 
+func processGroupAlive(pgid int) bool {
+	if pgid <= 0 {
+		return false
+	}
+	err := syscall.Kill(-pgid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
 func TerminateProcessIdentity(identity ProcessIdentity, grace time.Duration) bool {
 	if !ProcessIdentityMatches(identity) {
 		return false
 	}
-	if !SignalProcessIdentity(identity, syscall.SIGTERM) {
+	pgid := identity.ProcessGroupID
+	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return false
 	}
 	if grace < 0 {
@@ -207,15 +229,22 @@ func TerminateProcessIdentity(identity ProcessIdentity, grace time.Duration) boo
 	}
 	deadline := time.Now().Add(grace)
 	for time.Now().Before(deadline) {
-		if !ProcessIdentityMatches(identity) {
+		if !processGroupAlive(pgid) {
 			return true
 		}
 		time.Sleep(PollInterval)
 	}
-	if ProcessIdentityMatches(identity) {
-		_ = SignalProcessIdentity(identity, syscall.SIGKILL)
+	if processGroupAlive(pgid) {
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		killDeadline := time.Now().Add(TerminateGrace)
+		for time.Now().Before(killDeadline) {
+			if !processGroupAlive(pgid) {
+				break
+			}
+			time.Sleep(PollInterval)
+		}
 	}
-	return true
+	return !processGroupAlive(pgid)
 }
 
 func (r Runner) debugf(format string, args ...any) {
@@ -226,6 +255,28 @@ func (r Runner) debugf(format string, args ...any) {
 func (r Runner) infof(format string, args ...any) {
 	if r.Logger != nil {
 		r.Logger.Infof(format, args...)
+	}
+}
+
+func (o RunOptions) outputPolicy(background bool) (OutputPolicy, error) {
+	policy := o.OutputPolicy
+	if policy == "" {
+		if o.NoCapture {
+			return OutputDiscard, nil
+		}
+		if background {
+			return OutputDiscard, nil
+		}
+		return OutputCapture, nil
+	}
+	switch policy {
+	case OutputCapture, OutputInherit, OutputDiscard:
+		if background && policy == OutputCapture {
+			return "", errors.New("background output policy cannot be capture")
+		}
+		return policy, nil
+	default:
+		return "", fmt.Errorf("unknown output policy: %s", policy)
 	}
 }
 
@@ -262,21 +313,23 @@ func (r Runner) Run(ctx context.Context, args []string, options RunOptions) (Run
 		cmd.Stdin = strings.NewReader(options.Input)
 	}
 
-	var outFile, errFile *os.File
-	var err error
-	if !options.NoCapture {
-		outFile, err = os.CreateTemp("", "chrootctl-stdout-*")
-		if err != nil {
-			return RunResult{}, err
-		}
-		defer closeRemove(outFile)
-		errFile, err = os.CreateTemp("", "chrootctl-stderr-*")
-		if err != nil {
-			return RunResult{}, err
-		}
-		defer closeRemove(errFile)
-		cmd.Stdout = outFile
-		cmd.Stderr = errFile
+	policy, err := options.outputPolicy(false)
+	if err != nil {
+		return RunResult{}, err
+	}
+	var stdoutCapture, stderrCapture *boundedCaptureWriter
+	switch policy {
+	case OutputCapture:
+		stdoutCapture = newBoundedCaptureWriter(limit)
+		stderrCapture = newBoundedCaptureWriter(limit)
+		cmd.Stdout = stdoutCapture
+		cmd.Stderr = stderrCapture
+	case OutputInherit:
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	case OutputDiscard:
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
 	}
 	if err := cmd.Start(); err != nil {
 		return RunResult{}, err
@@ -325,12 +378,11 @@ waitLoop:
 		pgid := identity.ProcessGroupID
 		result.ProcessGroupID = &pgid
 	}
-	if !options.NoCapture {
-		result.Stdout, _ = boundedFile(outFile, limit)
-		result.Stderr, result.Truncated = boundedFile(errFile, limit)
-		out, ot := boundedFile(outFile, limit)
-		result.Stdout = out
-		result.Truncated = result.Truncated || ot
+	if policy == OutputCapture {
+		result.Stdout, result.Truncated = stdoutCapture.Result()
+		stderr, stderrTruncated := stderrCapture.Result()
+		result.Stderr = stderr
+		result.Truncated = result.Truncated || stderrTruncated
 	}
 	if !options.AllowFailure && (cancelled || timedOut || result.ReturnCode != 0) {
 		if cancelled {
@@ -414,14 +466,16 @@ waitLoop:
 		pgid := identity.ProcessGroupID
 		result.ProcessGroupID = &pgid
 	}
-	if !options.AllowFailure && result.ReturnCode != 0 {
+	if !options.AllowFailure {
 		if cancelled {
 			return result, errors.New("command cancelled")
 		}
 		if timedOut {
 			return result, fmt.Errorf("command timed out after %gs", options.Timeout.Seconds())
 		}
-		return result, fmt.Errorf("command failed with exit %d", result.ReturnCode)
+		if result.ReturnCode != 0 {
+			return result, fmt.Errorf("command failed with exit %d", result.ReturnCode)
+		}
 	}
 	return result, nil
 }
@@ -434,12 +488,17 @@ func (r Runner) runBackground(args []string, options RunOptions) (RunResult, err
 	}
 	cmd.SysProcAttr = processAttrs(options.UID, options.GID)
 	cmd.Stdin = nil
-	if options.NoCapture {
+	policy, err := options.outputPolicy(true)
+	if err != nil {
+		return RunResult{}, err
+	}
+	switch policy {
+	case OutputInherit:
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-	} else {
-		cmd.Stdout = nil
-		cmd.Stderr = nil
+	case OutputDiscard:
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
 	}
 	if err := cmd.Start(); err != nil {
 		return RunResult{}, err
@@ -850,40 +909,110 @@ func bootID() *string {
 	}
 	return &value
 }
-func boundedFile(file *os.File, max int) (string, bool) {
-	if file == nil {
-		return "", false
-	}
-	info, err := file.Stat()
-	if err != nil {
-		return "", false
-	}
-	size := info.Size()
-	if max <= 0 {
-		return "", size > 0
-	}
-	if size <= int64(max) {
-		_, _ = file.Seek(0, io.SeekStart)
-		raw, _ := io.ReadAll(file)
-		return string(bytes.ToValidUTF8(raw, []byte("�"))), false
-	}
-	head := max / 2
-	tail := max - head
-	buf := make([]byte, head)
-	_, _ = file.ReadAt(buf, 0)
-	tailBuf := make([]byte, tail)
-	_, _ = file.ReadAt(tailBuf, size-int64(tail))
-	marker := fmt.Sprintf("\n... chrootctl capture truncated %d bytes ...\n", size-int64(max))
-	return string(bytes.ToValidUTF8(append(append(buf, []byte(marker)...), tailBuf...), []byte("�"))), true
+
+type boundedCaptureWriter struct {
+	mu        sync.Mutex
+	limit     int
+	headCap   int
+	tailCap   int
+	head      []byte
+	tail      []byte
+	tailStart int
+	tailLen   int
+	total     int64
 }
-func closeRemove(file *os.File) {
-	if file == nil {
+
+func newBoundedCaptureWriter(limit int) *boundedCaptureWriter {
+	if limit < 0 {
+		limit = 0
+	}
+	headCap := limit / 2
+	return &boundedCaptureWriter{
+		limit:   limit,
+		headCap: headCap,
+		tailCap: limit - headCap,
+		head:    make([]byte, 0, headCap),
+		tail:    make([]byte, limit-headCap),
+	}
+}
+
+func (w *boundedCaptureWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	original := len(p)
+	w.total += int64(original)
+	if w.limit == 0 {
+		return original, nil
+	}
+	if len(w.head) < w.headCap {
+		n := minInt(len(p), w.headCap-len(w.head))
+		w.head = append(w.head, p[:n]...)
+		p = p[n:]
+	}
+	w.writeTail(p)
+	return original, nil
+}
+
+func (w *boundedCaptureWriter) writeTail(p []byte) {
+	if w.tailCap == 0 || len(p) == 0 {
 		return
 	}
-	name := file.Name()
-	_ = file.Close()
-	_ = os.Remove(name)
+	if len(p) >= w.tailCap {
+		copy(w.tail, p[len(p)-w.tailCap:])
+		w.tailStart = 0
+		w.tailLen = w.tailCap
+		return
+	}
+	for len(p) > 0 {
+		if w.tailLen < w.tailCap {
+			idx := (w.tailStart + w.tailLen) % w.tailCap
+			n := minInt(len(p), w.tailCap-w.tailLen)
+			n = minInt(n, w.tailCap-idx)
+			copy(w.tail[idx:idx+n], p[:n])
+			w.tailLen += n
+			p = p[n:]
+			continue
+		}
+		n := minInt(len(p), w.tailCap-w.tailStart)
+		copy(w.tail[w.tailStart:w.tailStart+n], p[:n])
+		w.tailStart = (w.tailStart + n) % w.tailCap
+		p = p[n:]
+	}
 }
+
+func (w *boundedCaptureWriter) tailBytes() []byte {
+	if w.tailLen == 0 {
+		return nil
+	}
+	out := make([]byte, w.tailLen)
+	first := minInt(w.tailLen, w.tailCap-w.tailStart)
+	copy(out, w.tail[w.tailStart:w.tailStart+first])
+	if first < w.tailLen {
+		copy(out[first:], w.tail[:w.tailLen-first])
+	}
+	return out
+}
+
+func (w *boundedCaptureWriter) Result() (string, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	tail := w.tailBytes()
+	if w.total <= int64(w.limit) {
+		raw := append(append([]byte(nil), w.head...), tail...)
+		return string(bytes.ToValidUTF8(raw, []byte("�"))), false
+	}
+	marker := fmt.Sprintf("\n... chrootctl capture truncated %d bytes ...\n", w.total-int64(w.limit))
+	raw := append(append(append([]byte(nil), w.head...), []byte(marker)...), tail...)
+	return string(bytes.ToValidUTF8(raw, []byte("�"))), true
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func exitCode(state *os.ProcessState, err error) int {
 	if state != nil {
 		return state.ExitCode()

@@ -11,7 +11,10 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.RemoteException
 import com.topjohnwu.superuser.ipc.RootService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -33,7 +36,6 @@ class RootServiceClient(private val context: Context) : BridgeTransport {
     private class BinderHealthCheckException(message: String) : IllegalStateException(message)
 
     private val bindMutex = Mutex()
-    private val callMutex = Mutex()
     private val stateLock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -43,17 +45,28 @@ class RootServiceClient(private val context: Context) : BridgeTransport {
 
     override suspend fun serviceInfo(): String = call("Service status", BinderReplayPolicy.SAFE_READ_ONLY) { it.serviceInfo() }
     override suspend fun capabilities(): String = call("Capabilities", BinderReplayPolicy.SAFE_READ_ONLY) { it.capabilities() }
-    override suspend fun query(requestJson: String): String = call("Query", BinderReplayPolicy.SAFE_READ_ONLY) { it.query(requestJson) }
-    override suspend fun preview(requestJson: String): String = call("Preview", BinderReplayPolicy.SAFE_READ_ONLY) { it.preview(requestJson) }
+    override suspend fun query(requestJson: String): String = checkedRequestCall("Query", requestJson, BinderReplayPolicy.SAFE_READ_ONLY) { it.query(requestJson) }
+    override suspend fun preview(requestJson: String): String = checkedRequestCall("Preview", requestJson, BinderReplayPolicy.SAFE_READ_ONLY) { it.preview(requestJson) }
     override suspend fun operationState(operationId: String): String = call("Operation status", BinderReplayPolicy.SAFE_READ_ONLY) { it.operationState(operationId) }
     override suspend fun reconcileOperation(operationId: String): String = call("Reconcile operation", BinderReplayPolicy.NEVER) { it.reconcileOperation(operationId) }
     override suspend fun cancelOperation(operationId: String): String = call("Cancel operation", BinderReplayPolicy.NEVER) { it.cancelOperation(operationId) }
     override suspend fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String =
-        call("Import transfer", BinderReplayPolicy.NEVER, TRANSFER_TIMEOUT_MS) { it.transferFromDescriptor(requestJson, input) }
+        transferCall("Import transfer", requestJson) { it.transferFromDescriptor(requestJson, input) }
     override suspend fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String =
-        call("Export transfer", BinderReplayPolicy.NEVER, TRANSFER_TIMEOUT_MS) { it.transferToDescriptor(requestJson, output) }
+        transferCall("Export transfer", requestJson) { it.transferToDescriptor(requestJson, output) }
+    override suspend fun transferState(requestId: String): String {
+        val response = call("Transfer status", BinderReplayPolicy.SAFE_READ_ONLY) { it.transferState(requestId) }
+        requireResponseRequestId("Transfer status", response, requestId)
+        return response
+    }
+    override suspend fun cancelTransfer(requestId: String): String {
+        val response = call("Cancel transfer", BinderReplayPolicy.NEVER) { it.cancelTransfer(requestId) }
+        requireResponseRequestId("Cancel transfer", response, requestId)
+        return response
+    }
 
     override suspend fun streamOperation(requestJson: String, onEvent: suspend (String) -> Unit): String {
+        requireRequestBudget("Start operation", requestJson)
         val pipe = ParcelFileDescriptor.createPipe()
         val readSide = pipe[0]
         val writeSide = pipe[1]
@@ -72,16 +85,22 @@ class RootServiceClient(private val context: Context) : BridgeTransport {
         var operationId: String? = null
         var terminalEventSeen = false
         withContext(Dispatchers.IO) {
-            ParcelFileDescriptor.AutoCloseInputStream(readSide).bufferedReader().use { reader ->
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    if (line.isBlank()) continue
-                    runCatching { JSONObject(line) }.getOrNull()?.let { event ->
-                        operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: operationId
-                        terminalEventSeen = terminalEventSeen || isTerminalEvent(event.optString("type"))
+            val closeOnCancel = coroutineContext[Job]?.invokeOnCompletion { runCatching { readSide.close() } }
+            try {
+                ParcelFileDescriptor.AutoCloseInputStream(readSide).bufferedReader().use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        if (line.isBlank()) continue
+                        runCatching { JSONObject(line) }.getOrNull()?.let { event ->
+                            operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: operationId
+                            terminalEventSeen = terminalEventSeen || isTerminalEvent(event.optString("type"))
+                        }
+                        onEvent(line)
                     }
-                    onEvent(line)
                 }
+            } finally {
+                closeOnCancel?.dispose()
+                runCatching { readSide.close() }
             }
         }
         if (!terminalEventSeen) {
@@ -159,31 +178,174 @@ class RootServiceClient(private val context: Context) : BridgeTransport {
         replayPolicy: BinderReplayPolicy,
         timeoutMs: Long = CALL_TIMEOUT_MS,
         block: (IChrootRootService) -> String,
-    ): String = try {
-        withTimeout(timeoutMs) {
-            callMutex.withLock {
+    ): String {
+        var usedBinder: IBinder? = null
+        return try {
+            withTimeout(timeoutMs) {
                 executeWithBinderRecovery(
                     label = label,
                     replayPolicy = replayPolicy,
                     attempt = {
                         val service = service()
-                        requireHealthyBinder(service.asBinder(), label)
+                        val binder = service.asBinder()
+                        requireHealthyBinder(binder, label)
+                        usedBinder = binder
                         withContext(Dispatchers.IO) { block(service) }
                     },
                     recover = { error ->
-                        disconnectCurrent(transportReason(label, error))
+                        disconnectIfCurrent(usedBinder, transportReason(label, error))
                     },
                     isTransportFailure = ::isBinderTransportFailure,
                     describeFailure = ::describeTransportFailure,
                 )
             }
+        } catch (error: TimeoutCancellationException) {
+            // A coroutine timeout cannot abort an in-flight synchronous Binder call.
+            // Do not tear down the process-wide connection here: unrelated calls may
+            // be healthy and the late transaction may still complete server-side.
+            throw IllegalStateException(
+                "$label timed out. The Binder transaction may still be settling; reconcile state before retrying a mutation.",
+                error,
+            )
         }
-    } catch (error: TimeoutCancellationException) {
-        disconnectCurrent("$label timed out after ${timeoutMs}ms")
-        throw IllegalStateException(
-            "$label timed out. The privileged service connection was reset; retry the action.",
-            error,
+    }
+
+    private suspend fun checkedRequestCall(
+        label: String,
+        requestJson: String,
+        replayPolicy: BinderReplayPolicy,
+        block: (IChrootRootService) -> String,
+    ): String {
+        requireRequestBudget(label, requestJson)
+        val expectedRequestId = JSONObject(requestJson).optString("requestId")
+        require(expectedRequestId.isNotBlank()) { "$label requires requestId" }
+        val response = call(label, replayPolicy, block = block)
+        requireResponseRequestId(label, response, expectedRequestId)
+        return response
+    }
+
+
+    private fun requireResponseRequestId(label: String, responseJson: String, expectedRequestId: String) {
+        val envelope = runCatching { JSONObject(responseJson) }.getOrElse {
+            throw IllegalStateException("$label returned invalid JSON before request-id correlation", it)
+        }
+        val actual = envelope.optString("requestId")
+        check(actual == expectedRequestId) {
+            "$label response requestId $actual did not match $expectedRequestId"
+        }
+    }
+
+    private fun requireRequestBudget(label: String, requestJson: String) {
+        require(requestJson.toByteArray(Charsets.UTF_8).size <= MAX_BINDER_REQUEST_BYTES) {
+            "$label request exceeds the Android Binder-safe request ceiling of $MAX_BINDER_REQUEST_BYTES bytes"
+        }
+    }
+
+    private suspend fun transferCall(
+        label: String,
+        requestJson: String,
+        block: (IChrootRootService) -> String,
+    ): String {
+        requireRequestBudget(label, requestJson)
+        val requestId = JSONObject(requestJson).optString("requestId")
+        require(requestId.isNotBlank()) { "$label requires requestId" }
+        val started = try {
+            call(label, BinderReplayPolicy.NEVER, START_TIMEOUT_MS, block)
+        } catch (error: RootServiceTransportException) {
+            return reconcileTransferAfterLoss(label, requestId, error)
+        } catch (error: IllegalStateException) {
+            return reconcileTransferAfterLoss(label, requestId, error)
+        }
+        requireResponseRequestId(label, started, requestId)
+        val startEnvelope = JSONObject(started)
+        if (!startEnvelope.optBoolean("ok")) return started
+        return try {
+            awaitTransfer(label, requestId)
+        } catch (error: CancellationException) {
+            runCatching { cancelTransfer(requestId) }
+            throw error
+        }
+    }
+
+    private suspend fun awaitTransfer(label: String, requestId: String): String {
+        var lastBytes = -1L
+        var lastServerUpdate = -1L
+        var lastProgressAt = System.currentTimeMillis()
+        while (true) {
+            val stateJson = transferState(requestId)
+            val envelope = JSONObject(stateJson)
+            if (!envelope.optBoolean("ok")) return stateJson
+            val state = envelope.optJSONObject("data") ?: return stateJson
+            val bytes = state.optLong("bytes", 0L)
+            val serverUpdate = state.optLong("updatedAt", 0L)
+            if (bytes != lastBytes || serverUpdate != lastServerUpdate) {
+                lastBytes = bytes
+                lastServerUpdate = serverUpdate
+                lastProgressAt = System.currentTimeMillis()
+            } else if (System.currentTimeMillis() - lastProgressAt > TRANSFER_STALL_TIMEOUT_MS) {
+                runCatching { cancelTransfer(requestId) }
+                throw RootServiceTransportException("$label made no transfer progress for ${TRANSFER_STALL_TIMEOUT_MS / 1000}s; cancellation was requested")
+            }
+            when (state.optString("state")) {
+                "succeeded" -> {
+                    val result = state.optJSONObject("result") ?: JSONObject()
+                    return JSONObject()
+                        .put("protocolVersion", 1)
+                        .put("requestId", requestId)
+                        .put("ok", true)
+                        .put("data", result)
+                        .put("error", JSONObject.NULL)
+                        .put("warnings", org.json.JSONArray())
+                        .put("nextSteps", org.json.JSONArray())
+                        .toString()
+                }
+                "failed", "cancelled", "interrupted" -> {
+                    return JSONObject()
+                        .put("protocolVersion", 1)
+                        .put("requestId", requestId)
+                        .put("ok", false)
+                        .put("data", JSONObject.NULL)
+                        .put(
+                            "error",
+                            JSONObject()
+                                .put("code", "TRANSFER_${state.optString("state").uppercase()}")
+                                .put("message", state.optString("error").ifBlank { "$label ${state.optString("state")}" })
+                                .put("details", JSONObject().put("bytes", state.optLong("bytes", 0L))),
+                        )
+                        .put("warnings", org.json.JSONArray())
+                        .put("nextSteps", org.json.JSONArray())
+                        .toString()
+                }
+            }
+            delay(TRANSFER_RECONCILE_DELAY_MS)
+        }
+    }
+
+    private suspend fun reconcileTransferAfterLoss(label: String, requestId: String, cause: Throwable): String {
+        if (requestId.isBlank()) throw cause
+        repeat(TRANSFER_RECONCILE_ATTEMPTS) { attempt ->
+            val state = runCatching { transferState(requestId) }.getOrNull()
+            if (state != null) {
+                val envelope = runCatching { JSONObject(state) }.getOrNull()
+                val transfer = envelope?.optJSONObject("data")
+                when (transfer?.optString("state")) {
+                    "succeeded", "failed", "cancelled", "interrupted" -> return awaitTransfer(label, requestId)
+                    "running", "cancelling", "started" -> return awaitTransfer(label, requestId)
+                }
+            }
+            if (attempt + 1 < TRANSFER_RECONCILE_ATTEMPTS) delay(TRANSFER_RECONCILE_DELAY_MS)
+        }
+        throw RootServiceTransportException(
+            "$label lost its Binder response. Request $requestId was not replayed and could not yet be reconciled; refresh transfer state before retrying.",
+            cause,
         )
+    }
+
+    private fun disconnectIfCurrent(binder: IBinder?, reason: String) {
+        if (binder == null) return
+        val isCurrent = synchronized(stateLock) { boundService?.binder === binder }
+        if (!isCurrent) return
+        clearConnection(reason)?.let(::postUnbind)
     }
 
     private suspend fun service(): IChrootRootService {
@@ -415,8 +577,11 @@ class RootServiceClient(private val context: Context) : BridgeTransport {
 
     private companion object {
         const val BIND_TIMEOUT_MS = 15_000L
-        const val CALL_TIMEOUT_MS = 30_000L
-        const val START_TIMEOUT_MS = 10_000L
-        const val TRANSFER_TIMEOUT_MS = 120_000L
+        const val CALL_TIMEOUT_MS = 60_000L
+        const val START_TIMEOUT_MS = 20_000L
+        const val MAX_BINDER_REQUEST_BYTES = 256 * 1024
+        const val TRANSFER_STALL_TIMEOUT_MS = 5 * 60_000L
+        const val TRANSFER_RECONCILE_ATTEMPTS = 3
+        const val TRANSFER_RECONCILE_DELAY_MS = 250L
     }
 }

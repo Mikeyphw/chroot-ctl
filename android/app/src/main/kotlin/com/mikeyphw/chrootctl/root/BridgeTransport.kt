@@ -18,6 +18,8 @@ public interface BridgeTransport {
     suspend fun cancelOperation(operationId: String): String
     suspend fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String
     suspend fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String
+    suspend fun transferState(requestId: String): String
+    suspend fun cancelTransfer(requestId: String): String
     suspend fun streamOperation(requestJson: String, onEvent: suspend (String) -> Unit): String
     fun close()
 }

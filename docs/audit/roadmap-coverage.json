@@ -30,7 +30,7 @@
     {
       "id": "CHR05",
       "title": "Process, signals & RootService transport",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR06",
@@ -385,7 +385,7 @@
       "title": "Cancellation/signal semantics are incomplete or inconsistent",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH12-08",
@@ -429,7 +429,7 @@
       "title": "Process timeout/termination does not reliably kill or classify the full process tree",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-05",
@@ -2250,7 +2250,7 @@
       "title": "RootService/Binder transport has ownership, serialization, timeout and FD lifecycle defects",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH15-12",
@@ -4491,7 +4491,7 @@
       "title": "Response request IDs are never correlated — MEDIUM",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH15-11",
@@ -4507,7 +4507,7 @@
       "title": "Streaming exit code and stderr diagnostics are discarded",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH16-06",
@@ -4523,7 +4523,7 @@
       "title": "Non-replay policy has no transfer outcome reconciliation",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH16-08",
@@ -4541,7 +4541,7 @@
       "supportingOverlays": [
         "CHR10"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH16-10",
@@ -4557,7 +4557,7 @@
       "title": "Cached external runtime is not re-authenticated after replacement",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-03",
@@ -4573,7 +4573,7 @@
       "title": "Runtime validation proves declared metadata, not executable architecture/interpreter",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-07",
@@ -4589,7 +4589,7 @@
       "title": "Compatibility field named “minimum” is enforced as exact equality",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-08",
@@ -4605,7 +4605,7 @@
       "title": "Runtime resolution is expensive on every bridge call",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-09",
@@ -4621,7 +4621,7 @@
       "title": "Runtime probe can exceed the client's advertised normal call timeout",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-10",
@@ -4637,7 +4637,7 @@
       "title": "Bridge envelope validator does not correlate request IDs",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-11",
@@ -4653,7 +4653,7 @@
       "title": "Output truncation is not surfaced as its own transport/protocol failure",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH17-12",
@@ -4669,7 +4669,7 @@
       "title": "A supposedly sealed runtime is only as trusted as its helper environment",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "X16-17-01",
@@ -6771,7 +6771,7 @@
       "title": "HIGH — capture limit does not bound disk usage",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH20-02",
@@ -6819,7 +6819,7 @@
       "title": "MEDIUM — foreground/background `NoCapture` semantics are inconsistent",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH20-05",
@@ -6835,7 +6835,7 @@
       "title": "LOW — captured stdout is read twice",
       "ownerOverlay": "CHR05",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH20-06",

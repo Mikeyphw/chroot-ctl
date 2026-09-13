@@ -1104,13 +1104,29 @@ func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string
 		if post == "" {
 			post = optText(p, "post_import")
 		}
-		return s.Transfer().Import(ctx, a, optText(p, "name"), defaultText(optText(p, "conflict"), "fail"), optText(p, "password"), post)
+		return s.Transfer().ImportWithControl(ctx, a, optText(p, "name"), defaultText(optText(p, "conflict"), "fail"), optText(p, "password"), post, services.TransferControl{
+			Progress: func(v any) error {
+				if e := emit(progress, v); e != nil {
+					return e
+				}
+				return cancelled(isCancelled, "Transfer import was cancelled")
+			},
+			Cancelled: isCancelled,
+		})
 	case "transfer.export":
 		n, e := reqName(p)
 		if e != nil {
 			return nil, e
 		}
-		return s.Transfer().Export(ctx, n, optText(p, "archive"), optText(p, "password"))
+		return s.Transfer().ExportWithControl(ctx, n, optText(p, "archive"), optText(p, "password"), services.TransferControl{
+			Progress: func(v any) error {
+				if e := emit(progress, v); e != nil {
+					return e
+				}
+				return cancelled(isCancelled, "Transfer export was cancelled")
+			},
+			Cancelled: isCancelled,
+		})
 	case "artifacts.cleanup":
 		return b.cleanup(ctx, p, false)
 	case "support.bundle":

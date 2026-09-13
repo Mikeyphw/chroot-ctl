@@ -167,6 +167,8 @@ Finite selectors are deterministic: chroot/user/tool/add-on values are auto-sele
 
 Zsh completion is rendered directly from the compiled CLI contract, so command families, options, choices, and completion hints cannot drift from parser/help metadata. Dynamic completion uses a read-only, non-root query path; the `chc` wrapper is a provenance-marked thin launcher and delegates all privilege decisions to the same generated CLI contract. See [`docs/cli/COMMAND_REFERENCE.md`](docs/cli/COMMAND_REFERENCE.md) for the generated exhaustive command reference.
 
+Process and privileged transport semantics are also sealed: CLI children run in managed process groups with bounded capture and cancellation/timeout classification; Android RootService uses bounded workers, request-correlated/truncation-aware bridge responses, and asynchronous journaled descriptor transfers instead of long synchronous Binder copies. Runtime reuse is generation-authenticated and sealed native entrypoints are verified as Android ARM64 ELF. See [`docs/audit/CHR05_PROCESS_TRANSPORT.md`](docs/audit/CHR05_PROCESS_TRANSPORT.md).
+
 
 ## Native Android replacement foundation
 

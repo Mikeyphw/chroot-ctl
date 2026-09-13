@@ -7,7 +7,7 @@ internal enum class BinderReplayPolicy {
 
 internal class RootServiceTransportException(
     message: String,
-    cause: Throwable,
+    cause: Throwable? = null,
 ) : IllegalStateException(message, cause)
 
 internal suspend fun <T> executeWithBinderRecovery(

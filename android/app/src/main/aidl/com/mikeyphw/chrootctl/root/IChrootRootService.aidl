@@ -14,4 +14,6 @@ interface IChrootRootService {
     String cancelOperation(String operationId);
     String transferFromDescriptor(String requestJson, in ParcelFileDescriptor input);
     String transferToDescriptor(String requestJson, in ParcelFileDescriptor output);
+    String transferState(String requestId);
+    String cancelTransfer(String requestId);
 }

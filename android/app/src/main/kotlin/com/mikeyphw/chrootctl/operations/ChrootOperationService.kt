@@ -218,13 +218,26 @@ class ChrootOperationService : Service() {
                     .put("payload", JSONObject().put("message", "Cancellation requested; waiting for the operation id.")),
                 null,
             )
+            if (activeJob?.isActive != true) resumePersistedOperation(null)
             return
         }
         activeOperationId = operationId
         state.edit { putString(KEY_OPERATION_ID, operationId) }
-        scope.launch {
-            val repository = (application as ChrootCtlApplication).container.bridgeRepository
-            repository.cancelOperation(operationId)
+        if (activeJob?.isActive == true) {
+            scope.launch {
+                val repository = (application as ChrootCtlApplication).container.bridgeRepository
+                repository.cancelOperation(operationId)
+            }
+        } else {
+            // Cancellation can be the only work after a process/service restart.
+            // Keep the foreground service alive until the durable backend journal
+            // reaches a terminal state instead of firing cancel and stopping blind.
+            activeJob = scope.launch {
+                val repository = (application as ChrootCtlApplication).container.bridgeRepository
+                repository.cancelOperation(operationId)
+                reconcileUntilTerminal(operationId, repository)
+                finishOperation()
+            }
         }
     }
 

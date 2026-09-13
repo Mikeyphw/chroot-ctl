@@ -195,19 +195,99 @@ func (s *TransferService) DeleteTemp(ctx context.Context, id, path string, all b
 	state["removed"] = removed
 	return state, nil
 }
-func sha256File(path string) (string, error) {
+
+type TransferProgress func(any) error
+
+type TransferControl struct {
+	Progress  TransferProgress
+	Cancelled func() bool
+}
+
+func (c TransferControl) check(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.Cancelled != nil && c.Cancelled() {
+		return context.Canceled
+	}
+	return nil
+}
+
+func (c TransferControl) emit(ctx context.Context, phase string, percent int, message string) error {
+	if err := c.check(ctx); err != nil {
+		return err
+	}
+	if c.Progress == nil {
+		return nil
+	}
+	return c.Progress(map[string]any{"phase": phase, "percent": percent, "message": message})
+}
+
+func transferRunner(base *sys.Runner, cancelled func() bool) sys.Runner {
+	runner := *base
+	runner.Cancelled = cancelled
+	return runner
+}
+
+func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) (int64, error) {
+	return copyWithControl(ctx, TransferControl{}, dst, src)
+}
+
+func copyWithControl(ctx context.Context, control TransferControl, dst io.Writer, src io.Reader) (int64, error) {
+	buf := make([]byte, 256*1024)
+	var total int64
+	for {
+		if err := control.check(ctx); err != nil {
+			return total, err
+		}
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			written, writeErr := dst.Write(buf[:n])
+			total += int64(written)
+			if writeErr != nil {
+				return total, writeErr
+			}
+			if written != n {
+				return total, io.ErrShortWrite
+			}
+		}
+		if readErr == io.EOF {
+			return total, nil
+		}
+		if readErr != nil {
+			return total, readErr
+		}
+	}
+}
+
+func sha256FileContext(ctx context.Context, path string) (string, error) {
+	return sha256FileControl(ctx, TransferControl{}, path)
+}
+
+func sha256FileControl(ctx context.Context, control TransferControl, path string) (string, error) {
 	f, e := os.Open(path)
 	if e != nil {
 		return "", e
 	}
 	defer f.Close()
 	h := sha256.New()
-	if _, e = io.Copy(h, f); e != nil {
+	if _, e = copyWithControl(ctx, control, h, f); e != nil {
 		return "", e
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+func sha256File(path string) (string, error) {
+	return sha256FileContext(context.Background(), path)
+}
 func (s *TransferService) Export(ctx context.Context, name, archive, password string) (model.ChrootExportResult, error) {
+	return s.ExportWithControl(ctx, name, archive, password, TransferControl{})
+}
+
+func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, password string, control TransferControl) (model.ChrootExportResult, error) {
+	if e := control.emit(ctx, "prepare", 5, "Resolving export source"); e != nil {
+		return model.ChrootExportResult{}, e
+	}
 	r, e := s.C.Registry.Get(ctx, name)
 	if e != nil || r == nil {
 		if e == nil {
@@ -252,7 +332,11 @@ func (s *TransferService) Export(ctx context.Context, name, archive, password st
 		baseArchive = strings.TrimSuffix(baseArchive, ".enc")
 	}
 	tmp := filepath.Join(filepath.Dir(archive), "."+filepath.Base(baseArchive)+fmt.Sprintf(".partial-%d", time.Now().UnixNano()))
-	res, e := rt.Runner.Run(ctx, []string{"tar", "--zstd", "-cpf", tmp, "-C", filepath.Dir(root), filepath.Base(root), filepath.Base(manifestPath)}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
+	if e = control.emit(ctx, "archive", 25, "Creating compressed archive"); e != nil {
+		return model.ChrootExportResult{}, e
+	}
+	runner := transferRunner(rt.Runner, control.Cancelled)
+	res, e := runner.Run(ctx, []string{"tar", "--zstd", "-cpf", tmp, "-C", filepath.Dir(root), filepath.Base(root), filepath.Base(manifestPath)}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
 	if e != nil {
 		return model.ChrootExportResult{}, e
 	}
@@ -262,7 +346,11 @@ func (s *TransferService) Export(ctx context.Context, name, archive, password st
 	finalTmp := tmp
 	if password != "" {
 		enc := tmp + ".enc"
-		res, e = rt.Runner.Run(ctx, []string{"openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-in", tmp, "-out", enc, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
+		if e = control.emit(ctx, "encrypt", 60, "Encrypting archive"); e != nil {
+			os.Remove(tmp)
+			return model.ChrootExportResult{}, e
+		}
+		res, e = runner.Run(ctx, []string{"openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-in", tmp, "-out", enc, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
 		if e != nil || res.ReturnCode != 0 {
 			os.Remove(tmp)
 			return model.ChrootExportResult{}, fmt.Errorf("archive encryption failed: %s", strings.TrimSpace(res.Stderr))
@@ -270,10 +358,19 @@ func (s *TransferService) Export(ctx context.Context, name, archive, password st
 		os.Remove(tmp)
 		finalTmp = enc
 	}
+	if e = control.emit(ctx, "commit", 75, "Publishing completed archive"); e != nil {
+		return model.ChrootExportResult{}, e
+	}
 	if e = os.Rename(finalTmp, archive); e != nil {
 		return model.ChrootExportResult{}, e
 	}
-	sum, e := sha256File(archive)
+	// Publication is the cancellation boundary. After the archive is visible,
+	// finish checksum/registration deterministically rather than reporting a
+	// cancelled operation that has already committed output. CHR10 owns making
+	// archive+sidecar+artifact registration one atomic publication transaction.
+	commitCtx := context.WithoutCancel(ctx)
+	_ = control.emit(commitCtx, "checksum", 85, "Computing archive checksum")
+	sum, e := sha256FileContext(commitCtx, archive)
 	if e != nil {
 		return model.ChrootExportResult{}, e
 	}
@@ -283,6 +380,7 @@ func (s *TransferService) Export(ctx context.Context, name, archive, password st
 	}
 	_, _ = s.RegisterArtifact(ctx, archive, "chroot-export", name, nil, map[string]any{"encrypted": password != ""})
 	_, _ = s.RegisterArtifact(ctx, sumPath, "checksum", name, nil, map[string]any{"for": archive})
+	_ = control.emit(context.WithoutCancel(ctx), "complete", 100, "Export completed")
 	return model.ChrootExportResult{Name: name, Archive: archive, Arch: ptrText(r.Arch), Checksum: &sum, ChecksumPath: &sumPath, Encrypted: password != ""}, nil
 }
 func exclusiveJSON(path string, v any) error {
@@ -301,6 +399,10 @@ func exclusiveJSON(path string, v any) error {
 	return ce
 }
 func (s *TransferService) Inspect(ctx context.Context, archive, password string) (model.ChrootArchiveInspection, error) {
+	return s.InspectWithControl(ctx, archive, password, TransferControl{})
+}
+
+func (s *TransferService) InspectWithControl(ctx context.Context, archive, password string, control TransferControl) (model.ChrootArchiveInspection, error) {
 	archive, _ = filepath.Abs(archive)
 	st, e := os.Stat(archive)
 	if e != nil {
@@ -312,24 +414,24 @@ func (s *TransferService) Inspect(ctx context.Context, archive, password string)
 	}
 	defer os.RemoveAll(tmp)
 	source := archive
+	rt, _ := s.C.RuntimeFor("", "")
+	runner := transferRunner(rt.Runner, control.Cancelled)
 	if strings.HasSuffix(archive, ".enc") {
 		if password == "" {
 			return model.ChrootArchiveInspection{}, fmt.Errorf("password required for encrypted archive")
 		}
 		source = filepath.Join(tmp, strings.TrimSuffix(filepath.Base(archive), ".enc"))
-		rt, _ := s.C.RuntimeFor("", "")
-		res, e := rt.Runner.Run(ctx, []string{"openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", archive, "-out", source, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
+		res, e := runner.Run(ctx, []string{"openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", archive, "-out", source, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
 		if e != nil || res.ReturnCode != 0 {
 			return model.ChrootArchiveInspection{}, fmt.Errorf("encrypted archive could not be opened")
 		}
 	}
 	tarPath := filepath.Join(tmp, "archive.tar")
-	rt, _ := s.C.RuntimeFor("", "")
-	res, e := rt.Runner.Run(ctx, []string{"zstd", "-d", "-q", "-f", source, "-o", tarPath}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
+	res, e := runner.Run(ctx, []string{"zstd", "-d", "-q", "-f", source, "-o", tarPath}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
 	if e != nil || res.ReturnCode != 0 {
 		return model.ChrootArchiveInspection{}, fmt.Errorf("zstd decompression failed: %s", strings.TrimSpace(res.Stderr))
 	}
-	manifest, size, e := inspectTar(tarPath)
+	manifest, size, e := inspectTar(ctx, control, tarPath)
 	if e != nil {
 		return model.ChrootArchiveInspection{}, e
 	}
@@ -348,7 +450,7 @@ func (s *TransferService) Inspect(ctx context.Context, archive, password string)
 		if len(fields) > 0 {
 			x := fields[0]
 			sum = &x
-			actual, _ := sha256File(archive)
+			actual, _ := sha256FileControl(ctx, control, archive)
 			ok := actual == x
 			verified = &ok
 			sumPathPtr = &sumPath
@@ -359,7 +461,7 @@ func (s *TransferService) Inspect(ctx context.Context, archive, password string)
 	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: stringMetadataAny(manifest["metadata"]), SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
 }
 func stringMetadataAny(v any) map[string]string { m, _ := v.(map[string]any); return stringMetadata(m) }
-func inspectTar(path string) (map[string]any, int64, error) {
+func inspectTar(ctx context.Context, control TransferControl, path string) (map[string]any, int64, error) {
 	f, e := os.Open(path)
 	if e != nil {
 		return nil, 0, e
@@ -369,6 +471,9 @@ func inspectTar(path string) (map[string]any, int64, error) {
 	var manifest map[string]any
 	var total int64
 	for {
+		if err := control.check(ctx); err != nil {
+			return nil, 0, err
+		}
 		h, e := tr.Next()
 		if e == io.EOF {
 			break
@@ -404,20 +509,25 @@ func max64(a, b int64) int64 {
 }
 
 func (s *TransferService) materializeTar(ctx context.Context, archive, password, tmp string) (string, error) {
+	return s.materializeTarWithControl(ctx, archive, password, tmp, TransferControl{})
+}
+
+func (s *TransferService) materializeTarWithControl(ctx context.Context, archive, password, tmp string, control TransferControl) (string, error) {
 	source := archive
 	rt, _ := s.C.RuntimeFor("", "")
+	runner := transferRunner(rt.Runner, control.Cancelled)
 	if strings.HasSuffix(archive, ".enc") {
 		if password == "" {
 			return "", fmt.Errorf("password required for encrypted archive")
 		}
 		source = filepath.Join(tmp, "decrypted.tar.zst")
-		res, e := rt.Runner.Run(ctx, []string{"openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", archive, "-out", source, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
+		res, e := runner.Run(ctx, []string{"openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", archive, "-out", source, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
 		if e != nil || res.ReturnCode != 0 {
 			return "", fmt.Errorf("encrypted archive could not be opened")
 		}
 	}
 	tarPath := filepath.Join(tmp, "archive.tar")
-	res, e := rt.Runner.Run(ctx, []string{"zstd", "-d", "-q", "-f", source, "-o", tarPath}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
+	res, e := runner.Run(ctx, []string{"zstd", "-d", "-q", "-f", source, "-o", tarPath}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
 	if e != nil || res.ReturnCode != 0 {
 		return "", fmt.Errorf("zstd decompression failed: %s", strings.TrimSpace(res.Stderr))
 	}
@@ -451,7 +561,7 @@ func safeExtractParent(root, path string) error {
 	}
 	return nil
 }
-func extractRootFromTar(tarPath, destRoot, pathName string) error {
+func extractRootFromTar(ctx context.Context, control TransferControl, tarPath, destRoot, pathName string) error {
 	if pathName == "" || filepath.Base(pathName) != pathName {
 		return fmt.Errorf("invalid archive root name: %q", pathName)
 	}
@@ -463,6 +573,9 @@ func extractRootFromTar(tarPath, destRoot, pathName string) error {
 	tr := tar.NewReader(f)
 	prefix := pathName + "/"
 	for {
+		if err := control.check(ctx); err != nil {
+			return err
+		}
 		h, e := tr.Next()
 		if e == io.EOF {
 			break
@@ -510,7 +623,7 @@ func extractRootFromTar(tarPath, destRoot, pathName string) error {
 			if e != nil {
 				return e
 			}
-			_, copyErr := io.Copy(out, tr)
+			_, copyErr := copyWithControl(ctx, control, out, tr)
 			closeErr := out.Close()
 			if copyErr != nil {
 				return copyErr
@@ -548,8 +661,15 @@ func extractRootFromTar(tarPath, destRoot, pathName string) error {
 	return nil
 }
 func (s *TransferService) Import(ctx context.Context, archive, name, conflict, password, postImport string) (model.ChrootImportResult, error) {
+	return s.ImportWithControl(ctx, archive, name, conflict, password, postImport, TransferControl{})
+}
+
+func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, conflict, password, postImport string, control TransferControl) (model.ChrootImportResult, error) {
+	if e := control.emit(ctx, "inspect", 5, "Inspecting import archive"); e != nil {
+		return model.ChrootImportResult{}, e
+	}
 	archive, _ = filepath.Abs(archive)
-	inspection, e := s.Inspect(ctx, archive, password)
+	inspection, e := s.InspectWithControl(ctx, archive, password, control)
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
@@ -618,7 +738,10 @@ func (s *TransferService) Import(ctx context.Context, archive, name, conflict, p
 		return model.ChrootImportResult{}, e
 	}
 	defer os.RemoveAll(tmp)
-	tarPath, e := s.materializeTar(ctx, archive, password, tmp)
+	if e = control.emit(ctx, "materialize", 25, "Materializing import archive"); e != nil {
+		return model.ChrootImportResult{}, e
+	}
+	tarPath, e := s.materializeTarWithControl(ctx, archive, password, tmp, control)
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
@@ -627,7 +750,13 @@ func (s *TransferService) Import(ctx context.Context, archive, name, conflict, p
 		return model.ChrootImportResult{}, e
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
-	if e = extractRootFromTar(tarPath, stage, inspection.PathName); e != nil {
+	if e = control.emit(ctx, "extract", 50, "Extracting root filesystem"); e != nil {
+		return model.ChrootImportResult{}, e
+	}
+	if e = extractRootFromTar(ctx, control, tarPath, stage, inspection.PathName); e != nil {
+		return model.ChrootImportResult{}, e
+	}
+	if e = control.emit(ctx, "commit", 80, "Committing imported root filesystem"); e != nil {
 		return model.ChrootImportResult{}, e
 	}
 	mutation, e := s.C.Registry.BeginFSMutation(ctx, "chroot.import", name, archive, target, map[string]any{"stage": stage, "had_existing": exists(target)})
@@ -682,5 +811,6 @@ func (s *TransferService) Import(ctx context.Context, archive, name, conflict, p
 	if postImport == "" {
 		postImport = "none"
 	}
+	_ = control.emit(context.WithoutCancel(ctx), "complete", 100, "Import completed")
 	return model.ChrootImportResult{Name: name, Archive: archive, Arch: arch, Path: target, ChecksumVerified: inspection.ChecksumVerified, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: inspection.Encrypted, ValidationOk: &validationOK, ValidationSummary: summary, PostImportAction: postImport}, nil
 }

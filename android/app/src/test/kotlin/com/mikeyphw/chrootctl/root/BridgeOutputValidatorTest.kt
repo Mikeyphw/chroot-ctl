@@ -55,4 +55,29 @@ class BridgeOutputValidatorTest {
 
         assertEquals(current, selected)
     }
+    @Test
+    fun `truncated bridge output is a transport failure`() {
+        val result = BridgeProcessResult(
+            exitCode = 0,
+            output = """{"protocolVersion":1,"requestId":"test","ok":true,"data":{},"error":null,"warnings":[],"nextSteps":[]}""",
+            truncated = true,
+        )
+
+        val validation = validateBridgeProcessResult(runtime, result, "test") as BridgeOutputValidation.Rejected
+
+        assertEquals("BRIDGE_RESPONSE_TRUNCATED", validation.code)
+    }
+
+    @Test
+    fun `request id mismatch is rejected`() {
+        val result = BridgeProcessResult(
+            exitCode = 0,
+            output = """{"protocolVersion":1,"requestId":"other","ok":true,"data":{},"error":null,"warnings":[],"nextSteps":[]}""",
+        )
+
+        val validation = validateBridgeProcessResult(runtime, result, "expected") as BridgeOutputValidation.Rejected
+
+        assertEquals("BRIDGE_REQUEST_ID_MISMATCH", validation.code)
+    }
+
 }

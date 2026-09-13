@@ -200,6 +200,19 @@ func ValidateAuditCoverage(root string) error {
 	if d02 := canonical["D02"]; d02.Status != "planned" || !containsString(d02.SupportingOverlays, "CHR04") {
 		return fmt.Errorf("CHR04 wrapper dry-run support must be recorded without prematurely closing D02")
 	}
+
+	chr05 := []string{"D05", "D06", "D31", "U081", "U082", "U083", "U084", "U085", "U086", "U087", "U088", "U089", "U090", "U091", "U092", "U223", "U226", "U227"}
+	chr05Sources := 0
+	for _, id := range chr05 {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR05" || finding.Status == "planned" {
+			return fmt.Errorf("CHR05 finding %s is not marked implemented", id)
+		}
+		chr05Sources += len(finding.SourceFindings)
+	}
+	if chr05Sources != 35 {
+		return fmt.Errorf("CHR05 source-manifestation coverage=%d, want 35", chr05Sources)
+	}
 	return nil
 }
 

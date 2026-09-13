@@ -491,7 +491,7 @@ func (s *UnitService) Stop(ctx context.Context, name, chroot string) (map[string
 		rt, _ := s.C.RuntimeFor(ch, u.User)
 		rootUser := u.Root || strings.EqualFold(u.User, "root")
 		argv, env, _ := rt.Controller.ServiceInvocation(rootUser, u.ExecStop, u.X11, u.User)
-		_, _ = rt.Runner.Run(ctx, argv, sys.RunOptions{Env: env, AllowFailure: true, MaxCaptureBytes: 128 * 1024})
+		_, _ = rt.Runner.Run(ctx, argv, sys.RunOptions{Env: env, AllowFailure: true, MaxCaptureBytes: 128 * 1024, Timeout: 30 * time.Second})
 	}
 	_ = sys.SignalProcessIdentity(*id, syscall.SIGTERM)
 	deadline := time.Now().Add(2 * time.Second)

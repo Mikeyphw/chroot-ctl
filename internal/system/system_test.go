@@ -204,3 +204,89 @@ func TestCHR04DryRunRootReexecFailsClosedIfCalledDirectly(t *testing.T) {
 		t.Fatal("dry-run root reexec must not silently report success")
 	}
 }
+
+func TestCHR05RunAttachedTimeoutWinsOverZeroExit(t *testing.T) {
+	runner := Runner{}
+	result, err := runner.RunAttached(
+		context.Background(),
+		[]string{"sh", "-c", "trap 'exit 0' TERM; while :; do sleep 1; done"},
+		RunOptions{Timeout: 150 * time.Millisecond},
+	)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !result.TimedOut {
+		t.Fatalf("expected timedOut result: %#v", result)
+	}
+}
+
+func TestCHR05RunAttachedAllowFailurePreservesCancellationFlag(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+	result, err := Runner{}.RunAttached(
+		ctx,
+		[]string{"sh", "-c", "trap 'exit 0' TERM; while :; do sleep 1; done"},
+		RunOptions{AllowFailure: true},
+	)
+	if err != nil {
+		t.Fatalf("allow-failure should preserve status without converting cancellation into a runner error: result=%#v err=%v", result, err)
+	}
+	if !result.Cancelled {
+		t.Fatalf("expected cancelled result: %#v", result)
+	}
+}
+
+func TestCHR05NoCaptureIsConsistentDiscardPolicy(t *testing.T) {
+	for _, background := range []bool{false, true} {
+		policy, err := (RunOptions{NoCapture: true}).outputPolicy(background)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if policy != OutputDiscard {
+			t.Fatalf("background=%v policy=%q", background, policy)
+		}
+	}
+	if _, err := (RunOptions{OutputPolicy: OutputCapture}).outputPolicy(true); err == nil {
+		t.Fatal("background capture must be rejected rather than silently changing semantics")
+	}
+}
+
+func TestCHR05BoundedCaptureWriterRetainsHeadTailWithoutUnboundedSpool(t *testing.T) {
+	w := newBoundedCaptureWriter(10)
+	payload := strings.Repeat("x", 1024*1024) + "TAIL!"
+	if _, err := io.WriteString(w, payload); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated := w.Result()
+	if !truncated || !strings.Contains(got, "truncated") || !strings.HasSuffix(got, "TAIL!") {
+		t.Fatalf("truncated=%v output=%q", truncated, got)
+	}
+	if len(w.head)+w.tailLen > 10 {
+		t.Fatalf("capture storage grew past limit: head=%d tail=%d", len(w.head), w.tailLen)
+	}
+}
+
+func TestCHR05TimeoutTerminatesWholeProcessGroup(t *testing.T) {
+	runner := Runner{}
+	result, err := runner.Run(
+		context.Background(),
+		[]string{"sh", "-c", "(trap '' TERM; while :; do sleep 1; done) & wait"},
+		RunOptions{Timeout: 150 * time.Millisecond, AllowFailure: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.TimedOut || result.ProcessGroupID == nil {
+		t.Fatalf("result=%#v", result)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && processGroupAlive(*result.ProcessGroupID) {
+		time.Sleep(25 * time.Millisecond)
+	}
+	if processGroupAlive(*result.ProcessGroupID) {
+		t.Fatalf("process group %d survived timeout", *result.ProcessGroupID)
+	}
+}
