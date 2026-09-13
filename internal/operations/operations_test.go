@@ -129,3 +129,70 @@ func TestEventEmitterFailureCannotRewriteSuccess(t *testing.T) {
 		t.Fatalf("state=%s err=%v", done.State, e)
 	}
 }
+
+func TestRecoverEnumeratesActiveRecordsBeyondRecentHistoryWindow(t *testing.T) {
+	m, err := NewManager(t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := m.Create(CreateOptions{Kind: "test.stale.deep", Title: "stale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.State = "running"
+	pid, pg, start, boot := 999999999, 999999999, int64(1), "dead-boot"
+	stale.PID, stale.ProcessGroupID, stale.ProcessStartTime, stale.ProcessBootID = &pid, &pg, &start, &boot
+	if err := m.Journal.Save(&stale); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 1005; i++ {
+		r, e := m.Create(CreateOptions{Kind: "test.terminal", Title: "terminal"})
+		if e != nil {
+			t.Fatal(e)
+		}
+		r.State = "succeeded"
+		if e = m.Journal.Save(&r); e != nil {
+			t.Fatal(e)
+		}
+	}
+	ids, err := m.Recover(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, id := range ids {
+		if id == stale.OperationID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("stale active operation %s was skipped", stale.OperationID)
+	}
+	got, err := m.Get(stale.OperationID, 10)
+	if err != nil || got.State != "interrupted" {
+		t.Fatalf("state=%s err=%v", got.State, err)
+	}
+}
+
+func TestExecuteFailsWhenTerminalJournalCannotBePersisted(t *testing.T) {
+	m, err := NewManager(t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Create(CreateOptions{Kind: "test.durability", Title: "durability"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Execute(context.Background(), &r, func(p ProgressFunc, c func() bool) (any, error) {
+		if err := os.RemoveAll(m.Journal.RecordsDir); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(m.Journal.RecordsDir, []byte("block terminal save"), 0600); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true}, nil
+	}, nil)
+	if err == nil {
+		t.Fatal("terminal persistence failure was acknowledged as success")
+	}
+}

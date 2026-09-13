@@ -63,7 +63,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidatePrivilegeTrustBoundary(root); e != nil {
 			return e
 		}
-		return ValidateProcessTransportBoundary(root)
+		if e := ValidateProcessTransportBoundary(root); e != nil {
+			return e
+		}
+		return ValidateMutationEngineGateA(root)
 	}); err != nil {
 		return err
 	}

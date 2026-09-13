@@ -71,6 +71,19 @@ func WithFileOpener(opener func(string) (io.WriteCloser, error)) Option {
 	return func(settings *settings) { settings.open = opener }
 }
 
+// ConfigureReadOnly creates a console-only logger without touching log paths.
+func ConfigureReadOnly(verbose bool, options ...Option) *Logger {
+	cfg := settings{console: os.Stderr, now: time.Now, open: func(string) (io.WriteCloser, error) { return nil, os.ErrPermission }}
+	for _, option := range options {
+		option(&cfg)
+	}
+	level := Info
+	if verbose {
+		level = Debug
+	}
+	return &Logger{console: cfg.console, consoleLevel: level, now: cfg.now}
+}
+
 func Configure(logFile string, verbose bool, options ...Option) *Logger {
 	cfg := settings{
 		console: os.Stderr,

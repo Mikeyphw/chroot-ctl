@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/operations"
 	"chrootctl/internal/services"
 	"chrootctl/internal/version"
@@ -14,6 +15,7 @@ import (
 type Dispatcher struct {
 	Backend    Backend
 	Operations *operations.Manager
+	Mutations  *mutation.Engine
 	Previews   *PreviewStore
 }
 
@@ -23,21 +25,31 @@ func NewDispatcher(backend Backend, manager *operations.Manager, previews *Previ
 func NewServicesDispatcher(s *services.Container) (*Dispatcher, error) {
 	root := filepath.Join(filepath.Dir(s.BaseConfig.DatabasePath), "operations")
 	m := s.Operations
-	if m == nil {
+	var p *PreviewStore
+	if !s.DryRun {
+		if m == nil {
+			var e error
+			m, e = operations.NewManager(root, false)
+			if e != nil {
+				return nil, e
+			}
+		}
 		var e error
-		m, e = operations.NewManager(root, false)
+		p, e = NewPreviewStore(filepath.Join(filepath.Dir(root), "previews"))
 		if e != nil {
 			return nil, e
 		}
 	}
-	p, e := NewPreviewStore(filepath.Join(filepath.Dir(root), "previews"))
-	if e != nil {
-		return nil, e
-	}
-	return NewDispatcher(NewServicesBackend(s), m, p), nil
+	d := NewDispatcher(NewServicesBackend(s), m, p)
+	d.Mutations = s.Mutations
+	return d, nil
 }
 func (d *Dispatcher) Capabilities() map[string]any {
-	return map[string]any{"protocolVersion": ProtocolVersion, "backendVersion": version.Version, "operations": Capabilities(), "operationRoot": d.Operations.Journal.Root, "transport": []string{"json", "ndjson"}, "arbitraryShell": false}
+	root := ""
+	if d.Operations != nil {
+		root = d.Operations.Journal.Root
+	}
+	return map[string]any{"protocolVersion": ProtocolVersion, "backendVersion": version.Version, "operations": Capabilities(), "operationRoot": root, "transport": []string{"json", "ndjson"}, "arbitraryShell": false}
 }
 func (d *Dispatcher) State(ctx context.Context, id string) Response {
 	v, e := d.Backend.State(ctx)
@@ -114,9 +126,11 @@ func (d *Dispatcher) Run(ctx context.Context, r Request, emit func(map[string]an
 		emitBridgeError(emit, r.RequestID, e)
 		return 2
 	}
-	if _, e := d.Operations.Recover(ctx); e != nil {
-		emitBridgeError(emit, r.RequestID, e)
-		return 2
+	if d.Operations != nil {
+		if _, e := d.Operations.Recover(ctx); e != nil {
+			emitBridgeError(emit, r.RequestID, e)
+			return 2
+		}
 	}
 	if r.Operation == "operations.retry" {
 		return d.runRetry(ctx, r, emit)
@@ -200,6 +214,28 @@ func (d *Dispatcher) runSpec(ctx context.Context, r Request, op string, p map[st
 		target = &targetText
 	}
 	request := map[string]any{"protocolVersion": r.ProtocolVersion, "requestId": r.RequestID, "operation": op, "payload": p}
+	if d.Operations == nil {
+		if d.Mutations != nil {
+			if _, recoveryErr := d.Mutations.RecoverLocked(ctx, targetText); recoveryErr != nil {
+				emitBridgeError(emit, r.RequestID, recoveryErr)
+				return 2
+			}
+		}
+		_, invokeErr := d.Backend.Invoke(ctx, "operation", op, p, func(v any) error {
+			if emit == nil {
+				return nil
+			}
+			if m, ok := v.(map[string]any); ok {
+				return emit(m)
+			}
+			return nil
+		}, func() bool { return false })
+		if invokeErr != nil {
+			emitBridgeError(emit, r.RequestID, invokeErr)
+			return 2
+		}
+		return 0
+	}
 	rec, e := d.Operations.Create(operations.CreateOptions{Kind: op, Title: defaultTitle(p, spec.Description), TargetName: target, Request: request, Retry: request, LockScope: spec.LockScope, ParentOperationID: parent})
 	if e != nil {
 		emitBridgeError(emit, r.RequestID, e)
@@ -221,6 +257,15 @@ func (d *Dispatcher) runSpec(ctx context.Context, r Request, op string, p map[st
 		return nil
 	}
 	completed, e := d.Operations.Execute(ctx, &rec, func(progress operations.ProgressFunc, cancel func() bool) (any, error) {
+		if d.Mutations != nil {
+			recoveryTarget := targetText
+			if spec.LockScope == "global" {
+				recoveryTarget = ""
+			}
+			if _, recoveryErr := d.Mutations.RecoverLocked(ctx, recoveryTarget); recoveryErr != nil {
+				return nil, recoveryErr
+			}
+		}
 		return d.Backend.Invoke(ctx, "operation", op, p, func(v any) error { return progress(v) }, cancel)
 	}, eventSink)
 	if e != nil {
@@ -264,6 +309,9 @@ func jsonMarshal(v any) ([]byte, error)   { return json.Marshal(v) }
 func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
 
 func (d *Dispatcher) Operation(id string) Response {
+	if d.Operations == nil {
+		return Failure(id, protocolError("DRY_RUN_NO_JOURNAL", "Dry-run operations are not persisted", nil))
+	}
 	r, e := d.Operations.Get(id, 200)
 	if e != nil {
 		return Failure(id, protocolError("UNKNOWN_OPERATION_ID", "Unknown operation: "+id, nil))
@@ -271,6 +319,9 @@ func (d *Dispatcher) Operation(id string) Response {
 	return Success(id, r)
 }
 func (d *Dispatcher) Cancel(id string) Response {
+	if d.Operations == nil {
+		return Failure(id, protocolError("DRY_RUN_NO_JOURNAL", "Dry-run operations are not persisted", nil))
+	}
 	r, e := d.Operations.Cancel(id)
 	if e != nil {
 		return Failure(id, protocolError("UNKNOWN_OPERATION_ID", "Unknown operation: "+id, nil))
@@ -278,6 +329,9 @@ func (d *Dispatcher) Cancel(id string) Response {
 	return Success(id, r)
 }
 func (d *Dispatcher) Reconcile(ctx context.Context, id string) Response {
+	if d.Operations == nil {
+		return Failure(id, protocolError("DRY_RUN_NO_JOURNAL", "Dry-run operations are not persisted", nil))
+	}
 	r, e := d.Operations.Reconcile(ctx, id)
 	if e != nil {
 		return Failure(id, protocolError("UNKNOWN_OPERATION_ID", "Unknown operation: "+id, nil))

@@ -2,13 +2,16 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"chrootctl/internal/catalog"
 	"chrootctl/internal/config"
 	"chrootctl/internal/controller"
 	"chrootctl/internal/logging"
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/operations"
 	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
@@ -34,36 +37,73 @@ type Container struct {
 	Registry   *registry.Registry
 	Logger     *logging.Logger
 	Operations *operations.Manager
+	Mutations  *mutation.Engine
 	DryRun     bool
 }
 
 func New(configPath string, dryRun, verbose bool) (*Container, error) {
-	cfg, err := config.Load(configPath, config.WithChrootCounter(registry.CountChroots))
+	load := config.Load
+	if dryRun {
+		load = config.LoadReadOnly
+	}
+	cfg, err := load(configPath, config.WithChrootCounter(registry.CountChroots))
 	if err != nil {
 		return nil, err
 	}
-	reg, err := registry.Open(cfg.DatabasePath)
+	var reg *registry.Registry
+	if dryRun {
+		if _, statErr := os.Stat(cfg.DatabasePath); statErr == nil {
+			reg, err = registry.OpenReadOnly(cfg.DatabasePath)
+		} else if errors.Is(statErr, os.ErrNotExist) {
+			reg, err = registry.OpenEphemeral()
+		} else {
+			err = statErr
+		}
+	} else {
+		reg, err = registry.Open(cfg.DatabasePath)
+	}
 	if err != nil {
 		return nil, err
 	}
-	logger := logging.Configure(cfg.LogFile, verbose)
-	ops, err := operations.NewManager(filepath.Join(filepath.Dir(cfg.DatabasePath), "operations"), false)
-	if err != nil {
-		reg.Close()
-		logger.Close()
-		return nil, err
+	var logger *logging.Logger
+	if dryRun {
+		logger = logging.ConfigureReadOnly(verbose)
+	} else {
+		logger = logging.Configure(cfg.LogFile, verbose)
 	}
-	return &Container{BaseConfig: cfg, Registry: reg, Logger: logger, Operations: ops, DryRun: dryRun}, nil
+	opRoot := filepath.Join(filepath.Dir(cfg.DatabasePath), "operations")
+	var ops *operations.Manager
+	if !dryRun {
+		ops, err = operations.NewManager(opRoot, false)
+		if err != nil {
+			reg.Close()
+			logger.Close()
+			return nil, err
+		}
+	}
+	return &Container{BaseConfig: cfg, Registry: reg, Logger: logger, Operations: ops, Mutations: mutation.New(reg, opRoot, dryRun), DryRun: dryRun}, nil
 }
 func NewWith(cfg config.ChrootConfig, reg *registry.Registry, logger *logging.Logger, dryRun bool) (*Container, error) {
 	if reg == nil {
 		return nil, fmt.Errorf("services registry is nil")
 	}
-	ops, err := operations.NewManager(filepath.Join(filepath.Dir(cfg.DatabasePath), "operations"), false)
-	if err != nil {
-		return nil, err
+	opRoot := filepath.Join(filepath.Dir(cfg.DatabasePath), "operations")
+	var ops *operations.Manager
+	var err error
+	if dryRun {
+		if err = reg.SetQueryOnly(context.Background(), true); err != nil {
+			return nil, err
+		}
+		if logger == nil {
+			logger = logging.ConfigureReadOnly(false)
+		}
+	} else {
+		ops, err = operations.NewManager(opRoot, false)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return &Container{BaseConfig: cfg, Registry: reg, Logger: logger, Operations: ops, DryRun: dryRun}, nil
+	return &Container{BaseConfig: cfg, Registry: reg, Logger: logger, Operations: ops, Mutations: mutation.New(reg, opRoot, dryRun), DryRun: dryRun}, nil
 }
 func (c *Container) Close() error {
 	var first error
@@ -187,6 +227,12 @@ func (c *Container) Services() *UnitService             { return &UnitService{C:
 func (c *Container) ModuleBuilder() *ModuleBuildService { return &ModuleBuildService{C: c} }
 func (c *Container) RecoverOperations(ctx context.Context) ([]string, error) {
 	return c.Operations.Recover(ctx)
+}
+func (c *Container) RecoverFilesystemMutations(ctx context.Context, target string) (mutation.RecoveryReport, error) {
+	if c.Mutations == nil {
+		return mutation.RecoveryReport{}, nil
+	}
+	return c.Mutations.RecoverLocked(ctx, target)
 }
 func (c *Container) catalog(kind string, cfg config.ChrootConfig) catalog.Catalog {
 	return catalog.Catalog{Kind: kind, Config: &cfg}

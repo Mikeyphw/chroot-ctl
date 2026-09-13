@@ -103,6 +103,21 @@ func OpenReadOnly(path string) (*sql.DB, error) {
 	return db, nil
 }
 
+// OpenMemory creates a private in-memory database for zero-write planning paths.
+func OpenMemory() (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", "file:chrootctl-dryrun?mode=memory&cache=private&_foreign_keys=on")
+	if err != nil {
+		return nil, fmt.Errorf("open in-memory sqlite registry: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping in-memory sqlite registry: %w", err)
+	}
+	return db, nil
+}
+
 func Open(path string) (*sql.DB, error) {
 	dsn, err := DSN(path)
 	if err != nil {

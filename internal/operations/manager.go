@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"chrootctl/internal/apperrors"
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/redaction"
 	sys "chrootctl/internal/system"
 )
@@ -87,12 +88,17 @@ func (m *Manager) Create(o CreateOptions) (Record, error) {
 	}
 	r.LogPath = o.LogPath
 	r.LockKey = key
+	r.LockScope = o.LockScope
 	r.CreatedAt = float64(m.Now().UnixNano()) / 1e9
-	_ = m.Journal.ClearCancel(id)
+	if e = m.Journal.ClearCancel(id); e != nil {
+		return Record{}, fmt.Errorf("clear stale cancellation marker: %w", e)
+	}
 	if e = m.Journal.Save(&r); e != nil {
 		return Record{}, e
 	}
-	_ = m.event(&r, "operation_queued", map[string]any{"state": r.State}, nil)
+	if e = m.event(&r, "operation_queued", map[string]any{"state": r.State}, nil); e != nil {
+		return Record{}, fmt.Errorf("persist queued operation event: %w", e)
+	}
 	return r, nil
 }
 func (m *Manager) cancelled(id string) bool { return m.Journal.CancellationRequested(id) }
@@ -131,22 +137,30 @@ func (m *Manager) RegisterProcess(r *Record, id sys.ProcessIdentity, emit EventE
 	return m.event(r, "operation_process_started", v, emit)
 }
 func (m *Manager) Execute(ctx context.Context, r *Record, runner RunnerFunc, emit EventEmitter) (Record, error) {
-	var lock *Lock
-	if r.LockKey != nil {
-		lock = NewLock(m.Journal.LocksDir, *r.LockKey, r.OperationID)
-		if e := lock.Acquire(); e != nil {
-			var b BlockedError
+	var lease *mutation.Lease
+	if r.LockScope != "" && r.LockScope != "none" {
+		target := ""
+		if r.TargetName != nil {
+			target = *r.TargetName
+		}
+		var e error
+		lease, _, e = mutation.AcquireScope(ctx, m.Journal.LocksDir, r.LockScope, target, r.OperationID)
+		if e != nil {
+			var b mutation.BlockedError
 			if errors.As(e, &b) {
-				return m.finishBlocked(r, b, emit), nil
+				rec, perr := m.finishBlocked(r, BlockedError{LockKey: b.LockKey, BlockingOperationID: b.BlockingOperationID}, emit)
+				return rec, perr
 			}
 			return *r, e
 		}
-		defer lock.Release()
+		defer lease.Release()
 	}
 	if e := m.setRunning(r); e != nil {
 		return *r, e
 	}
-	_ = m.event(r, "operation_started", map[string]any{"state": r.State}, emit)
+	if e := m.event(r, "operation_started", map[string]any{"state": r.State}, emit); e != nil {
+		return *r, fmt.Errorf("persist operation start event: %w", e)
+	}
 	progress := func(update any) error {
 		if m.cancelled(r.OperationID) {
 			return ErrCancelled
@@ -199,17 +213,17 @@ func (m *Manager) Execute(ctx context.Context, r *Record, runner RunnerFunc, emi
 		return m.event(r, "operation_progress", event, emit)
 	}
 	if m.cancelled(r.OperationID) {
-		return m.finishCancelled(r, "Cancellation requested", emit), nil
+		return m.finishCancelled(r, "Cancellation requested", emit)
 	}
 	result, e := runner(progress, func() bool { return m.cancelled(r.OperationID) || ctx.Err() != nil })
 	if e != nil {
 		if errors.Is(e, ErrCancelled) || m.cancelled(r.OperationID) || errors.Is(e, context.Canceled) {
-			return m.finishCancelled(r, "Cancellation requested", emit), nil
+			return m.finishCancelled(r, "Cancellation requested", emit)
 		}
-		return m.finishFailed(r, e, emit), nil
+		return m.finishFailed(r, e, emit)
 	}
 	if m.cancelled(r.OperationID) || ctx.Err() != nil {
-		return m.finishCancelled(r, "Cancellation requested", emit), nil
+		return m.finishCancelled(r, "Cancellation requested", emit)
 	}
 	r.State = "succeeded"
 	now := float64(m.Now().UnixNano()) / 1e9
@@ -219,9 +233,9 @@ func (m *Manager) Execute(ctx context.Context, r *Record, runner RunnerFunc, emi
 	r.ProgressPercent = &p
 	r.ResultPayload = redaction.Value(normalize(result))
 	r.NextSteps = nextSteps(result)
-	_ = m.Journal.Save(r)
-	_ = m.event(r, "operation_succeeded", map[string]any{"result": r.ResultPayload}, emit)
-	_ = m.Journal.ClearCancel(r.OperationID)
+	if e := m.persistTerminal(r, "operation_succeeded", map[string]any{"result": r.ResultPayload}, emit); e != nil {
+		return *r, e
+	}
 	return *r, nil
 }
 func nextSteps(v any) []string {
@@ -231,7 +245,7 @@ func nextSteps(v any) []string {
 	}
 	return stringSlice(m["next_steps"])
 }
-func (m *Manager) finishBlocked(r *Record, e BlockedError, emit EventEmitter) Record {
+func (m *Manager) finishBlocked(r *Record, e BlockedError, emit EventEmitter) (Record, error) {
 	r.State = "blocked"
 	now := float64(m.Now().UnixNano()) / 1e9
 	r.FinishedAt = &now
@@ -245,10 +259,10 @@ func (m *Manager) finishBlocked(r *Record, e BlockedError, emit EventEmitter) Re
 		r.NextSteps = append(r.NextSteps, "Review operation "+e.BlockingOperationID+".")
 	}
 	r.NextSteps = append(r.NextSteps, "Retry after the conflicting operation finishes.")
-	_ = m.Journal.Save(r)
-	_ = m.event(r, "operation_blocked", map[string]any{"message": msg}, emit)
-	_ = m.Journal.ClearCancel(r.OperationID)
-	return *r
+	if err := m.persistTerminal(r, "operation_blocked", map[string]any{"message": msg}, emit); err != nil {
+		return *r, err
+	}
+	return *r, nil
 }
 func errorCode(e error) string {
 	var app apperrors.AppError
@@ -262,7 +276,7 @@ func errorCode(e error) string {
 	}
 	return "OPERATION_FAILED"
 }
-func (m *Manager) finishFailed(r *Record, e error, emit EventEmitter) Record {
+func (m *Manager) finishFailed(r *Record, e error, emit EventEmitter) (Record, error) {
 	r.State = "failed"
 	now := float64(m.Now().UnixNano()) / 1e9
 	r.FinishedAt = &now
@@ -274,12 +288,12 @@ func (m *Manager) finishFailed(r *Record, e error, emit EventEmitter) Record {
 	}
 	r.ErrorCode = &code
 	r.Error = &msg
-	_ = m.Journal.Save(r)
-	_ = m.event(r, "operation_failed", map[string]any{"code": code, "message": msg}, emit)
-	_ = m.Journal.ClearCancel(r.OperationID)
-	return *r
+	if err := m.persistTerminal(r, "operation_failed", map[string]any{"code": code, "message": msg}, emit); err != nil {
+		return *r, errors.Join(e, err)
+	}
+	return *r, nil
 }
-func (m *Manager) finishCancelled(r *Record, msg string, emit EventEmitter) Record {
+func (m *Manager) finishCancelled(r *Record, msg string, emit EventEmitter) (Record, error) {
 	r.State = "cancelled"
 	now := float64(m.Now().UnixNano()) / 1e9
 	r.FinishedAt = &now
@@ -287,10 +301,22 @@ func (m *Manager) finishCancelled(r *Record, msg string, emit EventEmitter) Reco
 	code := "CANCELLED"
 	r.ErrorCode = &code
 	r.Error = &msg
-	_ = m.Journal.Save(r)
-	_ = m.event(r, "operation_cancelled", map[string]any{"message": msg}, emit)
-	_ = m.Journal.ClearCancel(r.OperationID)
-	return *r
+	if err := m.persistTerminal(r, "operation_cancelled", map[string]any{"message": msg}, emit); err != nil {
+		return *r, err
+	}
+	return *r, nil
+}
+func (m *Manager) persistTerminal(r *Record, kind string, payload map[string]any, emit EventEmitter) error {
+	if err := m.Journal.Save(r); err != nil {
+		return fmt.Errorf("persist terminal operation state: %w", err)
+	}
+	if err := m.event(r, kind, payload, emit); err != nil {
+		return fmt.Errorf("persist terminal operation event: %w", err)
+	}
+	if err := m.Journal.ClearCancel(r.OperationID); err != nil {
+		return fmt.Errorf("clear terminal cancellation marker: %w", err)
+	}
+	return nil
 }
 func (m *Manager) event(r *Record, kind string, payload map[string]any, emit EventEmitter) error {
 	r.EventSequence++
@@ -340,8 +366,12 @@ func (m *Manager) Cancel(id string) (Record, error) {
 	}
 	r.State = "cancelling"
 	r.ProgressText = "Cancelling"
-	_ = m.Journal.Save(&r)
-	_ = m.event(&r, "operation_cancelling", map[string]any{}, nil)
+	if e = m.Journal.Save(&r); e != nil {
+		return Record{}, fmt.Errorf("persist cancelling state: %w", e)
+	}
+	if e = m.event(&r, "operation_cancelling", map[string]any{}, nil); e != nil {
+		return Record{}, fmt.Errorf("persist cancelling event: %w", e)
+	}
 	signalled := false
 	for i := len(r.ChildProcesses) - 1; i >= 0; i-- {
 		if p := sys.ProcessIdentityFromMap(r.ChildProcesses[i]); p != nil {
@@ -356,8 +386,8 @@ func (m *Manager) Cancel(id string) (Record, error) {
 		}
 	}
 	if !signalled && host != nil && !sys.ProcessIdentityMatches(*host) {
-		x := m.finishCancelled(&r, "Cancellation requested after the operation process exited", nil)
-		return x, nil
+		x, err := m.finishCancelled(&r, "Cancellation requested after the operation process exited", nil)
+		return x, err
 	}
 	return r, nil
 }

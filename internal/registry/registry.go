@@ -89,11 +89,29 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_expires ON artifacts(expires_at);
 
 var ErrNotFound = errors.New("registry record not found")
 
+const (
+	FSMutationPending        = "pending"
+	FSMutationStaged         = "staged"
+	FSMutationPromoting      = "promoting"
+	FSMutationCommitted      = "committed"
+	FSMutationCleanupDebt    = "cleanup_debt"
+	FSMutationComplete       = "complete"
+	FSMutationRolledBack     = "rolled_back"
+	FSMutationFailed         = "failed"
+	FSMutationRepairRequired = "repair_required"
+)
+
+var validFSMutationStates = map[string]bool{
+	FSMutationPending: true, FSMutationStaged: true, FSMutationPromoting: true, FSMutationCommitted: true,
+	FSMutationCleanupDebt: true, FSMutationComplete: true, FSMutationRolledBack: true, FSMutationFailed: true, FSMutationRepairRequired: true,
+}
+
 type Registry struct {
-	path string
-	db   *sql.DB
-	mu   sync.Mutex
-	now  func() time.Time
+	path      string
+	db        *sql.DB
+	mu        sync.Mutex
+	now       func() time.Time
+	queryOnly bool
 }
 
 type Chroot struct {
@@ -230,6 +248,26 @@ func Open(path string) (*Registry, error) {
 	return r, nil
 }
 
+// OpenEphemeral returns a schema-complete in-memory registry used by dry-run on
+// hosts where no persistent registry exists yet. It never creates a filesystem file.
+func OpenEphemeral() (*Registry, error) {
+	db, err := sqlitecompat.OpenMemory()
+	if err != nil {
+		return nil, err
+	}
+	r := &Registry{path: ":memory:", db: db, now: time.Now, queryOnly: false}
+	if _, err := db.Exec(Schema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize ephemeral registry schema: %w", err)
+	}
+	if _, err := db.Exec("PRAGMA query_only = ON"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	r.queryOnly = true
+	return r, nil
+}
+
 func OpenReadOnly(path string) (*Registry, error) {
 	if path == "" {
 		return nil, errors.New("registry database path is empty")
@@ -245,12 +283,26 @@ func OpenReadOnly(path string) (*Registry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Registry{path: path, db: db, now: time.Now}, nil
+	return &Registry{path: path, db: db, now: time.Now, queryOnly: true}, nil
 }
 
 func (r *Registry) Close() error { return r.db.Close() }
-func (r *Registry) DB() *sql.DB  { return r.db }
-func (r *Registry) Path() string { return r.path }
+func (r *Registry) SetQueryOnly(ctx context.Context, enabled bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v := "OFF"
+	if enabled {
+		v = "ON"
+	}
+	if _, err := r.db.ExecContext(ctx, "PRAGMA query_only="+v); err != nil {
+		return err
+	}
+	r.queryOnly = enabled
+	return nil
+}
+func (r *Registry) QueryOnly() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.queryOnly }
+func (r *Registry) DB() *sql.DB     { return r.db }
+func (r *Registry) Path() string    { return r.path }
 
 func CountChroots(path string) (int, error) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
@@ -869,18 +921,25 @@ func (r *Registry) BeginFSMutation(ctx context.Context, kind, target, source, de
 	return id, err
 }
 func (r *Registry) UpdateFSMutation(ctx context.Context, id, state string, detail map[string]any) error {
+	if state == "completed" {
+		state = FSMutationComplete
+	}
+	if !validFSMutationStates[state] {
+		return fmt.Errorf("invalid filesystem mutation state: %s", state)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var raw string
 	err := r.db.QueryRowContext(ctx, "SELECT detail_json FROM fs_mutations WHERE mutation_id = ?", id).Scan(&raw)
-	merged := map[string]any{}
-	if err == nil {
-		merged = safeJSONDict(raw, "fs_mutations.detail_json")
-		if corrupt, _ := merged["_corrupt"].(bool); corrupt {
-			merged = map[string]any{}
-		}
-	} else if !errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
 		return err
+	}
+	merged := safeJSONDict(raw, "fs_mutations.detail_json")
+	if corrupt, _ := merged["_corrupt"].(bool); corrupt {
+		merged = map[string]any{}
 	}
 	for k, v := range detail {
 		merged[k] = v
@@ -890,8 +949,18 @@ func (r *Registry) UpdateFSMutation(ctx context.Context, id, state string, detai
 		return err
 	}
 	now := float64(r.now().UnixNano()) / 1e9
-	_, err = r.db.ExecContext(ctx, "UPDATE fs_mutations SET state = ?, detail_json = ?, updated_at = ? WHERE mutation_id = ?", state, payload, now, id)
-	return err
+	res, err := r.db.ExecContext(ctx, "UPDATE fs_mutations SET state = ?, detail_json = ?, updated_at = ? WHERE mutation_id = ?", state, payload, now, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrNotFound
+	}
+	return nil
 }
 func scanFSMutation(scanner interface{ Scan(...any) error }) (FSMutation, error) {
 	var m FSMutation
@@ -904,9 +973,9 @@ func scanFSMutation(scanner interface{ Scan(...any) error }) (FSMutation, error)
 }
 func (r *Registry) PendingFSMutations(ctx context.Context, limit int) ([]FSMutation, error) {
 	if limit <= 0 {
-		limit = 100
+		limit = 1000000
 	}
-	rows, err := r.db.QueryContext(ctx, "SELECT mutation_id,kind,target,source_path,destination_path,state,detail_json,created_at,updated_at FROM fs_mutations WHERE state IN ('pending','staged','promoting','committed') ORDER BY updated_at ASC LIMIT ?", limit)
+	rows, err := r.db.QueryContext(ctx, "SELECT mutation_id,kind,target,source_path,destination_path,state,detail_json,created_at,updated_at FROM fs_mutations WHERE state IN ('pending','staged','promoting','committed','cleanup_debt','repair_required') ORDER BY updated_at ASC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}

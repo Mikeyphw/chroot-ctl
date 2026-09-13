@@ -642,18 +642,27 @@ func (a *App) clipboard(ctx context.Context) error {
 	case "clipboard", "clipboard daemon":
 		return errors.New("clipboard subcommand is required")
 	case "clipboard daemon start":
+		if a.Services.DryRun {
+			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.daemon.start", "socket": paths.SocketPath})
+		}
 		v, e := clipboard.StartDaemon(ctx, cfg, runner, paths)
 		if e != nil {
 			return e
 		}
 		return a.emit("", v)
 	case "clipboard daemon stop":
+		if a.Services.DryRun {
+			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.daemon.stop", "pidFile": paths.PIDFile})
+		}
 		return a.emit("", clipboard.StopDaemon(paths.PIDFile))
 	case "clipboard daemon status":
 		v := clipboard.DaemonStatus(paths.PIDFile)
 		v["socket"] = paths.SocketPath
 		return a.emit("", v)
 	case "clipboard daemon run":
+		if a.Services.DryRun {
+			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.daemon.run", "socket": paths.SocketPath})
+		}
 		return clipboard.RunDaemon(ctx, cfg, runner, paths)
 	case "clipboard doctor":
 		return a.emit("", clipboard.Doctor(cfg, paths))
@@ -669,6 +678,9 @@ func (a *App) clipboard(ctx context.Context) error {
 		socket := a.Inv.String("socket")
 		if socket == "" {
 			socket = clipboard.ChrootSocket
+		}
+		if a.Services.DryRun {
+			return a.emit("", map[string]any{"dryRun": true, "action": "clipboard.set", "socket": socket, "bytes": len(text)})
 		}
 		v, e := clipboard.SocketSet(ctx, socket, text)
 		if e != nil {
@@ -1046,6 +1058,9 @@ func (a *App) magisk(ctx context.Context) error {
 		targets = all
 	}
 	opts := modulepkg.Options{OutputDir: a.Inv.String("output"), ZipPath: a.Inv.String("zip_path"), NativeRuntimeDir: a.Inv.String("native_runtime_dir"), StartupTargets: targets}
+	if a.Services.DryRun {
+		return a.emit("Magisk module", map[string]any{"dryRun": true, "output_dir": opts.OutputDir, "archive_path": opts.ZipPath, "startup_targets": targets})
+	}
 	if err := modulepkg.Render(opts); err != nil {
 		return err
 	}

@@ -118,7 +118,7 @@ func (c *Controller) run(ctx context.Context, args []string, opt sys.RunOptions)
 
 func (c *Controller) Mount(ctx context.Context) model.OperationResult {
 	r := model.OperationResult{}
-	if err := sys.RequireRoot(); err != nil {
+	if err := c.Runner.RequireRoot(); err != nil {
 		r.AddFailure(err.Error())
 		return r
 	}
@@ -165,7 +165,7 @@ func (c *Controller) Mount(ctx context.Context) model.OperationResult {
 }
 func (c *Controller) Unmount(ctx context.Context) model.OperationResult {
 	r := model.OperationResult{}
-	if err := sys.RequireRoot(); err != nil {
+	if err := c.Runner.RequireRoot(); err != nil {
 		r.AddFailure(err.Error())
 		return r
 	}
@@ -203,7 +203,7 @@ func (c *Controller) FixTTY(ctx context.Context) model.OperationResult {
 }
 func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResult {
 	r := model.OperationResult{}
-	if err := sys.RequireRoot(); err != nil {
+	if err := c.Runner.RequireRoot(); err != nil {
 		r.AddFailure(err.Error())
 		return r
 	}
@@ -228,7 +228,7 @@ func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResul
 }
 func (c *Controller) BindHostDevices(ctx context.Context) model.OperationResult {
 	r := model.OperationResult{}
-	if err := sys.RequireRoot(); err != nil {
+	if err := c.Runner.RequireRoot(); err != nil {
 		r.AddFailure(err.Error())
 		return r
 	}
@@ -354,7 +354,7 @@ func requireResult(label string, r model.OperationResult) error {
 	return fmt.Errorf("%s failed: %s", label, detail)
 }
 func (c *Controller) Prepare(ctx context.Context, x11 bool) error {
-	if err := sys.RequireRoot(); err != nil {
+	if err := c.Runner.RequireRoot(); err != nil {
 		return err
 	}
 	if err := requireResult("mount", c.Mount(ctx)); err != nil {

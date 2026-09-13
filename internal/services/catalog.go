@@ -3,6 +3,8 @@ package services
 import (
 	"chrootctl/internal/catalog"
 	"chrootctl/internal/model"
+	"chrootctl/internal/mutation"
+	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
 	"context"
 	"fmt"
@@ -88,9 +90,30 @@ func (s *CatalogService) Apply(ctx context.Context, names []string, progress fun
 				return out, e
 			}
 		}
-		r, e := c.Apply(ctx, name, rt.Config, rt.Runner, s.C.Registry)
-		if e != nil {
-			return out, e
+		if s.C.DryRun {
+			r, applyErr := c.Apply(ctx, name, rt.Config, rt.Runner, s.C.Registry)
+			if applyErr != nil {
+				return out, applyErr
+			}
+			out = append(out, r)
+			continue
+		}
+		tx, beginErr := s.C.Mutations.Begin(ctx, mutation.Spec{Kind: "catalog.apply", Target: s.Name, Scope: "target", Detail: map[string]any{"catalog_kind": s.Kind, "entry": name}})
+		if beginErr != nil {
+			return out, beginErr
+		}
+		if beginErr = tx.Transition(ctx, registry.FSMutationPromoting, map[string]any{"catalog_kind": s.Kind, "entry": name}); beginErr != nil {
+			return out, beginErr
+		}
+		r, applyErr := c.Apply(ctx, name, rt.Config, rt.Runner, s.C.Registry)
+		if applyErr != nil {
+			return out, tx.Fail(ctx, applyErr, map[string]any{"catalog_kind": s.Kind, "entry": name})
+		}
+		if beginErr = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"catalog_kind": s.Kind, "entry": name}); beginErr != nil {
+			return out, fmt.Errorf("catalog apply committed but mutation journal commit failed: %w", beginErr)
+		}
+		if beginErr = tx.Complete(ctx, map[string]any{"catalog_kind": s.Kind, "entry": name}); beginErr != nil {
+			return out, fmt.Errorf("catalog apply committed but terminal journal persistence failed: %w", beginErr)
 		}
 		out = append(out, r)
 	}

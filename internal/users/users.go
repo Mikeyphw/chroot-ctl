@@ -80,7 +80,7 @@ func ValidatePassword(p string) (string, error) {
 	return p, nil
 }
 func (m *Manager) installed(ctx context.Context) error {
-	if e := sys.RequireRoot(); e != nil {
+	if e := m.Runner.RequireRoot(); e != nil {
 		return e
 	}
 	if m.Registry == nil {
@@ -319,7 +319,7 @@ func (m *Manager) ShowID(username string) (model.UserIdStatus, error) {
 	return status, nil
 }
 func (m *Manager) SyncID(ctx context.Context, username string, fixOwnership, allowPending bool) (model.UserIdSyncResult, error) {
-	if e := sys.RequireRoot(); e != nil {
+	if e := m.Runner.RequireRoot(); e != nil {
 		return model.UserIdSyncResult{}, e
 	}
 	if username == "" {

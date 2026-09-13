@@ -591,6 +591,12 @@ func (r Runner) terminateCommand(cmd *exec.Cmd, identity *ProcessIdentity) {
 }
 
 func IsRoot() bool { return os.Geteuid() == 0 }
+func (r *Runner) RequireRoot() error {
+	if r != nil && r.DryRun {
+		return nil
+	}
+	return RequireRoot()
+}
 func RequireRoot() error {
 	if !IsRoot() {
 		return errors.New("root privileges required")
@@ -704,24 +710,32 @@ func (r Runner) ReexecWithSudo(ctx context.Context, argv []string) (int, error) 
 	return 0, fmt.Errorf("sudo re-exec failed: %w", err)
 }
 
+var trustedReexecExecutable = func() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if !androidHost() {
+		return exe, nil
+	}
+	trusted := firstExecutable(
+		"/system/bin/chrootctl",
+		"/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",
+		"/data/adb/ksu/modules/chrootctl-magisk/system/bin/chrootctl",
+	)
+	if trusted == "" {
+		return "", errors.New("trusted active chrootctl runtime is unavailable for root re-exec")
+	}
+	return trusted, nil
+}
+
 // ReexecArgv returns an exact re-exec argv for the args supplied to cli.Run.
 // On Android, privileged re-exec is allowed only through the active/root-managed
 // production executable, never a Termux-writable development binary.
 func ReexecArgv(args []string) ([]string, error) {
-	exe, err := os.Executable()
+	exe, err := trustedReexecExecutable()
 	if err != nil {
 		return nil, err
-	}
-	if androidHost() {
-		trusted := firstExecutable(
-			"/system/bin/chrootctl",
-			"/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",
-			"/data/adb/ksu/modules/chrootctl-magisk/system/bin/chrootctl",
-		)
-		if trusted == "" {
-			return nil, errors.New("trusted active chrootctl runtime is unavailable for root re-exec")
-		}
-		exe = trusted
 	}
 	return append([]string{exe}, args...), nil
 }

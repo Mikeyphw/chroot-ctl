@@ -35,7 +35,7 @@
     {
       "id": "CHR06",
       "title": "Universal mutation engine",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR07",
@@ -167,7 +167,7 @@
       "supportingOverlays": [
         "CHR04"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-02",
@@ -246,7 +246,7 @@
       "title": "Normal CLI mutations bypass shared target/global locking",
       "ownerOverlay": "CHR06",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CRUD-09",
@@ -6675,7 +6675,7 @@
       "title": "HIGH: operation recovery only scans newest 1000 records",
       "ownerOverlay": "CHR06",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "APP-OPS-01",
@@ -6691,7 +6691,7 @@
       "title": "HIGH: chroot remove marks mutation completed before registry deletion",
       "ownerOverlay": "CHR06",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI18-05",
@@ -6707,7 +6707,7 @@
       "title": "HIGH: transfer import does not persist backup path before the critical rename window",
       "ownerOverlay": "CHR06",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI18-08",
@@ -6723,7 +6723,7 @@
       "title": "MEDIUM/HIGH: install promotion intentionally leaves `committed` cleanup debt, but nobody consumes it",
       "ownerOverlay": "CHR06",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI18-09",
@@ -6739,7 +6739,7 @@
       "title": "MEDIUM: journal update errors are routinely discarded",
       "ownerOverlay": "CHR06",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI18-10",

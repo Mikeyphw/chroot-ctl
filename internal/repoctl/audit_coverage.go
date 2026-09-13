@@ -197,8 +197,8 @@ func ValidateAuditCoverage(root string) error {
 	if chr04Sources != 22 {
 		return fmt.Errorf("CHR04 source-manifestation coverage=%d, want 22", chr04Sources)
 	}
-	if d02 := canonical["D02"]; d02.Status != "planned" || !containsString(d02.SupportingOverlays, "CHR04") {
-		return fmt.Errorf("CHR04 wrapper dry-run support must be recorded without prematurely closing D02")
+	if d02 := canonical["D02"]; !containsString(d02.SupportingOverlays, "CHR04") {
+		return fmt.Errorf("CHR04 wrapper dry-run support must remain recorded on D02")
 	}
 
 	chr05 := []string{"D05", "D06", "D31", "U081", "U082", "U083", "U084", "U085", "U086", "U087", "U088", "U089", "U090", "U091", "U092", "U223", "U226", "U227"}
@@ -212,6 +212,22 @@ func ValidateAuditCoverage(root string) error {
 	}
 	if chr05Sources != 35 {
 		return fmt.Errorf("CHR05 source-manifestation coverage=%d, want 35", chr05Sources)
+	}
+
+	chr06 := []string{"D02", "D03", "U217", "U218", "U219", "U220", "U221"}
+	chr06Sources := 0
+	for _, id := range chr06 {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR06" || finding.Status == "planned" {
+			return fmt.Errorf("CHR06 finding %s is not marked implemented", id)
+		}
+		chr06Sources += len(finding.SourceFindings)
+	}
+	if chr06Sources != 19 {
+		return fmt.Errorf("CHR06 source-manifestation coverage=%d, want 19", chr06Sources)
+	}
+	if d04 := canonical["D04"]; d04.OwnerOverlay != "CHR07" || d04.Status != "planned" || !containsString(d04.SupportingOverlays, "CHR06") {
+		return fmt.Errorf("CHR06 must provide D04 transaction/recovery foundation without prematurely closing CHR07-owned D04")
 	}
 	return nil
 }

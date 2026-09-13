@@ -3,13 +3,16 @@ package services
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"chrootctl/internal/model"
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/validation"
@@ -144,22 +147,83 @@ func (s *ChrootService) Remove(ctx context.Context, name string) (model.ChrootRe
 	if e != nil {
 		return model.ChrootRemovalResult{}, e
 	}
-	if !s.C.DryRun {
-		mutation, e := s.C.Registry.BeginFSMutation(ctx, "chroot-remove", name, root, "", map[string]any{})
-		if e != nil {
+	if s.C.DryRun {
+		return model.ChrootRemovalResult{Name: name, Removed: true, UnmountedSuccess: un.Success, UnmountedFailed: un.Failed}, nil
+	}
+	tomb := filepath.Join(filepath.Dir(root), fmt.Sprintf(".%s.chrootctl-remove-%d", filepath.Base(root), time.Now().UnixNano()))
+	tx, e := s.C.Mutations.Begin(ctx, mutation.Spec{Kind: "chroot-remove", Target: name, Source: root, Destination: tomb, Scope: "target", Detail: map[string]any{"tombstone": tomb}})
+	if e != nil {
+		return model.ChrootRemovalResult{}, e
+	}
+	if e = tx.Transition(ctx, registry.FSMutationStaged, map[string]any{"tombstone": tomb}); e != nil {
+		return model.ChrootRemovalResult{}, e
+	}
+	if e = os.Rename(root, tomb); e != nil {
+		return model.ChrootRemovalResult{}, tx.Fail(ctx, e, map[string]any{"tombstone": tomb})
+	}
+	if e = mutation.SyncDir(filepath.Dir(root)); e != nil {
+		rollbackErr := os.Rename(tomb, root)
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(filepath.Dir(root))
+		}
+		if rollbackErr == nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRolledBack, map[string]any{"sync_error": e.Error()}); u != nil {
+				return model.ChrootRemovalResult{}, errors.Join(e, u)
+			}
 			return model.ChrootRemovalResult{}, e
 		}
-		if e = os.RemoveAll(root); e != nil {
-			_ = s.C.Registry.UpdateFSMutation(ctx, mutation, "failed", map[string]any{"error": e.Error()})
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"sync_error": e.Error(), "rollback_error": rollbackErr.Error()}); u != nil {
+			return model.ChrootRemovalResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootRemovalResult{}, errors.Join(e, rollbackErr)
+	}
+	if e = tx.Transition(ctx, registry.FSMutationPromoting, map[string]any{"tombstone": tomb}); e != nil {
+		rollbackErr := os.Rename(tomb, root)
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(filepath.Dir(root))
+		}
+		if rollbackErr == nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRolledBack, map[string]any{"journal_error": e.Error()}); u != nil {
+				return model.ChrootRemovalResult{}, errors.Join(e, u)
+			}
 			return model.ChrootRemovalResult{}, e
 		}
-		_ = s.C.Registry.UpdateFSMutation(ctx, mutation, "completed", map[string]any{})
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"journal_error": e.Error(), "rollback_error": rollbackErr.Error()}); u != nil {
+			return model.ChrootRemovalResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootRemovalResult{}, errors.Join(e, rollbackErr)
 	}
 	if e = s.C.Registry.Delete(ctx, name); e != nil {
-		return model.ChrootRemovalResult{}, e
+		rollbackErr := os.Rename(tomb, root)
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(filepath.Dir(root))
+		}
+		if rollbackErr == nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRolledBack, map[string]any{"registry_error": e.Error()}); u != nil {
+				return model.ChrootRemovalResult{}, errors.Join(e, u)
+			}
+			return model.ChrootRemovalResult{}, e
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"registry_error": e.Error(), "rollback_error": rollbackErr.Error()}); u != nil {
+			return model.ChrootRemovalResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootRemovalResult{}, errors.Join(e, rollbackErr)
+	}
+	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"tombstone": tomb}); e != nil {
+		return model.ChrootRemovalResult{}, fmt.Errorf("chroot registry deletion committed but mutation journal commit failed: %w", e)
+	}
+	if e = os.RemoveAll(tomb); e != nil {
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCleanupDebt, map[string]any{"cleanup_error": e.Error(), "tombstone": tomb}); u != nil {
+			return model.ChrootRemovalResult{}, errors.Join(e, u)
+		}
+		return model.ChrootRemovalResult{Name: name, Removed: true, UnmountedSuccess: un.Success, UnmountedFailed: un.Failed}, nil
+	}
+	if e = tx.Complete(ctx, map[string]any{"tombstone": tomb}); e != nil {
+		return model.ChrootRemovalResult{}, fmt.Errorf("chroot removal committed but terminal journal persistence failed: %w", e)
 	}
 	return model.ChrootRemovalResult{Name: name, Removed: true, UnmountedSuccess: un.Success, UnmountedFailed: un.Failed}, nil
 }
+
 func (s *ChrootService) Rename(ctx context.Context, oldName, newName string) (model.ChrootRenameResult, error) {
 	oldName, e := validation.ChrootNameField(oldName, "chroot name")
 	if e != nil {
@@ -187,25 +251,79 @@ func (s *ChrootService) Rename(ctx context.Context, oldName, newName string) (mo
 		return model.ChrootRenameResult{}, fmt.Errorf("unknown chroot: %s", oldName)
 	}
 	oldPath := resolved.RootPath
-	// Rename stays within the registry-owned parent. A config override/default for
-	// the destination name must never redirect the filesystem mutation.
 	newPath := filepath.Join(filepath.Dir(oldPath), newName)
-	if oldPath != newPath && !s.C.DryRun {
-		if exists(newPath) {
-			return model.ChrootRenameResult{}, fmt.Errorf("target chroot path already exists: %s", newPath)
+	if oldPath == newPath {
+		return model.ChrootRenameResult{OldName: oldName, NewName: newName, Renamed: true}, nil
+	}
+	if exists(newPath) {
+		return model.ChrootRenameResult{}, fmt.Errorf("target chroot path already exists: %s", newPath)
+	}
+	if s.C.DryRun {
+		return model.ChrootRenameResult{OldName: oldName, NewName: newName, Renamed: true}, nil
+	}
+	tx, e := s.C.Mutations.Begin(ctx, mutation.Spec{Kind: "chroot-rename", Target: oldName, Source: oldPath, Destination: newPath, Scope: "target", Detail: map[string]any{"new_name": newName}})
+	if e != nil {
+		return model.ChrootRenameResult{}, e
+	}
+	if e = tx.Transition(ctx, registry.FSMutationStaged, map[string]any{"new_name": newName}); e != nil {
+		return model.ChrootRenameResult{}, e
+	}
+	if e = os.Rename(oldPath, newPath); e != nil {
+		return model.ChrootRenameResult{}, tx.Fail(ctx, e, map[string]any{"new_name": newName})
+	}
+	if e = mutation.SyncDir(filepath.Dir(oldPath)); e != nil {
+		rollbackErr := os.Rename(newPath, oldPath)
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(filepath.Dir(oldPath))
 		}
-		id, e := s.C.Registry.BeginFSMutation(ctx, "chroot-rename", oldName, oldPath, newPath, map[string]any{"new_name": newName})
-		if e != nil {
+		if rollbackErr == nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRolledBack, map[string]any{"sync_error": e.Error()}); u != nil {
+				return model.ChrootRenameResult{}, errors.Join(e, u)
+			}
 			return model.ChrootRenameResult{}, e
 		}
-		if e = os.Rename(oldPath, newPath); e != nil {
-			_ = s.C.Registry.UpdateFSMutation(ctx, id, "failed", map[string]any{"error": e.Error()})
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"sync_error": e.Error(), "rollback_error": rollbackErr.Error()}); u != nil {
+			return model.ChrootRenameResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootRenameResult{}, errors.Join(e, rollbackErr)
+	}
+	if e = tx.Transition(ctx, registry.FSMutationPromoting, map[string]any{"new_name": newName}); e != nil {
+		rollbackErr := os.Rename(newPath, oldPath)
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(filepath.Dir(oldPath))
+		}
+		if rollbackErr == nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRolledBack, map[string]any{"journal_error": e.Error()}); u != nil {
+				return model.ChrootRenameResult{}, errors.Join(e, u)
+			}
 			return model.ChrootRenameResult{}, e
 		}
-		_ = s.C.Registry.UpdateFSMutation(ctx, id, "completed", map[string]any{})
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"journal_error": e.Error(), "rollback_error": rollbackErr.Error()}); u != nil {
+			return model.ChrootRenameResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootRenameResult{}, errors.Join(e, rollbackErr)
 	}
 	if e = s.C.Registry.Rename(ctx, oldName, newName, &newPath); e != nil {
-		return model.ChrootRenameResult{}, e
+		rollbackErr := os.Rename(newPath, oldPath)
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(filepath.Dir(oldPath))
+		}
+		if rollbackErr == nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRolledBack, map[string]any{"registry_error": e.Error()}); u != nil {
+				return model.ChrootRenameResult{}, errors.Join(e, u)
+			}
+			return model.ChrootRenameResult{}, e
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"registry_error": e.Error(), "rollback_error": rollbackErr.Error()}); u != nil {
+			return model.ChrootRenameResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootRenameResult{}, errors.Join(e, rollbackErr)
+	}
+	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"new_name": newName}); e != nil {
+		return model.ChrootRenameResult{}, fmt.Errorf("chroot rename committed but mutation journal commit failed: %w", e)
+	}
+	if e = tx.Complete(ctx, map[string]any{"new_name": newName}); e != nil {
+		return model.ChrootRenameResult{}, fmt.Errorf("chroot rename committed but terminal journal persistence failed: %w", e)
 	}
 	return model.ChrootRenameResult{OldName: oldName, NewName: newName, Renamed: true}, nil
 }

@@ -42,12 +42,16 @@ func (m *Manager) Reconcile(ctx context.Context, id string) (Record, error) {
 		r.Error = &msg
 		r.NextSteps = []string{"Retry the operation after reviewing its last completed phase."}
 	}
-	_ = m.Journal.Save(&r)
-	_ = m.Journal.ClearCancel(id)
+	if e := m.Journal.Save(&r); e != nil {
+		return r, e
+	}
+	if e := m.Journal.ClearCancel(id); e != nil {
+		return r, e
+	}
 	return m.Get(id, 200)
 }
 func (m *Manager) Recover(ctx context.Context) ([]string, error) {
-	rows, e := m.Journal.ListRecent(1000, nil)
+	rows, e := m.Journal.ListActive(nil)
 	if e != nil {
 		return nil, e
 	}

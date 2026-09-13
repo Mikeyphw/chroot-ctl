@@ -3,6 +3,7 @@ package controller
 import (
 	"chrootctl/internal/config"
 	sys "chrootctl/internal/system"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,5 +55,23 @@ func TestServiceInvocationUsesLoginShell(t *testing.T) {
 	}
 	if argv[2] != "/bin/su" || argv[5] != "-c" {
 		t.Fatalf("argv=%v", argv)
+	}
+}
+
+func TestGateADryRunMountDoesNotCreateFilesystemState(t *testing.T) {
+	cfg := testCfg(t)
+	root := cfg.ChrootBase()
+	mounts := filepath.Join(t.TempDir(), "mounts")
+	if err := os.WriteFile(mounts, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := New(cfg, &sys.Runner{DryRun: true}, nil)
+	c.MountsPath = mounts
+	result := c.Mount(context.Background())
+	if result.Failed != 0 {
+		t.Fatalf("dry-run mount failed: %+v", result)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatalf("dry-run mount created chroot root %s (err=%v)", root, err)
 	}
 }

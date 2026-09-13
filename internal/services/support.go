@@ -20,6 +20,16 @@ func (s *SupportService) ExportBundle(ctx context.Context, archive string, extra
 	if archive == "" {
 		archive = filepath.Join(os.TempDir(), fmt.Sprintf("chrootctl-support-%d.zip", time.Now().Unix()))
 	}
+	if s.C.DryRun {
+		included := []string{"chroots.json", "host-doctor.json", "lifecycle.json", "module-runtime.json"}
+		if extra != nil {
+			included = append(included, "extra.json")
+		}
+		if _, err := os.Stat(s.C.BaseConfig.LogFile); err == nil {
+			included = append(included, "chrootctl.log")
+		}
+		return model.SupportBundleResult{Archive: archive, Included: included}, nil
+	}
 	if err := os.MkdirAll(filepath.Dir(archive), 0755); err != nil {
 		return model.SupportBundleResult{}, err
 	}

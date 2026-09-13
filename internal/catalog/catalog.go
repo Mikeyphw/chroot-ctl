@@ -456,6 +456,9 @@ func (c Catalog) Apply(ctx context.Context, name string, cfg config.ChrootConfig
 	if !entry.MatchesDistro(rec.Distro) {
 		return model.CatalogApplyResult{}, fmt.Errorf("%s '%s' does not support distro '%s'", c.Kind, name, rec.Distro)
 	}
+	if runner != nil && runner.DryRun {
+		return model.CatalogApplyResult{Kind: c.Kind, Name: name, Distro: rec.Distro, Categories: entry.Categories, Applied: false}, nil
+	}
 	sum := sha256.Sum256([]byte(entry.ScriptText))
 	meta := clone(rec.Metadata)
 	state := map[string]any{"state": "running", "version": entry.Version, "script_sha256": hex.EncodeToString(sum[:]), "risks": entry.Risks, "rollback": entry.Rollback, "updated_at": float64(time.Now().UnixNano()) / 1e9}
@@ -478,7 +481,9 @@ func (c Catalog) Apply(ctx context.Context, name string, cfg config.ChrootConfig
 		state["state"] = "failed"
 		state["error"] = truncate(err.Error(), 1000)
 		setState(meta, c.Kind, name, state)
-		_ = save(ctx, reg, latest, meta)
+		if saveErr := save(context.WithoutCancel(ctx), reg, latest, meta); saveErr != nil {
+			return model.CatalogApplyResult{}, errors.Join(err, fmt.Errorf("persist catalog failure state: %w", saveErr))
+		}
 		return model.CatalogApplyResult{}, err
 	}
 	key := c.Kind + "s"

@@ -187,8 +187,13 @@ func TestDryRunAndValidation(t *testing.T) {
 
 func TestCHR04ReexecArgvUsesSuppliedArguments(t *testing.T) {
 	original := append([]string(nil), os.Args...)
+	originalResolver := trustedReexecExecutable
 	os.Args = []string{"wrong-process-global", "wrong"}
-	defer func() { os.Args = original }()
+	trustedReexecExecutable = func() (string, error) { return "/trusted/chrootctl", nil }
+	defer func() {
+		os.Args = original
+		trustedReexecExecutable = originalResolver
+	}()
 	got, err := ReexecArgv([]string{"status", "--details"})
 	if err != nil {
 		t.Fatal(err)

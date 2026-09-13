@@ -134,7 +134,7 @@ func unique(xs []string) []string {
 	return o
 }
 func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string, force bool) (model.InstallExtractResult, error) {
-	if e := sys.RequireRoot(); e != nil {
+	if e := i.Runner.RequireRoot(); e != nil {
 		return model.InstallExtractResult{}, e
 	}
 	if e := i.AssertPhaseAllowed(ctx, install.Extract, force); e != nil {
@@ -218,7 +218,7 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 	return model.InstallExtractResult{Version: version, Release: release, Tarball: name, Phase: "extract"}, e
 }
 func (i *Installer) RunPhaseBootstrap(ctx context.Context, username, profile string, force bool) (model.InstallBootstrapResult, error) {
-	if e := sys.RequireRoot(); e != nil {
+	if e := i.Runner.RequireRoot(); e != nil {
 		return model.InstallBootstrapResult{}, e
 	}
 	if e := i.EnsureExecutionSupported(); e != nil {
@@ -260,7 +260,7 @@ func (i *Installer) RunPhaseBootstrap(ctx context.Context, username, profile str
 }
 func shellSafe(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 func (i *Installer) RunPhaseDesktop(ctx context.Context, desktop, profile string, force bool) (model.InstallDesktopResult, error) {
-	if e := sys.RequireRoot(); e != nil {
+	if e := i.Runner.RequireRoot(); e != nil {
 		return model.InstallDesktopResult{}, e
 	}
 	if e := i.EnsureExecutionSupported(); e != nil {

@@ -3,9 +3,11 @@ package services
 import (
 	"archive/tar"
 	"chrootctl/internal/model"
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/registry"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -137,30 +139,105 @@ func (s *SnapshotService) Create(ctx context.Context, chrootName, name, note str
 		return model.SnapshotActionResult{}, e
 	}
 	stage := filepath.Join(base, fmt.Sprintf(".partial-%s-%d", name, time.Now().UnixNano()))
-	id, e := s.C.Registry.BeginFSMutation(ctx, "snapshot.create", chrootName, source, target, map[string]any{"snapshot": name})
+	tx, e := s.C.Mutations.Begin(ctx, mutation.Spec{Kind: "snapshot.create", Target: chrootName, Source: source, Destination: target, Scope: "target", Detail: map[string]any{"snapshot": name, "stage": stage}})
 	if e != nil {
 		return model.SnapshotActionResult{}, e
 	}
 	if e = copyTree(source, stage); e != nil {
-		os.RemoveAll(stage)
-		_ = s.C.Registry.UpdateFSMutation(ctx, id, "rolled_back", map[string]any{"error": e.Error()})
-		return model.SnapshotActionResult{}, e
+		cleanupErr := os.RemoveAll(stage)
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "error": e.Error()}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["cleanup_error"] = cleanupErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
 	}
-	_ = s.C.Registry.UpdateFSMutation(ctx, id, "staged", map[string]any{"stage": stage})
+	if e = tx.Transition(ctx, registry.FSMutationStaged, map[string]any{"stage": stage}); e != nil {
+		cleanupErr := os.RemoveAll(stage)
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "journal_error": e.Error()}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["cleanup_error"] = cleanupErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
+	}
 	if e = os.Rename(stage, target); e != nil {
-		os.RemoveAll(stage)
-		_ = s.C.Registry.UpdateFSMutation(ctx, id, "rolled_back", map[string]any{"error": e.Error()})
-		return model.SnapshotActionResult{}, e
+		cleanupErr := os.RemoveAll(stage)
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "rename_error": e.Error()}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["cleanup_error"] = cleanupErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
 	}
-	snap, e := s.C.Registry.AddSnapshot(ctx, registry.SnapshotInput{Name: name, ChrootName: chrootName, Path: target, Kind: "copy", Note: note, SizeBytes: directorySize(target), Metadata: map[string]any{"source_path": source, "_chrootctl_mutation_id": id}})
+	if e = mutation.SyncDir(base); e != nil {
+		cleanupErr := os.RemoveAll(target)
+		if cleanupErr == nil {
+			cleanupErr = mutation.SyncDir(base)
+		}
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "sync_error": e.Error()}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = cleanupErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
+	}
+	if e = tx.Transition(ctx, registry.FSMutationPromoting, map[string]any{"stage": stage}); e != nil {
+		cleanupErr := os.RemoveAll(target)
+		if cleanupErr == nil {
+			cleanupErr = mutation.SyncDir(base)
+		}
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "journal_error": e.Error()}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = cleanupErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
+	}
+	snap, e := s.C.Registry.AddSnapshot(ctx, registry.SnapshotInput{Name: name, ChrootName: chrootName, Path: target, Kind: "copy", Note: note, SizeBytes: directorySize(target), Metadata: map[string]any{"source_path": source, "_chrootctl_mutation_id": tx.ID}})
 	if e != nil {
-		os.RemoveAll(target)
-		return model.SnapshotActionResult{}, e
+		cleanupErr := os.RemoveAll(target)
+		if cleanupErr == nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRolledBack, map[string]any{"registry_error": e.Error()}); u != nil {
+				return model.SnapshotActionResult{}, errors.Join(e, u)
+			}
+			return model.SnapshotActionResult{}, e
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"registry_error": e.Error(), "cleanup_error": cleanupErr.Error()}); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
 	}
-	_ = s.C.Registry.UpdateFSMutation(ctx, id, "complete", map[string]any{})
+	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, nil); e != nil {
+		return model.SnapshotActionResult{}, fmt.Errorf("snapshot committed but mutation journal commit failed: %w", e)
+	}
+	if e = tx.Complete(ctx, nil); e != nil {
+		return model.SnapshotActionResult{}, fmt.Errorf("snapshot committed but terminal journal persistence failed: %w", e)
+	}
 	_, _ = s.C.Audit().Record(ctx, "snapshot.create", chrootName, "ok", "Created snapshot "+name, "", map[string]string{"snapshot": name})
 	return model.SnapshotActionResult{ChrootName: chrootName, SnapshotName: name, Path: target, Action: "create", CreatedAt: snap.CreatedAt, NextSteps: []string{"Review snapshot files: " + target}}, nil
 }
+
 func (s *SnapshotService) Restore(ctx context.Context, chrootName, name string) (model.SnapshotActionResult, error) {
 	name, e := safeBase(name, "snapshot name")
 	if e != nil {
@@ -184,36 +261,146 @@ func (s *SnapshotService) Restore(ctx context.Context, chrootName, name string) 
 	if s.C.DryRun {
 		return model.SnapshotActionResult{ChrootName: chrootName, SnapshotName: name, Path: target, Action: "restore", CreatedAt: snap.CreatedAt}, nil
 	}
-	// Restore staging must live beside the authoritative registered root so
-	// config-root drift cannot make promotion cross filesystems or target a
-	// different chroot parent.
 	rootParent := filepath.Dir(target)
-	stage := filepath.Join(rootParent, fmt.Sprintf(".chrootctl-restore-stage-%s-%d", chrootName, time.Now().UnixNano()))
-	backup := filepath.Join(rootParent, fmt.Sprintf(".chrootctl-restore-backup-%s-%d", chrootName, time.Now().UnixNano()))
-	id, e := s.C.Registry.BeginFSMutation(ctx, "snapshot.restore", chrootName, source, target, map[string]any{"snapshot": name})
+	stamp := time.Now().UnixNano()
+	stage := filepath.Join(rootParent, fmt.Sprintf(".chrootctl-restore-stage-%s-%d", chrootName, stamp))
+	backup := filepath.Join(rootParent, fmt.Sprintf(".chrootctl-restore-backup-%s-%d", chrootName, stamp))
+	had := exists(target)
+	tx, e := s.C.Mutations.Begin(ctx, mutation.Spec{Kind: "snapshot.restore", Target: chrootName, Source: source, Destination: target, Scope: "target", Detail: map[string]any{"snapshot": name, "stage": stage, "backup": backup, "had_existing": had}})
 	if e != nil {
 		return model.SnapshotActionResult{}, e
 	}
 	if e = copyTree(source, stage); e != nil {
-		return model.SnapshotActionResult{}, e
-	}
-	backed := false
-	if exists(target) {
-		if e = os.Rename(target, backup); e != nil {
-			return model.SnapshotActionResult{}, e
+		cleanupErr := os.RemoveAll(stage)
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "backup": backup, "error": e.Error()}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["cleanup_error"] = cleanupErr.Error()
 		}
-		backed = true
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
+	}
+	if e = tx.Transition(ctx, registry.FSMutationStaged, map[string]any{"stage": stage, "backup": backup}); e != nil {
+		cleanupErr := os.RemoveAll(stage)
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "backup": backup, "journal_error": e.Error()}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["cleanup_error"] = cleanupErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
+	}
+	if had {
+		if e = os.Rename(target, backup); e != nil {
+			cleanupErr := os.RemoveAll(stage)
+			state := registry.FSMutationRolledBack
+			detail := map[string]any{"stage": stage, "backup": backup, "rename_error": e.Error()}
+			if cleanupErr != nil {
+				state = registry.FSMutationRepairRequired
+				detail["cleanup_error"] = cleanupErr.Error()
+			}
+			if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+				return model.SnapshotActionResult{}, errors.Join(e, cleanupErr, u)
+			}
+			return model.SnapshotActionResult{}, errors.Join(e, cleanupErr)
+		}
+		if e = mutation.SyncDir(rootParent); e != nil {
+			rollbackErr := os.Rename(backup, target)
+			if rollbackErr == nil {
+				rollbackErr = mutation.SyncDir(rootParent)
+			}
+			cleanupErr := os.RemoveAll(stage)
+			rollbackErr = errors.Join(rollbackErr, cleanupErr)
+			state := registry.FSMutationRolledBack
+			detail := map[string]any{"stage": stage, "backup": backup, "sync_error": e.Error()}
+			if rollbackErr != nil {
+				state = registry.FSMutationRepairRequired
+				detail["rollback_error"] = rollbackErr.Error()
+			}
+			if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+				return model.SnapshotActionResult{}, errors.Join(e, rollbackErr, u)
+			}
+			return model.SnapshotActionResult{}, errors.Join(e, rollbackErr)
+		}
+	}
+	if e = tx.Transition(ctx, registry.FSMutationPromoting, map[string]any{"stage": stage, "backup": backup, "had_existing": had}); e != nil {
+		var rollbackErr error
+		if had {
+			rollbackErr = os.Rename(backup, target)
+			if rollbackErr == nil {
+				rollbackErr = mutation.SyncDir(rootParent)
+			}
+		}
+		rollbackErr = errors.Join(rollbackErr, os.RemoveAll(stage))
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "backup": backup, "journal_error": e.Error()}
+		if rollbackErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = rollbackErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, rollbackErr)
 	}
 	if e = os.Rename(stage, target); e != nil {
-		if backed {
-			_ = os.Rename(backup, target)
+		var rollbackErr error
+		if had {
+			rollbackErr = os.Rename(backup, target)
+			if rollbackErr == nil {
+				rollbackErr = mutation.SyncDir(rootParent)
+			}
 		}
-		return model.SnapshotActionResult{}, e
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"error": e.Error(), "stage": stage, "backup": backup}
+		if rollbackErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = rollbackErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, rollbackErr)
 	}
-	if backed {
-		_ = os.RemoveAll(backup)
+	if e = mutation.SyncDir(rootParent); e != nil {
+		rollbackErr := os.RemoveAll(target)
+		if had && rollbackErr == nil {
+			rollbackErr = os.Rename(backup, target)
+		}
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(rootParent)
+		}
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "backup": backup, "sync_error": e.Error()}
+		if rollbackErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = rollbackErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.SnapshotActionResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.SnapshotActionResult{}, errors.Join(e, rollbackErr)
 	}
-	_ = s.C.Registry.UpdateFSMutation(ctx, id, "complete", map[string]any{})
+	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"backup": backup, "had_existing": had}); e != nil {
+		return model.SnapshotActionResult{}, fmt.Errorf("snapshot restore committed but mutation journal commit failed: %w", e)
+	}
+	if had {
+		if e = os.RemoveAll(backup); e != nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCleanupDebt, map[string]any{"backup": backup, "cleanup_error": e.Error()}); u != nil {
+				return model.SnapshotActionResult{}, errors.Join(e, u)
+			}
+			return model.SnapshotActionResult{ChrootName: chrootName, SnapshotName: name, Path: target, Action: "restore", CreatedAt: snap.CreatedAt, NextSteps: []string{"Recovery cleanup pending: " + backup}}, nil
+		}
+	}
+	if e = tx.Complete(ctx, map[string]any{"backup": backup}); e != nil {
+		return model.SnapshotActionResult{}, fmt.Errorf("snapshot restore committed but terminal journal persistence failed: %w", e)
+	}
 	return model.SnapshotActionResult{ChrootName: chrootName, SnapshotName: name, Path: target, Action: "restore", CreatedAt: snap.CreatedAt, NextSteps: []string{"chrootctl --name " + chrootName + " start --login"}}, nil
 }
 func (s *SnapshotService) Export(ctx context.Context, chrootName, name, archive string) (model.SnapshotActionResult, error) {

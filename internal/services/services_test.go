@@ -33,7 +33,7 @@ func testContainer(t *testing.T) *Container {
 		t.Fatal(e)
 	}
 	logger := logging.Configure(cfg.LogFile, false)
-	c, e := NewWith(cfg, reg, logger, true)
+	c, e := NewWith(cfg, reg, logger, false)
 	if e != nil {
 		t.Fatal(e)
 	}

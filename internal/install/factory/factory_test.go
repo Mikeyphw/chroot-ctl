@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"chrootctl/internal/install"
+	sys "chrootctl/internal/system"
 )
 
 func TestBuild(t *testing.T) {
-	base := &install.Base{}
+	base := &install.Base{Runner: &sys.Runner{DryRun: true}}
 	if _, err := Build("ubuntu", base); err != nil {
 		t.Fatal(err)
 	}

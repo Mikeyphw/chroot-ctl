@@ -108,6 +108,40 @@ func (j *Journal) ListRecent(limit int, target *string) ([]Record, error) {
 	}
 	return out, nil
 }
+func (j *Journal) ListAll(target *string) ([]Record, error) {
+	entries, e := os.ReadDir(j.RecordsDir)
+	if e != nil {
+		return nil, e
+	}
+	out := []Record{}
+	for _, x := range entries {
+		if x.IsDir() || filepath.Ext(x.Name()) != ".json" {
+			continue
+		}
+		r, e := j.Load(strings.TrimSuffix(x.Name(), ".json"))
+		if e != nil {
+			continue
+		}
+		if target == nil || (r.TargetName != nil && *r.TargetName == *target) {
+			out = append(out, r)
+		}
+	}
+	sort.SliceStable(out, func(a, b int) bool { return out[a].CreatedAt < out[b].CreatedAt })
+	return out, nil
+}
+func (j *Journal) ListActive(target *string) ([]Record, error) {
+	rows, e := j.ListAll(target)
+	if e != nil {
+		return nil, e
+	}
+	out := rows[:0]
+	for _, r := range rows {
+		if IsActive(r.State) && !r.Corrupt {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
 func eventSequence(v map[string]any) int {
 	if n, ok := number(v["sequence"]); ok && n > 0 {
 		return int(n)
@@ -269,5 +303,13 @@ func atomicBytes(path string, b []byte) error {
 	if e != nil {
 		return e
 	}
-	return os.Rename(name, path)
+	if e = os.Rename(name, path); e != nil {
+		return e
+	}
+	dir, e := os.Open(filepath.Dir(path))
+	if e != nil {
+		return e
+	}
+	defer dir.Close()
+	return dir.Sync()
 }

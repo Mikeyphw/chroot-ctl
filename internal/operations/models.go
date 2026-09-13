@@ -40,6 +40,7 @@ type Record struct {
 	Retry             map[string]any   `json:"retry"`
 	LogPath           *string          `json:"logPath"`
 	LockKey           *string          `json:"lockKey"`
+	LockScope         string           `json:"lockScope"`
 	ProgressDetail    map[string]any   `json:"progressDetail"`
 	ProgressEvents    []map[string]any `json:"progressEvents"`
 	EventSequence     int              `json:"eventSequence"`
@@ -89,6 +90,7 @@ func RecordFromMap(v map[string]any) Record {
 	r.Retry = optionalMap(first(v, "retry"))
 	r.LogPath = optText(v, "logPath", "log_path")
 	r.LockKey = optText(v, "lockKey", "lock_key")
+	r.LockScope = textDefaultAny(v, "", "lockScope", "lock_scope")
 	r.ProgressDetail = mapValueKeys(v, "progressDetail", "progress_detail")
 	r.ProgressEvents = mapSlice(v, "progressEvents", "progress_events")
 	r.EventSequence = intDefault(v, 0, "eventSequence", "event_sequence")

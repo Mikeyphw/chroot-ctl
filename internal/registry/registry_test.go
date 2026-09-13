@@ -236,8 +236,8 @@ func TestCHR03CanonicalPathOwnershipAndRowsAffected(t *testing.T) {
 	if row == nil || row.Path != "/srv/one" {
 		t.Fatalf("canonical row = %#v", row)
 	}
-	if err := r.Upsert(ctx, ChrootInput{Name: "two", Distro: "ubuntu", Path: "/srv/one", Phase: "ready"}); err == nil || !strings.Contains(err.Error(), "already owned by one") {
-		t.Fatalf("duplicate ownership error = %v", err)
+	if err := r.Upsert(ctx, ChrootInput{Name: "two", Distro: "ubuntu", Path: "/srv/one", Phase: "ready"}); err == nil || !strings.Contains(err.Error(), "does not match identity") {
+		t.Fatalf("identity/ownership guard error = %v", err)
 	}
 	if err := r.Delete(ctx, "missing"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing delete = %v", err)

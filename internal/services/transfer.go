@@ -6,15 +6,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"chrootctl/internal/model"
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/validation"
@@ -26,26 +29,14 @@ type TransferService struct{ C *Container }
 
 func ManagedTransferRoot() string {
 	if x := os.Getenv("CHROOTCTL_TRANSFER_DIR"); x != "" {
-		_ = os.MkdirAll(x, 0755)
-		return x
+		return filepath.Clean(x)
 	}
-	root := "/data/local/tmp/chrootctl-transfer"
-	if _, e := os.Stat("/data/local/tmp"); e != nil || !writableDir("/data/local/tmp") {
-		root = filepath.Join(os.TempDir(), "chrootctl-transfer")
+	if st, err := os.Stat("/data/local/tmp"); err == nil && st.IsDir() {
+		return "/data/local/tmp/chrootctl-transfer"
 	}
-	_ = os.MkdirAll(root, 0755)
-	return root
+	return filepath.Join(os.TempDir(), "chrootctl-transfer")
 }
-func writableDir(p string) bool {
-	f, e := os.CreateTemp(p, ".probe-*")
-	if e != nil {
-		return false
-	}
-	n := f.Name()
-	f.Close()
-	os.Remove(n)
-	return true
-}
+func writableDir(p string) bool { return syscall.Access(p, 2) == nil }
 func safeArtifactName(v string) string {
 	var b strings.Builder
 	for _, c := range v {
@@ -317,6 +308,9 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 	}
 	if _, e = contained(root, archive, "archive"); e == nil {
 		return model.ChrootExportResult{}, fmt.Errorf("archive must be outside chroot source")
+	}
+	if s.C.DryRun {
+		return model.ChrootExportResult{Name: name, Archive: archive, Arch: ptrText(r.Arch), Encrypted: password != ""}, nil
 	}
 	if e = os.MkdirAll(filepath.Dir(archive), 0755); e != nil {
 		return model.ChrootExportResult{}, e
@@ -665,10 +659,35 @@ func (s *TransferService) Import(ctx context.Context, archive, name, conflict, p
 }
 
 func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, conflict, password, postImport string, control TransferControl) (model.ChrootImportResult, error) {
+	archive, _ = filepath.Abs(archive)
+	if _, e := os.Stat(archive); e != nil {
+		return model.ChrootImportResult{}, e
+	}
+	if conflict == "" {
+		conflict = "rename"
+	}
+	if conflict != "rename" && conflict != "overwrite" {
+		return model.ChrootImportResult{}, fmt.Errorf("unsupported conflict strategy: %s", conflict)
+	}
+	if s.C.DryRun {
+		if name == "" {
+			base := filepath.Base(archive)
+			for _, suffix := range []string{".tar.zst.enc", ".tar.zst", ".tar.gz", ".tgz", ".enc"} {
+				base = strings.TrimSuffix(base, suffix)
+			}
+			name = base
+		}
+		safe, e := validation.ChrootName(name)
+		if e != nil {
+			return model.ChrootImportResult{}, e
+		}
+		name = safe
+		ok := true
+		return model.ChrootImportResult{Name: name, Archive: archive, Path: filepath.Join(s.C.BaseConfig.ChrootRoot, name), ConflictStrategy: conflict, Encrypted: strings.HasSuffix(archive, ".enc"), ValidationOk: &ok, ValidationSummary: "dry-run: archive exists; extraction and publication were not performed", PostImportAction: postImport}, nil
+	}
 	if e := control.emit(ctx, "inspect", 5, "Inspecting import archive"); e != nil {
 		return model.ChrootImportResult{}, e
 	}
-	archive, _ = filepath.Abs(archive)
 	inspection, e := s.InspectWithControl(ctx, archive, password, control)
 	if e != nil {
 		return model.ChrootImportResult{}, e
@@ -684,12 +703,6 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		return model.ChrootImportResult{}, e
 	}
 	name = safe
-	if conflict == "" {
-		conflict = "rename"
-	}
-	if conflict != "rename" && conflict != "overwrite" {
-		return model.ChrootImportResult{}, fmt.Errorf("unsupported conflict strategy: %s", conflict)
-	}
 	root := s.C.BaseConfig.ChrootRoot
 	if e = os.MkdirAll(root, 0755); e != nil {
 		return model.ChrootImportResult{}, e
@@ -708,6 +721,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 			if r == nil && !exists(p) {
 				name = candidate
 				target = p
+				existing = nil
 				break
 			}
 		}
@@ -720,7 +734,6 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		if resolved == nil {
 			return model.ChrootImportResult{}, fmt.Errorf("unknown chroot: %s", name)
 		}
-		// Existing registry identity wins over the current creation default.
 		target = resolved.RootPath
 		root = filepath.Dir(target)
 		rt, err := s.C.RuntimeFor(name, "")
@@ -749,65 +762,185 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
-	defer func() { _ = os.RemoveAll(stage) }()
 	if e = control.emit(ctx, "extract", 50, "Extracting root filesystem"); e != nil {
-		return model.ChrootImportResult{}, e
+		cleanupErr := os.RemoveAll(stage)
+		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
 	if e = extractRootFromTar(ctx, control, tarPath, stage, inspection.PathName); e != nil {
-		return model.ChrootImportResult{}, e
+		cleanupErr := os.RemoveAll(stage)
+		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
+	}
+	backup := filepath.Join(root, fmt.Sprintf(".chrootctl-backup-%s-%d", safeArtifactName(name), time.Now().UnixNano()))
+	had := exists(target)
+	tx, e := s.C.Mutations.Begin(ctx, mutation.Spec{Kind: "chroot.import", Target: name, Source: archive, Destination: target, Scope: "global", Detail: map[string]any{"stage": stage, "backup": backup, "had_existing": had}})
+	if e != nil {
+		cleanupErr := os.RemoveAll(stage)
+		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
+	}
+	if e = tx.Transition(ctx, registry.FSMutationStaged, map[string]any{"stage": stage, "backup": backup, "had_existing": had}); e != nil {
+		cleanupErr := os.RemoveAll(stage)
+		if cleanupErr != nil {
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationRepairRequired, map[string]any{"stage": stage, "backup": backup, "journal_error": e.Error(), "cleanup_error": cleanupErr.Error()}); u != nil {
+				return model.ChrootImportResult{}, errors.Join(e, cleanupErr, u)
+			}
+		}
+		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
 	if e = control.emit(ctx, "commit", 80, "Committing imported root filesystem"); e != nil {
-		return model.ChrootImportResult{}, e
-	}
-	mutation, e := s.C.Registry.BeginFSMutation(ctx, "chroot.import", name, archive, target, map[string]any{"stage": stage, "had_existing": exists(target)})
-	if e != nil {
-		return model.ChrootImportResult{}, e
-	}
-	backup := ""
-	committed := false
-	defer func() {
-		if !committed {
-			_ = s.C.Registry.UpdateFSMutation(context.Background(), mutation, "failed", map[string]any{"stage": stage, "backup": backup})
+		cleanupErr := os.RemoveAll(stage)
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"cancelled": true, "stage": stage, "backup": backup}
+		if cleanupErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["cleanup_error"] = cleanupErr.Error()
 		}
-	}()
-	if exists(target) {
-		backup = filepath.Join(root, fmt.Sprintf(".chrootctl-backup-%s-%d", safeArtifactName(name), time.Now().UnixNano()))
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.ChrootImportResult{}, errors.Join(e, cleanupErr, u)
+		}
+		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
+	}
+	if had {
 		if e = os.Rename(target, backup); e != nil {
-			return model.ChrootImportResult{}, e
+			cleanupErr := os.RemoveAll(stage)
+			state := registry.FSMutationRolledBack
+			detail := map[string]any{"stage": stage, "backup": backup, "rename_error": e.Error()}
+			if cleanupErr != nil {
+				state = registry.FSMutationRepairRequired
+				detail["cleanup_error"] = cleanupErr.Error()
+			}
+			if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+				return model.ChrootImportResult{}, errors.Join(e, cleanupErr, u)
+			}
+			return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 		}
+		if e = mutation.SyncDir(root); e != nil {
+			rollbackErr := os.Rename(backup, target)
+			if rollbackErr == nil {
+				rollbackErr = mutation.SyncDir(root)
+			}
+			rollbackErr = errors.Join(rollbackErr, os.RemoveAll(stage))
+			state := registry.FSMutationRolledBack
+			detail := map[string]any{"stage": stage, "backup": backup, "sync_error": e.Error()}
+			if rollbackErr != nil {
+				state = registry.FSMutationRepairRequired
+				detail["rollback_error"] = rollbackErr.Error()
+			}
+			if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+				return model.ChrootImportResult{}, errors.Join(e, rollbackErr, u)
+			}
+			return model.ChrootImportResult{}, errors.Join(e, rollbackErr)
+		}
+	}
+	if e = tx.Transition(ctx, registry.FSMutationPromoting, map[string]any{"stage": stage, "backup": backup, "had_existing": had}); e != nil {
+		var rollbackErr error
+		if had {
+			rollbackErr = os.Rename(backup, target)
+			if rollbackErr == nil {
+				rollbackErr = mutation.SyncDir(root)
+			}
+		}
+		rollbackErr = errors.Join(rollbackErr, os.RemoveAll(stage))
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "backup": backup, "journal_error": e.Error()}
+		if rollbackErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = rollbackErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.ChrootImportResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootImportResult{}, errors.Join(e, rollbackErr)
 	}
 	if e = os.Rename(stage, target); e != nil {
-		if backup != "" {
-			_ = os.Rename(backup, target)
+		var rollbackErr error
+		if had {
+			rollbackErr = os.Rename(backup, target)
+			if rollbackErr == nil {
+				rollbackErr = mutation.SyncDir(root)
+			}
 		}
-		return model.ChrootImportResult{}, e
+		rollbackErr = errors.Join(rollbackErr, os.RemoveAll(stage))
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "backup": backup, "rename_error": e.Error()}
+		if rollbackErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = rollbackErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.ChrootImportResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootImportResult{}, errors.Join(e, rollbackErr)
+	}
+	if e = mutation.SyncDir(root); e != nil {
+		rollbackErr := os.RemoveAll(target)
+		if had && rollbackErr == nil {
+			rollbackErr = os.Rename(backup, target)
+		}
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(root)
+		}
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"stage": stage, "backup": backup, "sync_error": e.Error()}
+		if rollbackErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = rollbackErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.ChrootImportResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootImportResult{}, errors.Join(e, rollbackErr)
 	}
 	meta := map[string]any{}
 	for k, v := range inspection.Metadata {
 		meta[k] = v
 	}
 	meta["imported"] = "yes"
-	meta["_chrootctl_mutation_id"] = mutation
+	meta["_chrootctl_mutation_id"] = tx.ID
 	arch, release, version := inspection.Arch, inspection.ReleaseName, inspection.Version
 	if arch == "" {
 		arch = s.C.BaseConfig.TargetArch
 	}
 	if e = s.C.Registry.Upsert(ctx, registry.ChrootInput{Name: name, Distro: inspection.Distro, Path: target, Arch: strPtr(arch), ReleaseName: strPtr(release), Version: strPtr(version), Phase: inspection.Phase, Installed: inspection.Installed, Metadata: meta}); e != nil {
-		_ = os.RemoveAll(target)
-		if backup != "" {
-			_ = os.Rename(backup, target)
+		rollbackErr := os.RemoveAll(target)
+		if had && rollbackErr == nil {
+			rollbackErr = os.Rename(backup, target)
 		}
-		return model.ChrootImportResult{}, e
+		if rollbackErr == nil {
+			rollbackErr = mutation.SyncDir(root)
+		}
+		state := registry.FSMutationRolledBack
+		detail := map[string]any{"registry_error": e.Error(), "backup": backup}
+		if rollbackErr != nil {
+			state = registry.FSMutationRepairRequired
+			detail["rollback_error"] = rollbackErr.Error()
+		}
+		if u := tx.Transition(context.WithoutCancel(ctx), state, detail); u != nil {
+			return model.ChrootImportResult{}, errors.Join(e, rollbackErr, u)
+		}
+		return model.ChrootImportResult{}, errors.Join(e, rollbackErr)
 	}
-	if backup != "" {
-		_ = os.RemoveAll(backup)
+	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"backup": backup, "had_existing": had}); e != nil {
+		return model.ChrootImportResult{}, fmt.Errorf("import committed but mutation journal commit failed: %w", e)
 	}
-	if e = s.C.Registry.UpdateFSMutation(ctx, mutation, "complete", map[string]any{"destination": target}); e != nil {
-		return model.ChrootImportResult{}, e
+	cleanupDebt := false
+	if had {
+		if e = os.RemoveAll(backup); e != nil {
+			cleanupDebt = true
+			if u := tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCleanupDebt, map[string]any{"backup": backup, "cleanup_error": e.Error()}); u != nil {
+				return model.ChrootImportResult{}, errors.Join(e, u)
+			}
+		}
 	}
-	committed = true
+	if !cleanupDebt {
+		if e = tx.Complete(ctx, map[string]any{"destination": target}); e != nil {
+			return model.ChrootImportResult{}, fmt.Errorf("import committed but terminal journal persistence failed: %w", e)
+		}
+	}
 	validationOK := true
 	summary := "archive imported and registry record committed"
+	if cleanupDebt {
+		summary = "archive imported; old backup cleanup is pending recovery"
+	}
 	if postImport == "" {
 		postImport = "none"
 	}

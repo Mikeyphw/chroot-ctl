@@ -22,6 +22,36 @@ type SignalError struct{ Signal syscall.Signal }
 func (e SignalError) Error() string              { return fmt.Sprintf("terminated by signal %d", e.Signal) }
 func NewSignalError(signal syscall.Signal) error { return SignalError{Signal: signal} }
 
+func cliMutationScope(inv Invocation) string {
+	if inv.Spec.Mutability != "mutate" && inv.Spec.Mutability != "mixed" {
+		return "none"
+	}
+	switch inv.Spec.Command {
+	case "install", "chroots import", "transfer import", "support-bundle", "magisk render",
+		"clipboard daemon start", "clipboard daemon stop", "clipboard daemon run", "clipboard set":
+		return "global"
+	case "run":
+		if inv.Bool("run_list") || inv.Bool("run_status") || inv.Bool("logs") {
+			return "none"
+		}
+		if inv.Bool("boot") {
+			return "global"
+		}
+		return "global"
+	case "enable", "disable":
+		return "global"
+	default:
+		return "target"
+	}
+}
+
+func mutationTarget(ctx context.Context, app *App, inv Invocation) (string, error) {
+	if inv.Spec.Command == "install" || inv.Spec.Command == "chroots import" || inv.Spec.Command == "transfer import" {
+		return "", nil
+	}
+	return app.resolveTarget(ctx, false)
+}
+
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	inv, err := Parse(args)
 	if err != nil {
@@ -128,6 +158,29 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	defer s.Close()
 	app := App{Services: s, Inv: inv, Stdin: stdin, Stdout: stdout, Stderr: stderr}
+	scope := cliMutationScope(inv)
+	if scope != "none" {
+		target := ""
+		if scope == "target" {
+			target, err = mutationTarget(ctx, &app, inv)
+			if err != nil {
+				return signalExitCode(ctx, writeFailure(inv, stdout, stderr, err, nil, 1))
+			}
+		}
+		lockedCtx, release, guardErr := s.Mutations.Guard(ctx, scope, target, "cli-"+strings.ReplaceAll(inv.Spec.Command, " ", "-"))
+		if guardErr != nil {
+			return signalExitCode(ctx, writeFailure(inv, stdout, stderr, guardErr, nil, 2))
+		}
+		defer release()
+		recoveryTarget := target
+		if scope == "global" {
+			recoveryTarget = ""
+		}
+		if _, guardErr = s.RecoverFilesystemMutations(lockedCtx, recoveryTarget); guardErr != nil {
+			return signalExitCode(ctx, writeFailure(inv, stdout, stderr, guardErr, nil, 1))
+		}
+		ctx = lockedCtx
+	}
 	if err = app.Dispatch(ctx); err != nil {
 		var partial *PartialResultError
 		if errors.As(err, &partial) {

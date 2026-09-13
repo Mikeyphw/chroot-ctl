@@ -4,6 +4,7 @@ import (
 	"chrootctl/internal/config"
 	"chrootctl/internal/controller"
 	"chrootctl/internal/model"
+	"chrootctl/internal/mutation"
 	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
 	"context"
@@ -279,7 +280,8 @@ func (b *Base) PromoteStagedRootFS(ctx context.Context, staged string) error {
 	if e := b.AssertInstallTargetUnmounted(); e != nil {
 		return e
 	}
-	backup := filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".preinstall-"+fmt.Sprint(time.Now().UnixNano()))
+	parent := filepath.Dir(target)
+	backup := filepath.Join(parent, "."+filepath.Base(target)+".preinstall-"+fmt.Sprint(time.Now().UnixNano()))
 	had := false
 	if _, e := os.Stat(target); e == nil {
 		had = true
@@ -287,54 +289,82 @@ func (b *Base) PromoteStagedRootFS(ctx context.Context, staged string) error {
 	id := ""
 	var e error
 	if b.Registry != nil {
-		id, e = b.Registry.BeginFSMutation(ctx, "install.extract", b.Config.DistroName, staged, target, map[string]any{"backup": backup, "had_existing": had})
+		id, e = b.Registry.BeginFSMutation(ctx, "install.extract", b.Config.DistroName, staged, target, map[string]any{"stage": staged, "backup": backup, "had_existing": had})
 		if e != nil {
 			return e
 		}
+		if e = b.Registry.UpdateFSMutation(ctx, id, registry.FSMutationStaged, map[string]any{"stage": staged, "backup": backup, "had_existing": had}); e != nil {
+			return e
+		}
 	}
-	moved := false
-	promoted := false
-	fail := func(err error) error {
+	transition := func(state string, detail map[string]any) error {
+		if b.Registry == nil || id == "" {
+			return nil
+		}
+		return b.Registry.UpdateFSMutation(context.WithoutCancel(ctx), id, state, detail)
+	}
+	rollback := func(cause error, promoted, moved bool) error {
+		var rb error
 		if promoted {
-			_ = os.Rename(target, staged)
+			if x := os.Rename(target, staged); x != nil {
+				rb = errors.Join(rb, x)
+			}
 		}
 		if moved {
-			_ = os.Rename(backup, target)
+			if x := os.Rename(backup, target); x != nil {
+				rb = errors.Join(rb, x)
+			}
 		}
-		if b.Registry != nil && id != "" {
-			_ = b.Registry.UpdateFSMutation(ctx, id, "failed", map[string]any{"error": err.Error()})
+		if x := mutation.SyncDir(parent); x != nil {
+			rb = errors.Join(rb, x)
 		}
-		return err
+		if rb == nil {
+			if x := transition(registry.FSMutationRolledBack, map[string]any{"error": cause.Error()}); x != nil {
+				return errors.Join(cause, x)
+			}
+			return cause
+		}
+		if persistErr := transition(registry.FSMutationRepairRequired, map[string]any{"error": cause.Error(), "rollback_error": rb.Error()}); persistErr != nil {
+			return errors.Join(cause, rb, persistErr)
+		}
+		return errors.Join(cause, rb)
 	}
+	moved := false
 	if had {
 		if e = os.Rename(target, backup); e != nil {
-			return fail(e)
+			return rollback(e, false, false)
 		}
 		moved = true
-		if b.Registry != nil {
-			_ = b.Registry.UpdateFSMutation(ctx, id, "staged", nil)
+		if e = mutation.SyncDir(parent); e != nil {
+			return rollback(e, false, true)
 		}
 	}
+	if e = transition(registry.FSMutationPromoting, map[string]any{"stage": staged, "backup": backup, "had_existing": had}); e != nil {
+		return rollback(e, false, moved)
+	}
 	if e = os.Rename(staged, target); e != nil {
-		return fail(e)
+		return rollback(e, false, moved)
 	}
-	promoted = true
+	promoted := true
+	if e = mutation.SyncDir(parent); e != nil {
+		return rollback(e, true, moved)
+	}
 	if e = b.MarkPhase(ctx, Extract, false, "", "", map[string]any{"_chrootctl_install_mutation_id": id}); e != nil {
-		return fail(e)
+		return rollback(e, promoted, moved)
 	}
-	if b.Registry != nil {
-		_ = b.Registry.UpdateFSMutation(ctx, id, "committed", nil)
+	if e = transition(registry.FSMutationCommitted, map[string]any{"backup": backup, "had_existing": had}); e != nil {
+		return fmt.Errorf("install promotion committed but mutation journal commit failed: %w", e)
 	}
 	if moved {
 		if e = os.RemoveAll(backup); e != nil {
-			if b.Registry != nil {
-				_ = b.Registry.UpdateFSMutation(ctx, id, "committed", map[string]any{"cleanup_error": e.Error(), "backup": backup})
+			if u := transition(registry.FSMutationCleanupDebt, map[string]any{"cleanup_error": e.Error(), "backup": backup}); u != nil {
+				return errors.Join(e, u)
 			}
 			return nil
 		}
 	}
-	if b.Registry != nil {
-		_ = b.Registry.UpdateFSMutation(ctx, id, "complete", nil)
+	if e = transition(registry.FSMutationComplete, nil); e != nil {
+		return fmt.Errorf("install promotion committed but terminal journal persistence failed: %w", e)
 	}
 	return nil
 }
@@ -419,9 +449,13 @@ func (b *Base) RunSubstep(ctx context.Context, phase Phase, name string, resumab
 			return nil
 		}
 	}
-	_ = b.RecordStep(ctx, step, "running", "")
+	if e := b.RecordStep(ctx, step, "running", ""); e != nil {
+		return e
+	}
 	if e := fn(); e != nil {
-		_ = b.RecordStep(ctx, step, "failed", e.Error())
+		if persistErr := b.RecordStep(context.WithoutCancel(ctx), step, "failed", e.Error()); persistErr != nil {
+			return errors.Join(e, persistErr)
+		}
 		return e
 	}
 	return b.RecordStep(ctx, step, "completed", "")
@@ -466,7 +500,9 @@ func Run(ctx context.Context, d DistroInstaller, req Request) ([]model.Installer
 	}
 	b.ContextKey = strings.Join([]string{b.Distro, b.Config.TargetArch, b.Config.DistroName, req.Username, profile, desktop, req.Version, req.Release}, "|")
 	runOne := func(p Phase) (model.InstallerResult, error) {
-		_ = b.RecordStep(ctx, string(p), "running", "")
+		if e := b.RecordStep(ctx, string(p), "running", ""); e != nil {
+			return nil, e
+		}
 		var r model.InstallerResult
 		var e error
 		switch p {
@@ -488,10 +524,14 @@ func Run(ctx context.Context, d DistroInstaller, req Request) ([]model.Installer
 			r = x
 		}
 		if e != nil {
-			_ = b.RecordStep(ctx, string(p), "failed", e.Error())
+			if persistErr := b.RecordStep(context.WithoutCancel(ctx), string(p), "failed", e.Error()); persistErr != nil {
+				return nil, errors.Join(e, persistErr)
+			}
 			return nil, e
 		}
-		_ = b.RecordStep(ctx, string(p), "completed", "")
+		if e = b.RecordStep(ctx, string(p), "completed", ""); e != nil {
+			return nil, e
+		}
 		return r, nil
 	}
 	if req.Auto || req.Resume || req.Repair || req.Phase == nil {
