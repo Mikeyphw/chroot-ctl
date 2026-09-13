@@ -83,15 +83,14 @@ func copyTree(src, dst string) error {
 	})
 }
 func (s *SnapshotService) source(ctx context.Context, name string) (string, error) {
-	r, e := s.C.Registry.Get(ctx, name)
-	if e != nil || r == nil {
-		if e == nil {
-			e = fmt.Errorf("unknown chroot: %s", name)
-		}
-		return "", e
+	resolved, err := s.C.ResolveTarget(ctx, name, false)
+	if err != nil {
+		return "", err
 	}
-	cfg, _ := s.C.ConfigFor(name, "")
-	return contained(cfg.ChrootRoot, r.Path, "registered chroot path")
+	if resolved == nil {
+		return "", fmt.Errorf("unknown chroot: %s", name)
+	}
+	return resolved.RootPath, nil
 }
 func (s *SnapshotService) requireUnmounted(name string) error {
 	rt, e := s.C.RuntimeFor(name, "")
@@ -185,9 +184,12 @@ func (s *SnapshotService) Restore(ctx context.Context, chrootName, name string) 
 	if s.C.DryRun {
 		return model.SnapshotActionResult{ChrootName: chrootName, SnapshotName: name, Path: target, Action: "restore", CreatedAt: snap.CreatedAt}, nil
 	}
-	cfg, _ := s.C.ConfigFor(chrootName, "")
-	stage := filepath.Join(cfg.ChrootRoot, fmt.Sprintf(".chrootctl-restore-stage-%s-%d", chrootName, time.Now().UnixNano()))
-	backup := filepath.Join(cfg.ChrootRoot, fmt.Sprintf(".chrootctl-restore-backup-%s-%d", chrootName, time.Now().UnixNano()))
+	// Restore staging must live beside the authoritative registered root so
+	// config-root drift cannot make promotion cross filesystems or target a
+	// different chroot parent.
+	rootParent := filepath.Dir(target)
+	stage := filepath.Join(rootParent, fmt.Sprintf(".chrootctl-restore-stage-%s-%d", chrootName, time.Now().UnixNano()))
+	backup := filepath.Join(rootParent, fmt.Sprintf(".chrootctl-restore-backup-%s-%d", chrootName, time.Now().UnixNano()))
 	id, e := s.C.Registry.BeginFSMutation(ctx, "snapshot.restore", chrootName, source, target, map[string]any{"snapshot": name})
 	if e != nil {
 		return model.SnapshotActionResult{}, e

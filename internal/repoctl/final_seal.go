@@ -54,7 +54,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateAuditCoverage(root); e != nil {
 			return e
 		}
-		return ValidateBuildFoundation(root)
+		if e := ValidateBuildFoundation(root); e != nil {
+			return e
+		}
+		return ValidateConfigRegistryFoundation(root)
 	}); err != nil {
 		return err
 	}

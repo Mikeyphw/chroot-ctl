@@ -26,6 +26,12 @@ func openTestRegistry(t *testing.T) *Registry {
 	return r
 }
 
+func TestCHR03RegistryDatabasePathMustBeAbsolute(t *testing.T) {
+	if _, err := Open("relative/registry.sqlite3"); err == nil || !strings.Contains(err.Error(), "must be absolute") {
+		t.Fatalf("relative registry path error = %v", err)
+	}
+}
+
 func TestChrootCRUDAndSnapshotCascade(t *testing.T) {
 	ctx := context.Background()
 	r := openTestRegistry(t)
@@ -186,7 +192,7 @@ CREATE TABLE artifacts (artifact_id TEXT PRIMARY KEY,kind TEXT NOT NULL,path TEX
 	}
 	_ = schema
 	if !orphan {
-		if _, err := db.Exec(`INSERT INTO chroots(name,distro,path,phase) VALUES('ubuntu','ubuntu','/u','ready')`); err != nil {
+		if _, err := db.Exec(`INSERT INTO chroots(name,distro,path,phase) VALUES('ubuntu','ubuntu','/ubuntu','ready')`); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -216,3 +222,85 @@ func TestCountChroots(t *testing.T) {
 }
 
 var _ *sql.DB
+
+func TestCHR03CanonicalPathOwnershipAndRowsAffected(t *testing.T) {
+	ctx := context.Background()
+	r := openTestRegistry(t)
+	if err := r.Upsert(ctx, ChrootInput{Name: "one", Distro: "ubuntu", Path: "/srv/../srv/one", Phase: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := r.Get(ctx, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil || row.Path != "/srv/one" {
+		t.Fatalf("canonical row = %#v", row)
+	}
+	if err := r.Upsert(ctx, ChrootInput{Name: "two", Distro: "ubuntu", Path: "/srv/one", Phase: "ready"}); err == nil || !strings.Contains(err.Error(), "already owned by one") {
+		t.Fatalf("duplicate ownership error = %v", err)
+	}
+	if err := r.Delete(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing delete = %v", err)
+	}
+}
+
+func TestCHR03RenameRefreshesUpdatedAt(t *testing.T) {
+	ctx := context.Background()
+	r := openTestRegistry(t)
+	if err := r.Upsert(ctx, ChrootInput{Name: "old", Distro: "ubuntu", Path: "/old", Phase: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := r.Get(ctx, "old")
+	time.Sleep(5 * time.Millisecond)
+	newPath := "/new"
+	if err := r.Rename(ctx, "old", "new", &newPath); err != nil {
+		t.Fatal(err)
+	}
+	after, err := r.Get(ctx, "new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after == nil || before == nil || after.UpdatedAt == before.UpdatedAt {
+		t.Fatalf("updated_at did not advance: before=%#v after=%#v", before, after)
+	}
+}
+
+func TestCHR03SnapshotForeignKeyMustMatchExactColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wrong-fk.sqlite3")
+	db, err := sqlitecompat.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE chroots (name TEXT PRIMARY KEY,distro TEXT NOT NULL,path TEXT NOT NULL,phase TEXT NOT NULL,installed INTEGER NOT NULL DEFAULT 0,metadata_json TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE snapshots (snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,chroot_name TEXT NOT NULL,owner TEXT,path TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'copy',note TEXT NOT NULL DEFAULT '',size_bytes INTEGER NOT NULL DEFAULT 0,metadata_json TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(chroot_name,name),FOREIGN KEY(owner) REFERENCES chroots(name) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO chroots(name,distro,path,phase) VALUES('ubuntu','ubuntu','/ubuntu','ready');
+INSERT INTO snapshots(name,chroot_name,owner,path) VALUES('s','ubuntu','ubuntu','/s');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	r, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	rows, err := r.db.Query(`PRAGMA foreign_key_list(snapshots)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	found := false
+	for rows.Next() {
+		var id, seq int
+		var table, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			t.Fatal(err)
+		}
+		if table == "chroots" && from == "chroot_name" && to == "name" && strings.EqualFold(onUpdate, "CASCADE") && strings.EqualFold(onDelete, "CASCADE") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("exact snapshots(chroot_name)->chroots(name) cascade FK missing after migration")
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"chrootctl/internal/sqlitecompat"
+	"chrootctl/internal/validation"
 )
 
 const Schema = `
@@ -34,9 +35,9 @@ CREATE TABLE IF NOT EXISTS chroots (
 );
 CREATE TRIGGER IF NOT EXISTS chroots_updated_at
 AFTER UPDATE ON chroots
-FOR EACH ROW
+FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
 BEGIN
-    UPDATE chroots SET updated_at = CURRENT_TIMESTAMP WHERE name = OLD.name;
+    UPDATE chroots SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f','now') WHERE name = NEW.name;
 END;
 CREATE TABLE IF NOT EXISTS snapshots (
     snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,6 +200,13 @@ func Open(path string) (*Registry, error) {
 	if path == "" {
 		return nil, errors.New("registry database path is empty")
 	}
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("registry database path must be absolute: %s", path)
+	}
+	path = filepath.Clean(path)
+	if path == string(filepath.Separator) {
+		return nil, errors.New("registry database path must name a file")
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create registry parent: %w", err)
 	}
@@ -210,6 +218,10 @@ func Open(path string) (*Registry, error) {
 	if _, err := db.Exec(Schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize registry schema: %w", err)
+	}
+	if err := r.migrateChrootIntegrity(context.Background()); err != nil {
+		db.Close()
+		return nil, err
 	}
 	if err := r.migrateSnapshotsForeignKey(context.Background()); err != nil {
 		db.Close()
@@ -247,6 +259,114 @@ func isNoSuchTable(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "no such table") || strings.Contains(err.Error(), "does not exist"))
 }
 
+func canonicalChrootPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("chroot path is required")
+	}
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("chroot path must be absolute: %s", path)
+	}
+	clean := filepath.Clean(path)
+	if clean == string(filepath.Separator) {
+		return "", errors.New("chroot path must not be the filesystem root")
+	}
+	// Resolve existing symlink aliases so two names cannot own the same rootfs
+	// through different textual paths. For a not-yet-created target, resolve the
+	// existing parent when possible and preserve the final basename.
+	if resolved, err := filepath.EvalSymlinks(clean); err == nil {
+		clean = filepath.Clean(resolved)
+	} else if errors.Is(err, os.ErrNotExist) {
+		parent := filepath.Dir(clean)
+		if resolvedParent, parentErr := filepath.EvalSymlinks(parent); parentErr == nil {
+			clean = filepath.Join(resolvedParent, filepath.Base(clean))
+		} else if !errors.Is(parentErr, os.ErrNotExist) {
+			return "", fmt.Errorf("resolve chroot path parent %s: %w", parent, parentErr)
+		}
+	} else {
+		return "", fmt.Errorf("resolve chroot path %s: %w", clean, err)
+	}
+	return clean, nil
+}
+
+func canonicalIdentityPath(name, path string) (string, error) {
+	safe, err := validation.ChrootName(name)
+	if err != nil {
+		return "", err
+	}
+	clean, err := canonicalChrootPath(path)
+	if err != nil {
+		return "", err
+	}
+	if filepath.Base(clean) != safe {
+		return "", fmt.Errorf("chroot path basename %q does not match identity %q", filepath.Base(clean), safe)
+	}
+	return clean, nil
+}
+
+func (r *Registry) migrateChrootIntegrity(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	type row struct{ name, path string }
+	rows, err := r.db.QueryContext(ctx, "SELECT name,path FROM chroots ORDER BY name")
+	if err != nil {
+		return fmt.Errorf("read chroot paths: %w", err)
+	}
+	var items []row
+	owners := map[string]string{}
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.name, &item.path); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, err := validation.ChrootName(item.name); err != nil {
+			rows.Close()
+			return fmt.Errorf("registry chroot %q has invalid identity: %w", item.name, err)
+		}
+		clean, err := canonicalIdentityPath(item.name, item.path)
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("registry chroot %q has invalid path: %w", item.name, err)
+		}
+		if owner, exists := owners[clean]; exists && owner != item.name {
+			rows.Close()
+			return fmt.Errorf("registry path %s is owned by both %s and %s; refusing integrity migration", clean, owner, item.name)
+		}
+		owners[clean] = item.name
+		item.path = clean
+		items = append(items, item)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, item := range items {
+		if _, err := tx.ExecContext(ctx, "UPDATE chroots SET path = ? WHERE name = ? AND path <> ?", item.path, item.name, item.path); err != nil {
+			return fmt.Errorf("canonicalize chroot path for %s: %w", item.name, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "CREATE UNIQUE INDEX IF NOT EXISTS idx_chroots_path_unique ON chroots(path)"); err != nil {
+		return fmt.Errorf("enforce unique chroot path ownership: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DROP TRIGGER IF EXISTS chroots_updated_at"); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TRIGGER chroots_updated_at
+AFTER UPDATE ON chroots
+FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+    UPDATE chroots SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f','now') WHERE name = NEW.name;
+END`); err != nil {
+		return fmt.Errorf("repair chroot updated_at trigger: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (r *Registry) migrateSnapshotsForeignKey(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -262,7 +382,7 @@ func (r *Registry) migrateSnapshotsForeignKey(ctx context.Context) error {
 			rows.Close()
 			return err
 		}
-		if table == "chroots" && onUpdate == "CASCADE" && onDelete == "CASCADE" {
+		if table == "chroots" && from == "chroot_name" && to == "name" && strings.EqualFold(onUpdate, "CASCADE") && strings.EqualFold(onDelete, "CASCADE") {
 			cascade = true
 		}
 	}
@@ -393,17 +513,41 @@ func reprValue(value any) string {
 }
 
 func (r *Registry) Upsert(ctx context.Context, input ChrootInput) error {
+	name, err := validation.ChrootName(input.Name)
+	if err != nil {
+		return err
+	}
+	path, err := canonicalIdentityPath(name, input.Path)
+	if err != nil {
+		return err
+	}
 	payload, err := jsonPayload(input.Metadata)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	_, err = r.db.ExecContext(ctx, `INSERT INTO chroots (name,distro,path,arch,release_name,version,phase,installed,metadata_json)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var owner string
+	err = tx.QueryRowContext(ctx, "SELECT name FROM chroots WHERE path = ? LIMIT 1", path).Scan(&owner)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil && owner != name {
+		return fmt.Errorf("chroot path %s is already owned by %s", path, owner)
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO chroots (name,distro,path,arch,release_name,version,phase,installed,metadata_json)
         VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET distro=excluded.distro,path=excluded.path,arch=excluded.arch,
         release_name=excluded.release_name,version=excluded.version,phase=excluded.phase,installed=excluded.installed,metadata_json=excluded.metadata_json`,
-		input.Name, input.Distro, input.Path, input.Arch, input.ReleaseName, input.Version, input.Phase, boolInt(input.Installed), payload)
-	return err
+		name, input.Distro, path, input.Arch, input.ReleaseName, input.Version, input.Phase, boolInt(input.Installed), payload)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Registry) ApplyChrootMutations(ctx context.Context, mutations []ChrootMutation) error {
@@ -418,12 +562,37 @@ func (r *Registry) ApplyChrootMutations(ctx context.Context, mutations []ChrootM
 		if m.Name == "" {
 			return errors.New("registry mutation requires name")
 		}
+		safeName, err := validation.ChrootName(m.Name)
+		if err != nil {
+			return err
+		}
 		switch m.Action {
 		case "delete":
-			if _, err := tx.ExecContext(ctx, "DELETE FROM chroots WHERE name = ?", m.Name); err != nil {
+			result, err := tx.ExecContext(ctx, "DELETE FROM chroots WHERE name = ?", safeName)
+			if err != nil {
 				return err
 			}
+			rows, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if rows != 1 {
+				return fmt.Errorf("%w: %s", ErrNotFound, safeName)
+			}
 		case "upsert":
+			name := safeName
+			path, err := canonicalIdentityPath(name, m.Path)
+			if err != nil {
+				return err
+			}
+			var owner string
+			err = tx.QueryRowContext(ctx, "SELECT name FROM chroots WHERE path = ? LIMIT 1", path).Scan(&owner)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if err == nil && owner != name {
+				return fmt.Errorf("chroot path %s is already owned by %s", path, owner)
+			}
 			distro := m.Distro
 			if distro == "" {
 				distro = "unknown"
@@ -439,7 +608,7 @@ func (r *Registry) ApplyChrootMutations(ctx context.Context, mutations []ChrootM
 			if _, err := tx.ExecContext(ctx, `INSERT INTO chroots (name,distro,path,arch,release_name,version,phase,installed,metadata_json)
                 VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET distro=excluded.distro,path=excluded.path,arch=excluded.arch,
                 release_name=excluded.release_name,version=excluded.version,phase=excluded.phase,installed=excluded.installed,metadata_json=excluded.metadata_json`,
-				m.Name, distro, m.Path, m.Arch, m.ReleaseName, m.Version, phase, boolInt(m.Installed), payload); err != nil {
+				name, distro, path, m.Arch, m.ReleaseName, m.Version, phase, boolInt(m.Installed), payload); err != nil {
 				return err
 			}
 		default:
@@ -481,7 +650,11 @@ func (r *Registry) Get(ctx context.Context, name string) (*Chroot, error) {
 	return &item, nil
 }
 func (r *Registry) FindByPath(ctx context.Context, path string) (*Chroot, error) {
-	item, err := scanChroot(r.db.QueryRowContext(ctx, "SELECT "+chrootColumns+" FROM chroots WHERE path = ? LIMIT 1", path))
+	clean, err := canonicalChrootPath(path)
+	if err != nil {
+		return nil, err
+	}
+	item, err := scanChroot(r.db.QueryRowContext(ctx, "SELECT "+chrootColumns+" FROM chroots WHERE path = ? LIMIT 1", clean))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -491,28 +664,76 @@ func (r *Registry) FindByPath(ctx context.Context, path string) (*Chroot, error)
 	return &item, nil
 }
 func (r *Registry) Rename(ctx context.Context, oldName, newName string, newPath *string) error {
-	record, err := r.Get(ctx, oldName)
+	oldSafe, err := validation.ChrootName(oldName)
 	if err != nil {
 		return err
 	}
-	if record == nil {
-		return fmt.Errorf("%w: %s", ErrNotFound, oldName)
+	newSafe, err := validation.ChrootName(newName)
+	if err != nil {
+		return err
 	}
-	path := record.Path
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var path string
+	if err := tx.QueryRowContext(ctx, "SELECT path FROM chroots WHERE name = ?", oldSafe).Scan(&path); errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: %s", ErrNotFound, oldSafe)
+	} else if err != nil {
+		return err
+	}
 	if newPath != nil {
 		path = *newPath
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	_, err = r.db.ExecContext(ctx, "UPDATE chroots SET name = ?, path = ? WHERE name = ?", newName, path, oldName)
-	return err
+	path, err = canonicalIdentityPath(newSafe, path)
+	if err != nil {
+		return err
+	}
+	var owner string
+	err = tx.QueryRowContext(ctx, "SELECT name FROM chroots WHERE path = ? AND name <> ? LIMIT 1", path, oldSafe).Scan(&owner)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		return fmt.Errorf("chroot path %s is already owned by %s", path, owner)
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE chroots SET name = ?, path = ?, updated_at = STRFTIME('%Y-%m-%d %H:%M:%f','now') WHERE name = ?", newSafe, path, oldSafe)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("%w: %s", ErrNotFound, oldSafe)
+	}
+	return tx.Commit()
 }
 func (r *Registry) Delete(ctx context.Context, name string) error {
+	safe, err := validation.ChrootName(name)
+	if err != nil {
+		return err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	_, err := r.db.ExecContext(ctx, "DELETE FROM chroots WHERE name = ?", name)
-	return err
+	result, err := r.db.ExecContext(ctx, "DELETE FROM chroots WHERE name = ?", safe)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("%w: %s", ErrNotFound, safe)
+	}
+	return nil
 }
+
 func (r *Registry) List(ctx context.Context) ([]Chroot, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT "+chrootColumns+" FROM chroots ORDER BY name")
 	if err != nil {

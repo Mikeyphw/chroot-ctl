@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -248,5 +249,103 @@ func TestConfigJSONFieldNamesMatchFrozenPythonDataclass(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("config fields = %#v, want %#v", got, want)
+	}
+}
+
+func TestCHR03RejectsUnknownAndIdentityOverrideKeys(t *testing.T) {
+	rt := RuntimeContext{Home: "/home/tester"}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"chroot_rooot":"/safe/intended"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path, WithRuntime(rt)); err == nil || !strings.Contains(err.Error(), "unknown config key") {
+		t.Fatalf("unknown key error = %v", err)
+	}
+	cfg := Default(rt)
+	cfg.ChrootOverrides["work"] = map[string]any{"chroot_root": "/tmp/redirect", "distro_name": "other"}
+	if _, err := cfg.ForChroot("work", rt); err == nil || !strings.Contains(err.Error(), "unknown chroot override key") {
+		t.Fatalf("identity override error = %v", err)
+	}
+}
+
+func TestCHR03PrivilegedPathsAreAbsoluteAndExpandHome(t *testing.T) {
+	rt := RuntimeContext{Home: "/home/tester"}
+	base := Default(rt)
+	for _, value := range []string{"", "relative/root"} {
+		if _, err := ApplyPayload(base, map[string]any{"chroot_root": value}, rt); err == nil {
+			t.Fatalf("unsafe chroot_root %q accepted", value)
+		}
+	}
+	cfg, err := ApplyPayload(base, map[string]any{
+		"chroot_root": "~/chroots", "database_path": "~/.local/state/chrootctl/db.sqlite3",
+		"snapshot_dir": "~/snapshots", "log_file": "~/logs/chrootctl.log",
+	}, rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for field, got := range map[string]string{
+		"chroot_root": cfg.ChrootRoot, "database_path": cfg.DatabasePath,
+		"snapshot_dir": cfg.SnapshotDir, "log_file": cfg.LogFile,
+	} {
+		if !filepath.IsAbs(got) || strings.Contains(got, "~") || !strings.HasPrefix(got, rt.Home+string(filepath.Separator)) {
+			t.Fatalf("%s was not normalized: %q", field, got)
+		}
+	}
+}
+
+func TestCHR03DefaultMediaMountsFollowUsernameButExplicitMountsDoNot(t *testing.T) {
+	rt := RuntimeContext{Home: "/home/tester"}
+	base := Default(rt)
+	cfg, err := ApplyPayload(base, map[string]any{"username": "alice"}, rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mount := range cfg.MediaMounts {
+		if !strings.HasPrefix(mount.Target, "home/alice/") {
+			t.Fatalf("derived target = %q", mount.Target)
+		}
+	}
+	explicit := []any{map[string]any{"source": "/sdcard/Documents", "target": "home/shared/Documents", "enabled": true}}
+	cfg, err = ApplyPayload(base, map[string]any{"username": "alice", "media_mounts": explicit}, rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.MediaMounts[0].Target; got != "home/shared/Documents" {
+		t.Fatalf("explicit mount changed: %q", got)
+	}
+}
+
+func TestCHR03AndroidMigrationFailsClosedOnRegistryInspectionError(t *testing.T) {
+	root := t.TempDir()
+	rt := RuntimeContext{Android: true, Home: filepath.Join(root, "home"), AndroidStateDir: filepath.Join(root, "stable"), LegacyHome: filepath.Join(root, "legacy")}
+	legacyDB := legacyDatabasePath(rt)
+	stableDB := filepath.Join(rt.AndroidStateDir, "chroots.sqlite3")
+	if err := os.MkdirAll(filepath.Dir(legacyDB), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(stableDB), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyDB, []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stableDB, []byte("stable-current"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	counter := func(path string) (int, error) {
+		if filepath.Clean(path) == filepath.Clean(legacyDB) {
+			return 1, nil
+		}
+		return 0, errors.New("stable database busy")
+	}
+	if err := MigrateAndroidRuntimeLayout(rt, counter); err == nil || !strings.Contains(err.Error(), "inspect stable registry") {
+		t.Fatalf("migration error = %v", err)
+	}
+	data, err := os.ReadFile(stableDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "stable-current" {
+		t.Fatalf("stable DB overwritten: %q", data)
 	}
 }

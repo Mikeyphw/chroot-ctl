@@ -20,7 +20,7 @@
     {
       "id": "CHR03",
       "title": "Configuration, registry identity & privileged paths",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR04",
@@ -114,7 +114,7 @@
       "title": "Target path/identity authority is split between registry and config",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH06-02",
@@ -3076,7 +3076,7 @@
       "title": "Registry/SQLite model integrity checks are incomplete",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH19-09",
@@ -4859,7 +4859,7 @@
       "title": "HIGH — Android migration can overwrite the stable DB when registry inspection fails",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI02-01",
@@ -4875,7 +4875,7 @@
       "title": "HIGH — a per-chroot override can redirect the selected chroot's identity and root",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI02-03",
@@ -4891,7 +4891,7 @@
       "title": "HIGH — privileged core path configuration accepts empty/relative paths",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI02-04",
@@ -4907,7 +4907,7 @@
       "title": "MEDIUM/HIGH — unknown config keys are silently ignored",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI02-05",
@@ -4923,7 +4923,7 @@
       "title": "MEDIUM — default media mount destinations are coupled to the literal user `mike`",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI02-06",
@@ -4939,7 +4939,7 @@
       "title": "LOW/MEDIUM — `~` expansion is inconsistent across path fields",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI02-09",
@@ -6753,7 +6753,7 @@
       "title": "MEDIUM/LOW — snapshot FK migration accepts an incompletely matching FK",
       "ownerOverlay": "CHR03",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH19-04",

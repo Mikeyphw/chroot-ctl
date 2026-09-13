@@ -45,6 +45,28 @@ func contained(root, target, label string) (string, error) {
 	}
 	return b, nil
 }
+func validateRegisteredTargetPath(configuredRoot, name, target string) (string, error) {
+	if !filepath.IsAbs(target) {
+		return "", fmt.Errorf("registered chroot path must be absolute: %s", target)
+	}
+	clean := filepath.Clean(target)
+	if clean == string(filepath.Separator) || clean == filepath.Clean(configuredRoot) {
+		return "", fmt.Errorf("registered chroot path must identify one chroot, not a management root: %s", target)
+	}
+	if filepath.Base(clean) != name {
+		return "", fmt.Errorf("registered chroot path basename %q does not match identity %q", filepath.Base(clean), name)
+	}
+	parent := filepath.Dir(clean)
+	if parent == string(filepath.Separator) {
+		return "", fmt.Errorf("registered chroot path must not be a filesystem-root child: %s", target)
+	}
+	base := filepath.Base(clean)
+	if base == ".snapshots" || base == ".chrootctl" {
+		return "", fmt.Errorf("registered chroot path points at reserved management storage: %s", target)
+	}
+	return clean, nil
+}
+
 func diskUsage(path string) (total, used, free uint64) {
 	for {
 		var st syscall.Statfs_t

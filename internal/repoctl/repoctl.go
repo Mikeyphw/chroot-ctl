@@ -511,6 +511,9 @@ func Validate() error {
 	if e = ValidateCLIContractFoundation(root); e != nil {
 		return e
 	}
+	if e = ValidateConfigRegistryFoundation(root); e != nil {
+		return e
+	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
 	if e != nil {
 		return e

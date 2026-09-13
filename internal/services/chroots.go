@@ -179,13 +179,17 @@ func (s *ChrootService) Rename(ctx context.Context, oldName, newName string) (mo
 		}
 		return model.ChrootRenameResult{}, e
 	}
-	oldCfg, _ := s.C.ConfigFor(oldName, "")
-	newCfg, _ := s.C.ConfigFor(newName, "")
-	oldPath, e := contained(oldCfg.ChrootRoot, r.Path, "registered chroot path")
+	resolved, e := s.C.ResolveTarget(ctx, oldName, false)
 	if e != nil {
 		return model.ChrootRenameResult{}, e
 	}
-	newPath := newCfg.ChrootBase()
+	if resolved == nil {
+		return model.ChrootRenameResult{}, fmt.Errorf("unknown chroot: %s", oldName)
+	}
+	oldPath := resolved.RootPath
+	// Rename stays within the registry-owned parent. A config override/default for
+	// the destination name must never redirect the filesystem mutation.
+	newPath := filepath.Join(filepath.Dir(oldPath), newName)
 	if oldPath != newPath && !s.C.DryRun {
 		if exists(newPath) {
 			return model.ChrootRenameResult{}, fmt.Errorf("target chroot path already exists: %s", newPath)

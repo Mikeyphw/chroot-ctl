@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "chroots",
-    indices = [Index("name"), Index("status"), Index("lastRefreshAt")],
+    indices = [Index("status"), Index("lastRefreshAt")],
 )
 data class ChrootEntity(
     @PrimaryKey val name: String,

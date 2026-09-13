@@ -16,3 +16,10 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         )
     }
 }
+
+/** Version 4 removes the redundant secondary index on the chroots primary key. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP INDEX IF EXISTS index_chroots_name")
+    }
+}

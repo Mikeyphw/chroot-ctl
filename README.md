@@ -155,7 +155,9 @@ Service output is captured as journal-style files under `service_log_dir`, with 
 
 The Web UI also exposes a Services module at `/services` for listing units, starting/stopping/restarting, enabling/disabling, and reading each service journal.
 
-By default, chroots are created under `/data/local/tmp/<name>`. Set `chroot_root` in the config file if you need a different base directory.
+By default, new chroots are created under `/data/local/tmp/<name>`. Set `chroot_root` in the config file to change the **creation default**. Once a chroot is registered, its canonical `chroots.path` registry value is the authoritative filesystem identity; changing `chroot_root` does not silently relocate existing chroots.
+
+Configuration is fail-closed for privileged paths: host paths must resolve to non-empty absolute paths (with supported `~` expansion), unknown keys are rejected, and per-chroot overrides cannot replace target identity or process-global database/snapshot/log/state roots. Default media bind targets follow the configured username unless the media mounts were explicitly supplied. Registry writes also enforce one canonical path owner per chroot identity. See [`docs/audit/CHR03_CONFIG_REGISTRY_IDENTITY.md`](docs/audit/CHR03_CONFIG_REGISTRY_IDENTITY.md) for the exact invariants and migration behavior.
 
 Plain `chrootctl install ubuntu` uses the `minimal` profile and keeps Ubuntu Base as the rootfs source. Desktop environments are explicit via `--profile xfce4`, `--profile plasma`, or desktop add-ons.
 

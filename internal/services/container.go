@@ -23,6 +23,12 @@ type Runtime struct {
 	Users      *users.Manager
 }
 
+type ResolvedTarget struct {
+	Record   registry.Chroot
+	Config   config.ChrootConfig
+	RootPath string
+}
+
 type Container struct {
 	BaseConfig config.ChrootConfig
 	Registry   *registry.Registry
@@ -92,10 +98,66 @@ func (c *Container) ConfigFor(name, username string) (config.ChrootConfig, error
 	}
 	return cfg, nil
 }
+func (c *Container) ResolveTarget(ctx context.Context, name string, requireInstalled bool) (*ResolvedTarget, error) {
+	safe, err := validation.ChrootNameField(name, "chroot name")
+	if err != nil {
+		return nil, err
+	}
+	record, err := c.Registry.Get(ctx, safe)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
+		return nil, nil
+	}
+	if requireInstalled && !record.Installed {
+		return nil, fmt.Errorf("chroot %s is not installed", safe)
+	}
+	root, err := validateRegisteredTargetPath(c.BaseConfig.ChrootRoot, safe, record.Path)
+	if err != nil {
+		return nil, err
+	}
+	owner, err := c.Registry.FindByPath(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	if owner == nil || owner.Name != safe {
+		return nil, fmt.Errorf("registered chroot path %s does not have unique ownership by %s", root, safe)
+	}
+	cfg, err := c.ConfigFor(safe, "")
+	if err != nil {
+		return nil, err
+	}
+	// Existing records own their filesystem identity. Configuration supplies
+	// behavioral defaults, but must not silently relocate a registered target.
+	cfg.ChrootRoot = filepath.Dir(root)
+	cfg.DistroName = safe
+	if record.Arch != nil && *record.Arch != "" {
+		cfg.TargetArch = *record.Arch
+	}
+	return &ResolvedTarget{Record: *record, Config: cfg, RootPath: root}, nil
+}
+
 func (c *Container) RuntimeFor(name, username string) (Runtime, error) {
 	cfg, e := c.ConfigFor(name, username)
 	if e != nil {
 		return Runtime{}, e
+	}
+	if name != "" {
+		resolved, err := c.ResolveTarget(context.Background(), name, false)
+		if err != nil {
+			return Runtime{}, err
+		}
+		if resolved != nil {
+			cfg = resolved.Config
+			if username != "" {
+				u, err := validation.Username(username)
+				if err != nil {
+					return Runtime{}, err
+				}
+				cfg.Username = u
+			}
+		}
 	}
 	runner := &sys.Runner{Logger: c.Logger, DryRun: c.DryRun}
 	ctrl := controller.New(cfg, runner, c.Logger)

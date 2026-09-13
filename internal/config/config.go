@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"chrootctl/internal/validation"
@@ -24,12 +25,29 @@ const (
 
 var DefaultDNSServers = []string{"8.8.8.8", "1.1.1.1"}
 
-var DefaultMediaMounts = []BindMount{
-	{Source: "/sdcard/Documents", Target: "home/mike/Documents", Enabled: true},
-	{Source: "/sdcard/Download", Target: "home/mike/Downloads", Enabled: true},
-	{Source: "/sdcard/Pictures", Target: "home/mike/Pictures", Enabled: true},
-	{Source: "/sdcard/Movies", Target: "home/mike/Videos", Enabled: true},
-}
+var DefaultMediaMounts = defaultMediaMounts("mike")
+
+var topLevelConfigKeys = stringSet(
+	"chroot_root", "distro_name", "username", "target_arch", "termux_home", "termux_prefix",
+	"log_file", "database_path", "shell_path", "mount_data_with_dev_suid", "dev_shm_size",
+	"media_mounts", "extra_bind_mounts", "extra_packages", "locale", "dns_servers",
+	"post_install_hooks", "install_profile", "snapshot_dir", "snapshot_before_destructive",
+	"tool_manifest_dirs", "tool_script_dirs", "addon_manifest_dirs", "addon_script_dirs",
+	"service_dirs", "service_state_dir", "service_log_dir", "chroot_overrides", "repositories",
+)
+
+// Per-chroot overrides may tune behavior inside one already-selected target, but
+// they must never be able to redirect the selected filesystem identity or the
+// process-global registry/state roots.
+var chrootOverrideKeys = stringSet(
+	"username", "shell_path", "mount_data_with_dev_suid", "dev_shm_size", "media_mounts",
+	"extra_bind_mounts", "extra_packages", "locale", "dns_servers", "post_install_hooks",
+	"install_profile", "snapshot_before_destructive", "tool_manifest_dirs", "tool_script_dirs",
+	"addon_manifest_dirs", "addon_script_dirs", "service_dirs",
+)
+
+var repositoryKeys = stringSet("tool_manifests", "tool_scripts", "addon_manifests", "addon_scripts")
+var mountDefinitionKeys = stringSet("source", "target", "enabled", "read_only")
 
 type BindMount struct {
 	Source   string `json:"source"`
@@ -115,7 +133,7 @@ func Default(runtime RuntimeContext) ChrootConfig {
 		ShellPath:                 "/usr/bin/zsh",
 		MountDataWithDevSuid:      true,
 		DevShmSize:                "256M",
-		MediaMounts:               cloneMounts(DefaultMediaMounts),
+		MediaMounts:               defaultMediaMounts("mike"),
 		ExtraBindMounts:           []BindMount{},
 		ExtraPackages:             []string{},
 		Locale:                    "en_US.UTF-8",
@@ -183,7 +201,7 @@ func (cfg ChrootConfig) ForChroot(name string, runtime RuntimeContext) (ChrootCo
 	if len(overrides) == 0 {
 		return result, nil
 	}
-	return ApplyPayload(result, overrides, runtime)
+	return applyPayload(result, overrides, runtime, true)
 }
 
 func (cfg ChrootConfig) Clone() ChrootConfig {
@@ -246,6 +264,9 @@ func Load(path string, options ...LoadOption) (ChrootConfig, error) {
 	if err != nil {
 		return ChrootConfig{}, err
 	}
+	if err := validatePayloadKeys(payload, topLevelConfigKeys, "config"); err != nil {
+		return ChrootConfig{}, err
+	}
 	cfg, err := ApplyPayload(base, payload, settings.runtime)
 	if err != nil {
 		return ChrootConfig{}, err
@@ -261,13 +282,31 @@ func Load(path string, options ...LoadOption) (ChrootConfig, error) {
 }
 
 func ApplyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeContext) (ChrootConfig, error) {
+	return applyPayload(current, payload, runtime, false)
+}
+
+func applyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeContext, override bool) (ChrootConfig, error) {
 	runtime = normalizeRuntime(runtime)
+	allowed := topLevelConfigKeys
+	label := "config"
+	if override {
+		allowed = chrootOverrideKeys
+		label = "chroot override"
+	}
+	if err := validatePayloadKeys(payload, allowed, label); err != nil {
+		return ChrootConfig{}, err
+	}
 	cfg := current.Clone()
+	oldUsername := cfg.Username
+	mediaWasDerived := mountsEqual(cfg.MediaMounts, defaultMediaMounts(oldUsername))
 	repositories := map[string]any{}
 	if raw, exists := payload["repositories"]; exists && raw != nil {
 		mapping, ok := raw.(map[string]any)
 		if !ok {
 			return ChrootConfig{}, errors.New("repositories must be a mapping")
+		}
+		if err := validatePayloadKeys(mapping, repositoryKeys, "repositories"); err != nil {
+			return ChrootConfig{}, err
 		}
 		repositories = mapping
 	}
@@ -276,11 +315,23 @@ func ApplyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeC
 	if cfg.ChrootRoot, err = optionalString(payload, "chroot_root", cfg.ChrootRoot); err != nil {
 		return ChrootConfig{}, err
 	}
+	if cfg.ChrootRoot, err = normalizeHostPath(cfg.ChrootRoot, runtime.Home, "chroot_root", true); err != nil {
+		return ChrootConfig{}, err
+	}
 	if cfg.DistroName, err = optionalString(payload, "distro_name", cfg.DistroName); err != nil {
+		return ChrootConfig{}, err
+	}
+	if cfg.DistroName, err = validation.ChrootNameField(cfg.DistroName, "distro_name"); err != nil {
 		return ChrootConfig{}, err
 	}
 	if cfg.Username, err = optionalString(payload, "username", cfg.Username); err != nil {
 		return ChrootConfig{}, err
+	}
+	if cfg.Username, err = validation.UsernameField(cfg.Username, "username"); err != nil {
+		return ChrootConfig{}, err
+	}
+	if _, explicit := payload["media_mounts"]; !explicit && mediaWasDerived && cfg.Username != oldUsername {
+		cfg.MediaMounts = defaultMediaMounts(cfg.Username)
 	}
 	if cfg.TargetArch, err = optionalString(payload, "target_arch", cfg.TargetArch); err != nil {
 		return ChrootConfig{}, err
@@ -288,17 +339,32 @@ func ApplyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeC
 	if cfg.TermuxHome, err = optionalString(payload, "termux_home", cfg.TermuxHome); err != nil {
 		return ChrootConfig{}, err
 	}
+	if cfg.TermuxHome, err = normalizeHostPath(cfg.TermuxHome, runtime.Home, "termux_home", true); err != nil {
+		return ChrootConfig{}, err
+	}
 	if cfg.TermuxPrefix, err = optionalString(payload, "termux_prefix", cfg.TermuxPrefix); err != nil {
+		return ChrootConfig{}, err
+	}
+	if cfg.TermuxPrefix, err = normalizeHostPath(cfg.TermuxPrefix, runtime.Home, "termux_prefix", true); err != nil {
 		return ChrootConfig{}, err
 	}
 	if cfg.LogFile, err = optionalString(payload, "log_file", cfg.LogFile); err != nil {
 		return ChrootConfig{}, err
 	}
+	if cfg.LogFile, err = normalizeHostPath(cfg.LogFile, runtime.Home, "log_file", true); err != nil {
+		return ChrootConfig{}, err
+	}
 	if cfg.DatabasePath, err = optionalString(payload, "database_path", cfg.DatabasePath); err != nil {
+		return ChrootConfig{}, err
+	}
+	if cfg.DatabasePath, err = normalizeHostPath(cfg.DatabasePath, runtime.Home, "database_path", true); err != nil {
 		return ChrootConfig{}, err
 	}
 	cfg.DatabasePath = normalizeAndroidRuntimePath(cfg.DatabasePath, runtime, legacyDatabasePath(runtime), filepath.Join(runtime.AndroidStateDir, "chroots.sqlite3"))
 	if cfg.ShellPath, err = optionalString(payload, "shell_path", cfg.ShellPath); err != nil {
+		return ChrootConfig{}, err
+	}
+	if cfg.ShellPath, err = normalizeChrootPath(cfg.ShellPath, "shell_path"); err != nil {
 		return ChrootConfig{}, err
 	}
 	if value, ok := payload["mount_data_with_dev_suid"]; ok {
@@ -311,13 +377,13 @@ func ApplyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeC
 		return ChrootConfig{}, err
 	}
 	if value, ok := payload["media_mounts"]; ok {
-		cfg.MediaMounts, err = normalizeMounts(value)
+		cfg.MediaMounts, err = normalizeMounts(value, runtime.Home)
 		if err != nil {
 			return ChrootConfig{}, err
 		}
 	}
 	if value, ok := payload["extra_bind_mounts"]; ok {
-		cfg.ExtraBindMounts, err = normalizeMounts(value)
+		cfg.ExtraBindMounts, err = normalizeMounts(value, runtime.Home)
 		if err != nil {
 			return ChrootConfig{}, err
 		}
@@ -360,6 +426,9 @@ func ApplyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeC
 	if cfg.SnapshotDir, err = optionalString(payload, "snapshot_dir", cfg.SnapshotDir); err != nil {
 		return ChrootConfig{}, err
 	}
+	if cfg.SnapshotDir, err = normalizeHostPath(cfg.SnapshotDir, runtime.Home, "snapshot_dir", true); err != nil {
+		return ChrootConfig{}, err
+	}
 	cfg.SnapshotDir = normalizeAndroidRuntimePath(cfg.SnapshotDir, runtime, legacySnapshotDir(runtime), filepath.Join(runtime.AndroidStateDir, "snapshots"))
 	if value, ok := payload["snapshot_before_destructive"]; ok {
 		cfg.SnapshotBeforeDestructive, err = validation.StrictBool(value, "snapshot_before_destructive")
@@ -380,7 +449,7 @@ func ApplyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeC
 		return ChrootConfig{}, err
 	}
 	if value, ok := payload["service_dirs"]; ok {
-		cfg.ServiceDirs, err = normalizePaths(value, runtime.Home)
+		cfg.ServiceDirs, err = normalizePaths(value, runtime.Home, "service_dirs")
 		if err != nil {
 			return ChrootConfig{}, err
 		}
@@ -388,15 +457,19 @@ func ApplyPayload(current ChrootConfig, payload map[string]any, runtime RuntimeC
 	if cfg.ServiceStateDir, err = optionalString(payload, "service_state_dir", cfg.ServiceStateDir); err != nil {
 		return ChrootConfig{}, err
 	}
-	cfg.ServiceStateDir = expandUser(cfg.ServiceStateDir, runtime.Home)
+	if cfg.ServiceStateDir, err = normalizeHostPath(cfg.ServiceStateDir, runtime.Home, "service_state_dir", true); err != nil {
+		return ChrootConfig{}, err
+	}
 	if cfg.ServiceLogDir, err = optionalString(payload, "service_log_dir", cfg.ServiceLogDir); err != nil {
 		return ChrootConfig{}, err
 	}
-	cfg.ServiceLogDir = expandUser(cfg.ServiceLogDir, runtime.Home)
+	if cfg.ServiceLogDir, err = normalizeHostPath(cfg.ServiceLogDir, runtime.Home, "service_log_dir", true); err != nil {
+		return ChrootConfig{}, err
+	}
 	return cfg, nil
 }
 
-func normalizeMounts(value any) ([]BindMount, error) {
+func normalizeMounts(value any, home string) ([]BindMount, error) {
 	if value == nil {
 		return []BindMount{}, nil
 	}
@@ -407,14 +480,21 @@ func normalizeMounts(value any) ([]BindMount, error) {
 	switch typed := value.(type) {
 	case map[string]any:
 		for source, raw := range typed {
+			cleanSource, err := normalizeHostPath(source, home, "mount source", true)
+			if err != nil {
+				return nil, err
+			}
 			switch definition := raw.(type) {
 			case string:
 				target, err := validation.RelativeChrootPathField(definition, "mount target for "+source)
 				if err != nil {
 					return nil, err
 				}
-				mounts = append(mounts, BindMount{Source: source, Target: target, Enabled: true})
+				mounts = append(mounts, BindMount{Source: cleanSource, Target: target, Enabled: true})
 			case map[string]any:
+				if err := validatePayloadKeys(definition, mountDefinitionKeys, "mount definition for "+source); err != nil {
+					return nil, err
+				}
 				rawTarget, ok := definition["target"]
 				if !ok {
 					return nil, fmt.Errorf("mount target for %s is required", source)
@@ -437,7 +517,7 @@ func normalizeMounts(value any) ([]BindMount, error) {
 						return nil, err
 					}
 				}
-				mounts = append(mounts, BindMount{Source: source, Target: target, Enabled: enabled, ReadOnly: readOnly})
+				mounts = append(mounts, BindMount{Source: cleanSource, Target: target, Enabled: enabled, ReadOnly: readOnly})
 			default:
 				return nil, errors.New("mount definition must be a string target or object")
 			}
@@ -448,7 +528,14 @@ func normalizeMounts(value any) ([]BindMount, error) {
 			if !ok {
 				return nil, errors.New("mount list entries must be objects")
 			}
+			if err := validatePayloadKeys(definition, mountDefinitionKeys, "mount definition"); err != nil {
+				return nil, err
+			}
 			source, err := requiredString(definition, "source")
+			if err != nil {
+				return nil, err
+			}
+			source, err = normalizeHostPath(source, home, "mount source", true)
 			if err != nil {
 				return nil, err
 			}
@@ -504,41 +591,53 @@ func normalizeStrings(value any) ([]string, error) {
 	return result, nil
 }
 
-func normalizePaths(value any, home string) ([]string, error) {
+func normalizePaths(value any, home, field string) ([]string, error) {
 	if value == nil {
 		return []string{}, nil
 	}
 	if text, ok := value.(string); ok {
-		return []string{expandUser(text, home)}, nil
+		path, err := normalizeHostPath(text, home, field, true)
+		if err != nil {
+			return nil, err
+		}
+		return []string{path}, nil
 	}
 	items, ok := value.([]any)
 	if !ok {
 		if values, ok := value.([]string); ok {
 			result := make([]string, 0, len(values))
-			for _, item := range values {
-				result = append(result, expandUser(item, home))
+			for index, item := range values {
+				path, err := normalizeHostPath(item, home, fmt.Sprintf("%s[%d]", field, index), true)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, path)
 			}
 			return result, nil
 		}
 		return nil, errors.New("expected a list of paths")
 	}
 	result := make([]string, 0, len(items))
-	for _, item := range items {
+	for index, item := range items {
 		text, ok := item.(string)
 		if !ok {
 			return nil, errors.New("path entries must be strings")
 		}
-		result = append(result, expandUser(text, home))
+		path, err := normalizeHostPath(text, home, fmt.Sprintf("%s[%d]", field, index), true)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, path)
 	}
 	return result, nil
 }
 
 func pathsFromPayload(payload, repositories map[string]any, primary, legacy string, current []string, home string) ([]string, error) {
 	if value, ok := payload[primary]; ok {
-		return normalizePaths(value, home)
+		return normalizePaths(value, home, primary)
 	}
 	if value, ok := repositories[legacy]; ok {
-		return normalizePaths(value, home)
+		return normalizePaths(value, home, "repositories."+legacy)
 	}
 	return cloneStrings(current), nil
 }
@@ -577,13 +676,89 @@ func normalizeOverrides(value any) (map[string]map[string]any, error) {
 	}
 	result := make(map[string]map[string]any, len(mapping))
 	for name, raw := range mapping {
+		safeName, err := validation.ChrootNameField(name, "chroot override name")
+		if err != nil {
+			return nil, err
+		}
 		entry, ok := raw.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("chroot_overrides.%s must be a mapping", name)
 		}
-		result[name] = cloneAnyMap(entry)
+		if err := validatePayloadKeys(entry, chrootOverrideKeys, "chroot_overrides."+safeName); err != nil {
+			return nil, err
+		}
+		result[safeName] = cloneAnyMap(entry)
 	}
 	return result, nil
+}
+
+func stringSet(values ...string) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		result[value] = struct{}{}
+	}
+	return result
+}
+
+func validatePayloadKeys(payload map[string]any, allowed map[string]struct{}, label string) error {
+	unknown := make([]string, 0)
+	for key := range payload {
+		if _, ok := allowed[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	return fmt.Errorf("unknown %s key(s): %s", label, strings.Join(unknown, ", "))
+}
+
+func normalizeHostPath(value, home, field string, rejectRoot bool) (string, error) {
+	value = strings.TrimSpace(expandUser(value, home))
+	if value == "" {
+		return "", fmt.Errorf("%s must not be empty", field)
+	}
+	if !filepath.IsAbs(value) {
+		return "", fmt.Errorf("%s must be an absolute path: %s", field, value)
+	}
+	clean := filepath.Clean(value)
+	if rejectRoot && clean == string(filepath.Separator) {
+		return "", fmt.Errorf("%s must not be the filesystem root", field)
+	}
+	return clean, nil
+}
+
+func normalizeChrootPath(value, field string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || !strings.HasPrefix(value, "/") {
+		return "", fmt.Errorf("%s must be an absolute chroot path", field)
+	}
+	return filepath.Clean(value), nil
+}
+
+func defaultMediaMounts(username string) []BindMount {
+	if username == "" {
+		username = "mike"
+	}
+	return []BindMount{
+		{Source: "/sdcard/Documents", Target: filepath.Join("home", username, "Documents"), Enabled: true},
+		{Source: "/sdcard/Download", Target: filepath.Join("home", username, "Downloads"), Enabled: true},
+		{Source: "/sdcard/Pictures", Target: filepath.Join("home", username, "Pictures"), Enabled: true},
+		{Source: "/sdcard/Movies", Target: filepath.Join("home", username, "Videos"), Enabled: true},
+	}
+}
+
+func mountsEqual(left, right []BindMount) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func expandUser(path, home string) string {
@@ -625,11 +800,17 @@ func MigrateAndroidRuntimeLayout(runtime RuntimeContext, counter ChrootCounter) 
 		return err
 	}
 	if counter != nil {
-		legacyCount := safeCount(counter, legacyDatabasePath(runtime))
+		legacyPath := legacyDatabasePath(runtime)
+		legacyCount, err := counter(legacyPath)
+		if err != nil {
+			return fmt.Errorf("inspect legacy registry %s: %w", legacyPath, err)
+		}
 		stablePath := filepath.Join(runtime.AndroidStateDir, "chroots.sqlite3")
-		stableCount := safeCount(counter, stablePath)
+		stableCount, err := counter(stablePath)
+		if err != nil {
+			return fmt.Errorf("inspect stable registry %s: %w", stablePath, err)
+		}
 		if legacyCount > 0 && stableCount == 0 {
-			legacyPath := legacyDatabasePath(runtime)
 			info, statErr := os.Stat(legacyPath)
 			if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 				return statErr
@@ -638,21 +819,13 @@ func MigrateAndroidRuntimeLayout(runtime RuntimeContext, counter ChrootCounter) 
 				if err := os.MkdirAll(filepath.Dir(stablePath), 0o755); err != nil {
 					return err
 				}
-				if err := copyFile(legacyPath, stablePath, info.Mode()); err != nil {
+				if err := replaceFileAtomically(legacyPath, stablePath, info.Mode()); err != nil {
 					return err
 				}
 			}
 		}
 	}
 	return mergeTreeMissing(legacySnapshotDir(runtime), filepath.Join(runtime.AndroidStateDir, "snapshots"))
-}
-
-func safeCount(counter ChrootCounter, path string) int {
-	count, err := counter(path)
-	if err != nil {
-		return 0
-	}
-	return count
 }
 
 func copyIfMissing(source, target string) error {
@@ -674,7 +847,54 @@ func copyIfMissing(source, target string) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	return copyFile(source, target, info.Mode())
+	return replaceFileAtomically(source, target, info.Mode())
+}
+
+func replaceFileAtomically(source, target string, mode os.FileMode) error {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	parent := filepath.Dir(target)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(parent, ".chrootctl-migrate-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	committed := false
+	defer func() {
+		_ = tmp.Close()
+		if !committed {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(mode.Perm()); err != nil {
+		return err
+	}
+	if _, err := io.Copy(tmp, in); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, target); err != nil {
+		return err
+	}
+	committed = true
+	if dir, err := os.Open(parent); err == nil {
+		defer dir.Close()
+		if err := dir.Sync(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyFile(source, target string, mode os.FileMode) error {

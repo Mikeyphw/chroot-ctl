@@ -575,7 +575,10 @@ func (s *TransferService) Import(ctx context.Context, archive, name, conflict, p
 		return model.ChrootImportResult{}, e
 	}
 	target := filepath.Join(root, name)
-	existing, _ := s.C.Registry.Get(ctx, name)
+	existing, e := s.C.Registry.Get(ctx, name)
+	if e != nil {
+		return model.ChrootImportResult{}, e
+	}
 	if conflict == "rename" && (existing != nil || exists(target)) {
 		base := name
 		for i := 2; ; i++ {
@@ -590,9 +593,19 @@ func (s *TransferService) Import(ctx context.Context, archive, name, conflict, p
 		}
 	}
 	if conflict == "overwrite" && existing != nil {
-		rt, e := s.C.RuntimeFor(name, "")
-		if e != nil {
-			return model.ChrootImportResult{}, e
+		resolved, err := s.C.ResolveTarget(ctx, name, false)
+		if err != nil {
+			return model.ChrootImportResult{}, err
+		}
+		if resolved == nil {
+			return model.ChrootImportResult{}, fmt.Errorf("unknown chroot: %s", name)
+		}
+		// Existing registry identity wins over the current creation default.
+		target = resolved.RootPath
+		root = filepath.Dir(target)
+		rt, err := s.C.RuntimeFor(name, "")
+		if err != nil {
+			return model.ChrootImportResult{}, err
 		}
 		for _, m := range rt.Controller.Status(true) {
 			if strings.EqualFold(m["mounted"], "yes") {
