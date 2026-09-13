@@ -196,3 +196,38 @@ func TestExecuteFailsWhenTerminalJournalCannotBePersisted(t *testing.T) {
 		t.Fatal("terminal persistence failure was acknowledged as success")
 	}
 }
+
+func TestCHR16JournalFilesArePrivateAndRedacted(t *testing.T) {
+	j, err := NewJournal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewRecord("chr16", "test", "CHR16")
+	r.Request = map[string]any{"password": "secret"}
+	if err := j.Save(&r); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(j.RecordsDir, "chr16.json")
+	st, err := os.Stat(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("record mode=%#o", st.Mode().Perm())
+	}
+	data, _ := os.ReadFile(recordPath)
+	if strings.Contains(string(data), "secret") {
+		t.Fatalf("journal leaked secret: %s", data)
+	}
+	if err := j.AppendEvent("chr16", map[string]any{"type": "progress", "payload": map[string]any{"token": "abc"}}); err != nil {
+		t.Fatal(err)
+	}
+	eventPath := filepath.Join(j.EventsDir, "chr16.jsonl")
+	st, err = os.Stat(eventPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("event mode=%#o", st.Mode().Perm())
+	}
+}

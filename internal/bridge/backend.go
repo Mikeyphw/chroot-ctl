@@ -619,11 +619,11 @@ func (b *ServicesBackend) preview(ctx context.Context, op string, p map[string]a
 	case "support.preview":
 		archive := optText(p, "archive")
 		if archive == "" {
-			archive = services.ManagedArchive("chrootctl-support", "zip")
+			archive = services.ManagedArchive("chrootctl-support", "tar.gz")
 		}
 		blocking := []map[string]string{}
-		if root, err := services.EnsureManagedTransferRoot(); err != nil {
-			blocking = append(blocking, map[string]string{"code": "managed_root_unavailable", "message": err.Error()})
+		if root := services.ManagedTransferRoot(); root == "" {
+			blocking = append(blocking, map[string]string{"code": "managed_root_unavailable", "message": "managed transfer root is unavailable"})
 		} else if abs, err := filepath.Abs(archive); err != nil {
 			blocking = append(blocking, map[string]string{"code": "invalid_archive_path", "message": err.Error()})
 		} else if managed, err := containedBridgePath(root, abs, "support bundle artifact"); err != nil {

@@ -8,15 +8,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"chrootctl/internal/redaction"
 )
 
 const (
-	LoggerName     = "chrootctl"
-	PythonFormat   = "%(asctime)s %(levelname)s %(name)s: %(message)s"
-	LoggerLevel    = "DEBUG"
-	FileLevel      = "DEBUG"
-	ConsoleLevel   = "INFO"
-	VerboseConsole = "DEBUG"
+	LoggerName      = "chrootctl"
+	PythonFormat    = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+	LoggerLevel     = "DEBUG"
+	FileLevel       = "DEBUG"
+	ConsoleLevel    = "INFO"
+	VerboseConsole  = "DEBUG"
+	MaxLogFileBytes = 4 * 1024 * 1024
 )
 
 type Level int
@@ -89,7 +92,10 @@ func Configure(logFile string, verbose bool, options ...Option) *Logger {
 		console: os.Stderr,
 		now:     time.Now,
 		open: func(path string) (io.WriteCloser, error) {
-			return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+			if err := rotateIfNeeded(path, MaxLogFileBytes); err != nil {
+				return nil, err
+			}
+			return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		},
 	}
 	for _, option := range options {
@@ -102,7 +108,7 @@ func Configure(logFile string, verbose bool, options ...Option) *Logger {
 	logger := &Logger{console: cfg.console, consoleLevel: level, now: cfg.now}
 
 	if parent := filepath.Dir(logFile); parent != "." && parent != "" {
-		if err := os.MkdirAll(parent, 0o755); err != nil {
+		if err := os.MkdirAll(parent, 0o700); err != nil {
 			logger.Warningf("File logging disabled for %s: %v", logFile, err)
 			return logger
 		}
@@ -127,6 +133,28 @@ func (logger *Logger) Close() error {
 	return err
 }
 
+func rotateIfNeeded(path string, maxBytes int64) error {
+	if path == "" || maxBytes <= 0 {
+		return nil
+	}
+	st, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() {
+		return fmt.Errorf("unsafe log file: %s", path)
+	}
+	if st.Size() <= maxBytes {
+		return nil
+	}
+	rotated := path + ".1"
+	_ = os.Remove(rotated)
+	return os.Rename(path, rotated)
+}
+
 func (logger *Logger) Debugf(format string, args ...any)   { logger.logf(Debug, format, args...) }
 func (logger *Logger) Infof(format string, args ...any)    { logger.logf(Info, format, args...) }
 func (logger *Logger) Warningf(format string, args ...any) { logger.logf(Warning, format, args...) }
@@ -142,6 +170,7 @@ func (logger *Logger) logf(level Level, format string, args ...any) {
 	defer logger.mu.Unlock()
 	message := fmt.Sprintf(format, args...)
 	message = strings.TrimSuffix(message, "\n")
+	message = redaction.String(message)
 	line := fmt.Sprintf("%s %s %s: %s\n", logger.now().Format("2006-01-02 15:04:05,000"), level.String(), LoggerName, message)
 	if logger.console != nil && level >= logger.consoleLevel {
 		_, _ = io.WriteString(logger.console, line)

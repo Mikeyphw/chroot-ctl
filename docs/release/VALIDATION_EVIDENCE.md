@@ -99,4 +99,12 @@ Intermediate overlay scope. Focused local checks cover user policy classificatio
 - Added `ValidateModuleRuntimeReleaseTrust` to `repoctl validate` and final-seal.
 - Focused checks for the overlay cover package manifest generation, rendered-tree and ZIP seal validation, module-runtime fail-closed readiness, real module-build preflight, shared startup-target resolution, Android module-build payload parity, rollback-capable replacement promotion, dynamic-library validation, executable production wrappers, and CHR15 audit closure.
 - This is an intermediate overlay and should be applied with `--no-validate`; full release validation remains reserved for a later gate overlay.
+## CHR16 — Logging, diagnostics, audit & evidence
+
+Intermediate overlay validation performed in the sandbox:
+
+- `go test -modfile=/mnt/data/chrootctl_chr15.local.mod ./... -run '^$' -count=1`
+- Focused no-DB tests for logging, redaction, operations journal permissions, services severity helpers, and repoctl CHR16 source gate.
+
+Full device validation remains deferred to a later gate overlay per the current roadmap workflow.
 

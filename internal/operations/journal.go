@@ -23,7 +23,7 @@ type Journal struct{ Root, RecordsDir, EventsDir, CancelDir, LocksDir string }
 func NewJournal(root string) (*Journal, error) {
 	j := &Journal{Root: root, RecordsDir: filepath.Join(root, "records"), EventsDir: filepath.Join(root, "events"), CancelDir: filepath.Join(root, "cancel"), LocksDir: filepath.Join(root, "locks")}
 	for _, d := range []string{j.RecordsDir, j.EventsDir, j.CancelDir, j.LocksDir} {
-		if err := os.MkdirAll(d, 0755); err != nil {
+		if err := os.MkdirAll(d, 0o700); err != nil {
 			return nil, err
 		}
 	}
@@ -165,7 +165,7 @@ func (j *Journal) AppendEvent(id string, event map[string]any) error {
 		return e
 	}
 	p := filepath.Join(j.EventsDir, safe+".jsonl")
-	f, e := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	f, e := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if e != nil {
 		return e
 	}
@@ -252,7 +252,7 @@ func (j *Journal) RequestCancel(id string) error {
 	if e != nil {
 		return e
 	}
-	return os.WriteFile(filepath.Join(j.CancelDir, safe), []byte("cancel\n"), 0644)
+	return os.WriteFile(filepath.Join(j.CancelDir, safe), []byte("cancel\n"), 0o600)
 }
 func (j *Journal) CancellationRequested(id string) bool {
 	safe, e := ValidateID(id)
@@ -281,7 +281,7 @@ func atomicJSON(path string, v any) error {
 	return atomicBytes(path, append(b, '\n'))
 }
 func atomicBytes(path string, b []byte) error {
-	if e := os.MkdirAll(filepath.Dir(path), 0755); e != nil {
+	if e := os.MkdirAll(filepath.Dir(path), 0o700); e != nil {
 		return e
 	}
 	f, e := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
@@ -290,7 +290,7 @@ func atomicBytes(path string, b []byte) error {
 	}
 	name := f.Name()
 	defer os.Remove(name)
-	if e = f.Chmod(0644); e == nil {
+	if e = f.Chmod(0o600); e == nil {
 		_, e = f.Write(b)
 	}
 	if e == nil {

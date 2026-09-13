@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"chrootctl/internal/redaction"
 	"chrootctl/internal/sqlitecompat"
 	"chrootctl/internal/validation"
 )
@@ -1183,6 +1184,8 @@ func (r *Registry) PruneExpiredArtifacts(ctx context.Context) ([]Artifact, error
 	return out, nil
 }
 
+const MaxAuditEventLimit = 1000
+
 type EventInput struct {
 	EventType, Actor, Target, Result, Message string
 	Metadata                                  map[string]any
@@ -1192,7 +1195,11 @@ func (r *Registry) AddEvent(ctx context.Context, input EventInput) (Event, error
 	if input.Result == "" {
 		input.Result = "ok"
 	}
-	payload, err := jsonPayload(input.Metadata)
+	cleanMeta, _ := redaction.Value(input.Metadata).(map[string]any)
+	input.Actor = redaction.String(input.Actor)
+	input.Target = redaction.String(input.Target)
+	input.Message = redaction.String(input.Message)
+	payload, err := jsonPayload(cleanMeta)
 	if err != nil {
 		return Event{}, err
 	}
@@ -1230,6 +1237,9 @@ func (r *Registry) GetEvent(ctx context.Context, id int64) (Event, error) {
 func (r *Registry) ListEvents(ctx context.Context, limit int) ([]Event, error) {
 	if limit <= 0 {
 		limit = 20
+	}
+	if limit > MaxAuditEventLimit {
+		limit = MaxAuditEventLimit
 	}
 	rows, err := r.db.QueryContext(ctx, "SELECT "+eventColumns+" FROM events ORDER BY event_id DESC LIMIT ?", limit)
 	if err != nil {

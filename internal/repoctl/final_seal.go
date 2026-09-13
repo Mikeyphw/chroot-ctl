@@ -93,7 +93,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateClipboardPrivilegedIntegration(root); e != nil {
 			return e
 		}
-		return ValidateModuleRuntimeReleaseTrust(root)
+		if e := ValidateModuleRuntimeReleaseTrust(root); e != nil {
+			return e
+		}
+		return ValidateLoggingDiagnosticsAuditEvidence(root)
 	}); err != nil {
 		return err
 	}

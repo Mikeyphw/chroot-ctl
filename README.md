@@ -37,3 +37,7 @@ CHR14 makes clipboard integration target-aware and lifecycle-safe: daemon state 
 
 CHR15 makes module packaging, runtime readiness, Android selection, and release wrappers share one sealed Go-native contract. Rendered modules now carry a full package manifest at `config/chrootctl/module-package-manifest.json`; module ZIPs are validated against that inventory before artifact registration; runtime status and Android runtime resolution fail closed on corrupt package/runtime seals; module-build preview uses the real backend preflight; startup targets resolve through the installed-target path authority; replacement promotion is rollback-capable; uninstall removes transient module state; and the documented production wrappers are executable.
 
+## CHR16 — logging, diagnostics, audit & evidence
+
+Overlay 16 of 20 hardens the diagnostic plane: private/redacted logs, bounded operation/event journals, support bundles as managed tar.gz artifacts, sanitized audit events, correct severity thresholds, follow-mode filtering, and Android import-password clearing after dispatch.
+

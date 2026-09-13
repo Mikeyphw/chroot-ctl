@@ -200,7 +200,7 @@ fun ChrootCtlApp(
                 refreshTransferArtifacts = viewModel::refreshTransferArtifacts,
                 startTransferImport = {
                     val payload = viewModel.transferImportPayloadJson()
-                    viewModel.clearTransferImportPreview()
+                    viewModel.clearTransferImportSecretsAfterDispatch()
                     onStartBridgeOperation("transfer.import", payload)
                 },
                 startTransferExport = {

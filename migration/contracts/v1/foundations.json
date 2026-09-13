@@ -703,7 +703,11 @@
       "SupportBundleResult": [
         "archive",
         "included",
-        "artifact_id"
+        "artifact_id",
+        "archive_format",
+        "checksum",
+        "size_bytes",
+        "managed"
       ],
       "UpgradeResult": [
         "status",

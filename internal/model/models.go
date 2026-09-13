@@ -134,9 +134,13 @@ type AuditEvent struct {
 }
 
 type SupportBundleResult struct {
-	Archive    string   `json:"archive"`
-	Included   []string `json:"included"`
-	ArtifactID string   `json:"artifact_id,omitempty"`
+	Archive       string   `json:"archive"`
+	Included      []string `json:"included"`
+	ArtifactID    string   `json:"artifact_id,omitempty"`
+	ArchiveFormat string   `json:"archive_format"`
+	Checksum      string   `json:"checksum,omitempty"`
+	SizeBytes     int64    `json:"size_bytes,omitempty"`
+	Managed       bool     `json:"managed"`
 }
 
 type ChrootUserDetails struct {

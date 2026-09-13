@@ -1002,6 +1002,11 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         transferPane.value = transferPane.value.copy(importInspection = null)
     }
 
+    fun clearTransferImportSecretsAfterDispatch() {
+        transferImportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(importPassword = "", importInspection = null)
+    }
+
     fun clearTransferExportPreview() {
         transferExportPreviewRequestPayload = null
         transferPane.value = transferPane.value.copy(exportPreview = null)

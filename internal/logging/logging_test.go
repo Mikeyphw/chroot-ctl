@@ -88,3 +88,46 @@ func TestFileFailureFallsBackToConsole(t *testing.T) {
 		t.Fatalf("fallback warning = %q", console.String())
 	}
 }
+
+func TestCHR16FileLoggingIsPrivateAndRedacted(t *testing.T) {
+	var console bytes.Buffer
+	path := filepath.Join(t.TempDir(), "chrootctl.log")
+	logger := Configure(path, true, WithConsole(&console))
+	logger.Debug("token=super-secret")
+	if err := logger.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("log mode=%#o want 0600", st.Mode().Perm())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "super-secret") || !strings.Contains(string(data), "token=<redacted>") {
+		t.Fatalf("log was not redacted: %q", string(data))
+	}
+}
+
+func TestCHR16RotatesOversizedLog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chrootctl.log")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), MaxLogFileBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logger := Configure(path, false, WithConsole(io.Discard))
+	logger.Info("fresh")
+	if err := logger.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".1"); err != nil {
+		t.Fatalf("rotated log missing: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "fresh") {
+		t.Fatalf("fresh log missing: %q", string(data))
+	}
+}

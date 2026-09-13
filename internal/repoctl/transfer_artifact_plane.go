@@ -70,6 +70,7 @@ func ValidateTransferArtifactPlane(root string) error {
 	}
 	if err := mustContain("internal/services/module_build.go",
 		"ManagedArchive(\"chrootctl-magisk\", \"zip\")",
+		"contained(managedRoot, abs, \"module artifact\")",
 		"RegisterArtifact(ctx, abs, \"module-archive\"",
 	); err != nil {
 		return err
@@ -79,9 +80,8 @@ func ValidateTransferArtifactPlane(root string) error {
 		"return s.Transfer().TempState(ctx)",
 		"return b.Services.Transfer().DeleteTemp(ctx, id, path, all)",
 		"case \"support.preview\":",
+		"services.ManagedArchive(\"chrootctl-support\", \"tar.gz\")",
 		"containedBridgePath(root, abs, \"support bundle artifact\")",
-		"services.ManagedArchive(\"chrootctl-magisk\", \"zip\")",
-		"containedBridgePath(root, abs, \"module artifact\")",
 		"services.ManagedArchive(\"smoke-result-\"+kind, \"json\")",
 		"containedBridgePath(root, abs, \"smoke artifact\")",
 		"if b.Services.DryRun {",

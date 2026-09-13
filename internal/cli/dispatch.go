@@ -16,6 +16,7 @@ import (
 	"chrootctl/internal/completion"
 	"chrootctl/internal/model"
 	modulepkg "chrootctl/internal/module"
+	"chrootctl/internal/redaction"
 	"chrootctl/internal/services"
 	sys "chrootctl/internal/system"
 )
@@ -225,9 +226,38 @@ func (a *App) logs(ctx context.Context) error {
 		return nil
 	}
 	cfg, _ := a.Services.ConfigFor(n, "")
-	return followFile(ctx, cfg.LogFile, a.Stdout)
+	return followFile(ctx, cfg.LogFile, a.Stdout, a.Inv.String("level"))
 }
-func followFile(ctx context.Context, path string, w io.Writer) error {
+func cliLogSeverity(level string) int {
+	switch strings.ToUpper(strings.TrimSpace(level)) {
+	case "DEBUG":
+		return 10
+	case "":
+		return 0
+	case "INFO":
+		return 20
+	case "WARNING", "WARN":
+		return 30
+	case "ERROR":
+		return 40
+	case "CRITICAL":
+		return 50
+	default:
+		return 20
+	}
+}
+
+func cliLogLineSeverity(line string) int {
+	upper := strings.ToUpper(line)
+	for _, level := range []string{"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"} {
+		if strings.Contains(upper, " "+level+" ") || strings.Contains(upper, "	"+level+"	") {
+			return cliLogSeverity(level)
+		}
+	}
+	return cliLogSeverity("INFO")
+}
+
+func followFile(ctx context.Context, path string, w io.Writer, level string) error {
 	f, e := os.Open(path)
 	if e != nil {
 		return e
@@ -238,8 +268,11 @@ func followFile(ctx context.Context, path string, w io.Writer) error {
 	for {
 		line, e := r.ReadString('\n')
 		if line != "" {
-			if _, writeErr := fmt.Fprint(w, line); writeErr != nil {
-				return writeErr
+			clean := redaction.String(line)
+			if cliLogLineSeverity(clean) >= cliLogSeverity(level) {
+				if _, writeErr := fmt.Fprint(w, clean); writeErr != nil {
+					return writeErr
+				}
 			}
 		}
 		if e == nil {
@@ -385,7 +418,17 @@ func (a *App) units(ctx context.Context, cmd string) error {
 	if e != nil {
 		return &PartialResultError{Err: e, Partial: v, ExitCode: 1}
 	}
-	return a.emit("Services", []any{v})
+	if err := a.emit("Services", []any{v}); err != nil {
+		return err
+	}
+	if (cmd == "journal" || (cmd == "run" && a.Inv.Bool("logs"))) && a.Inv.Bool("follow") {
+		if row, ok := v.(map[string]any); ok {
+			if logPath, ok := row["log_file"].(string); ok && logPath != "" {
+				return followFile(ctx, logPath, a.Stdout, "")
+			}
+		}
+	}
+	return nil
 }
 
 func (a *App) install(ctx context.Context) error {

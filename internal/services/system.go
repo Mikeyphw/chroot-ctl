@@ -3,6 +3,7 @@ package services
 import (
 	"bufio"
 	"chrootctl/internal/model"
+	"chrootctl/internal/redaction"
 	sys "chrootctl/internal/system"
 	"context"
 	"fmt"
@@ -293,22 +294,77 @@ func (s *SystemService) ForeignArchAdvisories(ctx context.Context) []map[string]
 	}
 	return out
 }
+func logSeverityValue(level string) int {
+	switch strings.ToUpper(strings.TrimSpace(level)) {
+	case "DEBUG":
+		return 10
+	case "INFO":
+		return 20
+	case "WARNING", "WARN":
+		return 30
+	case "ERROR":
+		return 40
+	case "CRITICAL":
+		return 50
+	default:
+		return 0
+	}
+}
+
+func logLineSeverity(line string) string {
+	if m := logLevelRE.FindString(line); m != "" {
+		return strings.ToUpper(m)
+	}
+	return "INFO"
+}
+
+func validLogLevel(level string) bool {
+	if strings.TrimSpace(level) == "" {
+		return true
+	}
+	return logSeverityValue(level) != 0
+}
+
 func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll bool, level string, follow bool) (model.LogSnapshot, error) {
 	cfg, e := s.C.ConfigFor(name, "")
 	if e != nil {
 		return model.LogSnapshot{}, e
 	}
+	threshold := 0
+	if level != "" {
+		if !validLogLevel(level) {
+			return model.LogSnapshot{}, fmt.Errorf("unsupported log level %q", level)
+		}
+		threshold = logSeverityValue(level)
+	}
+	if tail < 0 {
+		return model.LogSnapshot{}, fmt.Errorf("tail must be non-negative")
+	}
 	lines := []string{}
 	f, e := os.Open(cfg.LogFile)
-	if e == nil {
+	if e != nil {
+		if !os.IsNotExist(e) {
+			return model.LogSnapshot{}, fmt.Errorf("read log file %s: %w", cfg.LogFile, e)
+		}
+	} else {
+		defer f.Close()
 		scan := bufio.NewScanner(f)
+		buf := make([]byte, 64*1024)
+		scan.Buffer(buf, 1024*1024)
 		for scan.Scan() {
-			line := scan.Text()
-			if level == "" || strings.Contains(strings.ToUpper(line), strings.ToUpper(level)) {
+			line := redaction.String(scan.Text())
+			sev := logSeverityValue(logLineSeverity(line))
+			if threshold == 0 || sev >= threshold {
 				lines = append(lines, line)
+				if !showAll && tail > 0 && len(lines) > tail {
+					copy(lines, lines[len(lines)-tail:])
+					lines = lines[:tail]
+				}
 			}
 		}
-		f.Close()
+		if e := scan.Err(); e != nil {
+			return model.LogSnapshot{}, fmt.Errorf("scan log file %s: %w", cfg.LogFile, e)
+		}
 	}
 	if !showAll && tail > 0 && len(lines) > tail {
 		lines = lines[len(lines)-tail:]
@@ -316,7 +372,7 @@ func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll
 	entries := []model.LogEntry{}
 	for _, line := range lines {
 		var lvl *string
-		if m := logLevelRE.FindString(line); m != "" {
+		if m := logLineSeverity(line); m != "" {
 			x := m
 			lvl = &x
 		}
