@@ -191,8 +191,8 @@ func (b Bundle) Validate() error {
 	if b.Release.NativeRuntime.SchemaVersion != ExpectedNativeRuntimeSchemaVersion {
 		return fmt.Errorf("native runtime schema drift: expected %d, got %d", ExpectedNativeRuntimeSchemaVersion, b.Release.NativeRuntime.SchemaVersion)
 	}
-	if len(b.Foundations.Models.FieldNames) != 40 {
-		return fmt.Errorf("GO03 model contract drift: expected 40 dataclass models, got %d", len(b.Foundations.Models.FieldNames))
+	if len(b.Foundations.Models.FieldNames) != 41 {
+		return fmt.Errorf("GO03 model contract drift: expected 41 dataclass models, got %d", len(b.Foundations.Models.FieldNames))
 	}
 	if len(b.Foundations.Validation.Cases) != 23 {
 		return fmt.Errorf("GO03 validation contract drift: expected 23 cases, got %d", len(b.Foundations.Validation.Cases))

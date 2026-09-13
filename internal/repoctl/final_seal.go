@@ -84,7 +84,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateInstallerUpgradeReconstruction(root); e != nil {
 			return e
 		}
-		return ValidateUserIdentitySafety(root)
+		if e := ValidateUserIdentitySafety(root); e != nil {
+			return e
+		}
+		return ValidateCatalogPackageWorkflow(root)
 	}); err != nil {
 		return err
 	}

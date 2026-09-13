@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y xclip xsel wl-clipboard jq socat
     ;;
   arch)
-    pacman -Syu --noconfirm --needed xclip xsel wl-clipboard jq socat
+    pacman -Sy --noconfirm --needed xclip xsel wl-clipboard jq socat
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

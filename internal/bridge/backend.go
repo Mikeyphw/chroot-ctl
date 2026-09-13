@@ -2,8 +2,6 @@ package bridge
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -181,8 +179,13 @@ func catalogNames(p map[string]any) ([]string, error) {
 	return names, nil
 }
 func entryPayload(e catalog.Entry) map[string]any {
-	sum := sha256.Sum256([]byte(e.ScriptText))
-	return map[string]any{"kind": e.Kind, "name": e.Name, "description": e.Description, "distros": e.Distros, "categories": e.Categories, "script": e.Script, "version": e.Version, "risks": e.Risks, "rollback": e.Rollback, "requires": e.Requires, "scriptSha256": hex.EncodeToString(sum[:])}
+	return map[string]any{
+		"kind": e.Kind, "name": e.Name, "description": e.Description, "distros": e.Distros, "categories": e.Categories,
+		"script": e.Script, "version": e.Version, "source": e.Source, "risks": e.Risks, "rollback": e.Rollback, "requires": e.Requires,
+		"scriptSha256": e.ScriptSHA256, "script_sha256": e.ScriptSHA256, "riskLevel": e.RiskLevel, "risk_level": e.RiskLevel,
+		"destructive": e.Destructive, "requiresConfirmation": e.RequiresConfirmation, "requires_confirmation": e.RequiresConfirmation,
+		"state": e.State, "stateReason": e.StateReason, "state_reason": e.StateReason, "installed": e.Installed, "failed": e.Failed,
+	}
 }
 func decisions(p map[string]any) ([]map[string]string, error) {
 	raw, ok := p["decisions"]
@@ -429,11 +432,11 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		if e != nil {
 			return nil, e
 		}
-		items, e := s.Chroots().PackageInventory(ctx, n, lim)
+		inventory, e := s.Chroots().PackageInventory(ctx, n, lim)
 		if e != nil {
 			return nil, e
 		}
-		return map[string]any{"name": n, "count": len(items), "packages": items}, nil
+		return inventory, nil
 	case "packages.compare":
 		left := optText(p, "left")
 		if left == "" {
@@ -519,6 +522,7 @@ func (b *ServicesBackend) catalogList(ctx context.Context, p map[string]any) (an
 	if e != nil {
 		return nil, e
 	}
+	entries = svc.EnrichEntries(ctx, entries)
 	out := []map[string]any{}
 	for _, entry := range entries {
 		if query != "" {
@@ -804,23 +808,39 @@ func (b *ServicesBackend) catalogPreview(ctx context.Context, p map[string]any) 
 	}
 	svc := b.Services.Catalog(kind, n)
 	block := []map[string]string{}
+	warnings := []string{}
 	entries := []map[string]any{}
 	for _, name := range names {
-		entry, e := svc.GetEntry(name)
+		entry, e := svc.EntryState(ctx, name)
 		if e != nil {
 			block = append(block, map[string]string{"code": "unknown_entry", "message": "Unknown " + kind + ": " + name})
 			continue
 		}
 		entries = append(entries, entryPayload(entry))
+		if entry.IsBlocked() {
+			block = append(block, map[string]string{"code": "entry_blocked", "message": entry.Name + " is blocked: " + entry.StateReason})
+			continue
+		}
 		if detail.Distro != "" && !entry.MatchesDistro(detail.Distro) {
 			block = append(block, map[string]string{"code": "unsupported_distro", "message": entry.Name + " does not support " + detail.Distro + "."})
 		}
+		if entry.Installed {
+			warnings = append(warnings, entry.Name+" is already recorded as applied to this target.")
+		}
+		if entry.Failed {
+			warnings = append(warnings, entry.Name+" failed during the previous attempt; review state before retrying.")
+		}
+		if entry.RequiresConfirmation {
+			warnings = append(warnings, entry.Name+" has "+entry.RiskLevel+" catalog risk and rollback="+entry.Rollback+".")
+		}
 		missing, e := svc.Preflight(ctx, entry)
-		if e == nil && len(missing) > 0 {
+		if e != nil {
+			block = append(block, map[string]string{"code": "preflight_unavailable", "message": entry.Name + " preflight failed: " + e.Error()})
+		} else if len(missing) > 0 {
 			block = append(block, map[string]string{"code": "missing_commands", "message": entry.Name + " requires: " + strings.Join(missing, ", ")})
 		}
 	}
-	return map[string]any{"ok": len(block) == 0, "kind": "catalog.apply", "name": n, "catalogKind": kind, "entries": entries, "blocking": block, "warnings": []string{}, "confirm": false}, nil
+	return map[string]any{"ok": len(block) == 0, "kind": "catalog.apply", "name": n, "catalogKind": kind, "entries": entries, "blocking": block, "warnings": warnings, "confirm": len(warnings) > 0}, nil
 }
 func (b *ServicesBackend) cleanupPreview(ctx context.Context, p map[string]any, temp bool) (any, error) {
 	id := optText(p, "artifactId")

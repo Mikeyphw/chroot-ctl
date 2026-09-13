@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y cinnamon nemo nemo-fileroller lightdm slick-greeter
     ;;
   arch)
-    pacman -Syu --noconfirm --needed cinnamon nemo-fileroller lightdm lightdm-slick-greeter
+    pacman -Sy --noconfirm --needed cinnamon nemo-fileroller lightdm lightdm-slick-greeter
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

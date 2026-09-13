@@ -408,6 +408,10 @@
         "name",
         "distro",
         "categories",
+        "version",
+        "script_sha256",
+        "risk_level",
+        "rollback",
         "applied"
       ],
       "CheckRow": [
@@ -725,6 +729,13 @@
         "gid",
         "ownership_fixed",
         "transactional"
+      ],
+      "PackageInventoryResult": [
+        "name",
+        "count",
+        "packages",
+        "limit",
+        "truncated"
       ]
     },
     "samples": {

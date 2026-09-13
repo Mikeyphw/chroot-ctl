@@ -48,6 +48,14 @@ type ChrootImportResult struct {
 	PostImportAction  string  `json:"post_import_action"`
 }
 
+type PackageInventoryResult struct {
+	Name      string   `json:"name"`
+	Count     int      `json:"count"`
+	Packages  []string `json:"packages"`
+	Limit     int      `json:"limit"`
+	Truncated bool     `json:"truncated"`
+}
+
 type PackageDiffResult struct {
 	Left        string   `json:"left"`
 	Right       string   `json:"right"`
@@ -181,11 +189,15 @@ type ChrootUserSudoResult struct {
 }
 
 type CatalogApplyResult struct {
-	Kind       string   `json:"kind"`
-	Name       string   `json:"name"`
-	Distro     string   `json:"distro"`
-	Categories []string `json:"categories"`
-	Applied    bool     `json:"applied"`
+	Kind         string   `json:"kind"`
+	Name         string   `json:"name"`
+	Distro       string   `json:"distro"`
+	Categories   []string `json:"categories"`
+	Version      string   `json:"version"`
+	ScriptSHA256 string   `json:"script_sha256"`
+	RiskLevel    string   `json:"risk_level"`
+	Rollback     string   `json:"rollback"`
+	Applied      bool     `json:"applied"`
 }
 
 type InstallExtractResult struct {

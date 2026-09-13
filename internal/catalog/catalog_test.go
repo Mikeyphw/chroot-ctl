@@ -25,7 +25,7 @@ func TestExternalSafetyAndCategory(t *testing.T) {
 	p := filepath.Join(d, "x.yaml")
 	_ = os.WriteFile(p, []byte("x"), 0o600)
 	_ = os.Chmod(p, 0o666)
-	if e := safeExternal(p, "manifest"); e == nil {
+	if _, e := safeExternal(p, "manifest"); e == nil {
 		t.Fatal("expected unsafe")
 	}
 	if c, e := normalizeCategory("Desktop Utility"); e != nil || c != "desktop-utility" {

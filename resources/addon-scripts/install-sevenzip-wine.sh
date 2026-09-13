@@ -10,7 +10,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y p7zip-full wine winbind cabextract
     ;;
   arch)
-    pacman -Syu --noconfirm --needed 7zip wine winetricks
+    pacman -Sy --noconfirm --needed 7zip wine winetricks
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

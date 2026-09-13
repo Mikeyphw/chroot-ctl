@@ -79,3 +79,10 @@ Evidence is written through a same-directory temporary file, file `fsync`, atomi
 ## CHR12 user identity safety
 
 Intermediate overlay scope. Focused local checks cover user policy classification, sudo state derivation, password confirmation semantics, bridge preview payload compatibility, and repoctl source invariants. Full repo validation remains deferred to a later gate overlay because this overlay is intentionally applied with `--no-validate`.
+
+## CHR13 catalog and package workflow
+
+- Overlay: `chrootctl_chr13_catalog_package_workflow_v1`
+- Scope: catalog/package preflight, risk/state propagation, external catalog trust, Android catalog controls, package inventory truncation truth.
+- Intermediate policy: apply with `--no-validate`; full gate validation remains reserved for the next sensible seal overlay.
+- Focused source gate: `ValidateCatalogPackageWorkflow`.

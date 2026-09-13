@@ -48,6 +48,7 @@ func TestPythonModelFieldNamesAreMirrored(t *testing.T) {
 		"ChrootRenameResult":           reflect.TypeOf(ChrootRenameResult{}),
 		"ChrootExportResult":           reflect.TypeOf(ChrootExportResult{}),
 		"ChrootImportResult":           reflect.TypeOf(ChrootImportResult{}),
+		"PackageInventoryResult":       reflect.TypeOf(PackageInventoryResult{}),
 		"PackageDiffResult":            reflect.TypeOf(PackageDiffResult{}),
 		"ChrootArchiveInspection":      reflect.TypeOf(ChrootArchiveInspection{}),
 		"SnapshotRecord":               reflect.TypeOf(SnapshotRecord{}),

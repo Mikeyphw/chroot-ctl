@@ -1036,7 +1036,7 @@ func (a *App) completeCatalog(topic string, vals []string) error {
 		if e != nil {
 			return e
 		}
-		_, e = fmt.Fprintf(a.Stdout, "name: %s\nkind: %s\ndistros: %s\ncategories: %s\nscript: %s\n\n%s", v.Name, v.Kind, strings.Join(v.Distros, ","), strings.Join(v.Categories, ","), v.Script, v.Description)
+		_, e = fmt.Fprintf(a.Stdout, "name: %s\nkind: %s\ndistros: %s\ncategories: %s\nscript: %s\nstate: %s\nrisk: %s\nrollback: %s\nsource: %s\nscript_sha256: %s\n\n%s", v.Name, v.Kind, strings.Join(v.Distros, ","), strings.Join(v.Categories, ","), v.Script, v.State, v.RiskLevel, v.Rollback, v.Source, v.ScriptSHA256, v.Description)
 		return e
 	}
 	v, e := svc.ListEntries(distro, category)
@@ -1050,7 +1050,7 @@ func (a *App) completeCatalog(topic string, vals []string) error {
 			if cat == "" {
 				cat = "uncategorized"
 			}
-			lines = append(lines, strings.Join([]string{x.Name, cat, strings.Join(x.Distros, ","), x.Description}, "\t"))
+			lines = append(lines, strings.Join([]string{x.Name, cat, strings.Join(x.Distros, ","), x.State, x.RiskLevel, x.Description}, "\t"))
 		} else {
 			lines = append(lines, x.Name)
 		}

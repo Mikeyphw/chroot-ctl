@@ -11,7 +11,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     group_name="sudo"
     ;;
   arch)
-    pacman -Syu --noconfirm --needed sudo
+    pacman -Sy --noconfirm --needed sudo
     group_name="wheel"
     ;;
   *)

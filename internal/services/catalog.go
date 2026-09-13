@@ -53,6 +53,33 @@ func (s *CatalogService) GetEntry(name string) (catalog.Entry, error) {
 	}
 	return c.Get(name)
 }
+
+func (s *CatalogService) EnrichEntries(ctx context.Context, entries []catalog.Entry) []catalog.Entry {
+	if s.Name == "" || len(entries) == 0 || s.C == nil || s.C.Registry == nil {
+		return entries
+	}
+	rec, err := s.C.Registry.Get(ctx, s.Name)
+	if err != nil || rec == nil {
+		return entries
+	}
+	out := make([]catalog.Entry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.WithMetadataState(rec.Metadata))
+	}
+	return out
+}
+
+func (s *CatalogService) EntryState(ctx context.Context, name string) (catalog.Entry, error) {
+	entry, err := s.GetEntry(name)
+	if err != nil {
+		return catalog.Entry{}, err
+	}
+	entries := s.EnrichEntries(ctx, []catalog.Entry{entry})
+	if len(entries) == 1 {
+		return entries[0], nil
+	}
+	return entry, nil
+}
 func (s *CatalogService) Preflight(ctx context.Context, entry catalog.Entry) ([]string, error) {
 	rt, e := s.C.RuntimeFor(s.Name, "")
 	if e != nil {
@@ -65,9 +92,6 @@ func (s *CatalogService) Preflight(ctx context.Context, entry catalog.Entry) ([]
 		return nil, fmt.Errorf("prepare catalog target: %w", e)
 	}
 	required := append([]string(nil), entry.Requires...)
-	if len(entry.Script) > 3 && entry.Script[len(entry.Script)-3:] == ".py" {
-		required = append(required, "python3")
-	}
 	missing := []string{}
 	for _, cmd := range uniqueStrings(required) {
 		r, e := rt.Runner.Run(ctx, []string{"busybox", "chroot", rt.Config.ChrootBase(), "/bin/bash", "-lc", "command -v " + cmd + " >/dev/null 2>&1"}, sys.RunOptions{AllowFailure: true, ChrootEnv: true})
@@ -88,11 +112,15 @@ func (s *CatalogService) Apply(ctx context.Context, names []string, progress fun
 	}
 	out := []model.CatalogApplyResult{}
 	for _, name := range uniqueStrings(names) {
-		if _, e = c.Get(name); e != nil {
-			return out, e
+		entry, getErr := s.EntryState(ctx, name)
+		if getErr != nil {
+			return out, getErr
+		}
+		if entry.IsBlocked() {
+			return out, fmt.Errorf("%s '%s' is blocked: %s", s.Kind, name, entry.StateReason)
 		}
 		if progress != nil {
-			if e = progress(map[string]any{"phase": "catalog", "message": "Applying " + s.Kind + ": " + name, "kind": s.Kind, "name": name}); e != nil {
+			if e = progress(map[string]any{"phase": "catalog", "message": "Applying " + s.Kind + ": " + name, "kind": s.Kind, "name": name, "risk_level": entry.RiskLevel, "requires_confirmation": entry.RequiresConfirmation, "script_sha256": entry.ScriptSHA256}); e != nil {
 				return out, e
 			}
 		}

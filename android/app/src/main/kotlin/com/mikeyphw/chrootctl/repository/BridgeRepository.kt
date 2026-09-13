@@ -993,6 +993,17 @@ private fun JSONObject.toCatalogEntrySummary(): CatalogEntrySummary = CatalogEnt
     description = firstString("description"),
     distros = optJSONArray("distros").toStringListLocal(),
     categories = optJSONArray("categories").toStringListLocal(),
+    risks = optJSONArray("risks").toStringListLocal(),
+    rollback = firstString("rollback").ifBlank { "manual" },
+    riskLevel = firstString("risk_level", "riskLevel").ifBlank { "low" },
+    source = firstString("source").ifBlank { "builtin" },
+    state = firstString("state").ifBlank { "available" },
+    stateReason = firstString("state_reason", "stateReason").ifBlank { "ready" },
+    scriptSha256 = firstString("script_sha256", "scriptSha256"),
+    destructive = optBoolean("destructive", false),
+    requiresConfirmation = optBoolean("requires_confirmation", optBoolean("requiresConfirmation", false)),
+    installed = optBoolean("installed", false),
+    failed = optBoolean("failed", false),
 )
 
 private fun JSONObject.toPackageInventorySummary(): PackageInventorySummary = PackageInventorySummary(
@@ -1000,6 +1011,7 @@ private fun JSONObject.toPackageInventorySummary(): PackageInventorySummary = Pa
     count = optInt("count", 0),
     packages = optJSONArray("packages").toStringListLocal(),
     truncated = optBoolean("truncated", false),
+    limit = optInt("limit", 0),
 )
 
 private fun JSONObject.toPackageCompareSummary(): PackageCompareSummary = PackageCompareSummary(

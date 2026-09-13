@@ -265,6 +265,17 @@ data class CatalogEntrySummary(
     val description: String,
     val distros: List<String>,
     val categories: List<String>,
+    val risks: List<String> = emptyList(),
+    val rollback: String = "manual",
+    val riskLevel: String = "low",
+    val source: String = "builtin",
+    val state: String = "available",
+    val stateReason: String = "ready",
+    val scriptSha256: String = "",
+    val destructive: Boolean = false,
+    val requiresConfirmation: Boolean = false,
+    val installed: Boolean = false,
+    val failed: Boolean = false,
     val selected: Boolean = false,
 )
 
@@ -285,6 +296,7 @@ data class PackageInventorySummary(
     val count: Int,
     val packages: List<String>,
     val truncated: Boolean,
+    val limit: Int = 0,
 )
 
 data class PackageCompareSummary(

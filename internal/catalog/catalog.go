@@ -23,11 +23,13 @@ import (
 )
 
 var SupportedDistros = map[string]bool{"ubuntu": true, "arch": true}
-var supportedSuffix = map[string]bool{".sh": true, ".py": true}
+var supportedSuffix = map[string]bool{".sh": true}
 
 type Entry struct {
 	Kind, Name, Description, Script, ScriptText, Version, Rollback string
+	Source, ScriptSHA256, RiskLevel, State, StateReason            string
 	Distros, Categories, Risks, Requires                           []string
+	Destructive, RequiresConfirmation, Installed, Failed           bool
 }
 
 type Catalog struct {
@@ -184,27 +186,193 @@ func normalizeStringList(in []string) []string {
 	return out
 }
 
-func safeExternal(path, label string) error {
-	i, err := os.Lstat(path)
+func scriptSHA256(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+func classifyRisk(entryName, scriptText, rollback string, risks []string) (level string, destructive, confirm bool) {
+	level = "low"
+	riskSet := map[string]bool{}
+	for _, risk := range risks {
+		riskSet[risk] = true
+	}
+	scriptLower := strings.ToLower(scriptText)
+	if riskSet["identity-mutation"] || riskSet["filesystem-ownership"] || strings.Contains(scriptLower, "usermod") || strings.Contains(scriptLower, "groupmod") || strings.Contains(scriptLower, "chown -r") {
+		level = "high"
+		destructive = true
+	}
+	if riskSet["package-mutation"] || strings.Contains(scriptLower, "apt-get install") || strings.Contains(scriptLower, "pacman -s") {
+		if level == "low" {
+			level = "medium"
+		}
+		confirm = true
+	}
+	for _, token := range []string{"rm -rf", "mkfs", "dd if=", "dpkg --add-architecture", "pacman -syu", "pacman -Syu"} {
+		if strings.Contains(scriptLower, strings.ToLower(token)) {
+			level = "high"
+			destructive = true
+			confirm = true
+		}
+	}
+	if rollback == "manual" && level == "low" && len(risks) > 0 {
+		level = "medium"
+	}
+	if destructive || level == "high" {
+		confirm = true
+	}
+	if entryName == "sync-uid" {
+		level = "blocked"
+		destructive = true
+		confirm = false
+	}
+	return level, destructive, confirm
+}
+
+func finalizeEntry(e Entry, source string) Entry {
+	e.Source = source
+	e.ScriptSHA256 = scriptSHA256(e.ScriptText)
+	e.State = "available"
+	e.StateReason = "ready"
+	e.RiskLevel, e.Destructive, e.RequiresConfirmation = classifyRisk(e.Name, e.ScriptText, e.Rollback, e.Risks)
+	if e.Name == "sync-uid" {
+		e.State = "blocked"
+		e.StateReason = "host-managed; use users sync-id so UID/GID collision checks and ownership bounds run"
+	}
+	return e
+}
+
+func (e Entry) IsBlocked() bool { return e.State == "blocked" }
+
+func (e Entry) WithMetadataState(meta map[string]any) Entry {
+	state := catalogState(meta, e.Kind, e.Name)
+	if e.IsBlocked() {
+		return e
+	}
+	if len(state) == 0 {
+		return e
+	}
+	if raw, ok := state["state"].(string); ok && raw != "" {
+		e.State = raw
+		e.Installed = raw == "completed"
+		e.Failed = raw == "failed"
+	}
+	if raw, ok := state["error"].(string); ok && raw != "" {
+		e.StateReason = raw
+	} else if e.Installed {
+		e.StateReason = "already applied to target"
+	} else if e.Failed {
+		e.StateReason = "last apply attempt failed"
+	}
+	return e
+}
+
+func catalogState(meta map[string]any, kind, name string) map[string]any {
+	cs, _ := meta["catalog_state"].(map[string]any)
+	ks, _ := cs[kind].(map[string]any)
+	row, _ := ks[name].(map[string]any)
+	return row
+}
+
+func sameFileIdentity(a, b fs.FileInfo) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Mode() != b.Mode() || a.Size() != b.Size() || !a.ModTime().Equal(b.ModTime()) {
+		return false
+	}
+	as, aok := a.Sys().(*syscall.Stat_t)
+	bs, bok := b.Sys().(*syscall.Stat_t)
+	if aok && bok {
+		return as.Dev == bs.Dev && as.Ino == bs.Ino && as.Uid == bs.Uid && as.Gid == bs.Gid && as.Mode == bs.Mode
+	}
+	return true
+}
+
+func readStable(path, label string) ([]byte, error) {
+	before, err := safeExternal(path, label)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	after, err := safeExternal(path, label)
+	if err != nil {
+		return nil, err
+	}
+	if !sameFileIdentity(before, after) {
+		return nil, fmt.Errorf("%s changed while being read: %s", label, path)
+	}
+	return data, nil
+}
+
+func safeExternalDir(path, label string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return err
+	}
 	if err != nil {
 		return err
 	}
-	if i.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%s must not be a symlink: %s", label, path)
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("%s must be a real directory: %s", label, path)
 	}
-	if !i.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file: %s", label, path)
+	if info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0 {
+		return fmt.Errorf("%s must not be group/world writable unless sticky: %s", label, path)
 	}
-	if i.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("%s must not be group/world writable: %s", label, path)
-	}
-	if st, ok := i.Sys().(*syscall.Stat_t); ok {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
 		uid := uint32(os.Geteuid())
 		if st.Uid != 0 && st.Uid != uid {
 			return fmt.Errorf("%s has untrusted owner uid %d: %s", label, st.Uid, path)
 		}
 	}
 	return nil
+}
+
+func safeExternalParentChain(path, label string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	cur := filepath.Dir(abs)
+	for {
+		if err := safeExternalDir(cur, label+" parent"); err != nil {
+			return err
+		}
+		next := filepath.Dir(cur)
+		if next == cur {
+			return nil
+		}
+		cur = next
+	}
+}
+
+func safeExternal(path, label string) (fs.FileInfo, error) {
+	if err := safeExternalParentChain(path, label); err != nil {
+		return nil, err
+	}
+	i, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if i.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s must not be a symlink: %s", label, path)
+	}
+	if !i.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file: %s", label, path)
+	}
+	if i.Mode().Perm()&0o022 != 0 {
+		return nil, fmt.Errorf("%s must not be group/world writable: %s", label, path)
+	}
+	if st, ok := i.Sys().(*syscall.Stat_t); ok {
+		uid := uint32(os.Geteuid())
+		if st.Uid != 0 && st.Uid != uid {
+			return nil, fmt.Errorf("%s has untrusted owner uid %d: %s", label, st.Uid, path)
+		}
+	}
+	return i, nil
 }
 
 func simpleScriptName(text string) string {
@@ -243,7 +411,7 @@ func (c Catalog) builtinEntries() ([]Entry, error) {
 			if err != nil {
 				return nil, err
 			}
-			entries = append(entries, entry)
+			entries = append(entries, finalizeEntry(entry, "builtin"))
 		}
 		return entries, nil
 	}
@@ -272,7 +440,7 @@ func (c Catalog) builtinEntries() ([]Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, entry)
+		entries = append(entries, finalizeEntry(entry, "builtin"))
 	}
 	return entries, nil
 }
@@ -291,15 +459,10 @@ func (c Catalog) externalEntries(existing map[string]bool) ([]Entry, error) {
 	manifestDirs, scriptDirs := c.externalDirs()
 	out := []Entry{}
 	for _, dir := range manifestDirs {
-		info, err := os.Stat(dir)
-		if os.IsNotExist(err) {
+		if err := safeExternalDir(dir, c.Kind+" manifest directory"); os.IsNotExist(err) {
 			continue
-		}
-		if err != nil {
+		} else if err != nil {
 			return nil, err
-		}
-		if !info.IsDir() {
-			return nil, fmt.Errorf("%s manifest directory is not a directory: %s", c.Kind, dir)
 		}
 		files, err := os.ReadDir(dir)
 		if err != nil {
@@ -310,10 +473,7 @@ func (c Catalog) externalEntries(existing map[string]bool) ([]Entry, error) {
 				continue
 			}
 			manifestPath := filepath.Join(dir, file.Name())
-			if err := safeExternal(manifestPath, c.Kind+" manifest"); err != nil {
-				return nil, err
-			}
-			manifest, err := os.ReadFile(manifestPath)
+			manifest, err := readStable(manifestPath, c.Kind+" manifest")
 			if err != nil {
 				return nil, err
 			}
@@ -322,6 +482,9 @@ func (c Catalog) externalEntries(existing map[string]bool) ([]Entry, error) {
 			for _, sd := range scriptDirs {
 				candidate := filepath.Join(sd, scriptName)
 				if _, err := os.Lstat(candidate); err == nil {
+					if err := safeExternalDir(sd, c.Kind+" script directory"); err != nil {
+						return nil, err
+					}
 					scriptPath = candidate
 					break
 				}
@@ -329,10 +492,7 @@ func (c Catalog) externalEntries(existing map[string]bool) ([]Entry, error) {
 			if scriptPath == "" {
 				return nil, fmt.Errorf("manifest %s references missing external script: %s", manifestPath, scriptName)
 			}
-			if err := safeExternal(scriptPath, c.Kind+" script"); err != nil {
-				return nil, err
-			}
-			script, err := os.ReadFile(scriptPath)
+			script, err := readStable(scriptPath, c.Kind+" script")
 			if err != nil {
 				return nil, err
 			}
@@ -357,7 +517,7 @@ func (c Catalog) externalEntries(existing map[string]bool) ([]Entry, error) {
 				return nil, fmt.Errorf("external manifest %s script sha256 mismatch", manifestPath)
 			}
 			existing[entry.Name] = true
-			out = append(out, entry)
+			out = append(out, finalizeEntry(entry, "external"))
 		}
 	}
 	return out, nil
@@ -453,15 +613,21 @@ func (c Catalog) Apply(ctx context.Context, name string, cfg config.ChrootConfig
 	if err != nil {
 		return model.CatalogApplyResult{}, err
 	}
+	entry = entry.WithMetadataState(rec.Metadata)
 	if !entry.MatchesDistro(rec.Distro) {
 		return model.CatalogApplyResult{}, fmt.Errorf("%s '%s' does not support distro '%s'", c.Kind, name, rec.Distro)
 	}
-	if runner != nil && runner.DryRun {
-		return model.CatalogApplyResult{Kind: c.Kind, Name: name, Distro: rec.Distro, Categories: entry.Categories, Applied: false}, nil
+	if entry.IsBlocked() {
+		return model.CatalogApplyResult{}, fmt.Errorf("%s '%s' is blocked: %s", c.Kind, name, entry.StateReason)
 	}
-	sum := sha256.Sum256([]byte(entry.ScriptText))
+	if filepath.Ext(entry.Script) != ".sh" {
+		return model.CatalogApplyResult{}, fmt.Errorf("%s '%s' uses unsupported script type %q", c.Kind, name, entry.Script)
+	}
+	if runner != nil && runner.DryRun {
+		return model.CatalogApplyResult{Kind: c.Kind, Name: name, Distro: rec.Distro, Categories: entry.Categories, Version: entry.Version, ScriptSHA256: entry.ScriptSHA256, RiskLevel: entry.RiskLevel, Rollback: entry.Rollback, Applied: false}, nil
+	}
 	meta := clone(rec.Metadata)
-	state := map[string]any{"state": "running", "version": entry.Version, "script_sha256": hex.EncodeToString(sum[:]), "risks": entry.Risks, "rollback": entry.Rollback, "updated_at": float64(time.Now().UnixNano()) / 1e9}
+	state := map[string]any{"state": "running", "version": entry.Version, "script_sha256": entry.ScriptSHA256, "risk_level": entry.RiskLevel, "destructive": entry.Destructive, "requires_confirmation": entry.RequiresConfirmation, "risks": entry.Risks, "rollback": entry.Rollback, "updated_at": float64(time.Now().UnixNano()) / 1e9}
 	setState(meta, c.Kind, name, state)
 	if err = save(ctx, reg, rec, meta); err != nil {
 		return model.CatalogApplyResult{}, err
@@ -503,7 +669,7 @@ func (c Catalog) Apply(ctx context.Context, name string, cfg config.ChrootConfig
 	if err = save(ctx, reg, latest, meta); err != nil {
 		return model.CatalogApplyResult{}, err
 	}
-	return model.CatalogApplyResult{Kind: c.Kind, Name: name, Distro: rec.Distro, Categories: entry.Categories, Applied: true}, nil
+	return model.CatalogApplyResult{Kind: c.Kind, Name: name, Distro: rec.Distro, Categories: entry.Categories, Version: entry.Version, ScriptSHA256: entry.ScriptSHA256, RiskLevel: entry.RiskLevel, Rollback: entry.Rollback, Applied: true}, nil
 }
 
 func clone(m map[string]any) map[string]any {

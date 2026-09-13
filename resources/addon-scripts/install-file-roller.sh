@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y file-roller
     ;;
   arch)
-    pacman -Syu --noconfirm --needed file-roller
+    pacman -Sy --noconfirm --needed file-roller
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

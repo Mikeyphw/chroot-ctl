@@ -541,6 +541,9 @@ func Validate() error {
 	if e = ValidateUserIdentitySafety(root); e != nil {
 		return e
 	}
+	if e = ValidateCatalogPackageWorkflow(root); e != nil {
+		return e
+	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
 	if e != nil {
 		return e

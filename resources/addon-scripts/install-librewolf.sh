@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y flatpak xdg-desktop-portal xdg-desktop-portal-gtk ca-certificates
     ;;
   arch)
-    pacman -Syu --noconfirm --needed flatpak xdg-desktop-portal xdg-desktop-portal-gtk
+    pacman -Sy --noconfirm --needed flatpak xdg-desktop-portal xdg-desktop-portal-gtk
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

@@ -24,3 +24,9 @@ Selected tools/add-ons are part of install completion: finalize records `pending
 ## User identity safety
 
 User operations are protected by the CHR12 safety model. `users list` and Android user rows expose sudo, protected/system, mutability, login-shell, and policy-reason metadata. Root and system accounts are read-only. Sudo fragments are canonicalized to `/etc/sudoers.d/<username>` with passwordless rules, while legacy `90-chrootctl-<username>` fragments remain readable and removable for upgrade compatibility.
+
+## Catalog and package workflow safety
+
+CHR13 adds executable catalog state to tools and add-ons. Catalog entries now expose source, script SHA-256, rollback, risks, risk level, destructive intent, confirmation requirement, and target state. `sync-uid` remains documented but is blocked from catalog execution because UID/GID mutation must use the host-managed user service.
+
+External catalog files are read only after parent-directory, symlink, permissions, owner, and stable-read checks. Package inventory responses distinguish total package count from returned package rows and set `truncated=true` when a bridge limit cuts the list. Android catalog screens now use real category filters, installed-target chips, blocked-state rows, and preview-gated apply actions.

@@ -321,6 +321,19 @@ func ValidateAuditCoverage(root string) error {
 	if chr12Sources != 24 {
 		return fmt.Errorf("CHR12 source-manifestation coverage=%d, want 24", chr12Sources)
 	}
+
+	chr13 := []string{"D23", "U047", "U048", "U049", "U050", "U051", "U052", "U053", "U178", "U179", "U180", "U181", "U182", "U183", "U184"}
+	chr13Sources := 0
+	for _, id := range chr13 {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR13" || finding.Status == "planned" {
+			return fmt.Errorf("CHR13 finding %s is not marked implemented", id)
+		}
+		chr13Sources += len(finding.SourceFindings)
+	}
+	if chr13Sources != 26 {
+		return fmt.Errorf("CHR13 source-manifestation coverage=%d, want 26", chr13Sources)
+	}
 	return nil
 }
 

@@ -215,16 +215,30 @@ private fun CatalogCard(
                 FilterChip(selected = pane.kind == "tool", onClick = { onRefreshCatalog("tool") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), label = { Text(stringResource(R.string.catalog_tools_chip)) })
                 FilterChip(selected = pane.kind == "addon", onClick = { onRefreshCatalog("addon") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), label = { Text(stringResource(R.string.catalog_addons_chip)) })
             }
+            val installedChroots = chroots.filter { it.status == "installed" || it.status == "running" || it.health == "ok" }
+            if (installedChroots.isNotEmpty()) {
+                Text("Choose an installed chroot target", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    installedChroots.forEach { chroot ->
+                        FilterChip(selected = pane.targetName == chroot.name, onClick = { onSetTarget(chroot.name) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), label = { Text(chroot.name) })
+                    }
+                }
+            }
             OutlinedTextField(value = pane.targetName.orEmpty(), onValueChange = onSetTarget, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.catalog_target_label)) })
             OutlinedTextField(value = pane.query, onValueChange = onSetQuery, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.catalog_search_label)) })
+            if (pane.categories.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = pane.category.isBlank(), onClick = { onSetCategory("") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), label = { Text(stringResource(R.string.catalog_all_categories)) })
+                    pane.categories.forEach { category ->
+                        FilterChip(selected = pane.category == category, onClick = { onSetCategory(category) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), label = { Text(category) })
+                    }
+                }
+            }
+            val selectedCount = pane.entries.count { it.selected }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { onRefreshCatalog(pane.kind) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.catalog_search_action)) }
-                Button(onClick = onPreview, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.preview_action)) }
+                Button(onClick = onPreview, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.targetName.isNullOrBlank() && selectedCount > 0) { Text(stringResource(R.string.preview_action)) }
                 Button(onClick = onApply, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.preview.approvesOperation("catalog.apply")) { Text(stringResource(R.string.apply_action)) }
-            }
-            if (pane.categories.isNotEmpty()) {
-                ChipRow(listOf(stringResource(R.string.catalog_all_categories)) + pane.categories)
-                OutlinedTextField(value = pane.category, onValueChange = onSetCategory, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.catalog_category_label)) })
             }
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             pane.preview?.let { PreviewBlock(it) }
@@ -237,13 +251,23 @@ private fun CatalogCard(
 
 @Composable
 private fun CatalogEntryRow(entry: CatalogEntrySummary, onToggleEntry: (String) -> Unit) {
+    val blocked = entry.state == "blocked"
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Checkbox(checked = entry.selected, onCheckedChange = { onToggleEntry(entry.name) })
+            Checkbox(checked = entry.selected && !blocked, onCheckedChange = { if (!blocked) onToggleEntry(entry.name) }, enabled = !blocked)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(entry.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(entry.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ChipRow(entry.categories + entry.distros)
+                val stateLabel = when {
+                    blocked -> "blocked: ${entry.stateReason}"
+                    entry.installed -> "installed: ${entry.stateReason}"
+                    entry.failed -> "failed: ${entry.stateReason}"
+                    else -> "${entry.state}; risk=${entry.riskLevel}; rollback=${entry.rollback}; source=${entry.source}"
+                }
+                Text(stateLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val riskChips = listOf(entry.riskLevel, entry.rollback) + entry.risks
+                ChipRow((entry.categories + entry.distros + riskChips).filter { it.isNotBlank() }.distinct())
+                if (entry.scriptSha256.isNotBlank()) Text("script sha256 ${entry.scriptSha256.take(12)}…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -274,6 +298,7 @@ private fun PackageCard(
             pane.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             pane.inventory?.let { inventory ->
                 Text(pluralStringResource(R.plurals.package_inventory_summary, inventory.count, inventory.name, inventory.count))
+                if (inventory.truncated) Text("Showing ${inventory.packages.size} of ${inventory.count}; inventory is truncated by the bridge limit.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ChipRow(inventory.packages.take(16))
             }
             pane.comparison?.let { comparison ->

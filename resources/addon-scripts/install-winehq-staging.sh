@@ -7,15 +7,14 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get update
     dpkg --add-architecture i386
     apt-get update
-    if apt-cache show wine-staging >/dev/null 2>&1; then
-      apt-get install -y wine-staging winbind cabextract
-    else
-      apt-get install -y wine winbind cabextract
-      echo "wine-staging is not available in the current Ubuntu sources; installed wine instead." >&2
+    if ! apt-cache show wine-staging >/dev/null 2>&1; then
+      echo "wine-staging is not available in the current Ubuntu sources; no alternate Wine package was installed." >&2
+      exit 65
     fi
+    apt-get install -y wine-staging winbind cabextract
     ;;
   arch)
-    pacman -Syu --noconfirm --needed wine-staging winetricks
+    pacman -Sy --noconfirm --needed wine-staging winetricks
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

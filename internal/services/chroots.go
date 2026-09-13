@@ -636,20 +636,23 @@ func (s *ChrootService) PackageDiff(ctx context.Context, left, right string) (mo
 	}
 	return model.PackageDiffResult{Left: left, Right: right, LeftCount: len(a), RightCount: len(b), OnlyLeft: onlyA, OnlyRight: onlyB, CommonCount: common}, nil
 }
-func (s *ChrootService) PackageInventory(ctx context.Context, name string, limit int) ([]string, error) {
+func (s *ChrootService) PackageInventory(ctx context.Context, name string, limit int) (model.PackageInventoryResult, error) {
 	items, err := s.packageInventory(ctx, name)
 	if err != nil {
-		return nil, err
+		return model.PackageInventoryResult{}, err
 	}
 	out := make([]string, 0, len(items))
 	for item := range items {
 		out = append(out, item)
 	}
 	sort.Strings(out)
+	total := len(out)
+	truncated := false
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
+		truncated = true
 	}
-	return out, nil
+	return model.PackageInventoryResult{Name: name, Count: total, Packages: out, Limit: limit, Truncated: truncated}, nil
 }
 
 func (s *ChrootService) packageInventory(ctx context.Context, name string) (map[string]bool, error) {

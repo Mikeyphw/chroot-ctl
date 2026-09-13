@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y xfce4 xfce4-goodies dbus-x11 xterm
     ;;
   arch)
-    pacman -Syu --noconfirm --needed xfce4 xfce4-goodies xterm
+    pacman -Sy --noconfirm --needed xfce4 xfce4-goodies xterm
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2

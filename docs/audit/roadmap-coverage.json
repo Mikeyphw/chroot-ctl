@@ -70,7 +70,7 @@
     {
       "id": "CHR13",
       "title": "Catalog & package workflow",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR14",
@@ -1527,7 +1527,7 @@
       "title": "Catalog/tools/package workflows lack authoritative preflight, risk/state or compatibility",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-01",
@@ -3947,7 +3947,7 @@
       "title": "HIGH interaction \u2014 `sync-uid` can receive a green Android preview even though apply is guaranteed to fail",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-03",
@@ -3963,7 +3963,7 @@
       "title": "MEDIUM/HIGH \u2014 The catalog UI hides real built-in entries",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-04",
@@ -3979,7 +3979,7 @@
       "title": "MEDIUM \u2014 Category chips are presentation-only",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-05",
@@ -3995,7 +3995,7 @@
       "title": "MEDIUM/HIGH \u2014 Catalog completion does not refresh its domain state",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-07",
@@ -4011,7 +4011,7 @@
       "title": "MEDIUM/HIGH \u2014 Tools workspace actions are not capability-gated per operation",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-08",
@@ -4027,7 +4027,7 @@
       "title": "MEDIUM \u2014 Catalog target is free text despite authoritative chroot data being present",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-09",
@@ -4043,7 +4043,7 @@
       "title": "HIGH/MEDIUM \u2014 Inventory truncation is represented as complete data",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH11-10",
@@ -6057,7 +6057,7 @@
       "title": "CRITICAL/HIGH \u2014 packaged `sync-uid` tool cannot succeed, yet is exposed and documented",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CAT-02",
@@ -6073,7 +6073,7 @@
       "title": "HIGH \u2014 external catalog trust checks do not validate parent directories and have TOCTOU windows",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CAT-05",
@@ -6089,7 +6089,7 @@
       "title": "HIGH \u2014 `rollback`, `risks`, and destructive intent are metadata only",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CAT-06",
@@ -6105,7 +6105,7 @@
       "title": "MEDIUM/HIGH \u2014 Arch package catalog entries routinely perform a full system upgrade",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CAT-12",
@@ -6121,7 +6121,7 @@
       "title": "MEDIUM \u2014 Python scripts are accepted by the manifest parser but cannot be applied",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CAT-13",
@@ -6137,7 +6137,7 @@
       "title": "MEDIUM \u2014 `winehq-staging` can report completed while installing a different product",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CAT-14",
@@ -6153,7 +6153,7 @@
       "title": "MEDIUM \u2014 risk metadata quality is inconsistent with actual scripts",
       "ownerOverlay": "CHR13",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CAT-15",

@@ -8,7 +8,7 @@ case "${CHROOTCTL_DISTRO:?}" in
     apt-get install -y gimp
     ;;
   arch)
-    pacman -Syu --noconfirm --needed gimp
+    pacman -Sy --noconfirm --needed gimp
     ;;
   *)
     echo "unsupported distro: ${CHROOTCTL_DISTRO}" >&2
