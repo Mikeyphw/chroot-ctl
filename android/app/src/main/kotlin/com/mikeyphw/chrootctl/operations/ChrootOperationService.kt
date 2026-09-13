@@ -61,7 +61,10 @@ class ChrootOperationService : Service() {
     }
 
     private fun startBridgeOperation(operation: String, payload: JSONObject) {
-        if (activeJob?.isActive == true) return
+        if (activeJob?.isActive == true) {
+            rejectSecondOperation(operation, "Another foreground operation is already running; open Activity to review or cancel it before starting a new request.")
+            return
+        }
         if (operation.isBlank()) {
             stopSelf()
             return
@@ -73,8 +76,10 @@ class ChrootOperationService : Service() {
             (!persistedId.isNullOrBlank() || !persistedRequestId.isNullOrBlank())
         ) {
             // Never overwrite recoverable persisted work with a second request. The
-            // original operation must reconcile to terminal state first.
+            // original operation must reconcile to terminal state first, and the
+            // dropped request is surfaced explicitly instead of disappearing.
             activeOperationId = persistedId
+            rejectSecondOperation(operation, "A persisted foreground operation is waiting for reconciliation; this new request was not admitted.")
             resumePersistedOperation(null)
             return
         }
@@ -85,6 +90,7 @@ class ChrootOperationService : Service() {
             putString(KEY_REQUEST_ID, requestId)
             remove(KEY_OPERATION_ID)
             putBoolean(KEY_CANCEL_REQUESTED, false)
+            putInt(KEY_RECOVERY_ATTEMPTS, 0)
         }
         activeOperationId = null
         cancelRequested = false
@@ -189,12 +195,11 @@ class ChrootOperationService : Service() {
 
     private suspend fun reconcileUntilTerminal(operationId: String, repository: com.mikeyphw.chrootctl.repository.BridgeRepository) {
         // This path is entered only after the live stream ended or the Android service
-        // resumed persisted work. Reconciliation is therefore explicit rather than a
-        // side effect of ordinary operation reads. Repeating the idempotent reconcile
-        // call lets a transient Binder disconnect recover on a later poll.
-        while (true) {
-            repository.reconcileOperation(operationId)
-            repository.refreshOperationDetail(operationId)
+        // resumed persisted work. Reconciliation is bounded so a dead/missing backend
+        // cannot keep the foreground service alive forever.
+        repeat(MAX_RECONCILE_ATTEMPTS) {
+            repository.reconcileOperation(operationId).getOrThrow()
+            repository.refreshOperationDetail(operationId).getOrThrow()
             val current = repository.operation(operationId).first()
             if (current != null) {
                 notifications.update(
@@ -204,26 +209,55 @@ class ChrootOperationService : Service() {
                         .put("payload", JSONObject().put("message", current.errorMessage ?: current.progressText).put("percent", current.progressPercent)),
                     operationId,
                 )
-                if (cancelRequested && !isTerminalState(current.state)) repository.cancelOperation(operationId)
+                if (cancelRequested && !isTerminalState(current.state)) repository.cancelOperation(operationId).getOrThrow()
                 if (isTerminalState(current.state)) return
             }
             delay(RECONCILE_INTERVAL_MS)
         }
+        throw IllegalStateException("Operation $operationId did not reconcile to a terminal backend state within the bounded recovery window.")
     }
 
     private fun preserveForRecovery(error: Throwable?) {
         activeJob = null
         val operationId = activeOperationId
+        val attempts = state.getInt(KEY_RECOVERY_ATTEMPTS, 0) + 1
+        state.edit { putInt(KEY_RECOVERY_ATTEMPTS, attempts) }
         notifications.update(
             JSONObject().put("type", "bridge_stream_interrupted")
                 .put("operationId", operationId ?: "")
-                .put("payload", JSONObject().put("message", error?.message ?: "Operation state preserved for reconciliation.")),
+                .put(
+                    "payload",
+                    JSONObject()
+                        .put("message", error?.message ?: "Operation state preserved for reconciliation.")
+                        .put("attempt", attempts)
+                        .put("maxAttempts", MAX_SERVICE_RECOVERY_ATTEMPTS),
+                ),
             operationId,
         )
-        scope.launch {
-            delay(RECONCILE_INTERVAL_MS)
-            if (activeJob?.isActive != true) resumePersistedOperation(null)
+        if (attempts < MAX_SERVICE_RECOVERY_ATTEMPTS) {
+            scope.launch {
+                delay(RECONCILE_INTERVAL_MS)
+                if (activeJob?.isActive != true) resumePersistedOperation(null)
+            }
+        } else {
+            stopSelf()
         }
+    }
+
+    private fun rejectSecondOperation(operation: String, message: String) {
+        notifications.update(
+            JSONObject()
+                .put("type", "operation_blocked")
+                .put("operationId", activeOperationId ?: "")
+                .put("payload", JSONObject().put("operation", operation).put("message", message)),
+            activeOperationId,
+        )
+    }
+
+    @android.annotation.TargetApi(35)
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        preserveForRecovery(IllegalStateException("Foreground data-sync timeout reached; operation state was preserved for Activity reconciliation."))
+        super.onTimeout(startId, fgsType)
     }
 
     private fun finishOperation() {
@@ -308,8 +342,11 @@ class ChrootOperationService : Service() {
         private const val KEY_REQUEST_ID = "request_id"
         private const val KEY_OPERATION = "operation"
         private const val KEY_CANCEL_REQUESTED = "cancel_requested"
+        private const val KEY_RECOVERY_ATTEMPTS = "recovery_attempts"
         private const val RECONCILE_INTERVAL_MS = 2_000L
         private const val REQUEST_DISCOVERY_ATTEMPTS = 30
+        private const val MAX_RECONCILE_ATTEMPTS = 60
+        private const val MAX_SERVICE_RECOVERY_ATTEMPTS = 3
 
         fun startRefresh(context: Context) {
             val intent = Intent(context, ChrootOperationService::class.java).setAction(ACTION_REFRESH)

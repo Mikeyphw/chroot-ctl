@@ -122,3 +122,10 @@ go test ./... -run '^$' -count=1
 
 The sandbox used a temporary sqlite module stub for compile/focused checks only; the overlay does not modify `go.mod` and keeps the real sqlite dependency for Termux validation.
 
+
+## CHR18 Android operation/Room/recovery engine
+
+- Overlay 18 of 20 is implemented as an intermediate no-validate patch.
+- Source gate: `repoctl` now calls `ValidateAndroidOperationRoomRecovery`.
+- Focused checks: Android recovery policy tests and operation recovery contract tests cover retry gating, interrupted mapping, and cancel gating.
+- Full Android/Go validation is intentionally reserved for a later gate overlay.

@@ -85,6 +85,17 @@ data class OperationSummary(
     val createdAt: Long,
     val stale: Boolean,
     val resultJson: String? = null,
+    val parentOperationId: String? = null,
+    val requestJson: String? = null,
+    val retryJson: String? = null,
+    val warnings: List<String> = emptyList(),
+    val nextSteps: List<String> = emptyList(),
+    val retryable: Boolean = false,
+    val retryWithFixes: Boolean = false,
+    val recoveryActions: List<String> = emptyList(),
+    val detailRefreshAt: Long? = null,
+    val reconciledAt: Long? = null,
+    val missingInBackend: Boolean = false,
 )
 
 data class OperationEventSummary(

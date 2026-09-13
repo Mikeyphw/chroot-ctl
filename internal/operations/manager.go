@@ -347,6 +347,18 @@ func (m *Manager) Get(id string, eventLimit int) (Record, error) {
 func (m *Manager) ListRecent(limit int, target *string) ([]Record, error) {
 	return m.Journal.ListRecent(limit, target)
 }
+func (m *Manager) FindByRequestID(requestID string) (*Record, error) {
+	rows, err := m.Journal.ListAll(nil)
+	if err != nil {
+		return nil, err
+	}
+	for i := len(rows) - 1; i >= 0; i-- {
+		if fmt.Sprint(rows[i].Request["requestId"]) == requestID {
+			return &rows[i], nil
+		}
+	}
+	return nil, nil
+}
 func identity(r Record) *sys.ProcessIdentity {
 	if r.PID == nil || r.ProcessGroupID == nil {
 		return nil

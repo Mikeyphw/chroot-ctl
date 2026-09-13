@@ -72,7 +72,7 @@ private class RoomHomeSnapshotStore(
     ) {
         database.withTransaction {
             database.chrootDao().replaceSnapshot(chroots)
-            operations.forEach { operation -> database.operationDao().persistOperation(operation) }
+            database.operationDao().replaceAuthoritativeSnapshot(operations, System.currentTimeMillis())
             database.checkDao().replaceScope("home", checks)
             database.homeSnapshotDao().upsert(snapshot)
         }
@@ -197,14 +197,17 @@ class BridgeRepository(
     }
 
     private suspend fun persistOperationEnvelope(operationId: String, raw: String) {
+        val now = System.currentTimeMillis()
         val data = BridgeEnvelope.fromJson(raw).requireData()
         val events = data.optJSONArray("progressEvents")?.toJsonObjects()?.map { event ->
             event.toOperationEventEntity(operationId)
         }.orEmpty()
         database.operationDao().persistOperation(
-            data.toOperationEntity(System.currentTimeMillis(), stale = false),
+            data.toOperationEntity(now, stale = false).copy(detailRefreshAt = now, reconciledAt = now, missingInBackend = false),
             events,
+            prune = true,
         )
+        database.operationDao().markDetailRefreshed(operationId, now)
     }
 
     suspend fun startSystemRefresh(onEvent: suspend (JSONObject) -> Unit): Result<String?> = runCatching {
@@ -212,7 +215,7 @@ class BridgeRepository(
         val request = BridgeRequest("system.refresh", JSONObject().put("title", "Native state refresh")).toJson()
         val started = rootClient.streamOperation(request) { line ->
             val event = JSONObject(line)
-            recordOperationEvent(event)
+            recordOperationEvent(event, fallbackKind = "system.refresh", fallbackTitle = "Native state refresh")
             operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: operationId
             onEvent(event)
         }
@@ -227,12 +230,17 @@ class BridgeRepository(
         database.operationDao().upsert(data.toOperationEntity(System.currentTimeMillis(), stale = false))
     }
 
-    suspend fun recordOperationEvent(event: JSONObject) {
+    suspend fun recordOperationEvent(
+        event: JSONObject,
+        fallbackKind: String? = null,
+        fallbackTitle: String? = null,
+    ) {
         val operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: return
         val existing = database.operationDao().findById(operationId)
         database.operationDao().persistOperation(
-            event.toOperationEntity(existing),
+            event.toOperationEntity(existing, fallbackKind, fallbackTitle),
             listOf(event.toOperationEventEntity(operationId)),
+            prune = OperationRecoveryContract.isTerminal(event.optString("type")),
         )
     }
 
@@ -494,7 +502,7 @@ class BridgeRepository(
         val request = BridgeRequest(operation, payload, requestId = requestId ?: java.util.UUID.randomUUID().toString()).toJson()
         val started = rootClient.streamOperation(request) { line ->
             val event = JSONObject(line)
-            recordOperationEvent(event)
+            recordOperationEvent(event, fallbackKind = operation, fallbackTitle = payload.optString("title").ifBlank { operation })
             operationId = event.optString("operationId").takeIf(String::isNotBlank) ?: operationId
             onEvent(event)
         }
@@ -505,12 +513,9 @@ class BridgeRepository(
     }
 
     suspend fun findOperationIdByRequestId(requestId: String): Result<String?> = runCatching {
-        val rows = BridgeEnvelope.fromJson(
-            rootClient.query(BridgeRequest("operations.list", JSONObject().put("limit", 1000)).toJson()),
-        ).requireArray().toJsonObjects()
-        rows.firstOrNull { row ->
-            row.optJSONObject("request")?.optString("requestId") == requestId
-        }?.optString("operationId")?.takeIf(String::isNotBlank)
+        BridgeEnvelope.fromJson(
+            rootClient.query(BridgeRequest("operations.find_request", JSONObject().put("requestId", requestId)).toJson()),
+        ).requireData().optString("operationId").takeIf(String::isNotBlank)
     }
 
     fun capabilityGroups(capabilities: BridgeCapabilities): List<ToolCapabilityGroup> {
@@ -641,6 +646,17 @@ private fun OperationEntity.toSummary(): OperationSummary = OperationSummary(
     createdAt = createdAt,
     stale = stale,
     resultJson = resultJson,
+    parentOperationId = parentOperationId,
+    requestJson = requestJson,
+    retryJson = retryJson,
+    warnings = jsonArrayStrings(warningsJson),
+    nextSteps = jsonArrayStrings(nextStepsJson),
+    retryable = retryable,
+    retryWithFixes = retryWithFixes,
+    recoveryActions = jsonArrayStrings(recoveryActionsJson),
+    detailRefreshAt = detailRefreshAt,
+    reconciledAt = reconciledAt,
+    missingInBackend = missingInBackend,
 )
 
 private fun OperationEventEntity.toSummary(): OperationEventSummary = OperationEventSummary(
@@ -687,39 +703,55 @@ private fun JSONObject.toStorageSummary(): StorageSummary = StorageSummary(
     snapshotDirectory = firstString("snapshotDirectory", "snapshot_directory"),
 )
 
-private fun JSONObject.toOperationEntity(now: Long, stale: Boolean): OperationEntity = OperationEntity(
-    operationId = firstString("operationId", "operation_id", "id").ifBlank { "unknown-$now" },
-    kind = firstString("kind", "operation").ifBlank { "unknown" },
-    title = firstString("title", "kind", "operation").ifBlank { "Operation" },
-    state = firstString("state").ifBlank { "unknown" },
-    targetName = firstString("targetName", "target_name", "name").takeIf(String::isNotBlank),
-    phase = firstString("phase").takeIf(String::isNotBlank),
-    progressPercent = optNullableInt("progressPercent", "progress_percent"),
-    progressText = firstString("progressText", "progress_text").ifBlank { firstString("state").ifBlank { "Queued" } },
-    createdAt = optEpochMillis("createdAt", "created_at") ?: now,
-    startedAt = optEpochMillis("startedAt", "started_at"),
-    finishedAt = optEpochMillis("finishedAt", "finished_at"),
-    resultJson = opt("resultPayload")?.takeUnless { it == JSONObject.NULL }?.toString(),
-    errorCode = firstString("errorCode", "error_code").takeIf(String::isNotBlank),
-    errorMessage = firstString("error", "message").takeIf(String::isNotBlank),
-    stale = stale,
-)
+private fun JSONObject.toOperationEntity(now: Long, stale: Boolean): OperationEntity {
+    val request = OperationRecoveryContract.requestFromRecord(this)
+    val retry = OperationRecoveryContract.retryFromRecord(this)
+    val state = firstString("state").ifBlank { "unknown" }
+    val kind = firstString("kind", "operation").ifBlank { "unknown" }
+    val missing = optBoolean("missingInBackend", optBoolean("missing_in_backend", false))
+    val actions = OperationRecoveryContract.recoveryActions(state, kind, request, retry, missing)
+    return OperationEntity(
+        operationId = firstString("operationId", "operation_id", "id").ifBlank { "unknown-$now" },
+        kind = kind,
+        title = firstString("title", "kind", "operation").ifBlank { "Operation" },
+        state = state,
+        targetName = firstString("targetName", "target_name", "name").takeIf(String::isNotBlank),
+        phase = firstString("phase").takeIf(String::isNotBlank),
+        progressPercent = optNullableInt("progressPercent", "progress_percent"),
+        progressText = firstString("progressText", "progress_text").ifBlank { state.ifBlank { "Queued" } },
+        createdAt = optEpochMillis("createdAt", "created_at") ?: now,
+        startedAt = optEpochMillis("startedAt", "started_at"),
+        finishedAt = optEpochMillis("finishedAt", "finished_at"),
+        resultJson = opt("resultPayload")?.takeUnless { it == JSONObject.NULL }?.toString(),
+        errorCode = firstString("errorCode", "error_code").takeIf(String::isNotBlank),
+        errorMessage = firstString("error", "message").takeIf(String::isNotBlank),
+        stale = stale,
+        parentOperationId = firstString("parentOperationId", "parent_operation_id").takeIf(String::isNotBlank),
+        requestJson = request?.toString(),
+        retryJson = retry?.toString(),
+        warningsJson = optJSONArray("warnings").safeJsonArrayString(),
+        nextStepsJson = optJSONArray("nextSteps").safeJsonArrayString(),
+        retryable = OperationRecoveryContract.retryable(kind, request, retry, state, missing),
+        retryWithFixes = OperationRecoveryContract.retryWithFixes(kind, request, retry, state, missing),
+        recoveryActionsJson = JSONArray(actions).toString(),
+        detailRefreshAt = optEpochMillis("detailRefreshAt", "detail_refresh_at"),
+        reconciledAt = optEpochMillis("reconciledAt", "reconciled_at"),
+        missingInBackend = missing,
+    )
+}
 
-private fun JSONObject.toOperationEntity(existing: OperationEntity?): OperationEntity {
+private fun JSONObject.toOperationEntity(existing: OperationEntity?, fallbackKind: String? = null, fallbackTitle: String? = null): OperationEntity {
     val payload = optJSONObject("payload") ?: JSONObject()
     val operationId = optString("operationId").takeIf(String::isNotBlank) ?: existing?.operationId ?: "unknown-${System.currentTimeMillis()}"
     val type = optString("type")
     val now = (optDouble("timestamp", System.currentTimeMillis() / 1000.0) * 1000).toLong()
-    val state = when (type) {
-        "operation_queued" -> "queued"
-        "operation_started", "operation_progress" -> "running"
-        "operation_cancelling" -> "cancelling"
-        "operation_cancelled" -> "cancelled"
-        "operation_succeeded" -> "succeeded"
-        "operation_failed" -> "failed"
-        "operation_blocked" -> "blocked"
-        else -> existing?.state ?: "running"
-    }
+    val state = OperationRecoveryContract.stateForEvent(type, existing?.state)
+    val kind = existing?.kind ?: payload.firstString("operation", "kind").ifBlank { fallbackKind ?: "unknown" }
+    val title = existing?.title ?: payload.firstString("title").ifBlank { fallbackTitle ?: kind }
+    val request = existing?.requestJson?.let(::jsonObjectOrNull)
+    val retry = existing?.retryJson?.let(::jsonObjectOrNull)
+    val missing = false
+    val actions = OperationRecoveryContract.recoveryActions(state, kind, request, retry, missing)
     val resultJson = when (type) {
         "operation_succeeded" -> payload.opt("result").takeUnless { it == JSONObject.NULL }?.toString()
             ?: payload.opt("resultPayload").takeUnless { it == JSONObject.NULL }?.toString()
@@ -728,20 +760,31 @@ private fun JSONObject.toOperationEntity(existing: OperationEntity?): OperationE
     }
     return OperationEntity(
         operationId = operationId,
-        kind = existing?.kind ?: "system.refresh",
-        title = existing?.title ?: "Native state refresh",
+        kind = kind,
+        title = title,
         state = state,
-        targetName = existing?.targetName,
+        targetName = existing?.targetName ?: payload.firstString("targetName", "target_name", "name").takeIf(String::isNotBlank),
         phase = payload.firstString("phase").takeIf(String::isNotBlank) ?: existing?.phase,
         progressPercent = payload.optNullableInt("percent", "progressPercent") ?: existing?.progressPercent,
         progressText = payload.firstString("message", "state").ifBlank { existing?.progressText ?: state.replaceFirstChar { it.uppercase() } },
         createdAt = existing?.createdAt ?: now,
         startedAt = existing?.startedAt ?: if (state == "running") now else null,
-        finishedAt = if (state in setOf("cancelled", "succeeded", "failed", "blocked")) now else existing?.finishedAt,
+        finishedAt = OperationRecoveryContract.finishedAtFor(state, now, existing?.finishedAt),
         resultJson = resultJson,
         errorCode = payload.firstString("code").takeIf(String::isNotBlank) ?: existing?.errorCode,
-        errorMessage = payload.firstString("message").takeIf(String::isNotBlank)?.takeIf { state == "failed" || state == "blocked" } ?: existing?.errorMessage,
+        errorMessage = payload.firstString("message").takeIf(String::isNotBlank)?.takeIf { state in setOf("failed", "blocked", "interrupted") } ?: existing?.errorMessage,
         stale = false,
+        parentOperationId = firstString("parentOperationId", "parent_operation_id").takeIf(String::isNotBlank) ?: existing?.parentOperationId,
+        requestJson = existing?.requestJson,
+        retryJson = existing?.retryJson,
+        warningsJson = existing?.warningsJson ?: "[]",
+        nextStepsJson = existing?.nextStepsJson ?: "[]",
+        retryable = OperationRecoveryContract.retryable(kind, request, retry, state, missing),
+        retryWithFixes = OperationRecoveryContract.retryWithFixes(kind, request, retry, state, missing),
+        recoveryActionsJson = JSONArray(actions).toString(),
+        detailRefreshAt = existing?.detailRefreshAt,
+        reconciledAt = now,
+        missingInBackend = missing,
     )
 }
 
@@ -775,6 +818,12 @@ private fun JSONObject.toOperationEventEntity(operationId: String): OperationEve
         payloadJson = payload.toString(),
     )
 }
+
+private fun jsonObjectOrNull(raw: String): JSONObject? = runCatching { JSONObject(raw) }.getOrNull()
+
+private fun jsonArrayStrings(raw: String): List<String> = runCatching { JSONArray(raw).toStringListLocal() }.getOrDefault(emptyList())
+
+private fun JSONArray?.safeJsonArrayString(): String = this?.toString() ?: "[]"
 
 private fun JSONObject.extractChecks(now: Long, scope: String): List<CheckResultEntity> {
     val checks = mutableListOf<CheckResultEntity>()

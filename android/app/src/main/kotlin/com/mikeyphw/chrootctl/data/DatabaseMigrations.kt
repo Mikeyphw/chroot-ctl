@@ -23,3 +23,29 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("DROP INDEX IF EXISTS index_chroots_name")
     }
 }
+
+
+/**
+ * Version 5 makes Android operation state replay-safe and reconciliation-safe.
+ * It keeps backend request/retry metadata, explicit recovery eligibility, and
+ * missing-backend tombstones so Room can distinguish stale cache from a live
+ * operation that disappeared from the authoritative journal.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE operations ADD COLUMN parentOperationId TEXT")
+        db.execSQL("ALTER TABLE operations ADD COLUMN requestJson TEXT")
+        db.execSQL("ALTER TABLE operations ADD COLUMN retryJson TEXT")
+        db.execSQL("ALTER TABLE operations ADD COLUMN warningsJson TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE operations ADD COLUMN nextStepsJson TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE operations ADD COLUMN retryable INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE operations ADD COLUMN retryWithFixes INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE operations ADD COLUMN recoveryActionsJson TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE operations ADD COLUMN detailRefreshAt INTEGER")
+        db.execSQL("ALTER TABLE operations ADD COLUMN reconciledAt INTEGER")
+        db.execSQL("ALTER TABLE operations ADD COLUMN missingInBackend INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_operations_parentOperationId ON operations(parentOperationId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_operations_missingInBackend ON operations(missingInBackend)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_operations_reconciledAt ON operations(reconciledAt)")
+    }
+}

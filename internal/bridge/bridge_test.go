@@ -15,8 +15,8 @@ func validRequest(op string, p map[string]any) []byte {
 	b, _ := json.Marshal(map[string]any{"protocolVersion": 1, "requestId": "req-1", "operation": op, "payload": p})
 	return b
 }
-func TestFrozenCapabilitiesCoverAll86Operations(t *testing.T) {
-	if got := len(orderedSpecs); got != 86 {
+func TestFrozenCapabilitiesCoverAll87Operations(t *testing.T) {
+	if got := len(orderedSpecs); got != 87 {
 		t.Fatalf("spec count=%d", got)
 	}
 	modes := map[string]int{}
@@ -28,7 +28,7 @@ func TestFrozenCapabilitiesCoverAll86Operations(t *testing.T) {
 			t.Fatalf("resolve %s: %v", s.Name, e)
 		}
 	}
-	if modes["query"] != 36 || modes["preview"] != 16 || modes["operation"] != 34 {
+	if modes["query"] != 37 || modes["preview"] != 16 || modes["operation"] != 34 {
 		t.Fatalf("modes=%v", modes)
 	}
 	if locks["none"] == 0 || locks["target"] == 0 || locks["global"] == 0 {

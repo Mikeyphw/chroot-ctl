@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -57,8 +58,11 @@ fun ActivityScreen(
     var filterName by rememberSaveable { mutableStateOf(OperationActivityFilter.All.name) }
     val filter = OperationActivityFilter.entries.firstOrNull { it.name == filterName } ?: OperationActivityFilter.All
     val visible = visibleOperations(operations, filter)
-    var previewRetryOperation by rememberSaveable { mutableStateOf<String?>(null) }
-    var previewRetryWithFixes by rememberSaveable { mutableStateOf(false) }
+    // Destructive recovery confirmations are intentionally not saveable across
+    // process death; the user must re-open and re-confirm stale-sensitive retry
+    // actions after Activity recreation.
+    var previewRetryOperation by remember { mutableStateOf<String?>(null) }
+    var previewRetryWithFixes by remember { mutableStateOf(false) }
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ActivityFilterRow(
@@ -173,8 +177,21 @@ private fun OperationCard(
                 detail = operation.errorMessage ?: operation.progressText,
                 percent = operation.progressPercent,
             )
+            if (operation.stale || operation.missingInBackend) {
+                Text(
+                    if (operation.missingInBackend) stringResource(R.string.operation_missing_backend) else stringResource(R.string.operation_stale_cache),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             operation.errorCode?.let { code ->
                 Text(stringResource(R.string.operation_error_code, code), color = MaterialTheme.colorScheme.error)
+            }
+            if (operation.parentOperationId != null) {
+                Text(stringResource(R.string.operation_parent_line, operation.parentOperationId), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (operation.nextSteps.isNotEmpty()) {
+                Text(stringResource(R.string.operation_next_steps_line, operation.nextSteps.joinToString(" • ")), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -208,6 +225,12 @@ private fun RetryPreviewDialog(operation: OperationSummary?, repair: Boolean, on
                 Text(if (repair) stringResource(R.string.operation_retry_fixes_preview_body) else stringResource(R.string.operation_retry_preview_body))
                 operation?.targetName?.let { Text(stringResource(R.string.home_operation_target, it)) }
                 operation?.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                operation?.nextSteps?.takeIf { it.isNotEmpty() }?.let { steps ->
+                    Text(stringResource(R.string.operation_next_steps_line, steps.joinToString(" • ")))
+                }
+                operation?.warnings?.takeIf { it.isNotEmpty() }?.let { warnings ->
+                    Text(stringResource(R.string.operation_warnings_line, warnings.joinToString(" • ")), color = MaterialTheme.colorScheme.error)
+                }
             }
         },
         confirmButton = { Button(onClick = onRetry, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(if (repair) stringResource(R.string.operation_retry_fixes_action) else stringResource(R.string.operation_retry_action)) } },
@@ -237,6 +260,12 @@ private fun OperationDetailCard(
                 DetailRow(stringResource(R.string.operation_detail_state), operation.state)
                 DetailRow(stringResource(R.string.operation_detail_target), operation.targetName ?: stringResource(R.string.value_not_reported))
                 DetailRow(stringResource(R.string.operation_detail_created), operation.createdAt.toString())
+                operation.parentOperationId?.let { DetailRow(stringResource(R.string.operation_detail_parent), it) }
+                operation.detailRefreshAt?.let { DetailRow(stringResource(R.string.operation_detail_refreshed), it.toString()) }
+                operation.reconciledAt?.let { DetailRow(stringResource(R.string.operation_detail_reconciled), it.toString()) }
+                if (operation.resultJson != null) DetailRow(stringResource(R.string.operation_detail_result), operation.resultJson)
+                if (operation.nextSteps.isNotEmpty()) DetailRow(stringResource(R.string.operation_detail_next_steps), operation.nextSteps.joinToString(" • "))
+                if (operation.warnings.isNotEmpty()) DetailRow(stringResource(R.string.operation_detail_warnings), operation.warnings.joinToString(" • "))
                 Text("Event timeline", fontWeight = FontWeight.SemiBold)
                 if (events.isEmpty()) {
                     Text(stringResource(R.string.operation_detail_events_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)

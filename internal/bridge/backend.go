@@ -401,6 +401,22 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 			target = &safe
 		}
 		return s.Operations.ListRecent(lim, target)
+	case "operations.find_request":
+		req := optText(p, "requestId")
+		if req == "" {
+			req = optText(p, "request_id")
+		}
+		if req == "" {
+			return nil, protocolError("MISSING_REQUEST_ID", "payload.requestId is required", nil)
+		}
+		row, e := s.Operations.FindByRequestID(req)
+		if e != nil {
+			return nil, e
+		}
+		if row == nil {
+			return map[string]any{"requestId": req, "operationId": "", "found": false}, nil
+		}
+		return map[string]any{"requestId": req, "operationId": row.OperationID, "found": true, "state": row.State, "kind": row.Kind}, nil
 	case "operations.get":
 		id := optText(p, "operationId")
 		if id == "" {

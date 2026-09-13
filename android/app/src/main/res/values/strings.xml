@@ -46,6 +46,17 @@
     <string name="operation_detail_target">Target</string>
     <string name="operation_detail_created">Created</string>
     <string name="operation_detail_events_empty">No timeline events are cached for this operation.</string>
+    <string name="operation_detail_parent">Parent operation</string>
+    <string name="operation_detail_refreshed">Detail refreshed</string>
+    <string name="operation_detail_reconciled">Reconciled</string>
+    <string name="operation_detail_result">Result</string>
+    <string name="operation_detail_next_steps">Next steps</string>
+    <string name="operation_detail_warnings">Warnings</string>
+    <string name="operation_stale_cache">Cached state is stale; refresh before acting.</string>
+    <string name="operation_missing_backend">Backend no longer reports this active operation; recovery is limited to refresh until details are reconciled.</string>
+    <string name="operation_parent_line">Retry of %1$s</string>
+    <string name="operation_next_steps_line">Next: %1$s</string>
+    <string name="operation_warnings_line">Warnings: %1$s</string>
     <string name="operation_event_line">%1$s · %2$s</string>
     <string name="operation_notification_channel">Chroot operations</string>
     <string name="operation_notification_channel_body">Foreground progress for long-running chrootctl operations.</string>

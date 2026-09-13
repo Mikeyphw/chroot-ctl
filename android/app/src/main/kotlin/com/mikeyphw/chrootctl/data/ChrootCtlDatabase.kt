@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         CheckResultEntity::class,
         HomeSnapshotEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class ChrootCtlDatabase : RoomDatabase() {

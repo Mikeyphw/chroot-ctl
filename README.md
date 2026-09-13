@@ -44,3 +44,5 @@ Overlay 16 of 20 hardens the diagnostic plane: private/redacted logs, bounded op
 
 Overlay 17 of 20 adds response-shape metadata to bridge capabilities, wraps debug timeline/report data into Android-ready objects, preserves structured error details, and keeps smoke/debug workspaces from treating result/report payloads as generic previews. Apply it as an intermediate overlay with `--no-validate`; full validation belongs in a later gate overlay.
 
+
+- CHR18/20 implements the Android operation/Room/recovery engine: authoritative Room reconciliation, bounded foreground recovery, metadata-gated retries, exact request-id lookup and stale/missing-backend tombstones.

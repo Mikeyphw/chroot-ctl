@@ -7,7 +7,14 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "operations",
-    indices = [Index("state"), Index("targetName"), Index("createdAt")],
+    indices = [
+        Index("state"),
+        Index("targetName"),
+        Index("createdAt"),
+        Index("parentOperationId"),
+        Index("missingInBackend"),
+        Index("reconciledAt"),
+    ],
 )
 data class OperationEntity(
     @PrimaryKey val operationId: String,
@@ -25,6 +32,17 @@ data class OperationEntity(
     val errorCode: String?,
     val errorMessage: String?,
     val stale: Boolean,
+    val parentOperationId: String? = null,
+    val requestJson: String? = null,
+    val retryJson: String? = null,
+    @ColumnInfo(defaultValue = "'[]'") val warningsJson: String = "[]",
+    @ColumnInfo(defaultValue = "'[]'") val nextStepsJson: String = "[]",
+    @ColumnInfo(defaultValue = "0") val retryable: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val retryWithFixes: Boolean = false,
+    @ColumnInfo(defaultValue = "'[]'") val recoveryActionsJson: String = "[]",
+    val detailRefreshAt: Long? = null,
+    val reconciledAt: Long? = null,
+    @ColumnInfo(defaultValue = "0") val missingInBackend: Boolean = false,
 )
 
 @Entity(

@@ -2,27 +2,31 @@ package com.mikeyphw.chrootctl.ui
 
 import com.mikeyphw.chrootctl.model.OperationSummary
 
+private val activeStates = setOf("queued", "running", "cancelling")
+private val recoverableStates = setOf("failed", "blocked", "cancelled", "interrupted")
+private val completedStates = setOf("succeeded", "completed")
+
 enum class OperationActivityFilter(val label: String) {
     All("All"),
     Running("Running"),
-    Failed("Failed"),
+    Failed("Needs recovery"),
     Completed("Completed"),
 }
 
-fun OperationSummary.isActiveOperation(): Boolean = state.lowercase() in setOf("queued", "running", "cancelling")
+fun OperationSummary.isActiveOperation(): Boolean = state.lowercase() in activeStates && !missingInBackend
 
-fun OperationSummary.isRecoverableFailure(): Boolean = state.lowercase() in setOf("failed", "blocked", "cancelled", "interrupted")
+fun OperationSummary.isRecoverableFailure(): Boolean = state.lowercase() in recoverableStates || missingInBackend
 
-fun OperationSummary.isCompletedOperation(): Boolean = state.lowercase() in setOf("succeeded", "completed")
+fun OperationSummary.isCompletedOperation(): Boolean = state.lowercase() in completedStates
 
-fun OperationSummary.canCancelOperation(): Boolean = isActiveOperation()
+fun OperationSummary.canCancelOperation(): Boolean = isActiveOperation() && state.lowercase() != "cancelling"
 
-fun OperationSummary.canRetryOperation(): Boolean = isRecoverableFailure()
+fun OperationSummary.canRetryOperation(): Boolean = retryable && recoveryActions.contains("retry")
 
-fun OperationSummary.canRetryWithFixes(): Boolean = canRetryOperation() && kind == "install.run"
+fun OperationSummary.canRetryWithFixes(): Boolean = retryWithFixes && recoveryActions.contains("retry_with_fixes")
 
 fun OperationSummary.canOpenSnapshotRecovery(): Boolean =
-    targetName?.let { operationNeedsSnapshotRecovery(this, it) } == true
+    !missingInBackend && recoveryActions.contains("snapshot_recovery") && targetName?.let { operationNeedsSnapshotRecovery(this, it) } == true
 
 fun OperationActivityFilter.matches(operation: OperationSummary): Boolean = when (this) {
     OperationActivityFilter.All -> true
