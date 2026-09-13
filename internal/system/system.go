@@ -539,6 +539,40 @@ func RequireRoot() error {
 	return nil
 }
 func SudoAvailable() bool { _, err := exec.LookPath("sudo"); return err == nil }
+func SuAvailable() bool   { _, err := exec.LookPath("su"); return err == nil }
+
+// ReexecWithRoot prefers sudo on conventional hosts and falls back to the
+// Android/Magisk/KernelSU su -c interface. It deliberately keeps the provider
+// decision in one place so CLI contract metadata can describe privilege policy
+// without duplicating host-specific escalation logic.
+func (r Runner) ReexecWithRoot(ctx context.Context, argv []string) (int, error) {
+	if len(argv) == 0 {
+		return 0, errors.New("re-exec argv is empty")
+	}
+	if r.DryRun {
+		provider := "sudo"
+		if !SudoAvailable() && SuAvailable() {
+			provider = "su -c"
+		}
+		r.infof("dry-run root re-exec via %s: %s", provider, shellJoin(argv))
+		return 0, nil
+	}
+	var cmd *exec.Cmd
+	switch {
+	case SudoAvailable():
+		cmd = exec.CommandContext(ctx, "sudo", argv...)
+	case SuAvailable():
+		cmd = exec.CommandContext(ctx, "su", "-c", shellJoin(argv))
+	default:
+		return 0, errors.New("neither sudo nor su is available and root is required")
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	return exitCode(cmd.ProcessState, err), nil
+}
+
 func (r Runner) ReexecWithSudo(ctx context.Context, argv []string) (int, error) {
 	if r.DryRun {
 		r.infof("dry-run sudo re-exec: %s", shellJoin(append([]string{"sudo"}, argv...)))

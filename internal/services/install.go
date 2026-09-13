@@ -167,18 +167,22 @@ func (s *InstallService) Install(ctx context.Context, req model.InstallRequest, 
 	if progress != nil {
 		_ = progress(map[string]any{"phase": "catalog", "message": "Applying selected tools and addons", "percent": 94})
 	}
+	result := model.InstallRunResult{ChrootName: req.Name, Distro: req.Distro, Phases: phaseResults, ToolResults: []model.CatalogApplyResult{}, AddonResults: []model.CatalogApplyResult{}}
 	tools, e := s.C.Catalog("tool", req.Name).Apply(ctx, req.Tools, progress)
+	result.ToolResults = tools
 	if e != nil {
-		return model.InstallRunResult{}, e
+		return result, e
 	}
 	addons, e := s.C.Catalog("addon", req.Name).Apply(ctx, req.Addons, progress)
+	result.AddonResults = addons
 	if e != nil {
-		return model.InstallRunResult{}, e
+		return result, e
 	}
 	if progress != nil {
 		_ = progress(map[string]any{"phase": "complete", "message": "Install completed", "percent": 100})
 	}
-	return model.InstallRunResult{ChrootName: req.Name, Distro: req.Distro, Phases: phaseResults, ToolResults: tools, AddonResults: addons, NextSteps: []string{"chrootctl --name " + req.Name + " start --login", "chrootctl --name " + req.Name + " logs --all"}}, nil
+	result.NextSteps = []string{"chrootctl --name " + req.Name + " start --login", "chrootctl --name " + req.Name + " logs --all"}
+	return result, nil
 }
 func (s *InstallService) Upgrade(ctx context.Context, name, username string, progress func(any) error) (model.UpgradeResult, error) {
 	r, e := s.C.Registry.Get(ctx, name)

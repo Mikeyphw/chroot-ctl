@@ -25,7 +25,7 @@ The committed fixtures under `migration/contracts/v1/` currently define:
 
 | Surface | Baseline |
 | --- | ---: |
-| Human CLI command nodes | 68 |
+| Human CLI command nodes | 69 |
 | `app` bridge CLI subcommands | 8 |
 | Android bridge operations | 86 |
 | Bridge protocol | 1 |
@@ -190,7 +190,7 @@ SQLite-backed bridge as a CGO Android/arm64 executable.
 
 ### GO11 — Human CLI parity — COMPLETE
 
-Implemented in `internal/cli` from the frozen 68-node CLI contract. The native
+Implemented in `internal/cli` from the contract-derived 69-node CLI surface (including first-class `version`). The native
 parser preserves the existing command/argument surface, static and dynamic
 completion paths, root escalation policy, target/user resolution, interactive
 session I/O, and service-layer dispatch. `app` delegates to the GO10 bridge.
@@ -243,6 +243,6 @@ and deterministic frozen-contract parity while both implementations still exist.
 The legacy Python package, tests, validators, packaging metadata, compatibility shims, and
 Nuitka-era execution fallbacks are removed. Devtool and CI are Go/Kotlin-only.
 `repoctl validate` enforces repository purity and the retained GO16 migration-test map;
-`repoctl final-seal` additionally proves the 68-node CLI / 86-operation bridge contracts,
+`repoctl final-seal` additionally proves the 69-node CLI / 86-operation bridge contracts,
 builds a real Android/ARM64 CGO runtime, and requires byte-for-byte deterministic source
 and module archives before reporting a final seal.

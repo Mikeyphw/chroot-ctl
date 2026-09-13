@@ -15,7 +15,7 @@
     {
       "id": "CHR02",
       "title": "CLI contract as single source of truth",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR03",
@@ -566,7 +566,7 @@
       "title": "CLI command metadata, parser, help, docs and completion drift",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI01-01",
@@ -673,7 +673,7 @@
       "title": "Machine-readable JSON/error contract is fragmented",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "SRV17",
@@ -3115,7 +3115,7 @@
       "supportingOverlays": [
         "CHR16"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI17-07",
@@ -4795,7 +4795,7 @@
       "title": "MEDIUM — `version` exists outside the CLI contract",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI01-07",
@@ -4811,7 +4811,7 @@
       "title": "MEDIUM — install emits a misleading target-name error",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI01-11",
@@ -4827,7 +4827,7 @@
       "title": "MEDIUM — direct auto-escalation is `sudo`-only while the Android/Termux wrapper uses `su`",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI01-12",
@@ -4843,7 +4843,7 @@
       "title": "MEDIUM — numeric parser types have no range contract",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI01-13",
@@ -6593,7 +6593,7 @@
       "title": "MEDIUM/HIGH — early-return commands bypass the JSON capability guard",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI17-04",
@@ -6609,7 +6609,7 @@
       "title": "HIGH — `doctor` can report FAIL while the process exits 0",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI17-05",
@@ -6625,7 +6625,7 @@
       "title": "HIGH — signal/cancellation exit semantics are not stable",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI17-08",
@@ -6641,7 +6641,7 @@
       "title": "MEDIUM — output semantics vary by command instead of by output mode",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI17-12",
@@ -6657,7 +6657,7 @@
       "title": "MEDIUM — JSON support is modeled at command-root granularity instead of in the generated command contract",
       "ownerOverlay": "CHR02",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI17-16",

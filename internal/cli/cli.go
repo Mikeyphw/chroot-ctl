@@ -3,43 +3,78 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+	"syscall"
 
 	"chrootctl/internal/bridge"
 	"chrootctl/internal/completion"
 	"chrootctl/internal/services"
 	sys "chrootctl/internal/system"
+	"chrootctl/internal/version"
 )
 
-var machineReadable = map[string]bool{"status": true, "doctor": true, "chroots": true, "users": true, "tools": true, "addons": true}
+type SignalError struct{ Signal syscall.Signal }
+
+func (e SignalError) Error() string              { return fmt.Sprintf("terminated by signal %d", e.Signal) }
+func NewSignalError(signal syscall.Signal) error { return SignalError{Signal: signal} }
 
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	inv, err := Parse(args)
 	if err != nil {
-		fmt.Fprintln(stderr, "chrootctl:", err)
-		if spec, ok := HelpSpecForArgs(args); ok {
-			fmt.Fprint(stderr, Help(spec))
+		if requestedJSON(args) {
+			_ = emitJSONEnvelope(stdout, bestCommand(args), false, nil, err, false)
 		} else {
-			fmt.Fprint(stderr, RootHelp())
+			_, _ = fmt.Fprintln(stderr, "chrootctl:", err)
+			if spec, ok := HelpSpecForArgs(args); ok {
+				_, _ = fmt.Fprint(stderr, Help(spec))
+			} else {
+				_, _ = fmt.Fprint(stderr, RootHelp())
+			}
 		}
 		return 2
 	}
 	if inv.Help && inv.Spec.Command == "" {
-		fmt.Fprint(stdout, RootHelp())
+		if _, e := fmt.Fprint(stdout, RootHelp()); e != nil {
+			return 1
+		}
 		return 0
 	}
 	if inv.Help {
-		fmt.Fprint(stdout, Help(inv.Spec))
+		if _, e := fmt.Fprint(stdout, Help(inv.Spec)); e != nil {
+			return 1
+		}
 		return 0
+	}
+
+	// Version is a first-class contract action and needs no service container.
+	if inv.Spec.Command == "version" {
+		data := map[string]any{"version": version.Version, "commit": version.Commit, "backend": "go-native"}
+		if inv.Globals.JSON {
+			if emitJSONEnvelope(stdout, "version", true, data, nil, false) != nil {
+				return 1
+			}
+		} else {
+			if _, e := fmt.Fprintf(stdout, "chrootctl %s (Go native backend, commit %s)\n", version.Version, version.Commit); e != nil {
+				return 1
+			}
+		}
+		return signalExitCode(ctx, 0)
 	}
 	if inv.Spec.Command == "completion zsh" {
-		fmt.Fprint(stdout, completion.GenerateZsh())
-		return 0
+		text, e := completion.GenerateZsh()
+		if e != nil {
+			return writeFailure(inv, stdout, stderr, e, nil, 1)
+		}
+		if _, e = io.WriteString(stdout, text); e != nil {
+			return 1
+		}
+		return signalExitCode(ctx, 0)
 	}
 	if inv.Spec.Command == "wrapper install" {
-		return InstallWrapper(inv, stdout, stderr)
+		return signalExitCode(ctx, InstallWrapper(inv, stdout, stderr))
 	}
 	if inv.Spec.Command == "app" {
 		bargs := []string{}
@@ -53,42 +88,80 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			bargs = append(bargs, "--verbose")
 		}
 		bargs = append(bargs, inv.Strings("bridge_args")...)
-		return bridge.RunApp(ctx, bargs, stdin, stdout, stderr)
+		return signalExitCode(ctx, bridge.RunApp(ctx, bargs, stdin, stdout, stderr))
 	}
-	if inv.Globals.JSON && !machineReadable[firstWord(inv.Spec.Command)] {
-		fmt.Fprintf(stderr, "chrootctl: --json is not supported for command: %s\n", firstWord(inv.Spec.Command))
-		return 1
-	}
-	if requiresRoot(inv.Spec.Command) && !sys.IsRoot() {
+
+	if inv.Spec.EffectivePrivilege(inv.Values) != "none" && !sys.IsRoot() {
 		if inv.Globals.NoSudo {
-			fmt.Fprintln(stderr, "chrootctl: permission error: root privileges required; rerun without --no-sudo to auto-escalate")
-			return 2
+			return writeFailure(inv, stdout, stderr, errors.New("permission error: root privileges required; rerun without --no-sudo to auto-escalate"), nil, 2)
 		}
 		argv, e := sys.ReexecArgv()
 		if e != nil {
-			fmt.Fprintln(stderr, "chrootctl:", e)
-			return 1
+			return writeFailure(inv, stdout, stderr, e, nil, 1)
 		}
 		runner := sys.Runner{DryRun: inv.Globals.DryRun}
-		code, e := runner.ReexecWithSudo(ctx, argv)
+		code, e := runner.ReexecWithRoot(ctx, argv)
 		if e != nil {
-			fmt.Fprintln(stderr, "chrootctl:", e)
-			return 1
+			return writeFailure(inv, stdout, stderr, e, nil, 1)
 		}
-		return code
+		return signalExitCode(ctx, code)
 	}
+
 	s, err := services.New(inv.Globals.ConfigPath, inv.Globals.DryRun, inv.Globals.Verbose)
 	if err != nil {
-		fmt.Fprintln(stderr, "chrootctl:", err)
-		return 1
+		return writeFailure(inv, stdout, stderr, err, nil, 1)
 	}
 	defer s.Close()
 	app := App{Services: s, Inv: inv, Stdin: stdin, Stdout: stdout, Stderr: stderr}
 	if err = app.Dispatch(ctx); err != nil {
-		fmt.Fprintln(stderr, "chrootctl:", err)
-		return 1
+		var partial *PartialResultError
+		if errors.As(err, &partial) {
+			code := partial.ExitCode
+			if code == 0 {
+				code = 1
+			}
+			return signalExitCode(ctx, writeFailure(inv, stdout, stderr, partial.Err, partial.Partial, code))
+		}
+		return signalExitCode(ctx, writeFailure(inv, stdout, stderr, err, nil, 1))
 	}
-	return app.ExitCode
+	return signalExitCode(ctx, app.ExitCode)
+}
+
+func writeFailure(inv Invocation, stdout, stderr io.Writer, err error, partial any, code int) int {
+	if inv.Globals.JSON {
+		if e := emitJSONEnvelope(stdout, inv.Spec.Command, false, partial, err, partial != nil); e != nil {
+			_, _ = fmt.Fprintln(stderr, "chrootctl:", e)
+			return 1
+		}
+		return code
+	}
+	if partial != nil {
+		_ = writeHuman(stdout, "Partial result", partial)
+	}
+	_, _ = fmt.Fprintln(stderr, "chrootctl:", err)
+	return code
+}
+
+func signalExitCode(ctx context.Context, fallback int) int {
+	cause := context.Cause(ctx)
+	var signalErr SignalError
+	if errors.As(cause, &signalErr) {
+		switch signalErr.Signal {
+		case syscall.SIGINT:
+			return 130
+		case syscall.SIGTERM:
+			return 143
+		}
+		return 128 + int(signalErr.Signal)
+	}
+	return fallback
+}
+
+func bestCommand(args []string) string {
+	if spec, ok := HelpSpecForArgs(args); ok {
+		return spec.Command
+	}
+	return ""
 }
 
 type App struct {
@@ -100,54 +173,29 @@ type App struct {
 	ExitCode int
 }
 
-func firstWord(s string) string {
-	if i := strings.IndexByte(s, ' '); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
-
-func requiresRoot(command string) bool {
-	switch command {
-	case "mount", "unmount", "fix-tty", "start", "restart", "exec", "run", "enable", "disable", "install", "upgrade":
-		return true
-	case "chroots remove", "chroots export", "chroots import", "transfer export", "transfer import", "tools apply", "addons apply":
-		return true
-	}
-	return command == "users" || strings.HasPrefix(command, "users ")
-}
-
 func (a *App) emit(title string, value any) error {
-	if s, ok := value.(string); ok {
-		_, e := fmt.Fprint(a.Stdout, s)
-		if !strings.HasSuffix(s, "\n") {
-			fmt.Fprintln(a.Stdout)
-		}
-		return e
+	if a.Inv.Globals.JSON {
+		return emitJSONEnvelope(a.Stdout, a.Inv.Spec.Command, a.ExitCode == 0, value, nil, false)
 	}
-	b, e := json.MarshalIndent(value, "", "  ")
-	if e != nil {
-		return e
-	}
-	if !a.Inv.Globals.JSON && title != "" {
-		fmt.Fprintln(a.Stdout, title)
-	}
-	_, e = a.Stdout.Write(append(b, '\n'))
-	return e
+	return writeHuman(a.Stdout, title, value)
 }
 
 func (a *App) progress(value any) error {
 	if a.Inv.Globals.JSON {
 		return nil
 	}
-	b, _ := json.Marshal(value)
-	_, e := fmt.Fprintf(a.Stderr, "%s\n", b)
-	return e
+	b, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(a.Stderr, "%s\n", b)
+	return err
 }
 
 func RootHelp() string {
 	var b strings.Builder
-	b.WriteString("usage: chrootctl [global options] COMMAND [arguments]\n\n")
+	b.WriteString("usage: chrootctl [global options] COMMAND [arguments] [global options]\n\n")
+	b.WriteString("Global options may appear before or after the command. Command-local options win name collisions.\n\n")
 	b.WriteString("global options:\n")
 	for _, a := range GlobalArguments {
 		label := strings.Join(a.Options, ", ")
@@ -164,37 +212,50 @@ func RootHelp() string {
 			continue
 		}
 		if len(entries) == 1 && entries[0].Command == name {
-			fmt.Fprintf(&b, "  %-28s %s\n", name, entries[0].Description)
+			if !entries[0].Hidden {
+				fmt.Fprintf(&b, "  %-28s %s\n", name, entries[0].Description)
+			}
 			continue
 		}
 		parts := []string{}
 		for _, spec := range entries {
-			if spec.Command == name {
+			if spec.Hidden || spec.Command == name {
 				continue
 			}
 			parts = append(parts, strings.TrimPrefix(spec.Command, name+" "))
 		}
-		fmt.Fprintf(&b, "  %-28s %s\n", name, strings.Join(parts, ", "))
+		rootDescription := ""
+		for _, spec := range entries {
+			if spec.Command == name {
+				rootDescription = spec.Description
+				break
+			}
+		}
+		if len(parts) > 0 {
+			fmt.Fprintf(&b, "  %-28s %s", name, strings.Join(parts, ", "))
+			if rootDescription != "" {
+				fmt.Fprintf(&b, " — %s", rootDescription)
+			}
+			b.WriteString("\n")
+		}
 	}
 	b.WriteString("\nUse `chrootctl COMMAND --help` for command-specific help.\n")
-	b.WriteString("Examples: `chrootctl status --help`, `chrootctl chroots list --help`, `chrootctl wrapper install --help`.\n")
+	b.WriteString("\nExamples:\n  chrootctl status --name work\n  chrootctl --json doctor --name work\n  chrootctl chroots list\n  chrootctl version\n")
 	return b.String()
 }
 
 func commandGroups() map[string][]CommandSpec {
 	groups := map[string][]CommandSpec{}
 	for _, spec := range CommandSpecs {
-		if len(spec.Path) == 0 {
-			continue
+		if len(spec.Path) > 0 {
+			groups[spec.Path[0]] = append(groups[spec.Path[0]], spec)
 		}
-		root := spec.Path[0]
-		groups[root] = append(groups[root], spec)
 	}
 	return groups
 }
 
 func orderedGroups(groups map[string][]CommandSpec) []string {
-	preferred := []string{"status", "doctor", "start", "restart", "exec", "install", "upgrade", "mount", "unmount", "fix-tty", "logs", "run", "enable", "disable", "journal", "chroots", "transfer", "events", "users", "tools", "addons", "clipboard", "support-bundle", "completion", "wrapper", "magisk", "app", "__complete"}
+	preferred := []string{"version", "status", "doctor", "start", "restart", "exec", "install", "upgrade", "mount", "unmount", "fix-tty", "logs", "run", "enable", "disable", "journal", "chroots", "transfer", "events", "users", "tools", "addons", "clipboard", "support-bundle", "completion", "wrapper", "magisk", "app", "__complete"}
 	seen := map[string]bool{}
 	out := []string{}
 	for _, name := range preferred {
@@ -210,33 +271,92 @@ func orderedGroups(groups map[string][]CommandSpec) []string {
 	}
 	return out
 }
+
 func Help(s CommandSpec) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "usage: chrootctl %s", s.Command)
 	for _, a := range s.Arguments {
-		if len(a.Options) > 0 {
-			label := strings.Join(a.Options, "/")
-			if a.Action == "_StoreAction" || a.Action == "_AppendAction" {
-				label += " VALUE"
-			}
-			fmt.Fprintf(&b, " [%s]", label)
-		} else {
-			fmt.Fprintf(&b, " <%s>", a.Dest)
+		if a.Help == "<SUPPRESS>" {
+			continue
 		}
+		var token string
+		if len(a.Options) > 0 {
+			token = strings.Join(a.Options, "/")
+			if a.Action == "_StoreAction" || a.Action == "_AppendAction" {
+				token += " VALUE"
+			}
+			if !a.Required {
+				token = "[" + token + "]"
+			}
+		} else {
+			token = a.Dest
+			switch fmt.Sprint(a.NArgs) {
+			case "?":
+				token = "[" + token + "]"
+			case "*":
+				token = "[" + token + " ...]"
+			case "+", "...":
+				token += " ..."
+			default:
+				token = "<" + token + ">"
+			}
+		}
+		fmt.Fprintf(&b, " %s", token)
 	}
-	b.WriteString("\n")
+	b.WriteString(" [global options]\n")
 	if s.Description != "" {
 		b.WriteString("\n" + s.Description + "\n")
+	}
+	if s.Group {
+		children := []CommandSpec{}
+		for _, candidate := range CommandSpecs {
+			if candidate.Hidden || len(candidate.Path) != len(s.Path)+1 {
+				continue
+			}
+			if strings.HasPrefix(candidate.Command, s.Command+" ") {
+				children = append(children, candidate)
+			}
+		}
+		if len(children) > 0 {
+			b.WriteString("\nsubcommands:\n")
+			for _, child := range children {
+				fmt.Fprintf(&b, "  %-28s %s\n", child.Path[len(child.Path)-1], child.Description)
+			}
+		}
 	}
 	if len(s.Arguments) > 0 {
 		b.WriteString("\narguments:\n")
 	}
 	for _, a := range s.Arguments {
+		if a.Help == "<SUPPRESS>" {
+			continue
+		}
 		label := a.Dest
 		if len(a.Options) > 0 {
 			label = strings.Join(a.Options, ", ")
 		}
-		fmt.Fprintf(&b, "  %-28s %s\n", label, a.Help)
+		meta := []string{}
+		if a.Required {
+			meta = append(meta, "required")
+		}
+		if a.Action == "_AppendAction" {
+			meta = append(meta, "repeatable")
+		}
+		text := a.Help
+		if len(meta) > 0 {
+			text += " (" + strings.Join(meta, ", ") + ")"
+		}
+		fmt.Fprintf(&b, "  %-28s %s\n", label, text)
+	}
+	if len(s.ExclusiveGroups) > 0 {
+		b.WriteString("\nconstraints:\n")
+		for _, group := range s.ExclusiveGroups {
+			labels := []string{}
+			for _, key := range group {
+				labels = append(labels, optionLabel(s, key))
+			}
+			fmt.Fprintf(&b, "  mutually exclusive: %s\n", strings.Join(labels, ", "))
+		}
 	}
 	if s.Epilog != "" {
 		b.WriteString("\n" + s.Epilog + "\n")

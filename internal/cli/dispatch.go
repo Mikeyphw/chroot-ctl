@@ -30,47 +30,49 @@ func strptr(s string) *string {
 
 func (a *App) Dispatch(ctx context.Context) error {
 	cmd := a.Inv.Spec.Command
-	switch {
-	case cmd == "status":
+	switch a.Inv.Spec.Handler {
+	case "status":
 		return a.status(ctx)
-	case cmd == "mount" || cmd == "unmount" || cmd == "fix-tty":
+	case "mount_action":
 		return a.mountAction(ctx, cmd)
-	case cmd == "doctor":
+	case "doctor":
 		return a.doctor(ctx)
-	case cmd == "logs":
+	case "logs":
 		return a.logs(ctx)
-	case cmd == "start" || cmd == "restart":
+	case "session":
 		return a.start(ctx, cmd == "restart")
-	case cmd == "exec":
+	case "exec":
 		return a.exec(ctx)
-	case cmd == "run" || cmd == "enable" || cmd == "disable" || cmd == "journal":
+	case "units":
 		return a.units(ctx, cmd)
-	case cmd == "install":
+	case "install":
 		return a.install(ctx)
-	case cmd == "upgrade":
+	case "upgrade":
 		return a.upgrade(ctx)
-	case cmd == "completion":
-		return errors.New("completion shell is required")
-	case strings.HasPrefix(cmd, "chroots"):
+	case "chroots":
 		return a.chroots(ctx)
-	case strings.HasPrefix(cmd, "transfer"):
+	case "transfer":
 		return a.transfer(ctx)
-	case strings.HasPrefix(cmd, "events"):
+	case "events":
 		return a.events(ctx)
-	case cmd == "support-bundle":
+	case "support":
 		return a.support(ctx)
-	case strings.HasPrefix(cmd, "clipboard"):
+	case "clipboard":
 		return a.clipboard(ctx)
-	case strings.HasPrefix(cmd, "users"):
+	case "users":
 		return a.users(ctx)
-	case strings.HasPrefix(cmd, "tools") || strings.HasPrefix(cmd, "addons"):
+	case "catalog":
 		return a.catalog(ctx)
-	case cmd == "__complete":
+	case "complete":
 		return a.complete(ctx)
-	case strings.HasPrefix(cmd, "magisk"):
+	case "magisk":
 		return a.magisk(ctx)
+	case "completion":
+		return errors.New("completion shell is required")
+	case "version", "wrapper", "app":
+		return fmt.Errorf("internal special handler reached service dispatch: %s", a.Inv.Spec.Handler)
 	default:
-		return fmt.Errorf("unsupported command: %s", cmd)
+		return fmt.Errorf("unsupported handler %q for command %s", a.Inv.Spec.Handler, cmd)
 	}
 }
 
@@ -157,6 +159,12 @@ func (a *App) doctor(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	for _, row := range v {
+		if strings.EqualFold(row.Result, "FAIL") {
+			a.ExitCode = 1
+			break
+		}
+	}
 	return a.emit("Doctor", v)
 }
 func (a *App) mountAction(ctx context.Context, action string) error {
@@ -199,7 +207,9 @@ func (a *App) logs(ctx context.Context) error {
 		return a.emit("", v)
 	}
 	for _, entry := range v.Entries {
-		fmt.Fprintln(a.Stdout, entry.Line)
+		if _, err := fmt.Fprintln(a.Stdout, entry.Line); err != nil {
+			return err
+		}
 	}
 	if !a.Inv.Bool("follow") {
 		return nil
@@ -218,7 +228,9 @@ func followFile(ctx context.Context, path string, w io.Writer) error {
 	for {
 		line, e := r.ReadString('\n')
 		if line != "" {
-			fmt.Fprint(w, line)
+			if _, writeErr := fmt.Fprint(w, line); writeErr != nil {
+				return writeErr
+			}
 		}
 		if e == nil {
 			continue
@@ -328,7 +340,7 @@ func (a *App) units(ctx context.Context, cmd string) error {
 	if cmd == "run" && a.Inv.Bool("boot") {
 		result, e := svc.Boot(ctx, a.Inv.String("target"), !a.Inv.Bool("no_parallel"))
 		if e != nil {
-			return e
+			return &PartialResultError{Err: e, Partial: result, ExitCode: 1}
 		}
 		return a.emit("Services", result)
 	}
@@ -361,7 +373,19 @@ func (a *App) units(ctx context.Context, cmd string) error {
 			}
 		}
 		if e != nil {
-			return e
+			partial := append([]any(nil), out...)
+			if v != nil {
+				partial = append(partial, v)
+			}
+			exitCode := 1
+			if row, ok := v.(map[string]any); ok {
+				if raw, ok := row["exit_code"]; ok {
+					if n, ok := raw.(int); ok && n != 0 {
+						exitCode = n
+					}
+				}
+			}
+			return &PartialResultError{Err: e, Partial: partial, ExitCode: exitCode}
 		}
 		out = append(out, v)
 	}
@@ -381,7 +405,7 @@ func (a *App) install(ctx context.Context) error {
 		}
 	}
 	if distro == "" {
-		return errors.New("install requires a target distro or --name")
+		return errors.New("install requires a target distro (ubuntu or arch)")
 	}
 	name := a.Inv.Globals.Name
 	if name == "" {
@@ -408,6 +432,9 @@ func (a *App) install(ctx context.Context) error {
 	}
 	v, e := a.Services.Install().Install(ctx, req, a.progress)
 	if e != nil {
+		if v.ChrootName != "" || len(v.Phases) > 0 || len(v.ToolResults) > 0 || len(v.AddonResults) > 0 {
+			return &PartialResultError{Err: e, Partial: v, ExitCode: 1}
+		}
 		return e
 	}
 	return a.emit("Install Results", v)
@@ -539,6 +566,9 @@ func (a *App) chroots(ctx context.Context) error {
 			if r.Result == "FAIL" {
 				ok = false
 			}
+		}
+		if !ok {
+			a.ExitCode = 1
 		}
 		return a.emit("Imported Chroot Validation", map[string]any{"name": n, "validation_ok": ok, "checks": v})
 	}
@@ -822,7 +852,7 @@ func (a *App) catalog(ctx context.Context) error {
 		}
 		v, e := svc.Apply(ctx, names, a.progress)
 		if e != nil {
-			return e
+			return &PartialResultError{Err: e, Partial: v, ExitCode: 1}
 		}
 		return a.emit(strings.Title(group)+" Apply", v)
 	}
@@ -1019,10 +1049,6 @@ func (a *App) magisk(ctx context.Context) error {
 	if err := modulepkg.Render(opts); err != nil {
 		return err
 	}
-	if opts.ZipPath != "" {
-		_, _ = fmt.Fprintln(a.Stdout, opts.ZipPath)
-	} else {
-		_, _ = fmt.Fprintln(a.Stdout, opts.OutputDir)
-	}
-	return nil
+	result := map[string]any{"output_dir": opts.OutputDir, "archive_path": opts.ZipPath, "startup_targets": targets}
+	return a.emit("Magisk module", result)
 }

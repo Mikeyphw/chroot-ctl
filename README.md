@@ -16,9 +16,9 @@ Go-native Android/Termux chroot manager with a Magisk/KernelSU module runtime an
 - recovery helpers for install resume/repair and post-install upgrades
 - config-driven bind mounts, extra packages, locale, DNS, and per-chroot overrides
 - diagnostics via `doctor` and local log viewing via `logs`
-- `completion zsh` output with auto-detected `fzf`, `bat`, and `lsd` enhancements
+- zsh completion generated from the same CLI contract used by parser/help, including dynamic chroot/user/catalog candidates
 - `wrapper install` for a local `chc` helper that auto-escalates through `su -c` when needed
-- YAML-backed `tools` and `addons` repositories with optional `fzf` multi-select
+- YAML-backed `tools` and `addons` repositories with explicit selection and single-candidate auto-selection
 - rich CLI output
 
 ## Build and install
@@ -49,9 +49,8 @@ chrootctl install ubuntu --name ubuntu --username mike
 chrootctl install arch --name arch --username mike
 chrootctl install ubuntu --name work --resume --profile dev --username mike
 chrootctl install ubuntu --name ubuntu --tool remove-snapd --addon nala --username mike
-chrootctl install ubuntu --name ubuntu --select-tools --select-addons --username mike
 
-chrootctl users show-id --name ubuntu --username mike
+chrootctl users show-id mike --name ubuntu
 chrootctl users sync-id --name ubuntu --username mike
 chrootctl users list --name ubuntu
 chrootctl users show mike --name ubuntu
@@ -62,8 +61,8 @@ chrootctl users sudo dev --disable --name ubuntu
 chrootctl users remove dev --delete-home --name ubuntu
 
 chrootctl chroots list
-chrootctl chroots show work
-chrootctl start ubuntu
+chrootctl chroots show --name work
+chrootctl start --name ubuntu
 chrootctl exec --name work -- ls /home/mike
 chrootctl restart --name work --login
 chrootctl upgrade --name work
@@ -162,9 +161,9 @@ Plain `chrootctl install ubuntu` uses the `minimal` profile and keeps Ubuntu Bas
 
 Tool and add-on manifests live in YAML. `distro` may be a single distro, a list such as `[ubuntu, arch]`, or `all`; scripts are loaded from the matching script repository and run inside an installed chroot with a sanitized chroot environment.
 
-When a command is missing a finite selectable argument, such as a chroot name, chroot username, tool, or add-on, `chrootctl` uses `fzf` when available. Without `fzf`, it falls back to a numbered prompt in an interactive TTY and returns a clear error in non-interactive scripts.
+Finite selectors are deterministic: chroot/user/tool/add-on values are auto-selected only when exactly one eligible candidate exists; otherwise pass the value explicitly. `--non-interactive` continues to disable the install wizard and confirmations. The CLI no longer documents an `fzf`/numbered-prompt fallback that the native backend does not implement.
 
-If `fzf` is installed, the generated zsh completion uses it for interactive chroot selection. If `bat` or `lsd` are available, they are used automatically for previews. The script falls back to normal zsh completion and standard preview tools when those commands are missing, so regeneration is not required after installing them later.
+Zsh completion is rendered directly from the compiled CLI contract, so command families, options, choices, and completion hints cannot drift from parser/help metadata. See [`docs/cli/COMMAND_REFERENCE.md`](docs/cli/COMMAND_REFERENCE.md) for the generated exhaustive command reference.
 
 
 ## Native Android replacement foundation

@@ -2,18 +2,34 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"chrootctl/internal/cli"
-	"chrootctl/internal/version"
 )
 
-func main() { os.Exit(run(os.Args[1:])) }
-func run(args []string) int {
-	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
-		fmt.Printf("chrootctl %s (Go native backend, commit %s)\n", version.Version, version.Commit)
-		return 0
-	}
-	return cli.Run(context.Background(), args, os.Stdin, os.Stdout, os.Stderr)
+func main() { os.Exit(runWithIO(os.Args[1:])) }
+
+func runWithIO(args []string) int {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	go func() {
+		select {
+		case sig := <-signals:
+			if value, ok := sig.(syscall.Signal); ok {
+				cancel(cli.NewSignalError(value))
+			} else {
+				cancel(context.Canceled)
+			}
+		case <-ctx.Done():
+		}
+	}()
+	return cli.Run(ctx, args, os.Stdin, os.Stdout, os.Stderr)
 }
+
+// run is retained for focused tests and delegates to the same signal-aware path.
+func run(args []string) int { return runWithIO(args) }

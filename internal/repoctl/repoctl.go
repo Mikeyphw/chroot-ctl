@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"chrootctl/internal/contractgen"
 	"chrootctl/internal/contracts"
 	chmodule "chrootctl/internal/module"
 	chsystem "chrootctl/internal/system"
@@ -502,6 +503,12 @@ func Validate() error {
 		return e
 	}
 	if e = ValidateBuildFoundation(root); e != nil {
+		return e
+	}
+	if e = contractgen.Check(root); e != nil {
+		return e
+	}
+	if e = ValidateCLIContractFoundation(root); e != nil {
 		return e
 	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))

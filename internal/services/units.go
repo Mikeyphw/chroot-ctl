@@ -368,7 +368,7 @@ func (s *UnitService) Boot(ctx context.Context, target string, parallel bool) (m
 			for _, ref := range layer {
 				row, e := s.Start(ctx, ref.Name, ref.Chroot, false)
 				if e != nil {
-					return nil, e
+					return map[string]any{"target": target, "parallel": parallel, "started": started, "count": len(started), "failed_service": ref.Name, "failed_result": row}, e
 				}
 				started = append(started, row)
 			}
@@ -392,11 +392,19 @@ func (s *UnitService) Boot(ctx context.Context, target string, parallel bool) (m
 		wg.Wait()
 		close(ch)
 		rows := []map[string]any{}
+		var firstErr error
 		for r := range ch {
 			if r.err != nil {
-				return nil, r.err
+				if firstErr == nil {
+					firstErr = r.err
+				}
+				continue
 			}
 			rows = append(rows, r.row)
+		}
+		if firstErr != nil {
+			started = append(started, rows...)
+			return map[string]any{"target": target, "parallel": parallel, "started": started, "count": len(started)}, firstErr
 		}
 		sort.Slice(rows, func(i, j int) bool { return fmt.Sprint(rows[i]["service"]) < fmt.Sprint(rows[j]["service"]) })
 		started = append(started, rows...)

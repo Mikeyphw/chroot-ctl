@@ -61,7 +61,11 @@ func InstallWrapper(inv Invocation, stdout, stderr io.Writer) int {
 			return 1
 		}
 		completionPath := filepath.Join(completionDir, "_chrootctl")
-		if err := atomicWriteFile(completionPath, []byte(completion.GenerateZsh()), 0o644); err != nil {
+		completionText, genErr := completion.GenerateZsh()
+		if genErr != nil {
+			return 1
+		}
+		if err := atomicWriteFile(completionPath, []byte(completionText), 0o644); err != nil {
 			fmt.Fprintln(stderr, "chrootctl:", err)
 			return 1
 		}

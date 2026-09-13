@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestFrozenCommandSurfaceHas68Nodes(t *testing.T) {
-	if len(CommandSpecs) != 68 {
+func TestContractCommandSurfaceHas69Nodes(t *testing.T) {
+	if len(CommandSpecs) != 69 {
 		t.Fatalf("nodes=%d", len(CommandSpecs))
 	}
 	seen := map[string]bool{}
@@ -30,7 +30,7 @@ func TestFrozenCommandSurfaceHas68Nodes(t *testing.T) {
 	if e = json.Unmarshal(raw, &c); e != nil {
 		t.Fatal(e)
 	}
-	if c.CommandNodeCount != 68 || len(c.CommandNodes) != 68 {
+	if c.CommandNodeCount != 69 || len(c.CommandNodes) != 69 {
 		t.Fatalf("contract=%d/%d", c.CommandNodeCount, len(c.CommandNodes))
 	}
 	for _, n := range c.CommandNodes {
@@ -48,6 +48,17 @@ func TestEveryFrozenPathParses(t *testing.T) {
 			}
 			if len(a.Options) == 0 && a.Required {
 				args = append(args, sample(a))
+			}
+		}
+		for _, group := range s.RequireOneOfGroups {
+			if len(group) == 0 {
+				continue
+			}
+			for _, a := range s.Arguments {
+				if a.Dest == group[0] && len(a.Options) > 0 {
+					args = append(args, a.Options[0])
+					break
+				}
 			}
 		}
 		inv, e := Parse(args)
