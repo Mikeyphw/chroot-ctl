@@ -3,6 +3,7 @@ package com.mikeyphw.chrootctl.ui
 import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
+import com.mikeyphw.chrootctl.model.SnapshotSummary
 import com.mikeyphw.chrootctl.model.UserSummary
 
 enum class ChrootWorkspaceTab {
@@ -247,8 +248,22 @@ fun logWorkspaceBridgeLevel(filter: LogWorkspaceFilter): String? = when (filter)
     LogWorkspaceFilter.Error -> "ERROR"
 }
 
+private val snapshotRecoverableOperationKinds = setOf("chroots.upgrade", "install.run", "transfer.import")
+
 fun operationNeedsSnapshotRecovery(operation: OperationSummary, chrootName: String): Boolean =
-    operation.targetName == chrootName && operation.state.trim().lowercase() in setOf("failed", "interrupted", "blocked")
+    operation.targetName == chrootName &&
+        !operation.stale &&
+        operation.kind in snapshotRecoverableOperationKinds &&
+        operation.state.trim().lowercase() in setOf("failed", "interrupted")
+
+fun matchingRecoverySnapshot(operation: OperationSummary, snapshots: List<SnapshotSummary>): SnapshotSummary? =
+    snapshots.firstOrNull { snapshot ->
+        snapshot.metadata["protected_operation_id"] == operation.operationId &&
+            snapshot.metadata["protected_operation_kind"] == operation.kind
+    }
+
+fun defaultSnapshotName(nowMillis: Long = System.currentTimeMillis(), nonce: String = java.util.UUID.randomUUID().toString().take(8)): String =
+    "snapshot-$nowMillis-$nonce"
 
 fun snapshotPreviewMatches(
     action: SnapshotWorkspaceAction,

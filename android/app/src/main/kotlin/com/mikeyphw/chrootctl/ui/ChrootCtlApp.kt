@@ -32,6 +32,7 @@ import com.mikeyphw.chrootctl.ui.components.StatusTone
 import com.mikeyphw.chrootctl.ui.home.HomeScreen
 import com.mikeyphw.chrootctl.ui.install.InstallScreen
 import com.mikeyphw.chrootctl.ui.tools.ToolsScreen
+import org.json.JSONObject
 
 @Composable
 fun ChrootCtlApp(
@@ -47,10 +48,34 @@ fun ChrootCtlApp(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var destinationName by rememberSaveable { mutableStateOf(AppDestination.Home.name) }
+    var lastHandledSnapshotOperationId by rememberSaveable { mutableStateOf("") }
+    var requestedChrootWorkspaceTabName by rememberSaveable { mutableStateOf("") }
+    var requestedChrootWorkspaceTabNonce by rememberSaveable { mutableStateOf(0L) }
     val destination = AppDestination.entries.firstOrNull { it.name == destinationName } ?: AppDestination.Home
     val destinationStateHolder = rememberSaveableStateHolder()
     fun navigate(item: AppDestination) {
         destinationName = item.name
+    }
+
+
+    LaunchedEffect(uiState.operations) {
+        val completed = uiState.operations.firstOrNull { operation ->
+            operation.kind.startsWith("snapshots.") && operation.state == "succeeded" && operation.operationId != lastHandledSnapshotOperationId
+        }
+        completed?.let { operation ->
+            operation.targetName?.takeIf(String::isNotBlank)?.let(viewModel::refreshSnapshots)
+            if (operation.kind == "snapshots.export") {
+                val exported = operation.resultJson
+                    ?.let { runCatching { JSONObject(it) }.getOrNull() }
+                    ?.optString("exported_archive")
+                    .orEmpty()
+                if (exported.isNotBlank()) {
+                    viewModel.adoptSnapshotExport(exported)
+                    onCreateExportDocument()
+                }
+            }
+            lastHandledSnapshotOperationId = operation.operationId
+        }
     }
 
     LaunchedEffect(openOperationId, openOperationNonce) {
@@ -88,9 +113,13 @@ fun ChrootCtlApp(
                     uiState.operations.firstOrNull { it.operationId == operationId }?.targetName?.let { target ->
                         viewModel.selectChroot(target)
                         viewModel.refreshSnapshots(target)
+                        requestedChrootWorkspaceTabName = ChrootWorkspaceTab.Snapshots.name
+                        requestedChrootWorkspaceTabNonce += 1L
                         navigate(AppDestination.Chroots)
                     }
                 },
+                requestedChrootWorkspaceTab = ChrootWorkspaceTab.entries.firstOrNull { it.name == requestedChrootWorkspaceTabName },
+                requestedChrootWorkspaceTabNonce = requestedChrootWorkspaceTabNonce,
                 updateInstallDraft = viewModel::updateInstallDraft,
                 refreshInstallForm = viewModel::refreshInstallForm,
                 previewInstall = viewModel::previewInstall,
@@ -235,6 +264,8 @@ private fun AppContent(
     retryOperation: (String) -> Unit,
     retryOperationWithFixes: (String) -> Unit,
     recoverLatestSnapshot: (String) -> Unit,
+    requestedChrootWorkspaceTab: ChrootWorkspaceTab?,
+    requestedChrootWorkspaceTabNonce: Long,
     updateInstallDraft: (com.mikeyphw.chrootctl.model.InstallDraft) -> Unit,
     refreshInstallForm: () -> Unit,
     previewInstall: () -> Unit,
@@ -371,6 +402,8 @@ private fun AppContent(
                     usersPane = state.usersPane,
                     servicesPane = state.servicesPane,
                     systemSupportPane = state.systemSupportPane,
+                    requestedWorkspaceTab = requestedChrootWorkspaceTab,
+                    requestedWorkspaceTabNonce = requestedChrootWorkspaceTabNonce,
                     onSelect = selectChroot,
                     onRefreshDetail = refreshSelectedChroot,
                     onPreviewLifecycle = previewLifecycle,

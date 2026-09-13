@@ -257,16 +257,17 @@ func (d *Dispatcher) runSpec(ctx context.Context, r Request, op string, p map[st
 		return nil
 	}
 	completed, e := d.Operations.Execute(ctx, &rec, func(progress operations.ProgressFunc, cancel func() bool) (any, error) {
+		execCtx := services.WithOperationProvenance(ctx, rec.OperationID, op)
 		if d.Mutations != nil {
 			recoveryTarget := targetText
 			if spec.LockScope == "global" {
 				recoveryTarget = ""
 			}
-			if _, recoveryErr := d.Mutations.RecoverLocked(ctx, recoveryTarget); recoveryErr != nil {
+			if _, recoveryErr := d.Mutations.RecoverLocked(execCtx, recoveryTarget); recoveryErr != nil {
 				return nil, recoveryErr
 			}
 		}
-		return d.Backend.Invoke(ctx, "operation", op, p, func(v any) error { return progress(v) }, cancel)
+		return d.Backend.Invoke(execCtx, "operation", op, p, func(v any) error { return progress(v) }, cancel)
 	}, eventSink)
 	if e != nil {
 		emitBridgeError(emit, r.RequestID, e)

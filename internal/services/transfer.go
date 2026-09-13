@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"chrootctl/internal/fsmeta"
 	"chrootctl/internal/model"
 	"chrootctl/internal/mutation"
 	"chrootctl/internal/registry"
@@ -303,6 +304,16 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 			return model.ChrootExportResult{}, fmt.Errorf("export requires the chroot to be fully and verifiably unmounted (%s)", m["mounted"])
 		}
 	}
+	allMounts, mountTableErr := sys.MountTableDetailed("/proc/mounts")
+	if mountTableErr != nil {
+		return model.ChrootExportResult{}, fmt.Errorf("verify nested export mounts: %w", mountTableErr)
+	}
+	for _, mount := range allMounts {
+		rel, relErr := filepath.Rel(root, filepath.Clean(mount.Target))
+		if relErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return model.ChrootExportResult{}, fmt.Errorf("export source contains live nested mount %s; unmount it before export", mount.Target)
+		}
+	}
 	if archive == "" {
 		archive = ManagedArchive(name, "tar.zst")
 	}
@@ -319,7 +330,7 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 	if e = os.MkdirAll(filepath.Dir(archive), 0755); e != nil {
 		return model.ChrootExportResult{}, e
 	}
-	manifest := map[string]any{"name": name, "distro": r.Distro, "arch": ptrText(r.Arch), "release_name": ptrText(r.ReleaseName), "version": ptrText(r.Version), "phase": r.Phase, "installed": r.Installed, "metadata": r.Metadata, "path_name": filepath.Base(root)}
+	manifest := map[string]any{"name": name, "distro": r.Distro, "arch": ptrText(r.Arch), "release_name": ptrText(r.ReleaseName), "version": ptrText(r.Version), "phase": r.Phase, "installed": r.Installed, "metadata": r.Metadata, "path_name": filepath.Base(root), "rootfs_metadata_contract": "chrootctl-rootfs-v1", "rootfs_metadata_features": []string{"uid_gid", "mode_special_bits", "atime_mtime", "xattrs_acl_capabilities", "hardlinks", "symlinks", "fifo_device_nodes", "sparse_zero_ranges"}}
 	manifestPath := filepath.Join(filepath.Dir(root), ".chrootctl-export.json")
 	if e = exclusiveJSON(manifestPath, manifest); e != nil {
 		return model.ChrootExportResult{}, e
@@ -334,7 +345,7 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 		return model.ChrootExportResult{}, e
 	}
 	runner := transferRunner(rt.Runner, control.Cancelled)
-	res, e := runner.Run(ctx, []string{"tar", "--zstd", "-cpf", tmp, "-C", filepath.Dir(root), filepath.Base(root), filepath.Base(manifestPath)}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
+	res, e := runner.Run(ctx, []string{"tar", "--format=pax", "--numeric-owner", "--acls", "--xattrs", "--xattrs-include=*", "--sparse", "--one-file-system", "--zstd", "-cpf", tmp, "-C", filepath.Dir(root), filepath.Base(root), filepath.Base(manifestPath)}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
 	if e != nil {
 		return model.ChrootExportResult{}, e
 	}
@@ -432,6 +443,9 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 	manifest, size, e := inspectTar(ctx, control, tarPath)
 	if e != nil {
 		return model.ChrootArchiveInspection{}, e
+	}
+	if contract := strings.TrimSpace(fmt.Sprint(manifest["rootfs_metadata_contract"])); contract != "chrootctl-rootfs-v1" {
+		return model.ChrootArchiveInspection{}, fmt.Errorf("archive is not proven metadata-faithful (rootfs_metadata_contract=%q); re-export it with CHR09 or newer", contract)
 	}
 	pathName := fmt.Sprint(manifest["path_name"])
 	sourceName := fmt.Sprint(manifest["name"])
@@ -560,104 +574,16 @@ func safeExtractParent(root, path string) error {
 	return nil
 }
 func extractRootFromTar(ctx context.Context, control TransferControl, tarPath, destRoot, pathName string) error {
-	if pathName == "" || filepath.Base(pathName) != pathName {
-		return fmt.Errorf("invalid archive root name: %q", pathName)
-	}
-	f, e := os.Open(tarPath)
-	if e != nil {
-		return e
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return err
 	}
 	defer f.Close()
-	tr := tar.NewReader(f)
-	prefix := pathName + "/"
-	for {
-		if err := control.check(ctx); err != nil {
-			return err
-		}
-		h, e := tr.Next()
-		if e == io.EOF {
-			break
-		}
-		if e != nil {
-			return e
-		}
-		name := filepath.Clean(h.Name)
-		if name == ".chrootctl-export.json" || name == pathName {
-			continue
-		}
-		if !strings.HasPrefix(name, prefix) {
-			return fmt.Errorf("unexpected archive member outside root %s: %s", pathName, h.Name)
-		}
-		rel := strings.TrimPrefix(name, prefix)
-		if rel == "" || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("unsafe archive member: %s", h.Name)
-		}
-		target := filepath.Join(destRoot, rel)
-		if _, e := contained(destRoot, target, "archive member"); e != nil {
-			return e
-		}
-		if e = safeExtractParent(destRoot, target); e != nil {
-			return e
-		}
-		mode := os.FileMode(h.Mode) & 07777
-		switch h.Typeflag {
-		case tar.TypeDir:
-			if st, e := os.Lstat(target); e == nil {
-				if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
-					return fmt.Errorf("archive directory collides with unsafe entry: %s", rel)
-				}
-			} else if os.IsNotExist(e) {
-				if e = os.Mkdir(target, mode.Perm()); e != nil {
-					return e
-				}
-			} else {
-				return e
-			}
-		case tar.TypeReg, tar.TypeRegA:
-			if st, e := os.Lstat(target); e == nil && st.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("archive file collides with symlink: %s", rel)
-			}
-			out, e := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode.Perm())
-			if e != nil {
-				return e
-			}
-			_, copyErr := copyWithControl(ctx, control, out, tr)
-			closeErr := out.Close()
-			if copyErr != nil {
-				return copyErr
-			}
-			if closeErr != nil {
-				return closeErr
-			}
-		case tar.TypeSymlink:
-			if _, e := os.Lstat(target); e == nil {
-				return fmt.Errorf("duplicate archive member: %s", rel)
-			}
-			if e = os.Symlink(h.Linkname, target); e != nil {
-				return e
-			}
-		case tar.TypeLink:
-			linkName := filepath.Clean(h.Linkname)
-			if !strings.HasPrefix(linkName, prefix) {
-				return fmt.Errorf("unsafe hardlink target: %s", h.Linkname)
-			}
-			linkRel := strings.TrimPrefix(linkName, prefix)
-			linkTarget := filepath.Join(destRoot, linkRel)
-			if _, e := contained(destRoot, linkTarget, "hardlink target"); e != nil {
-				return e
-			}
-			st, e := os.Lstat(linkTarget)
-			if e != nil || !st.Mode().IsRegular() {
-				return fmt.Errorf("hardlink target is not a regular extracted file: %s", h.Linkname)
-			}
-			if e = os.Link(linkTarget, target); e != nil {
-				return e
-			}
-		default: /* device/fifo/socket entries are recreated by runtime preparation */
-		}
-	}
-	return nil
+	return fsmeta.ExtractTarRoot(ctx, f, destRoot, pathName, fsmeta.CopyControl{
+		Check: func(checkCtx context.Context) error { return control.check(checkCtx) },
+	})
 }
+
 func (s *TransferService) Import(ctx context.Context, archive, name, conflict, password, postImport string) (model.ChrootImportResult, error) {
 	return s.ImportWithControl(ctx, archive, name, conflict, password, postImport, TransferControl{})
 }

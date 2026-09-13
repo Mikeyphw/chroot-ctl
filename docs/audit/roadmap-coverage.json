@@ -50,7 +50,7 @@
     {
       "id": "CHR09",
       "title": "Metadata-faithful snapshot subsystem",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR10",
@@ -1114,7 +1114,7 @@
       "title": "Snapshots/imports do not preserve rootfs filesystem metadata faithfully",
       "ownerOverlay": "CHR09",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI09-01",
@@ -1137,7 +1137,7 @@
       "title": "Snapshot storage/recovery workflow has split authority or unsafe preconditions",
       "ownerOverlay": "CHR09",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH05-01",
@@ -5420,7 +5420,9 @@
       "id": "U139",
       "title": "HIGH — Install-time destructive snapshots use a separate, unmanaged and unsafe snapshot mechanism",
       "ownerOverlay": "CHR11",
-      "supportingOverlays": [],
+      "supportingOverlays": [
+        "CHR09"
+      ],
       "status": "planned",
       "sourceFindings": [
         {
@@ -5436,7 +5438,9 @@
       "id": "U140",
       "title": "HIGH — Upgrade ignores failure of the configured safety snapshot",
       "ownerOverlay": "CHR11",
-      "supportingOverlays": [],
+      "supportingOverlays": [
+        "CHR09"
+      ],
       "status": "planned",
       "sourceFindings": [
         {
@@ -5452,7 +5456,9 @@
       "id": "U141",
       "title": "HIGH — Safety snapshot and upgrade command can operate on different rootfs paths",
       "ownerOverlay": "CHR11",
-      "supportingOverlays": [],
+      "supportingOverlays": [
+        "CHR09"
+      ],
       "status": "planned",
       "sourceFindings": [
         {

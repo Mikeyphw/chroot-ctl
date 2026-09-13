@@ -51,6 +51,8 @@ func (a *App) Dispatch(ctx context.Context) error {
 		return a.upgrade(ctx)
 	case "chroots":
 		return a.chroots(ctx)
+	case "snapshots":
+		return a.snapshots(ctx)
 	case "transfer":
 		return a.transfer(ctx)
 	case "events":
@@ -566,6 +568,59 @@ func (a *App) chroots(ctx context.Context) error {
 	}
 	return errors.New("unsupported chroots command")
 }
+func (a *App) snapshots(ctx context.Context) error {
+	switch a.Inv.Spec.Command {
+	case "snapshots":
+		return errors.New("snapshots subcommand is required")
+	case "snapshots list":
+		n, err := a.resolveTarget(ctx, false)
+		if err != nil {
+			return err
+		}
+		rows, err := a.Services.Snapshots().List(ctx, n, a.Inv.Int("limit", 100))
+		if err != nil {
+			return err
+		}
+		return a.emit("Managed Snapshots", rows)
+	case "snapshots create":
+		n, err := a.resolveTarget(ctx, false)
+		if err != nil {
+			return err
+		}
+		result, err := a.Services.Snapshots().Create(ctx, n, a.Inv.String("snapshot"), a.Inv.String("note"))
+		if err != nil {
+			return err
+		}
+		return a.emit("Snapshot Create", result)
+	case "snapshots restore":
+		n, err := a.resolveTarget(ctx, false)
+		if err != nil {
+			return err
+		}
+		snapshot := a.Inv.String("snapshot")
+		if err = a.confirm("Restore snapshot '"+snapshot+"' over chroot '"+n+"'?", a.Inv.Bool("yes")); err != nil {
+			return err
+		}
+		result, err := a.Services.Snapshots().Restore(ctx, n, snapshot)
+		if err != nil {
+			return err
+		}
+		return a.emit("Snapshot Restore", result)
+	case "snapshots export":
+		n, err := a.resolveTarget(ctx, false)
+		if err != nil {
+			return err
+		}
+		result, err := a.Services.Snapshots().Export(ctx, n, a.Inv.String("snapshot"), a.Inv.String("archive"))
+		if err != nil {
+			return err
+		}
+		return a.emit("Snapshot Export", result)
+	default:
+		return errors.New("unsupported snapshots command")
+	}
+}
+
 func (a *App) transfer(ctx context.Context) error {
 	switch a.Inv.Spec.Command {
 	case "transfer":

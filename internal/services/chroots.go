@@ -403,7 +403,11 @@ func (s *ChrootService) StorageStatus(ctx context.Context, name string) (map[str
 	} else if mounted > 0 {
 		mountState = "mounted"
 	}
-	return map[string]any{"name": name, "rootfsPath": root, "rootfsExists": exists(root), "rootfsBytes": directorySize(root), "cachePath": cache, "cacheExists": exists(cache), "cacheBytes": directorySize(cache), "freeBytes": free, "usedBytes": used, "totalBytes": total, "mountState": mountState, "mountedCount": mounted, "mismatchedMountCount": mismatched, "mountCount": len(rows), "snapshotDirectory": rt.Config.SnapshotDir}, nil
+	snapshotDirectory, snapshotErr := s.C.Snapshots().base(name)
+	if snapshotErr != nil {
+		return nil, snapshotErr
+	}
+	return map[string]any{"name": name, "rootfsPath": root, "rootfsExists": exists(root), "rootfsBytes": directorySize(root), "cachePath": cache, "cacheExists": exists(cache), "cacheBytes": directorySize(cache), "freeBytes": free, "usedBytes": used, "totalBytes": total, "mountState": mountState, "mountedCount": mounted, "mismatchedMountCount": mismatched, "mountCount": len(rows), "snapshotDirectory": snapshotDirectory}, nil
 }
 func (s *ChrootService) DeletePreview(ctx context.Context, name string) (map[string]any, error) {
 	r, e := s.C.Registry.Get(ctx, name)

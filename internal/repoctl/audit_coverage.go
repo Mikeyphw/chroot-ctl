@@ -260,6 +260,37 @@ func ValidateAuditCoverage(root string) error {
 	if d12 := canonical["D12"]; d12.OwnerOverlay != "CHR16" || d12.Status != "planned" {
 		return fmt.Errorf("CHR08 must not prematurely close CHR16-owned log retrieval/retention root cause D12")
 	}
+
+	chr09 := []string{"D16", "D17"}
+	chr09Sources := 0
+	for _, id := range chr09 {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR09" || finding.Status == "planned" {
+			return fmt.Errorf("CHR09 finding %s is not marked implemented", id)
+		}
+		chr09Sources += len(finding.SourceFindings)
+	}
+	if chr09Sources != 16 {
+		return fmt.Errorf("CHR09 source-manifestation coverage=%d, want 16", chr09Sources)
+	}
+	for _, id := range []string{"U139", "U140", "U141"} {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR11" || !containsString(finding.SupportingOverlays, "CHR09") {
+			return fmt.Errorf("CHR09 snapshot support must remain recorded on CHR11-owned %s", id)
+		}
+	}
+	for _, id := range []string{"U010"} {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR19" || !containsString(finding.SupportingOverlays, "CHR09") {
+			return fmt.Errorf("CHR09 Android snapshot support must remain recorded on CHR19-owned %s", id)
+		}
+	}
+	for _, id := range []string{"U152", "U155", "U156"} {
+		finding := canonical[id]
+		if finding.OwnerOverlay != "CHR07" || !containsString(finding.SupportingOverlays, "CHR09") {
+			return fmt.Errorf("CHR09 snapshot integration must retain CHR07-owned %s", id)
+		}
+	}
 	return nil
 }
 

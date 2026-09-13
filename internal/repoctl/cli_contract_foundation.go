@@ -13,8 +13,8 @@ import (
 // invariants that previously drifted independently across parser/help/JSON,
 // completion, privilege policy, and generated documentation.
 func ValidateCLIContractFoundation(root string) error {
-	if len(cli.CommandSpecs) != 69 {
-		return fmt.Errorf("CHR02 command count: got %d want 69", len(cli.CommandSpecs))
+	if len(cli.CommandSpecs) != 74 {
+		return fmt.Errorf("CHR02 command count: got %d want 74", len(cli.CommandSpecs))
 	}
 	if len(cli.GlobalArguments) != 8 {
 		return fmt.Errorf("CHR02 global count: got %d want 8", len(cli.GlobalArguments))

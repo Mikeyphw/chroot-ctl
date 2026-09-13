@@ -197,7 +197,7 @@
       "prog": "chrootctl app reconcile"
     }
   ],
-  "commandNodeCount": 69,
+  "commandNodeCount": 74,
   "commandNodes": [
     {
       "arguments": [],
@@ -2175,6 +2175,250 @@
       "requireOneOfGroups": [],
       "jsonForbiddenWhen": [],
       "privilegeRules": []
+    },
+    {
+      "epilog": "examples:\n  chrootctl --name work snapshots list\n  chrootctl --name work snapshots create before-change\n  chrootctl --name work snapshots restore before-change --yes",
+      "handler": "snapshots",
+      "group": true,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "none",
+      "mutability": "read",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [],
+      "command": "snapshots",
+      "description": "List, create, restore, or export metadata-faithful managed rootfs snapshots.",
+      "path": [
+        "snapshots"
+      ],
+      "prog": "chrootctl snapshots"
+    },
+    {
+      "epilog": null,
+      "handler": "snapshots",
+      "group": false,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "none",
+      "mutability": "read",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": 100,
+          "dest": "limit",
+          "help": "Maximum snapshots to show.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--limit"
+          ],
+          "required": false,
+          "type": "int",
+          "completion": "",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      ],
+      "command": "snapshots list",
+      "description": "List managed snapshots for the target chroot.",
+      "path": [
+        "snapshots",
+        "list"
+      ],
+      "prog": "chrootctl snapshots list"
+    },
+    {
+      "epilog": null,
+      "handler": "snapshots",
+      "group": false,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "mutate-root",
+      "mutability": "mutate",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "snapshot",
+          "help": "Snapshot name. If omitted, a unique operation-safe name is generated.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null,
+          "completion": ""
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "note",
+          "help": "Optional snapshot note.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--note"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
+        }
+      ],
+      "command": "snapshots create",
+      "description": "Create a metadata-faithful snapshot of a fully unmounted target.",
+      "path": [
+        "snapshots",
+        "create"
+      ],
+      "prog": "chrootctl snapshots create"
+    },
+    {
+      "epilog": null,
+      "handler": "snapshots",
+      "group": false,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "mutate-root",
+      "mutability": "mutate",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "snapshot",
+          "help": "Snapshot name to restore.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null,
+          "completion": ""
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "yes",
+          "help": "Skip the destructive confirmation prompt.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--yes"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
+        }
+      ],
+      "command": "snapshots restore",
+      "description": "Restore a metadata-faithful managed snapshot to the target rootfs.",
+      "path": [
+        "snapshots",
+        "restore"
+      ],
+      "prog": "chrootctl snapshots restore"
+    },
+    {
+      "epilog": null,
+      "handler": "snapshots",
+      "group": false,
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "privilege": "read-root",
+      "mutability": "mutate",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "snapshot",
+          "help": "Snapshot name to export.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null,
+          "completion": ""
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "archive",
+          "help": "Optional destination tar.gz path.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": "Path",
+          "completion": "path"
+        }
+      ],
+      "command": "snapshots export",
+      "description": "Export a managed snapshot bundle. Defaults to managed transfer storage.",
+      "path": [
+        "snapshots",
+        "export"
+      ],
+      "prog": "chrootctl snapshots export"
     },
     {
       "arguments": [],

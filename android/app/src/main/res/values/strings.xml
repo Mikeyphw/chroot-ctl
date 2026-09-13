@@ -231,14 +231,14 @@
     <string name="operation_retry_preview_action">Preview retry</string>
     <string name="operation_retry_action">Retry now</string>
     <string name="operation_retry_fixes_action">Retry with fixes</string>
-    <string name="operation_restore_latest_preview_action">Preview latest restore</string>
+    <string name="operation_restore_latest_preview_action">Open matching recovery snapshot</string>
     <string name="help_open_action">Help and API reference</string>
     <string name="help_getting_started_title">Getting started</string>
     <string name="help_getting_started_body">Home checks root and bridge readiness. Install creates a chroot through a preview-first foreground operation. Chroots manages lifecycle, snapshots, users and services. Tools contains catalogs, transfers, logs, repair, diagnostics and support exports.</string>
     <string name="help_operations_title">Operations and cancellation</string>
     <string name="help_operations_body">Long-running work is journaled in Activity and remains visible through foreground notifications. Open an operation to inspect events, cancel active work, or use recovery actions after a failure.</string>
     <string name="help_recovery_title">Failure recovery</string>
-    <string name="help_recovery_body">Failed, interrupted, blocked or cancelled work can expose Retry now, Retry with fixes, and Restore latest snapshot. Recovery is offered only when the journal contains a safe replay request and a matching snapshot exists.</string>
+    <string name="help_recovery_body">Failed or interrupted rootfs-mutating work can expose Retry now, Retry with fixes, and snapshot recovery. Snapshot recovery is offered only for non-stale operations when a snapshot is explicitly linked to that operation.</string>
     <string name="help_storage_title">Imports, exports and snapshots</string>
     <string name="help_storage_body">Android document pickers stage archives without granting broad storage access. Managed artifacts can be copied to a document you choose. Snapshot restore requires typing the chroot name.</string>
     <string name="help_privacy_title">Privacy and support evidence</string>
@@ -437,8 +437,8 @@
     <string name="snapshot_create_name">Snapshot name</string>
     <string name="snapshot_action_preview">Preview action</string>
     <string name="snapshot_recovery_title">Failed-operation recovery</string>
-    <string name="snapshot_recovery_body">%1$s is %2$s. Review the newest snapshot before choosing a restore.</string>
-    <string name="snapshot_recovery_review_latest">Review latest restore</string>
+    <string name="snapshot_recovery_body">%1$s is %2$s. Review the snapshot explicitly linked to this operation before choosing a restore.</string>
+    <string name="snapshot_recovery_review_latest">Review matching restore</string>
     <string name="snapshot_recovery_refresh">Refresh recovery points</string>
 
     <string name="storage_workspace_title">Storage</string>

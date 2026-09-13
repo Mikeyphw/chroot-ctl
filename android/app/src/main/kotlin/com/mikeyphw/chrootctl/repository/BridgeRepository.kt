@@ -629,6 +629,7 @@ private fun OperationEntity.toSummary(): OperationSummary = OperationSummary(
     errorMessage = errorMessage,
     createdAt = createdAt,
     stale = stale,
+    resultJson = resultJson,
 )
 
 private fun OperationEventEntity.toSummary(): OperationEventSummary = OperationEventSummary(
@@ -708,6 +709,12 @@ private fun JSONObject.toOperationEntity(existing: OperationEntity?): OperationE
         "operation_blocked" -> "blocked"
         else -> existing?.state ?: "running"
     }
+    val resultJson = when (type) {
+        "operation_succeeded" -> payload.opt("result").takeUnless { it == JSONObject.NULL }?.toString()
+            ?: payload.opt("resultPayload").takeUnless { it == JSONObject.NULL }?.toString()
+            ?: existing?.resultJson
+        else -> existing?.resultJson
+    }
     return OperationEntity(
         operationId = operationId,
         kind = existing?.kind ?: "system.refresh",
@@ -720,7 +727,7 @@ private fun JSONObject.toOperationEntity(existing: OperationEntity?): OperationE
         createdAt = existing?.createdAt ?: now,
         startedAt = existing?.startedAt ?: if (state == "running") now else null,
         finishedAt = if (state in setOf("cancelled", "succeeded", "failed", "blocked")) now else existing?.finishedAt,
-        resultJson = existing?.resultJson,
+        resultJson = resultJson,
         errorCode = payload.firstString("code").takeIf(String::isNotBlank) ?: existing?.errorCode,
         errorMessage = payload.firstString("message").takeIf(String::isNotBlank)?.takeIf { state == "failed" || state == "blocked" } ?: existing?.errorMessage,
         stale = false,
@@ -934,6 +941,7 @@ private fun JSONObject.toSnapshotSummary(): SnapshotSummary = SnapshotSummary(
     createdAt = firstString("createdAt", "created_at"),
     note = firstString("note"),
     sizeBytes = optLong("sizeBytes", optLong("size_bytes", 0L)),
+    metadata = optJSONObject("metadata")?.let { obj -> obj.keys().asSequence().associateWith { key -> obj.optString(key) } } ?: emptyMap(),
 )
 
 private fun JSONObject.toUserSummary(): UserSummary = UserSummary(

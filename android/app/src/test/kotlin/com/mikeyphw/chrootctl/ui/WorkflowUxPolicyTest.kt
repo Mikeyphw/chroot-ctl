@@ -4,6 +4,7 @@ import com.mikeyphw.chrootctl.model.ChrootSummary
 import com.mikeyphw.chrootctl.model.InstallDraft
 import com.mikeyphw.chrootctl.model.OperationSummary
 import com.mikeyphw.chrootctl.model.ServiceUnitSummary
+import com.mikeyphw.chrootctl.model.SnapshotSummary
 import com.mikeyphw.chrootctl.model.UserSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -133,9 +134,26 @@ class WorkflowUxPolicyTest {
         val other = sampleOperation(state = "failed", target = "ubuntu")
         assertTrue(operationNeedsSnapshotRecovery(failed, "androidos"))
         assertTrue(operationNeedsSnapshotRecovery(interrupted, "androidos"))
-        assertTrue(operationNeedsSnapshotRecovery(blocked, "androidos"))
+        assertFalse(operationNeedsSnapshotRecovery(blocked, "androidos"))
         assertFalse(operationNeedsSnapshotRecovery(complete, "androidos"))
         assertFalse(operationNeedsSnapshotRecovery(other, "androidos"))
+        assertFalse(operationNeedsSnapshotRecovery(failed.copy(stale = true), "androidos"))
+        assertFalse(operationNeedsSnapshotRecovery(failed.copy(kind = "services.start"), "androidos"))
+
+        val linked = SnapshotSummary("safe", "androidos", "rootfs-tar-v1", "/snap/safe", "now", "", 1, mapOf(
+            "protected_operation_id" to failed.operationId,
+            "protected_operation_kind" to failed.kind,
+        ))
+        val unrelated = linked.copy(name = "other", metadata = mapOf("protected_operation_id" to "different"))
+        assertEquals(linked, matchingRecoverySnapshot(failed, listOf(unrelated, linked)))
+    }
+
+    @Test
+    fun `snapshot default names include subsecond identity and nonce`() {
+        val a = defaultSnapshotName(1_700_000_000_123L, "abc12345")
+        val b = defaultSnapshotName(1_700_000_000_123L, "def67890")
+        assertTrue(a.startsWith("snapshot-1700000000123-"))
+        assertFalse(a == b)
     }
 
     @Test

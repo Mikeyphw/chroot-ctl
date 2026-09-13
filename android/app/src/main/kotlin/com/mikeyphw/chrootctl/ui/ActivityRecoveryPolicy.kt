@@ -21,7 +21,8 @@ fun OperationSummary.canRetryOperation(): Boolean = isRecoverableFailure()
 
 fun OperationSummary.canRetryWithFixes(): Boolean = canRetryOperation() && kind == "install.run"
 
-fun OperationSummary.canOpenSnapshotRecovery(): Boolean = isRecoverableFailure() && !targetName.isNullOrBlank()
+fun OperationSummary.canOpenSnapshotRecovery(): Boolean =
+    targetName?.let { operationNeedsSnapshotRecovery(this, it) } == true
 
 fun OperationActivityFilter.matches(operation: OperationSummary): Boolean = when (this) {
     OperationActivityFilter.All -> true

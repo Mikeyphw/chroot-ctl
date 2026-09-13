@@ -72,7 +72,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateCRUDAtomicity(root); e != nil {
 			return e
 		}
-		return ValidateMountServiceRuntime(root)
+		if e := ValidateMountServiceRuntime(root); e != nil {
+			return e
+		}
+		return ValidateSnapshotFidelity(root)
 	}); err != nil {
 		return err
 	}

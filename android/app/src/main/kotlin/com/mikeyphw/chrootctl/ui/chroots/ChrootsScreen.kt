@@ -69,6 +69,8 @@ import com.mikeyphw.chrootctl.ui.isBridgeShapeError
 import com.mikeyphw.chrootctl.ui.isRunningChrootStatus
 import com.mikeyphw.chrootctl.ui.formatStorageBytes
 import com.mikeyphw.chrootctl.ui.logWorkspaceBridgeLevel
+import com.mikeyphw.chrootctl.ui.defaultSnapshotName
+import com.mikeyphw.chrootctl.ui.matchingRecoverySnapshot
 import com.mikeyphw.chrootctl.ui.operationNeedsSnapshotRecovery
 import com.mikeyphw.chrootctl.ui.selectedChrootListFilter
 import com.mikeyphw.chrootctl.ui.selectedChrootWorkspaceTab
@@ -117,6 +119,8 @@ fun ChrootsScreen(
     usersPane: UsersPane,
     servicesPane: ServicesPane,
     systemSupportPane: SystemSupportPane,
+    requestedWorkspaceTab: ChrootWorkspaceTab? = null,
+    requestedWorkspaceTabNonce: Long = 0L,
     onSelect: (String) -> Unit,
     onRefreshDetail: () -> Unit,
     onPreviewLifecycle: (String, String) -> Unit,
@@ -154,6 +158,9 @@ fun ChrootsScreen(
     var requestedWorkspaceSelection by remember { mutableStateOf(selectedName) }
     val filter = selectedChrootListFilter(filterName)
     val workspaceTab = selectedChrootWorkspaceTab(workspaceTabName)
+    LaunchedEffect(requestedWorkspaceTab, requestedWorkspaceTabNonce) {
+        requestedWorkspaceTab?.let { workspaceTabName = it.name }
+    }
     val visibleChroots = chroots.filter { chroot ->
         chrootMatchesQuery(chroot, query) && chrootMatchesFilter(chroot, filter)
     }
@@ -285,7 +292,7 @@ private fun ChrootWorkspaceLauncher(
                     onSelect = { onOpenWorkspace(chroot.name) },
                     onPreviewLifecycle = onPreviewLifecycle,
                     onPreviewSnapshotCreate = { name ->
-                        onPreviewSnapshotCreate(name, "snapshot-${System.currentTimeMillis() / 1000}")
+                        onPreviewSnapshotCreate(name, defaultSnapshotName())
                     },
                 )
             }
@@ -657,7 +664,7 @@ private fun WorkspaceOverviewTab(
                         ) {
                             Text(stringResource(R.string.action_upgrade_chroot))
                         }
-                        OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name, "snapshot-${System.currentTimeMillis() / 1000}") }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                        OutlinedButton(onClick = { onPreviewSnapshotCreate(chroot.name, defaultSnapshotName()) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
                             Text(stringResource(R.string.action_preview_snapshot))
                         }
                     }
@@ -954,7 +961,12 @@ private fun SnapshotPanel(
 ) {
     var reviewToken by remember(chroot.name) { mutableStateOf("") }
     val snapshots = if (pane.targetName == chroot.name) pane.snapshots else emptyList()
-    val failedOperation = operations.firstOrNull { operationNeedsSnapshotRecovery(it, chroot.name) }
+    val recovery = operations.asSequence()
+        .filter { operationNeedsSnapshotRecovery(it, chroot.name) }
+        .mapNotNull { operation -> matchingRecoverySnapshot(operation, snapshots)?.let { snapshot -> operation to snapshot } }
+        .firstOrNull()
+    val failedOperation = recovery?.first
+    val recoverySnapshot = recovery?.second
     LaunchedEffect(chroot.name) {
         if (pane.targetName != chroot.name) onRefreshSnapshots(chroot.name)
     }
@@ -982,9 +994,9 @@ private fun SnapshotPanel(
                     title = stringResource(R.string.snapshot_recovery_title),
                     body = stringResource(R.string.snapshot_recovery_body, operation.title, operation.state),
                     footer = {
-                        if (snapshots.isNotEmpty()) {
+                        if (recoverySnapshot != null) {
                             OutlinedButton(
-                                onClick = { reviewToken = snapshotReviewTokenFor(SnapshotWorkspaceAction.Restore, snapshots.first().name) },
+                                onClick = { reviewToken = snapshotReviewTokenFor(SnapshotWorkspaceAction.Restore, recoverySnapshot.name) },
                                 modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
                             ) { Text(stringResource(R.string.snapshot_recovery_review_latest)) }
                         } else {
@@ -1049,7 +1061,7 @@ private fun SnapshotActionReviewSheet(
 ) {
     var restoreConfirmation by remember(chroot.name, action.name, snapshot?.name) { mutableStateOf("") }
     val createSnapshotName by remember(chroot.name, action.name, snapshot?.name) {
-        mutableStateOf("snapshot-${System.currentTimeMillis() / 1000}")
+        mutableStateOf(defaultSnapshotName())
     }
     val reviewedSnapshotName = snapshot?.name ?: createSnapshotName
     val activePreview = preview?.takeIf {

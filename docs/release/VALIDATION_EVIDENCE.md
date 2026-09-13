@@ -34,7 +34,7 @@ The exact check IDs are:
 
 A passing check carries `status: pass`, `exitCode: 0`, a non-empty `command`, a positive `recordedAt`, and provenance of either `subprocess` or `internal-check`. Missing, extra, malformed, or failed checks make release readiness fail closed.
 
-`go_contracts` validates the retained GO16 test map, the frozen GO00 fixtures, and the live 69-node CLI / 86-operation bridge metadata. `source_package` builds the source archive twice and requires identical SHA-256 values. `module_zip` likewise packages the module twice and requires byte-for-byte deterministic ZIP output. The three Android checks execute the exact Gradle tasks rather than accepting caller assertions. `source_no_webui` scans the current runtime source for retired WebUI dependencies/surfaces.
+`go_contracts` validates the retained GO16 test map, the frozen GO00 fixtures, and the live 74-node CLI / 86-operation bridge metadata. `source_package` builds the source archive twice and requires identical SHA-256 values. `module_zip` likewise packages the module twice and requires byte-for-byte deterministic ZIP output. The three Android checks execute the exact Gradle tasks rather than accepting caller assertions. `source_no_webui` scans the current runtime source for retired WebUI dependencies/surfaces.
 
 Repository-internal validation also seals the CHR01–CHR03 roadmap foundations before final evidence can pass: build/Devtool configuration, generated CLI-contract freshness, the complete 609→272 audit ledger, and CHR03 configuration/registry/Room identity invariants.
 
@@ -66,3 +66,7 @@ Evidence is written through a same-directory temporary file, file `fsync`, atomi
 ## CHR08 mount/session/service-runtime seal
 
 `repoctl validate` and final-seal execute `ValidateMountServiceRuntime`. The CHR08 gate requires option-aware decoded mount evidence, transactional mount rollback and `/data` flag restoration, shared start/exec session construction, fail-closed status/doctor checks, strict trusted service-unit parsing/execution, durable process-state lifecycle semantics, Android operation reconciliation markers, and exact audit closure of D13/D25/D26 plus U116–U132/U225 (21 canonical findings / 49 source manifestations). D12 remains reserved for CHR16's logging/diagnostics closure.
+
+## CHR09 metadata-faithful snapshot seal
+
+`repoctl validate` and final-seal execute `ValidateSnapshotFidelity`. The CHR09 gate requires the Linux/Android metadata-preserving archive primitive, configured `snapshot_dir` as the single managed snapshot authority, rootfs-tar-v1 manifest/payload validation, restore refusal for legacy metadata-lossy snapshots, operation-provenance linkage for recovery snapshots, normal CLI snapshot commands, Android recovery selection tied to matching provenance, and exact audit closure of D16/D17 (2 canonical findings / 16 source manifestations). Install/upgrade and Android storage/UI follow-ups remain assigned to their later roadmap overlays with CHR09 recorded only as supporting work where appropriate.

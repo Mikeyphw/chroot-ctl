@@ -209,9 +209,12 @@ func (s *InstallService) Upgrade(ctx context.Context, name, username string, pro
 	}
 	snap := ""
 	if s.C.BaseConfig.SnapshotBeforeDestructive {
-		if x, e := s.C.Snapshots().Create(ctx, name, "pre-upgrade", "Automatic pre-upgrade snapshot"); e == nil {
-			snap = x.SnapshotName
+		snapshotName := uniqueSnapshotName("pre-upgrade")
+		x, snapshotErr := s.C.Snapshots().Create(ctx, name, snapshotName, "Automatic pre-upgrade snapshot")
+		if snapshotErr != nil {
+			return model.UpgradeResult{}, fmt.Errorf("pre-upgrade safety snapshot failed; upgrade was not started: %w", snapshotErr)
 		}
+		snap = x.SnapshotName
 	}
 	cmd := "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade"
 	if strings.EqualFold(r.Distro, "arch") {

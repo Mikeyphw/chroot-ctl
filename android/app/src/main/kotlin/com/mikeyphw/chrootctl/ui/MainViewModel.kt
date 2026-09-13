@@ -950,6 +950,13 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         transferPane.value = transferPane.value.copy(exportArchive = path, exportPreview = null, refreshing = false, errorMessage = null)
     }
 
+    fun adoptSnapshotExport(path: String) {
+        if (path.isBlank()) return
+        transferExportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(exportArchive = path, exportPreview = null, errorMessage = null)
+        refreshTransferArtifacts()
+    }
+
     fun inspectTransferImport() {
         val request = transferPane.value
         val requestPayload = transferImportPreviewIdentity(request)

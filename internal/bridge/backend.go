@@ -642,13 +642,9 @@ func (b *ServicesBackend) snapshotPreview(ctx context.Context, p map[string]any)
 	if e != nil {
 		return nil, e
 	}
-	a := optText(p, "action")
-	if a == "" {
-		a = "create"
-	}
-	rows, e := b.Services.Snapshots().List(ctx, n, 100)
-	if e != nil {
-		return nil, e
+	action := optText(p, "action")
+	if action == "" {
+		action = "create"
 	}
 	snap := optText(p, "snapshot")
 	if snap == "" {
@@ -657,56 +653,9 @@ func (b *ServicesBackend) snapshotPreview(ctx context.Context, p map[string]any)
 	if snap == "" {
 		snap = optText(p, "snapshot_name")
 	}
-	switch a {
-	case "create":
-		if snap == "" {
-			snap = "snapshot"
-		}
-		snap, e = validation.SnapshotNameField(snap, "payload.snapshot")
-		if e != nil {
-			return nil, e
-		}
-		exists := false
-		for _, r := range rows {
-			if r.Name == snap {
-				exists = true
-			}
-		}
-		block := []map[string]string{}
-		if exists {
-			block = append(block, map[string]string{"code": "snapshot_exists", "message": "Snapshot already exists: " + snap})
-		}
-		return map[string]any{"ok": len(block) == 0, "kind": "snapshot.create", "name": n, "snapshot": snap, "existingCount": len(rows), "blocking": block, "warnings": []string{}, "confirm": false}, nil
-	case "restore":
-		snap, e = reqSnapshot(p)
-		if e != nil {
-			return nil, e
-		}
-		exists := false
-		for _, r := range rows {
-			if r.Name == snap {
-				exists = true
-			}
-		}
-		block := []map[string]string{}
-		if !exists {
-			block = append(block, map[string]string{"code": "snapshot_missing", "message": "Snapshot does not exist: " + snap})
-		}
-		return map[string]any{"ok": len(block) == 0, "kind": "snapshot.restore", "name": n, "snapshot": snap, "destructive": true, "blocking": block, "warnings": []string{"Restore replaces the current chroot files with the selected snapshot."}, "confirm": true}, nil
-	case "export":
-		snap, e = reqSnapshot(p)
-		if e != nil {
-			return nil, e
-		}
-		archive := optText(p, "archive")
-		if archive == "" {
-			archive = "./" + n + "-" + snap + ".tar.gz"
-		}
-		return map[string]any{"ok": true, "kind": "snapshot.export", "name": n, "snapshot": snap, "archive": archive, "blocking": []any{}, "warnings": []any{}, "confirm": false}, nil
-	default:
-		return nil, protocolError("INVALID_SNAPSHOT_ACTION", "Unsupported snapshot action: "+a, nil)
-	}
+	return b.Services.Snapshots().Preview(ctx, n, action, snap)
 }
+
 func (b *ServicesBackend) userPreview(ctx context.Context, p map[string]any) (any, error) {
 	n, e := reqName(p)
 	if e != nil {
@@ -929,12 +878,9 @@ func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string
 		if e != nil {
 			return nil, e
 		}
-		snap := optText(p, "snapshot")
-		if snap == "" {
-			snap = optText(p, "snapshotName")
-		}
-		if snap == "" {
-			snap = "snapshot"
+		snap, e := reqSnapshot(p)
+		if e != nil {
+			return nil, e
 		}
 		return s.Snapshots().Create(ctx, n, snap, optText(p, "description"))
 	case "snapshots.restore":

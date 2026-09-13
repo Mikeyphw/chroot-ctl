@@ -189,6 +189,12 @@ printf '%s' '{"protocolVersion":1,"requestId":"refresh-1","operation":"system.re
 
 See `docs/android/WEBUI_PARITY_MATRIX.md` for the native replacement gate and `docs/android/ANDROID_APP_ARCHITECTURE.md` for the process and security boundaries.
 
+### Metadata-faithful snapshots
+
+CHR09 makes snapshots a managed, metadata-faithful subsystem instead of an ad hoc directory copy. The configured `snapshot_dir` is the only managed snapshot authority; normal CLI, Android bridge, storage/status surfaces, install/upgrade safety hooks, and recovery policy all route through the same service contract.
+
+Managed snapshots contain a versioned `manifest.json` plus `rootfs.tar.gz` payload preserving ownership, special permission bits, timestamps, xattrs/capability carriers, hardlinks, symlinks, FIFOs/device nodes where supported, and sparse zero ranges. Snapshot create/restore require a fully unmounted rootfs, publish through CHR06/CHR07 mutation journals, and attach protected-operation provenance so Android recovery can choose a matching known-good snapshot instead of the newest unrelated snapshot. See [`docs/audit/CHR09_METADATA_FAITHFUL_SNAPSHOTS.md`](docs/audit/CHR09_METADATA_FAITHFUL_SNAPSHOTS.md).
+
 ### Transactional mounts and service runtime
 
 CHR08 makes mount/session and service state evidence-driven rather than optimistic. Mount operations validate source/type/options, decode `/proc/mounts` escapes, reject duplicate or mismatched targets, unwind partial mounts, and restore any temporary `/data` `dev,suid` remount before returning. Status and doctor fail closed when mount evidence cannot be read or required mounts are incomplete.

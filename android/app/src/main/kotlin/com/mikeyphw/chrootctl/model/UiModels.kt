@@ -84,6 +84,7 @@ data class OperationSummary(
     val errorMessage: String?,
     val createdAt: Long,
     val stale: Boolean,
+    val resultJson: String? = null,
 )
 
 data class OperationEventSummary(
@@ -161,6 +162,7 @@ data class SnapshotSummary(
     val createdAt: String,
     val note: String,
     val sizeBytes: Long,
+    val metadata: Map<String, String> = emptyMap(),
 )
 
 data class SnapshotPane(
