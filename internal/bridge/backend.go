@@ -225,7 +225,7 @@ func installRequest(p map[string]any) model.InstallRequest {
 		r.Arch = "arm64"
 	}
 	if r.Profile == nil {
-		r.Profile = stringPtr("base")
+		r.Profile = stringPtr("minimal")
 	}
 	if r.Desktop == nil {
 		r.Desktop = stringPtr("none")
@@ -233,6 +233,7 @@ func installRequest(p map[string]any) model.InstallRequest {
 	r.Resume, _ = optBool(p, []string{"resume"}, false)
 	r.Repair, _ = optBool(p, []string{"repair"}, false)
 	r.ForcePhase, _ = optBool(p, []string{"forcePhase", "force_phase"}, false)
+	r.OverwriteExisting, _ = optBool(p, []string{"overwriteExisting", "overwrite_existing"}, false)
 	return r
 }
 

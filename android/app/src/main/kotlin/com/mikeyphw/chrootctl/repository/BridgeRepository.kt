@@ -897,6 +897,9 @@ private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
     .put("release", release.takeIf(String::isNotBlank) ?: JSONObject.NULL)
     .put("version", version.takeIf(String::isNotBlank) ?: JSONObject.NULL)
     .put("mirror", mirror)
+    .put("resume", resume)
+    .put("repair", repair)
+    .put("overwrite_existing", overwriteExisting)
 
 private fun JSONObject.toInstallFormSummary(): InstallFormSummary {
     val defaults = optJSONObject("defaults") ?: JSONObject()
@@ -1054,7 +1057,7 @@ private fun JSONObject.rowsFromJson(
             when (value) {
                 is JSONObject -> add(
                     SystemRowSummary(
-                        label = value.firstString("label", "id", "name").ifBlank { key },
+                        label = value.firstString("id", "name", "label").ifBlank { key },
                         value = value.firstString("value", "detail", "message", "status", "state").ifBlank { value.toString() },
                         state = value.firstString("state", "status", "severity").ifBlank { "info" },
                     ),
@@ -1127,7 +1130,7 @@ private fun JSONArray?.labelsFromObjects(): List<String> {
         for (index in 0 until length()) {
             val value = opt(index)
             if (value is JSONObject) {
-                add(value.firstString("label", "id", "name").ifBlank { value.toString() })
+                add(value.firstString("id", "name", "label").ifBlank { value.toString() })
             } else if (value != null) {
                 add(value.toString())
             }

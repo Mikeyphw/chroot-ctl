@@ -53,9 +53,18 @@ func (s *PreviewService) Upgrade(ctx context.Context, name string) (map[string]a
 	if r.Path == "" {
 		blocking = append(blocking, map[string]string{"code": "missing_path", "message": "No chroot path is registered."})
 	}
+	if !r.Installed || r.Phase != "finalize" {
+		blocking = append(blocking, map[string]string{"code": "not_finalized", "message": fmt.Sprintf("Upgrade requires an installed finalized chroot; current phase=%s installed=%v.", r.Phase, r.Installed)})
+	}
+	if r.Distro != "ubuntu" && r.Distro != "arch" {
+		blocking = append(blocking, map[string]string{"code": "unsupported_distro", "message": "Upgrade does not support registered distro: " + r.Distro})
+	}
+	if _, err := s.C.ResolveTarget(ctx, name, true); err != nil {
+		blocking = append(blocking, map[string]string{"code": "target_identity", "message": err.Error()})
+	}
 	warnings := []string{}
-	if !r.Installed {
-		warnings = append(warnings, "Chroot is not marked fully installed yet.")
+	if s.C.BaseConfig.SnapshotBeforeDestructive {
+		warnings = append(warnings, "A managed pre-upgrade snapshot will be created before package commands run.")
 	}
 	return map[string]any{
 		"ok": len(blocking) == 0, "kind": "upgrade", "name": name, "distro": r.Distro,

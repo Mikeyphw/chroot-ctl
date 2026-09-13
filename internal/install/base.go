@@ -36,18 +36,21 @@ type IdentitySyncer interface {
 	SyncID(context.Context, string, bool, bool) (model.UserIdSyncResult, error)
 }
 type Base struct {
-	Config           config.ChrootConfig
-	Runner           *sys.Runner
-	Controller       *controller.Controller
-	Registry         *registry.Registry
-	UserSync         IdentitySyncer
-	Logger           Logger
-	Distro           string
-	MirrorSelection  string
-	MirrorBaseURL    string
-	MirrorCandidates []MirrorCandidate
-	Resume           bool
-	ContextKey       string
+	Config                     config.ChrootConfig
+	Runner                     *sys.Runner
+	Controller                 *controller.Controller
+	Registry                   *registry.Registry
+	UserSync                   IdentitySyncer
+	Logger                     Logger
+	Distro                     string
+	MirrorSelection            string
+	MirrorBaseURL              string
+	MirrorCandidates           []MirrorCandidate
+	Resume                     bool
+	DeferInstalledFinalization bool
+	AllowExistingRootfsReplace bool
+	Progress                   func(ProgressEvent) error
+	ContextKey                 string
 }
 type MirrorCandidate struct {
 	ID  string `json:"id"`
@@ -58,10 +61,19 @@ type ReleaseRef struct {
 	URL   string `json:"url"`
 }
 type Request struct {
-	Phase                                        *Phase
-	Username, Desktop, Version, Release, Profile string
-	ForcePhase, Auto, Resume, Repair             bool
+	Phase                                               *Phase
+	Username, Desktop, Version, Release, Profile        string
+	ForcePhase, Auto, Resume, Repair, OverwriteExisting bool
+	Progress                                            func(ProgressEvent) error
 }
+type ProgressEvent struct {
+	Phase   Phase  `json:"phase"`
+	Step    string `json:"step,omitempty"`
+	State   string `json:"state"`
+	Percent int    `json:"percent"`
+	Message string `json:"message"`
+}
+
 type DistroInstaller interface {
 	BaseInstaller() *Base
 	RunPhaseExtract(context.Context, string, string, bool) (model.InstallExtractResult, error)
@@ -285,6 +297,9 @@ func (b *Base) PromoteStagedRootFS(ctx context.Context, staged string) error {
 	had := false
 	if _, e := os.Stat(target); e == nil {
 		had = true
+		if !b.AllowExistingRootfsReplace {
+			return fmt.Errorf("target rootfs already exists at %s; pass --overwrite-existing only after taking a snapshot or choosing resume/repair", target)
+		}
 	}
 	id := ""
 	var e error
@@ -417,7 +432,17 @@ func (b *Base) RecordStep(ctx context.Context, step, state, errText string) erro
 		return e
 	}
 	if r == nil {
-		return errors.New("chroot registry record missing")
+		input := registry.ChrootInput{Name: b.Config.DistroName, Distro: b.Distro, Path: b.Config.ChrootBase(), Arch: strptr(b.Config.TargetArch), Phase: string(Extract), Installed: false, Metadata: map[string]any{}}
+		if e := b.Registry.Upsert(ctx, input); e != nil {
+			return e
+		}
+		r, e = b.Registry.Get(ctx, b.Config.DistroName)
+		if e != nil {
+			return e
+		}
+		if r == nil {
+			return errors.New("chroot registry record missing after install transaction seed")
+		}
 	}
 	meta := cloneMap(r.Metadata)
 	tx := b.transaction(ctx)
@@ -436,6 +461,16 @@ func (b *Base) RecordStep(ctx context.Context, step, state, errText string) erro
 	meta["install_transaction"] = map[string]any{"version": 2, "steps": steps}
 	return b.Registry.Upsert(ctx, registry.ChrootInput{Name: r.Name, Distro: r.Distro, Path: r.Path, Arch: r.Arch, ReleaseName: r.ReleaseName, Version: r.Version, Phase: r.Phase, Installed: r.Installed, Metadata: meta})
 }
+func (b *Base) emitProgress(ctx context.Context, event ProgressEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if b.Progress == nil {
+		return nil
+	}
+	return b.Progress(event)
+}
+
 func (b *Base) RunSubstep(ctx context.Context, phase Phase, name string, resumable bool, fn func() error) error {
 	step := string(phase) + "." + name
 	tx := b.transaction(ctx)
@@ -452,13 +487,19 @@ func (b *Base) RunSubstep(ctx context.Context, phase Phase, name string, resumab
 	if e := b.RecordStep(ctx, step, "running", ""); e != nil {
 		return e
 	}
+	if e := b.emitProgress(ctx, ProgressEvent{Phase: phase, Step: name, State: "running", Percent: phaseStartPercent(phase), Message: "Running " + step}); e != nil {
+		return e
+	}
 	if e := fn(); e != nil {
 		if persistErr := b.RecordStep(context.WithoutCancel(ctx), step, "failed", e.Error()); persistErr != nil {
 			return errors.Join(e, persistErr)
 		}
 		return e
 	}
-	return b.RecordStep(ctx, step, "completed", "")
+	if e := b.RecordStep(ctx, step, "completed", ""); e != nil {
+		return e
+	}
+	return b.emitProgress(ctx, ProgressEvent{Phase: phase, Step: name, State: "completed", Percent: phaseEndPercent(phase), Message: "Completed " + step})
 }
 func (b *Base) ResumeStartPhase(ctx context.Context, repair bool) Phase {
 	tx := b.transaction(ctx)
@@ -484,6 +525,8 @@ func (b *Base) ResumeStartPhase(ctx context.Context, repair bool) Phase {
 func Run(ctx context.Context, d DistroInstaller, req Request) ([]model.InstallerResult, error) {
 	b := d.BaseInstaller()
 	b.Resume = req.Resume || req.Repair
+	b.AllowExistingRootfsReplace = req.OverwriteExisting || req.Repair
+	b.Progress = req.Progress
 	if req.Username == "" {
 		req.Username = b.Config.Username
 	}
@@ -500,6 +543,9 @@ func Run(ctx context.Context, d DistroInstaller, req Request) ([]model.Installer
 	}
 	b.ContextKey = strings.Join([]string{b.Distro, b.Config.TargetArch, b.Config.DistroName, req.Username, profile, desktop, req.Version, req.Release}, "|")
 	runOne := func(p Phase) (model.InstallerResult, error) {
+		if e := b.emitProgress(ctx, ProgressEvent{Phase: p, State: "running", Percent: phaseStartPercent(p), Message: "Starting install phase " + string(p)}); e != nil {
+			return nil, e
+		}
 		if e := b.RecordStep(ctx, string(p), "running", ""); e != nil {
 			return nil, e
 		}
@@ -530,6 +576,9 @@ func Run(ctx context.Context, d DistroInstaller, req Request) ([]model.Installer
 			return nil, e
 		}
 		if e = b.RecordStep(ctx, string(p), "completed", ""); e != nil {
+			return nil, e
+		}
+		if e = b.emitProgress(ctx, ProgressEvent{Phase: p, State: "completed", Percent: phaseEndPercent(p), Message: "Completed install phase " + string(p)}); e != nil {
 			return nil, e
 		}
 		return r, nil
@@ -576,14 +625,88 @@ func (b *Base) Finalize(ctx context.Context, username string, force bool) (model
 	if e != nil {
 		return model.InstallFinalizeResult{}, e
 	}
+	if locale := strings.TrimSpace(b.Config.Locale); locale != "" {
+		e = b.RunSubstep(ctx, Finalize, "locale", true, func() error { return b.ApplyConfiguredLocale(ctx, locale) })
+		if e != nil {
+			return model.InstallFinalizeResult{}, e
+		}
+	}
 	if b.UserSync != nil {
 		e = b.RunSubstep(ctx, Finalize, "uid-sync", true, func() error { _, x := b.UserSync.SyncID(ctx, username, true, true); return x })
 		if e != nil {
 			return model.InstallFinalizeResult{}, e
 		}
 	}
-	if e = b.MarkPhase(ctx, Finalize, true, "", "", map[string]any{"uid_sync": b.UserSync != nil, "finalize_snapshot": snap}); e != nil {
+	for index, hook := range b.Config.PostInstallHooks {
+		hook = strings.TrimSpace(hook)
+		if hook == "" {
+			continue
+		}
+		step := fmt.Sprintf("post-hook-%02d", index+1)
+		e = b.RunSubstep(ctx, Finalize, step, false, func() error { return b.RunPostInstallHook(ctx, hook) })
+		if e != nil {
+			return model.InstallFinalizeResult{}, e
+		}
+	}
+	installed := !b.DeferInstalledFinalization
+	status := strptr("finalized")
+	if !installed {
+		status = strptr("pending-catalog")
+	}
+	if e = b.MarkPhase(ctx, Finalize, installed, "", "", map[string]any{"uid_sync": b.UserSync != nil, "finalize_snapshot": snap, "locale": strings.TrimSpace(b.Config.Locale), "post_install_hooks": len(b.Config.PostInstallHooks), "install_status": *status}); e != nil {
 		return model.InstallFinalizeResult{}, e
 	}
-	return model.InstallFinalizeResult{Installed: true, UidSync: b.UserSync != nil, Snapshot: snap, Phase: "finalize"}, nil
+	return model.InstallFinalizeResult{Installed: installed, UidSync: b.UserSync != nil, Snapshot: snap, Status: status, Phase: "finalize"}, nil
+}
+
+func phaseStartPercent(phase Phase) int {
+	switch phase {
+	case Extract:
+		return 10
+	case Bootstrap:
+		return 35
+	case Desktop:
+		return 60
+	case Finalize:
+		return 82
+	default:
+		return 5
+	}
+}
+
+func phaseEndPercent(phase Phase) int {
+	switch phase {
+	case Extract:
+		return 30
+	case Bootstrap:
+		return 55
+	case Desktop:
+		return 78
+	case Finalize:
+		return 92
+	default:
+		return 10
+	}
+}
+
+func (b *Base) ApplyConfiguredLocale(ctx context.Context, locale string) error {
+	locale = strings.TrimSpace(locale)
+	if locale == "" {
+		return nil
+	}
+	quoted := ShellQuote(locale)
+	cmd := "if command -v locale-gen >/dev/null 2>&1; then " +
+		"grep -q '^" + locale + " ' /etc/locale.gen 2>/dev/null || printf '%s UTF-8\\n' " + quoted + " >> /etc/locale.gen; " +
+		"locale-gen " + quoted + "; fi; " +
+		"printf 'LANG=%s\\nLC_ALL=%s\\n' " + quoted + " " + quoted + " > /etc/default/locale"
+	_, err := b.ChrootShell(ctx, cmd, false)
+	return err
+}
+
+func (b *Base) RunPostInstallHook(ctx context.Context, hook string) error {
+	if strings.TrimSpace(hook) == "" {
+		return nil
+	}
+	_, err := b.ChrootShell(ctx, hook, false)
+	return err
 }

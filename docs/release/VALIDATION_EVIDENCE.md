@@ -70,3 +70,8 @@ Evidence is written through a same-directory temporary file, file `fsync`, atomi
 ## CHR09 metadata-faithful snapshot seal
 
 `repoctl validate` and final-seal execute `ValidateSnapshotFidelity`. The CHR09 gate requires the Linux/Android metadata-preserving archive primitive, configured `snapshot_dir` as the single managed snapshot authority, rootfs-tar-v1 manifest/payload validation, restore refusal for legacy metadata-lossy snapshots, operation-provenance linkage for recovery snapshots, normal CLI snapshot commands, Android recovery selection tied to matching provenance, and exact audit closure of D16/D17 (2 canonical findings / 16 source manifestations). Install/upgrade and Android storage/UI follow-ups remain assigned to their later roadmap overlays with CHR09 recorded only as supporting work where appropriate.
+## CHR11 installer/upgrade reconstruction evidence
+
+- `internal/install/policy.go` is the backend source of truth for install distro, architecture, preset, profile, desktop, mirror, package-name, and shell-quoting policy.
+- `install.form`, `install.preview`, CLI install, and Android install draft payloads use the same normalized request shape, including `resume`, `repair`, and `overwrite_existing`.
+- `ValidateInstallerUpgradeReconstruction` is part of `repoctl validate` and the final release seal, covering Android form parity, upgrade preflight, catalog-completion install marking, package validation, locale/hooks, and CHR11 roadmap closure.

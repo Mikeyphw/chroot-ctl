@@ -9,7 +9,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type Installer struct {
@@ -24,6 +23,14 @@ var devPackages = []string{"base-devel", "python", "python-pip", "pkgconf"}
 
 func New(base *install.Base) *Installer           { return &Installer{Base: base} }
 func (i *Installer) BaseInstaller() *install.Base { return i.Base }
+func RootFSURLForArch(arch string) (string, error) {
+	switch arch {
+	case "", "arm64":
+		return RootFSURL, nil
+	default:
+		return "", errors.New("arch installer currently supports only arm64/aarch64 rootfs")
+	}
+}
 func (i *Installer) InferPhaseFromFilesystem() install.Phase {
 	b := i.Config.ChrootBase()
 	if _, e := os.Stat(filepath.Join(b, "etc/os-release")); e != nil {
@@ -51,9 +58,13 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 	if e := i.AssertPhaseAllowed(ctx, install.Extract, force); e != nil {
 		return model.InstallExtractResult{}, e
 	}
-	name := filepath.Base(RootFSURL)
+	url, e := RootFSURLForArch(i.Config.TargetArch)
+	if e != nil {
+		return model.InstallExtractResult{}, e
+	}
+	name := filepath.Base(url)
 	if i.Runner.DryRun {
-		_, e := i.Runner.Run(ctx, []string{"curl", "--fail", "--location", RootFSURL, "-o", name}, sys.RunOptions{NoCapture: true})
+		_, e := i.Runner.Run(ctx, []string{"curl", "--fail", "--location", url, "-o", name}, sys.RunOptions{NoCapture: true})
 		if e != nil {
 			return model.InstallExtractResult{}, e
 		}
@@ -73,10 +84,10 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 		defer os.RemoveAll(stage)
 		tar := filepath.Join(work, name)
 		sig := tar + ".sig"
-		if e = i.Download(RootFSURL, tar); e != nil {
+		if e = i.Download(url, tar); e != nil {
 			return model.InstallExtractResult{}, e
 		}
-		if e = i.Download(RootFSURL+".sig", sig); e != nil {
+		if e = i.Download(url+".sig", sig); e != nil {
 			return model.InstallExtractResult{}, e
 		}
 		if e = integrity.VerifyDetachedSignature(ctx, i.Runner, tar, sig, integrity.ArchLinuxARMSigningFingerprint, ""); e != nil {
@@ -94,7 +105,7 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 			_ = os.MkdirAll(filepath.Join(i.Config.ChrootBase(), rel), 0o755)
 		}
 	}
-	e := i.MarkPhase(ctx, install.Extract, false, "latest", "rolling", map[string]any{"tarball": name, "url": RootFSURL, "requested_url": RootFSURL, "mirror": i.MirrorSelection, "integrity": "openpgp", "signing_fingerprint": integrity.ArchLinuxARMSigningFingerprint})
+	e = i.MarkPhase(ctx, install.Extract, false, "latest", "rolling", map[string]any{"tarball": name, "url": url, "requested_url": url, "mirror": i.MirrorSelection, "integrity": "openpgp", "signing_fingerprint": integrity.ArchLinuxARMSigningFingerprint})
 	return model.InstallExtractResult{Version: "latest", Release: "rolling", Tarball: name, Phase: "extract"}, e
 }
 func unique(xs []string) []string {
@@ -133,9 +144,26 @@ func (i *Installer) RunPhaseBootstrap(ctx context.Context, u, p string, f bool) 
 	if p == "dev" {
 		pkgs = append(pkgs, devPackages...)
 	}
-	pkgs = unique(append(pkgs, i.Config.ExtraPackages...))
+	var e error
+	pkgs, e = install.ValidatePackageNames(append(pkgs, i.Config.ExtraPackages...))
+	if e != nil {
+		return model.InstallBootstrapResult{}, e
+	}
 	if len(pkgs) > 0 {
-		if _, e := i.ChrootShell(ctx, "pacman -S --noconfirm "+strings.Join(pkgs, " "), false); e != nil {
+		if _, e := i.ChrootShell(ctx, "pacman -S --noconfirm "+install.ShellJoin(pkgs), false); e != nil {
+			return model.InstallBootstrapResult{}, e
+		}
+	}
+	user := install.ShellQuote(u)
+	cmds := []string{
+		"getent group storage >/dev/null || groupadd storage",
+		"getent group wheel >/dev/null || groupadd wheel",
+		"getent group " + user + " >/dev/null || groupadd " + user,
+		"id -u " + user + " >/dev/null 2>&1 || useradd -m -s /bin/bash -g " + user + " -G wheel,storage " + user,
+		"printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' " + user + " > /etc/sudoers.d/" + user + " && chmod 440 /etc/sudoers.d/" + user,
+	}
+	for _, cmd := range cmds {
+		if _, e := i.ChrootShell(ctx, cmd, false); e != nil {
 			return model.InstallBootstrapResult{}, e
 		}
 	}

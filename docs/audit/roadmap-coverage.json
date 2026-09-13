@@ -60,7 +60,7 @@
     {
       "id": "CHR11",
       "title": "Installer & upgrade reconstruction",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR12",
@@ -1402,7 +1402,7 @@
       "title": "Android/Go install form/options schema and semantic validation are inconsistent",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-01",
@@ -1474,7 +1474,7 @@
       "title": "Production distro installer download/fetch wiring is broken",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-01",
@@ -1490,7 +1490,7 @@
       "title": "Install resume/repair/progress/cancellation and phase state are incomplete",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-14",
@@ -3643,7 +3643,7 @@
       "title": "HIGH \u2014 Android fallback distro includes unsupported `debian`",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-03",
@@ -3659,7 +3659,7 @@
       "title": "HIGH \u2014 Android profile IDs do not match backend profile IDs",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-04",
@@ -3675,7 +3675,7 @@
       "title": "HIGH \u2014 Android desktop IDs do not match backend desktop IDs",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-05",
@@ -3691,7 +3691,7 @@
       "title": "HIGH \u2014 Authoritative server options do not replace unsafe fallbacks",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-06",
@@ -3707,7 +3707,7 @@
       "title": "HIGH \u2014 The form model expects data the backend does not return",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-09",
@@ -3723,7 +3723,7 @@
       "title": "HIGH \u2014 \u201cReview install plan\u201d does not show the exact install plan",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-13",
@@ -3739,7 +3739,7 @@
       "title": "HIGH \u2014 Cancellation is not responsive during long installer phases",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-15",
@@ -3755,7 +3755,7 @@
       "title": "MEDIUM \u2014 Tools/add-ons supported by install backend cannot be selected in Android wizard",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-20",
@@ -3771,7 +3771,7 @@
       "title": "MEDIUM \u2014 Process death can restore wizard step without restoring the draft",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH09-21",
@@ -5325,7 +5325,7 @@
       "title": "CRITICAL \u2014 Arch `--arch amd64` installs an ARM64 rootfs and records it as amd64",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-02",
@@ -5341,7 +5341,7 @@
       "title": "HIGH \u2014 Existing unmanaged directories can be replaced by a fresh install without an explicit overwrite decision",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-06",
@@ -5357,7 +5357,7 @@
       "title": "HIGH \u2014 Finalize marks the chroot installed before selected tools/addons are applied",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-10",
@@ -5373,7 +5373,7 @@
       "title": "MEDIUM/HIGH \u2014 Configured post-install hooks are never executed",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-11",
@@ -5389,7 +5389,7 @@
       "title": "MEDIUM \u2014 Configured locale is displayed but never applied during install",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-12",
@@ -5405,7 +5405,7 @@
       "title": "HIGH \u2014 `extra_packages` is inserted into a root shell command without package-name validation/quoting",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-13",
@@ -5423,7 +5423,7 @@
       "supportingOverlays": [
         "CHR09"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-14",
@@ -5441,7 +5441,7 @@
       "supportingOverlays": [
         "CHR09"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-15",
@@ -5459,7 +5459,7 @@
       "supportingOverlays": [
         "CHR09"
       ],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-17",
@@ -5475,7 +5475,7 @@
       "title": "HIGH \u2014 Upgrade does not establish runtime mount prerequisites",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-18",
@@ -5491,7 +5491,7 @@
       "title": "MEDIUM/HIGH \u2014 Upgrade skips the foreign-architecture execution guard",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-19",
@@ -5507,7 +5507,7 @@
       "title": "MEDIUM/HIGH \u2014 Upgrade defaults unknown/corrupt distro values to apt",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-20",
@@ -5523,7 +5523,7 @@
       "title": "MEDIUM/HIGH \u2014 Upgrade can run on an incomplete chroot through the shared service/bridge path",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-21",
@@ -5539,7 +5539,7 @@
       "title": "MEDIUM/HIGH \u2014 Operation cancellation/progress cannot interrupt install phases or upgrade work",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-22",
@@ -5555,7 +5555,7 @@
       "title": "MEDIUM \u2014 Required host tools are not represented by installer preflight",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-23",
@@ -5571,7 +5571,7 @@
       "title": "MEDIUM \u2014 Installer filesystem inference does not match the actual Go bootstrap/finalize layout",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI07-24",
@@ -6041,7 +6041,7 @@
       "title": "Medium/installer consistency \u2014 Arch bootstrap reports a username without creating it",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-22",
@@ -6793,7 +6793,7 @@
       "title": "HIGH/MEDIUM \u2014 foreign-architecture support rejects standard binfmt aliases",
       "ownerOverlay": "CHR11",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH20-03",

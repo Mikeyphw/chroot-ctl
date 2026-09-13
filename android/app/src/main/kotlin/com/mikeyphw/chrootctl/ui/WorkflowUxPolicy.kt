@@ -46,10 +46,10 @@ fun chrootMatchesQuery(chroot: ChrootSummary, query: String): Boolean {
 }
 
 fun validateInstallDraft(draft: InstallDraft): InstallDraftValidation = InstallDraftValidation(
-    distroValid = draft.distro.trim().isNotEmpty(),
+    distroValid = draft.distro in setOf("ubuntu", "arch"),
     nameValid = draft.name.matches(CHROOT_NAME_PATTERN),
     usernameValid = draft.username.matches(USERNAME_PATTERN),
-    archValid = draft.arch in setOf("arm64", "amd64") && !(draft.distro == "arch" && draft.arch != "arm64"),
+    archValid = draft.arch in if (draft.distro == "arch") setOf("arm64") else setOf("arm64", "amd64"),
 )
 
 private val CHROOT_NAME_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")

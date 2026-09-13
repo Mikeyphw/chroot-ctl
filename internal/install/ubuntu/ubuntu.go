@@ -242,12 +242,22 @@ func (i *Installer) RunPhaseBootstrap(ctx context.Context, username, profile str
 		pkgs = append(pkgs, devPackages...)
 	}
 	pkgs = append(pkgs, i.Config.ExtraPackages...)
-	pkgs = unique(pkgs)
-	if _, e := i.ChrootShell(ctx, "DEBIAN_FRONTEND=noninteractive apt install -y "+strings.Join(pkgs, " "), false); e != nil {
+	var e error
+	pkgs, e = install.ValidatePackageNames(pkgs)
+	if e != nil {
 		return model.InstallBootstrapResult{}, e
 	}
-	u := shellSafe(username)
-	cmds := []string{"getent group storage >/dev/null || groupadd storage", "getent group wheel >/dev/null || groupadd wheel", "getent group " + u + " >/dev/null || groupadd " + u, "id -u " + u + " >/dev/null 2>&1 || useradd -m -s /bin/bash -g " + u + " " + u}
+	if _, e := i.ChrootShell(ctx, "DEBIAN_FRONTEND=noninteractive apt install -y "+install.ShellJoin(pkgs), false); e != nil {
+		return model.InstallBootstrapResult{}, e
+	}
+	u := install.ShellQuote(username)
+	cmds := []string{
+		"getent group storage >/dev/null || groupadd storage",
+		"getent group wheel >/dev/null || groupadd wheel",
+		"getent group " + u + " >/dev/null || groupadd " + u,
+		"id -u " + u + " >/dev/null 2>&1 || useradd -m -s /bin/bash -g " + u + " -G sudo,storage " + u,
+		"printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' " + u + " > /etc/sudoers.d/" + u + " && chmod 440 /etc/sudoers.d/" + u,
+	}
 	for _, c := range cmds {
 		if _, e := i.ChrootShell(ctx, c, false); e != nil {
 			return model.InstallBootstrapResult{}, e
@@ -258,7 +268,6 @@ func (i *Installer) RunPhaseBootstrap(ctx context.Context, username, profile str
 	}
 	return model.InstallBootstrapResult{Username: username, Profile: profile, Phase: "bootstrap"}, nil
 }
-func shellSafe(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 func (i *Installer) RunPhaseDesktop(ctx context.Context, desktop, profile string, force bool) (model.InstallDesktopResult, error) {
 	if e := i.Runner.RequireRoot(); e != nil {
 		return model.InstallDesktopResult{}, e
@@ -278,7 +287,7 @@ func (i *Installer) RunPhaseDesktop(ctx context.Context, desktop, profile string
 		return model.InstallDesktopResult{}, fmt.Errorf("unsupported desktop: %s", desktop)
 	}
 	if len(pkgs) > 0 {
-		if _, e = i.ChrootShell(ctx, "DEBIAN_FRONTEND=noninteractive apt install -y "+strings.Join(pkgs, " "), false); e != nil {
+		if _, e = i.ChrootShell(ctx, "DEBIAN_FRONTEND=noninteractive apt install -y "+install.ShellJoin(pkgs), false); e != nil {
 			return model.InstallDesktopResult{}, e
 		}
 	}

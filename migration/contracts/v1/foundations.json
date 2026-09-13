@@ -592,6 +592,7 @@
         "force_phase",
         "resume",
         "repair",
+        "overwrite_existing",
         "tools",
         "addons"
       ],

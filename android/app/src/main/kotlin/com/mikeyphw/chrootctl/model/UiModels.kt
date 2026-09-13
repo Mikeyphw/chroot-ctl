@@ -118,6 +118,9 @@ data class InstallDraft(
     val release: String = "",
     val version: String = "",
     val mirror: String = "auto",
+    val resume: Boolean = false,
+    val repair: Boolean = false,
+    val overwriteExisting: Boolean = false,
 )
 
 data class InstallFormSummary(

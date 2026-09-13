@@ -15,3 +15,8 @@ The CHR08 fake BusyBox test helper now writes its shebang with an absolute
 `python3` or `python` path discovered from the active validation environment.
 This avoids `/usr/bin/env` assumptions on Termux, where `/usr/bin/env` is not
 portable, while preserving the same fake mount-table behavior for Linux hosts.
+## Installer and upgrade reconstruction
+
+The Go-native installer now normalizes CLI, bridge, and Android requests through one backend policy. Use `chrootctl install <distro> --resume` to continue a matching install plan, `--repair` to rerun failed or inferred phases, and `--overwrite-existing` only after intentionally approving replacement of an existing rootfs directory. Install preview shows the exact normalized plan before Android or CLI starts `install.run`.
+
+Selected tools/add-ons are part of install completion: finalize records `pending-catalog` until catalog application succeeds, then marks the chroot installed. Upgrade preview rejects incomplete targets and validates distro, registry path identity, runtime prerequisites, and managed pre-upgrade snapshot behavior before package commands run.

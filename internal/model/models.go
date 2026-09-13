@@ -315,22 +315,23 @@ type InstallWizardDefaults struct {
 }
 
 type InstallRequest struct {
-	Distro     string   `json:"distro"`
-	Name       string   `json:"name"`
-	Username   string   `json:"username"`
-	Arch       string   `json:"arch"`
-	Preset     *string  `json:"preset"`
-	Profile    *string  `json:"profile"`
-	Desktop    *string  `json:"desktop"`
-	Release    *string  `json:"release"`
-	Version    *string  `json:"version"`
-	Mirror     *string  `json:"mirror"`
-	Phase      *string  `json:"phase"`
-	ForcePhase bool     `json:"force_phase"`
-	Resume     bool     `json:"resume"`
-	Repair     bool     `json:"repair"`
-	Tools      []string `json:"tools"`
-	Addons     []string `json:"addons"`
+	Distro            string   `json:"distro"`
+	Name              string   `json:"name"`
+	Username          string   `json:"username"`
+	Arch              string   `json:"arch"`
+	Preset            *string  `json:"preset"`
+	Profile           *string  `json:"profile"`
+	Desktop           *string  `json:"desktop"`
+	Release           *string  `json:"release"`
+	Version           *string  `json:"version"`
+	Mirror            *string  `json:"mirror"`
+	Phase             *string  `json:"phase"`
+	ForcePhase        bool     `json:"force_phase"`
+	Resume            bool     `json:"resume"`
+	Repair            bool     `json:"repair"`
+	OverwriteExisting bool     `json:"overwrite_existing"`
+	Tools             []string `json:"tools"`
+	Addons            []string `json:"addons"`
 }
 
 type InstallRunResult struct {

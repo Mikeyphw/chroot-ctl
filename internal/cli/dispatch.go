@@ -422,7 +422,7 @@ func (a *App) install(ctx context.Context) error {
 		}
 		return a.emit("Available Versions", v)
 	}
-	req := model.InstallRequest{Distro: distro, Name: name, Username: username, Arch: arch, Preset: strptr(a.Inv.String("preset")), Profile: strptr(a.Inv.String("profile")), Desktop: strptr(a.Inv.String("desktop")), Release: strptr(a.Inv.String("release")), Version: strptr(a.Inv.String("version")), Mirror: strptr(a.Inv.String("mirror")), Phase: strptr(a.Inv.String("phase")), ForcePhase: a.Inv.Bool("force_phase"), Resume: a.Inv.Bool("resume"), Repair: a.Inv.Bool("repair"), Tools: a.Inv.Strings("tools"), Addons: a.Inv.Strings("addons")}
+	req := model.InstallRequest{Distro: distro, Name: name, Username: username, Arch: arch, Preset: strptr(a.Inv.String("preset")), Profile: strptr(a.Inv.String("profile")), Desktop: strptr(a.Inv.String("desktop")), Release: strptr(a.Inv.String("release")), Version: strptr(a.Inv.String("version")), Mirror: strptr(a.Inv.String("mirror")), Phase: strptr(a.Inv.String("phase")), ForcePhase: a.Inv.Bool("force_phase"), Resume: a.Inv.Bool("resume"), Repair: a.Inv.Bool("repair"), OverwriteExisting: a.Inv.Bool("overwrite_existing"), Tools: a.Inv.Strings("tools"), Addons: a.Inv.Strings("addons")}
 	if a.Inv.Bool("select_tools") || a.Inv.Bool("select_addons") {
 		return errors.New("interactive catalog multi-selection is not available in the native CLI; pass repeated --tool/--addon")
 	}

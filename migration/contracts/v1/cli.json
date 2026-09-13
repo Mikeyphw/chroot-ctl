@@ -1224,6 +1224,22 @@
           "choices": null,
           "const": true,
           "default": false,
+          "dest": "overwrite_existing",
+          "help": "Explicitly allow replacing an existing rootfs directory after you have reviewed or snapshotted it.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--overwrite-existing"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
           "dest": "resume",
           "help": "Resume from the detected or recorded install phase.",
           "metavar": null,
@@ -1480,7 +1496,7 @@
       ],
       "command": "install",
       "description": "Install a supported distro through extract, bootstrap, desktop, and finalize phases.",
-      "epilog": "examples:\n  chrootctl install --wizard\n  chrootctl install ubuntu --username devuser\n  chrootctl install ubuntu --resume --username devuser\n  chrootctl install arch --phase bootstrap --force-phase --username devuser\n  chrootctl install ubuntu --username devuser --profile dev --tool sync-uid --select-addons",
+      "epilog": "examples:\n  chrootctl install --wizard\n  chrootctl install ubuntu --username devuser\n  chrootctl install ubuntu --resume --username devuser\n  chrootctl install arch --phase bootstrap --force-phase --username devuser\n  chrootctl install ubuntu --username devuser --profile dev --tool sync-uid --select-addons\n  chrootctl install ubuntu --overwrite-existing --username devuser",
       "path": [
         "install"
       ],

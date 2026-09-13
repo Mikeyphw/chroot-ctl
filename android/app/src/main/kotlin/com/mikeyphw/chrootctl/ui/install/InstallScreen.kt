@@ -128,7 +128,7 @@ private fun DistroChoiceStep(draft: InstallDraft, form: InstallFormSummary, vali
         title = stringResource(R.string.install_choose_title),
         body = stringResource(R.string.install_choose_body),
         footer = {
-            val choices = phase32Choices(form.distros, draft.distro, listOf("ubuntu", "debian", "arch"))
+            val choices = phase32Choices(form.distros, draft.distro, listOf("ubuntu", "arch"))
             ActionFlowRow {
                 choices.forEach { distro ->
                     ChoiceButton(
@@ -178,13 +178,13 @@ private fun ConfigureInstallStep(
             if (!validation.archValid) Text("This distribution/architecture combination is not supported.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.install_profile_choices), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
             ActionFlowRow {
-                phase32Choices(form.profiles, draft.profile, listOf("minimal", "developer", "desktop")).forEach { profile ->
+                phase32Choices(form.profiles, draft.profile, listOf("minimal", "dev", "xfce4", "plasma", "custom")).forEach { profile ->
                     ChoiceButton(profile, selected = profile == draft.profile, onClick = { onDraftChange(draft.copy(profile = profile)) })
                 }
             }
             Text(stringResource(R.string.install_desktop_choices), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
             ActionFlowRow {
-                phase32Choices(form.desktops, draft.desktop, listOf("none", "xfce", "lxqt")).forEach { desktop ->
+                phase32Choices(form.desktops, draft.desktop, listOf("none", "xfce4", "plasma")).forEach { desktop ->
                     ChoiceButton(desktop, selected = desktop == draft.desktop, onClick = { onDraftChange(draft.copy(desktop = desktop)) })
                 }
             }
@@ -214,6 +214,12 @@ private fun ConfigureInstallStep(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Text("Resume / repair", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                    ActionFlowRow {
+                        ChoiceButton("Resume", selected = draft.resume, onClick = { onDraftChange(draft.copy(resume = !draft.resume, repair = false)) })
+                        ChoiceButton("Repair", selected = draft.repair, onClick = { onDraftChange(draft.copy(repair = !draft.repair, resume = false)) })
+                        ChoiceButton("Overwrite existing", selected = draft.overwriteExisting, onClick = { onDraftChange(draft.copy(overwriteExisting = !draft.overwriteExisting)) })
+                    }
                     OptionLine(stringResource(R.string.install_form_desktops), form.desktops)
                 }
             }
@@ -239,6 +245,9 @@ private fun ReviewInstallStep(
             ReviewLine(stringResource(R.string.install_field_username), draft.username)
             ReviewLine(stringResource(R.string.install_field_profile), draft.profile)
             ReviewLine(stringResource(R.string.install_field_desktop), draft.desktop)
+            ReviewLine("Preset", draft.preset)
+            ReviewLine("Recovery mode", when { draft.repair -> "Repair"; draft.resume -> "Resume"; else -> "Fresh install" })
+            ReviewLine("Overwrite existing", if (draft.overwriteExisting) "Explicitly allowed" else "Blocked unless target is empty/managed")
             ReviewLine(stringResource(R.string.install_review_safety), stringResource(R.string.install_review_safety_body))
             ActionFlowRow {
                 Button(onClick = onPreview, enabled = validation.valid, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.install_preview_action)) }
