@@ -680,28 +680,80 @@ func (b *ServicesBackend) userPreview(ctx context.Context, p map[string]any) (an
 	if a == "" {
 		a = "add"
 	}
-	existing, _ := b.Services.Users(n).List(ctx)
-	present := false
+	existing, listErr := b.Services.Users(n).List(ctx)
+	if listErr != nil {
+		return nil, listErr
+	}
+	var selected map[string]any
 	for _, r := range existing {
 		if asString(r["username"]) == u {
-			present = true
+			selected = r
+			break
 		}
+	}
+	present := selected != nil
+	mutable := false
+	protected := false
+	systemAccount := false
+	if selected != nil {
+		mutable, _ = optBool(selected, []string{"mutable"}, false)
+		protected, _ = optBool(selected, []string{"protected"}, false)
+		systemAccount, _ = optBool(selected, []string{"system"}, false)
 	}
 	blocking := []map[string]string{}
 	warnings := []string{}
+	policyReasons := []string{}
+	if raw, ok := selected["policy_reasons"].([]string); ok {
+		policyReasons = append(policyReasons, raw...)
+	} else if raw, ok := selected["policy_reasons"].([]any); ok {
+		for _, item := range raw {
+			if text := asString(item); text != "" {
+				policyReasons = append(policyReasons, text)
+			}
+		}
+	}
 	switch a {
 	case "add":
 		if present {
 			blocking = append(blocking, map[string]string{"code": "user_exists", "message": "User already exists: " + u})
 		}
+		if u == "root" || protected {
+			blocking = append(blocking, map[string]string{"code": "protected_account", "message": "Protected account names cannot be created or reassigned: " + u})
+		}
+		if shell := optText(p, "shell"); shell != "" && (!strings.HasPrefix(shell, "/") || strings.Contains(shell, "..") || strings.ContainsAny(shell, "\n\r")) {
+			blocking = append(blocking, map[string]string{"code": "invalid_shell", "message": "Shell must be an absolute path inside the chroot."})
+		}
 	case "remove", "sync_uid_gid", "set_shell", "set_sudo", "set_password", "password":
 		if !present {
 			blocking = append(blocking, map[string]string{"code": "user_missing", "message": "User does not exist: " + u})
+		} else if !mutable || protected || systemAccount {
+			msg := "Protected or system users cannot be changed from the app."
+			if len(policyReasons) > 0 {
+				msg += " Reasons: " + strings.Join(policyReasons, ", ")
+			}
+			blocking = append(blocking, map[string]string{"code": "protected_account", "message": msg})
+		}
+		if a == "set_shell" {
+			shell := optText(p, "shell")
+			if shell == "" || !strings.HasPrefix(shell, "/") || strings.Contains(shell, "..") || strings.ContainsAny(shell, "\n\r") {
+				blocking = append(blocking, map[string]string{"code": "invalid_shell", "message": "Shell must be an absolute path inside the chroot."})
+			}
+		}
+		if a == "set_password" || a == "password" {
+			if asString(p["password"]) == "" {
+				blocking = append(blocking, map[string]string{"code": "missing_password", "message": "Password is required for this preview."})
+			}
+			if confirm, ok := p["confirmPassword"]; ok && asString(confirm) != asString(p["password"]) {
+				blocking = append(blocking, map[string]string{"code": "password_confirmation_mismatch", "message": "Password confirmation does not match."})
+			}
 		}
 	default:
 		return nil, protocolError("INVALID_USER_ACTION", "Unsupported user action: "+a, nil)
 	}
-	return map[string]any{"ok": len(blocking) == 0, "kind": "users." + a, "name": n, "username": u, "blocking": blocking, "warnings": warnings, "confirm": a == "remove" || a == "set_password" || a == "password"}, nil
+	if selected != nil && systemAccount {
+		warnings = append(warnings, "System and protected accounts are read-only in the Android workspace.")
+	}
+	return map[string]any{"ok": len(blocking) == 0, "kind": "users." + a, "name": n, "username": u, "blocking": blocking, "warnings": warnings, "confirm": a == "remove" || a == "set_password" || a == "password", "protected": protected, "system": systemAccount, "mutable": mutable, "policy_reasons": policyReasons}, nil
 }
 func (b *ServicesBackend) servicePreview(ctx context.Context, p map[string]any) (any, error) {
 	unit, e := reqService(p)

@@ -503,7 +503,8 @@
         "username",
         "shell",
         "sudo",
-        "created"
+        "created",
+        "already_existed"
       ],
       "ChrootUserDetails": [
         "username",
@@ -511,7 +512,14 @@
         "gid",
         "home",
         "shell",
-        "sudo"
+        "sudo",
+        "sudo_rule",
+        "sudo_group",
+        "protected",
+        "system",
+        "login",
+        "mutable",
+        "policy_reasons"
       ],
       "ChrootUserPasswordResult": [
         "username",
@@ -529,7 +537,10 @@
       ],
       "ChrootUserSudoResult": [
         "username",
-        "enabled"
+        "enabled",
+        "passwordless",
+        "sudo_rule",
+        "sudo_group"
       ],
       "DashboardChrootCard": [
         "name",
@@ -702,13 +713,18 @@
         "chroot_uid",
         "chroot_gid",
         "passwd_exists",
-        "group_exists"
+        "group_exists",
+        "protected",
+        "system",
+        "mutable",
+        "policy_reasons"
       ],
       "UserIdSyncResult": [
         "username",
         "uid",
         "gid",
-        "ownership_fixed"
+        "ownership_fixed",
+        "transactional"
       ]
     },
     "samples": {

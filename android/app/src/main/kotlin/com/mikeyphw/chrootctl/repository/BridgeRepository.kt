@@ -954,6 +954,13 @@ private fun JSONObject.toUserSummary(): UserSummary = UserSummary(
     home = firstString("home"),
     shell = firstString("shell"),
     sudo = optBoolean("sudo", false),
+    sudoRule = optBoolean("sudo_rule", optBoolean("sudoRule", false)),
+    sudoGroup = optBoolean("sudo_group", optBoolean("sudoGroup", false)),
+    protectedAccount = optBoolean("protected", optBoolean("protectedAccount", false)),
+    system = optBoolean("system", false),
+    login = optBoolean("login", true),
+    mutable = optBoolean("mutable", true),
+    policyReasons = optJSONArray("policy_reasons").toStringListLocal().ifEmpty { optJSONArray("policyReasons").toStringListLocal() },
 )
 
 private fun JSONObject.toServiceUnitSummary(): ServiceUnitSummary = ServiceUnitSummary(

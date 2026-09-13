@@ -84,7 +84,7 @@ class WorkflowUxPolicyTest {
         val login = sampleUser(username = "mike", uid = "1000", shell = "/bin/bash", sudo = true)
         val daemon = sampleUser(username = "daemon", uid = "1", shell = "/usr/sbin/nologin")
         val highUidNoLogin = sampleUser(username = "worker", uid = "1001", shell = "/bin/false")
-        val root = sampleUser(username = "root", uid = "0", shell = "/bin/bash", sudo = true)
+        val root = sampleUser(username = "root", uid = "0", shell = "/bin/bash", sudo = true, protectedAccount = true, system = true, mutable = false)
 
         assertTrue(userMatchesWorkspaceFilter(login, UserWorkspaceFilter.Managed))
         assertTrue(userMatchesWorkspaceFilter(login, UserWorkspaceFilter.LoginUsers))
@@ -93,18 +93,21 @@ class WorkflowUxPolicyTest {
         assertTrue(userIsSystem(highUidNoLogin))
         assertFalse(userMatchesWorkspaceFilter(daemon, UserWorkspaceFilter.Managed))
         assertTrue(userMatchesWorkspaceFilter(daemon, UserWorkspaceFilter.SystemUsers))
-        assertTrue(userMatchesWorkspaceFilter(root, UserWorkspaceFilter.Managed))
-        assertFalse(userIsSystem(root))
+        assertFalse(userMatchesWorkspaceFilter(root, UserWorkspaceFilter.Managed))
+        assertTrue(userIsSystem(root))
     }
 
     @Test
     fun `user workspace actions keep mutations inside review flow`() {
-        val existing = userWorkspaceActions(existingUser = true)
-        assertTrue(existing.contains(UserWorkspaceAction.SetShell))
-        assertTrue(existing.contains(UserWorkspaceAction.SetPassword))
-        assertTrue(existing.contains(UserWorkspaceAction.Remove))
-        assertFalse(existing.contains(UserWorkspaceAction.Add))
-        assertTrue(userWorkspaceActions(existingUser = false) == listOf(UserWorkspaceAction.Add))
+        val existing = sampleUser(username = "mike", uid = "1000", shell = "/bin/bash", mutable = true)
+        val protectedRoot = sampleUser(username = "root", uid = "0", shell = "/bin/bash", protectedAccount = true, system = true, mutable = false)
+        val actions = userWorkspaceActions(existing)
+        assertTrue(actions.contains(UserWorkspaceAction.SetShell))
+        assertTrue(actions.contains(UserWorkspaceAction.SetPassword))
+        assertTrue(actions.contains(UserWorkspaceAction.Remove))
+        assertFalse(actions.contains(UserWorkspaceAction.Add))
+        assertTrue(userWorkspaceActions(null) == listOf(UserWorkspaceAction.Add))
+        assertTrue(userWorkspaceActions(protectedRoot).isEmpty())
     }
 
     @Test
@@ -270,6 +273,9 @@ class WorkflowUxPolicyTest {
         uid: String,
         shell: String,
         sudo: Boolean = false,
+        protectedAccount: Boolean = false,
+        system: Boolean = false,
+        mutable: Boolean = true,
     ): UserSummary = UserSummary(
         username = username,
         uid = uid,
@@ -277,6 +283,9 @@ class WorkflowUxPolicyTest {
         home = "/home/$username",
         shell = shell,
         sudo = sudo,
+        protectedAccount = protectedAccount,
+        system = system,
+        mutable = mutable,
     )
 
 }

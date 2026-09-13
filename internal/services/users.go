@@ -23,7 +23,7 @@ func (s *UserService) List(ctx context.Context) ([]map[string]any, error) {
 	rows, e := rt.Users.List()
 	out := []map[string]any{}
 	for _, u := range rows {
-		out = append(out, map[string]any{"username": u.Username, "uid": u.UID, "gid": u.GID, "home": u.Home, "shell": u.Shell, "sudo": false})
+		out = append(out, map[string]any{"username": u.Username, "uid": u.UID, "gid": u.GID, "home": u.Home, "shell": u.Shell, "sudo": u.Sudo, "sudo_rule": u.SudoRule, "sudo_group": u.SudoGroup, "protected": u.Protected, "system": u.System, "login": u.Login, "mutable": u.Mutable, "policy_reasons": u.PolicyReasons})
 	}
 	return out, e
 }

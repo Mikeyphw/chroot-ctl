@@ -132,19 +132,27 @@ type SupportBundleResult struct {
 }
 
 type ChrootUserDetails struct {
-	Username string `json:"username"`
-	Uid      string `json:"uid"`
-	Gid      string `json:"gid"`
-	Home     string `json:"home"`
-	Shell    string `json:"shell"`
-	Sudo     bool   `json:"sudo"`
+	Username      string   `json:"username"`
+	Uid           string   `json:"uid"`
+	Gid           string   `json:"gid"`
+	Home          string   `json:"home"`
+	Shell         string   `json:"shell"`
+	Sudo          bool     `json:"sudo"`
+	SudoRule      bool     `json:"sudo_rule"`
+	SudoGroup     bool     `json:"sudo_group"`
+	Protected     bool     `json:"protected"`
+	System        bool     `json:"system"`
+	Login         bool     `json:"login"`
+	Mutable       bool     `json:"mutable"`
+	PolicyReasons []string `json:"policy_reasons"`
 }
 
 type ChrootUserCreateResult struct {
-	Username string `json:"username"`
-	Shell    string `json:"shell"`
-	Sudo     bool   `json:"sudo"`
-	Created  bool   `json:"created"`
+	Username       string `json:"username"`
+	Shell          string `json:"shell"`
+	Sudo           bool   `json:"sudo"`
+	Created        bool   `json:"created"`
+	AlreadyExisted bool   `json:"already_existed"`
 }
 
 type ChrootUserRemoveResult struct {
@@ -165,8 +173,11 @@ type ChrootUserShellResult struct {
 }
 
 type ChrootUserSudoResult struct {
-	Username string `json:"username"`
-	Enabled  bool   `json:"enabled"`
+	Username     string `json:"username"`
+	Enabled      bool   `json:"enabled"`
+	Passwordless bool   `json:"passwordless"`
+	SudoRule     bool   `json:"sudo_rule"`
+	SudoGroup    bool   `json:"sudo_group"`
 }
 
 type CatalogApplyResult struct {
@@ -218,13 +229,17 @@ type UpgradeResult struct {
 }
 
 type UserIdStatus struct {
-	Username     string `json:"username"`
-	HostUid      int    `json:"host_uid"`
-	HostGid      int    `json:"host_gid"`
-	ChrootUid    string `json:"chroot_uid"`
-	ChrootGid    string `json:"chroot_gid"`
-	PasswdExists bool   `json:"passwd_exists"`
-	GroupExists  bool   `json:"group_exists"`
+	Username      string   `json:"username"`
+	HostUid       int      `json:"host_uid"`
+	HostGid       int      `json:"host_gid"`
+	ChrootUid     string   `json:"chroot_uid"`
+	ChrootGid     string   `json:"chroot_gid"`
+	PasswdExists  bool     `json:"passwd_exists"`
+	GroupExists   bool     `json:"group_exists"`
+	Protected     bool     `json:"protected"`
+	System        bool     `json:"system"`
+	Mutable       bool     `json:"mutable"`
+	PolicyReasons []string `json:"policy_reasons"`
 }
 
 type UserIdSyncResult struct {
@@ -232,6 +247,7 @@ type UserIdSyncResult struct {
 	Uid            int    `json:"uid"`
 	Gid            int    `json:"gid"`
 	OwnershipFixed bool   `json:"ownership_fixed"`
+	Transactional  bool   `json:"transactional"`
 }
 
 type ChrootRecord struct {

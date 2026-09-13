@@ -20,3 +20,7 @@ portable, while preserving the same fake mount-table behavior for Linux hosts.
 The Go-native installer now normalizes CLI, bridge, and Android requests through one backend policy. Use `chrootctl install <distro> --resume` to continue a matching install plan, `--repair` to rerun failed or inferred phases, and `--overwrite-existing` only after intentionally approving replacement of an existing rootfs directory. Install preview shows the exact normalized plan before Android or CLI starts `install.run`.
 
 Selected tools/add-ons are part of install completion: finalize records `pending-catalog` until catalog application succeeds, then marks the chroot installed. Upgrade preview rejects incomplete targets and validates distro, registry path identity, runtime prerequisites, and managed pre-upgrade snapshot behavior before package commands run.
+
+## User identity safety
+
+User operations are protected by the CHR12 safety model. `users list` and Android user rows expose sudo, protected/system, mutability, login-shell, and policy-reason metadata. Root and system accounts are read-only. Sudo fragments are canonicalized to `/etc/sudoers.d/<username>` with passwordless rules, while legacy `90-chrootctl-<username>` fragments remain readable and removable for upgrade compatibility.

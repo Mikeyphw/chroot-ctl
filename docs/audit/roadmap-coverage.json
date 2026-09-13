@@ -65,7 +65,7 @@
     {
       "id": "CHR12",
       "title": "User identity safety",
-      "status": "planned"
+      "status": "implemented"
     },
     {
       "id": "CHR13",
@@ -1620,7 +1620,7 @@
       "title": "User identity and sudo operations lack protected-account and transactional safety",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-01",
@@ -3515,7 +3515,7 @@
       "title": "CRITICAL \u2014 Remove and Set Password preview payloads are rejected by protocol-v1",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH07-01",
@@ -3531,7 +3531,7 @@
       "title": "HIGH \u2014 `users.list` hardcodes every account as non-sudo",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH07-02",
@@ -3547,7 +3547,7 @@
       "title": "CRITICAL/HIGH \u2014 Root is intentionally classified as Managed and receives destructive account actions",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH07-03",
@@ -3563,7 +3563,7 @@
       "title": "HIGH/MEDIUM \u2014 System accounts become fully mutable when the System filter is opened",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH07-04",
@@ -3579,7 +3579,7 @@
       "title": "MEDIUM \u2014 Android ignores the existing `users.get` authoritative detail endpoint",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH07-05",
@@ -5929,7 +5929,7 @@
       "title": "High/Medium \u2014 `users list` always reports sudo=false",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-06",
@@ -5945,7 +5945,7 @@
       "title": "High \u2014 UID/GID collision checks ignore passwd/group read failures",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-08",
@@ -5961,7 +5961,7 @@
       "title": "Medium/High \u2014 ownership repair is incomplete after UID/GID change",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-10",
@@ -5977,7 +5977,7 @@
       "title": "Medium \u2014 `users add` existing-user behavior is not convergent",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-13",
@@ -5993,7 +5993,7 @@
       "title": "Medium \u2014 terminal echo suppression errors are ignored",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-15",
@@ -6009,7 +6009,7 @@
       "title": "Medium \u2014 sudo state model is internally inconsistent",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-17",
@@ -6025,7 +6025,7 @@
       "title": "Medium \u2014 all `users` commands are root-escalated, including read-only queries",
       "ownerOverlay": "CHR12",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "USER-20",

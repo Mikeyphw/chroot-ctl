@@ -1511,8 +1511,11 @@ private fun FocusedUserRow(
                 if (user.sudo) {
                     StatusPill(stringResource(R.string.user_badge_sudo), StatusTone.Success)
                 }
-                if (user.username.equals("root", ignoreCase = true)) {
+                if (user.protectedAccount || user.username.equals("root", ignoreCase = true)) {
                     StatusPill(stringResource(R.string.user_badge_root), StatusTone.Warning)
+                }
+                if (user.system && !user.username.equals("root", ignoreCase = true)) {
+                    StatusPill(stringResource(R.string.user_filter_system), StatusTone.Warning)
                 }
             }
             OutlinedButton(
@@ -1536,7 +1539,22 @@ private fun UserActionReviewSheet(
     onStartUserOperation: (String, String) -> Unit,
 ) {
     val existingUser = user != null
-    val actions = userWorkspaceActions(existingUser)
+    val actions = userWorkspaceActions(user)
+    if (actions.isEmpty()) {
+        val reviewTitle = stringResource(R.string.user_action_review_title, user?.username.orEmpty())
+        OutlinedCard(Modifier.fillMaxWidth().semantics { paneTitle = reviewTitle }) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(reviewTitle, fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
+                Text("This is a protected or system account. It is read-only in chrootctl to prevent UID/GID, sudo, password, shell, or removal damage.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                val reasons = user?.policyReasons.orEmpty()
+                if (reasons.isNotEmpty()) Text(reasons.joinToString(" • "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        }
+        return
+    }
     var actionName by remember(chroot, user?.username) { mutableStateOf(actions.first().name) }
     val action = actions.firstOrNull { it.name == actionName } ?: actions.first()
     var draftUsername by remember(chroot, user?.username) { mutableStateOf(user?.username.orEmpty()) }
@@ -1572,11 +1590,11 @@ private fun UserActionReviewSheet(
     }
     val canSubmit = when (action) {
         UserWorkspaceAction.Add -> username.isNotBlank() && draftShell.isNotBlank()
-        UserWorkspaceAction.SyncUidGid -> existingUser
-        UserWorkspaceAction.SetShell -> existingUser && draftShell.isNotBlank()
-        UserWorkspaceAction.ToggleSudo -> existingUser
-        UserWorkspaceAction.SetPassword -> existingUser && confirmation == username && password.isNotBlank() && password == confirmPassword
-        UserWorkspaceAction.Remove -> existingUser && confirmation == username
+        UserWorkspaceAction.SyncUidGid -> existingUser && user?.mutable == true
+        UserWorkspaceAction.SetShell -> existingUser && user?.mutable == true && draftShell.isNotBlank()
+        UserWorkspaceAction.ToggleSudo -> existingUser && user?.mutable == true
+        UserWorkspaceAction.SetPassword -> existingUser && user?.mutable == true && confirmation == username && password.isNotBlank() && password == confirmPassword
+        UserWorkspaceAction.Remove -> existingUser && user?.mutable == true && confirmation == username
     }
     val reviewTitle = if (existingUser) {
         stringResource(R.string.user_action_review_title, username)

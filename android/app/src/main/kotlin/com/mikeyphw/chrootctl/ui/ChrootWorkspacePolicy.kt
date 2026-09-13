@@ -196,17 +196,14 @@ fun userHasLoginShell(user: UserSummary): Boolean {
 fun userIsKnownSystemAccount(user: UserSummary): Boolean = user.username.trim().lowercase() in knownSystemUsernames
 
 fun userIsSystem(user: UserSummary): Boolean {
-    if (user.username.equals("root", ignoreCase = true)) return false
+    if (user.system || user.protectedAccount) return true
     if (userIsKnownSystemAccount(user)) return true
     if (!userHasLoginShell(user)) return true
     val uid = user.uid.toIntOrNull()
     return uid != null && uid < SYSTEM_USER_UID_THRESHOLD
 }
 
-fun userIsManaged(user: UserSummary): Boolean {
-    if (user.username.equals("root", ignoreCase = true)) return true
-    return !userIsSystem(user)
-}
+fun userIsManaged(user: UserSummary): Boolean = user.mutable && !userIsSystem(user)
 
 fun userMatchesWorkspaceFilter(user: UserSummary, filter: UserWorkspaceFilter): Boolean = when (filter) {
     UserWorkspaceFilter.Managed -> userIsManaged(user)
@@ -214,16 +211,16 @@ fun userMatchesWorkspaceFilter(user: UserSummary, filter: UserWorkspaceFilter): 
     UserWorkspaceFilter.SystemUsers -> userIsSystem(user)
 }
 
-fun userWorkspaceActions(existingUser: Boolean): List<UserWorkspaceAction> = if (existingUser) {
-    listOf(
+fun userWorkspaceActions(user: UserSummary?): List<UserWorkspaceAction> = when {
+    user == null -> listOf(UserWorkspaceAction.Add)
+    !user.mutable || user.protectedAccount || userIsSystem(user) -> emptyList()
+    else -> listOf(
         UserWorkspaceAction.SetShell,
         UserWorkspaceAction.ToggleSudo,
         UserWorkspaceAction.SyncUidGid,
         UserWorkspaceAction.SetPassword,
         UserWorkspaceAction.Remove,
     )
-} else {
-    listOf(UserWorkspaceAction.Add)
 }
 
 enum class SnapshotWorkspaceAction {

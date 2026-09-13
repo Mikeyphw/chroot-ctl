@@ -223,6 +223,13 @@ data class UserSummary(
     val home: String,
     val shell: String,
     val sudo: Boolean,
+    val sudoRule: Boolean = false,
+    val sudoGroup: Boolean = false,
+    val protectedAccount: Boolean = false,
+    val system: Boolean = false,
+    val login: Boolean = true,
+    val mutable: Boolean = true,
+    val policyReasons: List<String> = emptyList(),
 )
 
 data class UsersPane(

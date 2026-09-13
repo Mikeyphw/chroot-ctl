@@ -263,10 +263,14 @@
       "name": "users.preview",
       "payloadFields": [
         "action",
+        "confirmPassword",
+        "confirmUsername",
+        "confirmation",
         "deleteHome",
         "enabled",
         "fixOwnership",
         "name",
+        "password",
         "shell",
         "sudo",
         "username"

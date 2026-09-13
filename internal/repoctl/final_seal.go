@@ -81,7 +81,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateTransferArtifactPlane(root); e != nil {
 			return e
 		}
-		return ValidateInstallerUpgradeReconstruction(root)
+		if e := ValidateInstallerUpgradeReconstruction(root); e != nil {
+			return e
+		}
+		return ValidateUserIdentitySafety(root)
 	}); err != nil {
 		return err
 	}

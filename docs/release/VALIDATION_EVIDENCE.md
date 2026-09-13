@@ -75,3 +75,7 @@ Evidence is written through a same-directory temporary file, file `fsync`, atomi
 - `internal/install/policy.go` is the backend source of truth for install distro, architecture, preset, profile, desktop, mirror, package-name, and shell-quoting policy.
 - `install.form`, `install.preview`, CLI install, and Android install draft payloads use the same normalized request shape, including `resume`, `repair`, and `overwrite_existing`.
 - `ValidateInstallerUpgradeReconstruction` is part of `repoctl validate` and the final release seal, covering Android form parity, upgrade preflight, catalog-completion install marking, package validation, locale/hooks, and CHR11 roadmap closure.
+
+## CHR12 user identity safety
+
+Intermediate overlay scope. Focused local checks cover user policy classification, sudo state derivation, password confirmation semantics, bridge preview payload compatibility, and repoctl source invariants. Full repo validation remains deferred to a later gate overlay because this overlay is intentionally applied with `--no-validate`.

@@ -1077,27 +1077,52 @@ func (a *App) confirm(prompt string, yes bool) error {
 	}
 	return nil
 }
-func (a *App) readPassword() (string, error) {
+func (a *App) readPassword() (password string, err error) {
 	if a.Inv.Globals.NonInteractive {
 		return "", errors.New("password prompt is unavailable in non-interactive mode")
 	}
-	fmt.Fprint(a.Stderr, "Password: ")
 	tty, ok := a.Stdin.(*os.File)
+	echoDisabled := false
 	if ok {
 		cmd := exec.Command("stty", "-echo")
 		cmd.Stdin = tty
 		cmd.Stdout = a.Stderr
-		_ = cmd.Run()
-		defer func() { c := exec.Command("stty", "echo"); c.Stdin = tty; _ = c.Run(); fmt.Fprintln(a.Stderr) }()
+		cmd.Stderr = a.Stderr
+		if e := cmd.Run(); e != nil {
+			return "", fmt.Errorf("disable terminal echo: %w", e)
+		}
+		echoDisabled = true
+		defer func() {
+			c := exec.Command("stty", "echo")
+			c.Stdin = tty
+			c.Stdout = a.Stderr
+			c.Stderr = a.Stderr
+			if e := c.Run(); err == nil && e != nil {
+				err = fmt.Errorf("restore terminal echo: %w", e)
+			}
+			fmt.Fprintln(a.Stderr)
+		}()
 	}
-	line, e := bufio.NewReader(a.Stdin).ReadString('\n')
+	reader := bufio.NewReader(a.Stdin)
+	fmt.Fprint(a.Stderr, "Password: ")
+	line, e := reader.ReadString('\n')
 	if e != nil && e != io.EOF {
 		return "", e
 	}
-	v := strings.TrimSpace(line)
+	v := strings.TrimRight(line, "\r\n")
 	if v == "" {
 		return "", errors.New("password must not be empty")
 	}
+	fmt.Fprint(a.Stderr, "Confirm password: ")
+	confirmLine, e := reader.ReadString('\n')
+	if e != nil && e != io.EOF {
+		return "", e
+	}
+	confirm := strings.TrimRight(confirmLine, "\r\n")
+	if confirm != v {
+		return "", errors.New("password confirmation does not match")
+	}
+	_ = echoDisabled
 	return v, nil
 }
 
