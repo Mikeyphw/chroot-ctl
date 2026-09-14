@@ -2,8 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# CHR23 convergence gate: roadmap/source contracts, Go tests/vet, and the
-# Android application seal must all pass in the same artifact validation path.
+# CHR24 optimized convergence gate: keep the full Go roadmap/source validation,
+# then ask Gradle for the single Android aggregate.  The aggregate already
+# depends on stable-toolchain verification, debug unit tests, debug packaging,
+# and the deterministic lint-configuration seal, so listing those leaf tasks as
+# additional command-line roots only creates avoidable graph/phase churn.
 go run ./cmd/repoctl validate
 
 if [ ! -x android/gradlew ]; then
@@ -11,12 +14,8 @@ if [ ! -x android/gradlew ]; then
   exit 1
 fi
 
-(cd android && ./gradlew --no-daemon --continue \
-  :chrootctlAndroidAppSeal \
-  :app:testDebugUnitTest \
-  :app:assembleDebug \
-  :chrootctlAndroidLintConfigurationSeal)
+(cd android && ./gradlew --no-daemon --continue :chrootctlAndroidAppSeal)
 
-# CHR22/CHR23 regression: prove the focused lint seal is reusable from Gradle's
-# configuration cache after the complete Android gate has populated it.
+# CHR22/CHR23/CHR24 regression: prove the focused lint seal is reusable from
+# Gradle's configuration cache after the complete Android gate has populated it.
 (cd android && ./gradlew --no-daemon :chrootctlAndroidLintConfigurationSeal)

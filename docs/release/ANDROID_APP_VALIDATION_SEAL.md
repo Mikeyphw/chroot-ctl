@@ -64,3 +64,13 @@ The hotfix keeps `org.gradle.configuration-cache=true`; it does not hide the def
 ## CHR23 composite-gate convergence
 
 CHR23 keeps `:chrootctlAndroidAppSeal` as the authoritative Android aggregate while restoring `go run ./cmd/repoctl validate` to `.devtool-artifact/validate.sh`. The final artifact validator therefore proves the Go roadmap and Android app seal in one run, then replays `:chrootctlAndroidLintConfigurationSeal` to exercise configuration-cache reuse.
+
+## CHR24 Gradle task graph optimization
+
+The optimized final artifact validator invokes Android through one command-line root:
+
+```bash
+./gradlew --no-daemon --continue :chrootctlAndroidAppSeal
+```
+
+`chrootctlAndroidAppSeal` remains the release-authoritative aggregate and already depends on the internal debug validation graph. Passing `:app:testDebugUnitTest`, `:app:assembleDebug`, or `:chrootctlAndroidLintConfigurationSeal` as additional roots is valid for focused debugging, but it is redundant for the final seal. The dedicated lint-configuration replay remains separate only to prove configuration-cache reuse after the complete Android graph has populated the cache.
