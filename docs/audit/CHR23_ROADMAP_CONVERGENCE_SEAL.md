@@ -50,3 +50,11 @@ CHR23 adds focused regression tests for:
 ## Acceptance
 
 The campaign is complete only when the CHR23 Devtool apply reports zero diagnostics and passes the composite Go + Android validation path. A successful Android-only graph is not sufficient for this final convergence seal.
+## Rebase v2
+
+CHR23 v2 is a source-state rebase overlay for repositories where CHR23 v1 content is already present but the original Devtool artifact manifest was generated from the post-CHR22 baseline. The v2 manifest treats the existing CHR23 files as the source state, updates this document, and keeps the composite Go + Android validation gate authoritative.
+
+
+## Rebase v3
+
+CHR23 v3 keeps the v2 source-state rebase content but repackages the Devtool artifact without directory members or `./`-prefixed tar entries. The v2 manifest validated, but Devtool apply rejected the archive layout because the top-level `.` directory member normalized to an empty path. The v3 artifact contains only explicit file members with repository-relative names.
