@@ -96,9 +96,9 @@ func ValidateAndroidProductWorkspaceCorrectness(root string) error {
 		return err
 	}
 	if err := mustContain("internal/services/system.go",
-		"matched := 0",
-		"readErr := \"\"",
-		"Truncated: !showAll && tail > 0 && matched > len(lines)",
+		"readRecentLogLines",
+		"Truncated: truncated",
+		"ReadError: \"\"",
 		"RefreshedAt: time.Now().UTC().Format(time.RFC3339Nano)",
 	); err != nil {
 		return err

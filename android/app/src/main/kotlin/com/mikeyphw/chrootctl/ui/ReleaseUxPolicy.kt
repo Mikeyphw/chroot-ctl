@@ -52,7 +52,7 @@ object ReleaseUxPolicy {
     val finalGateCommands: List<String> = listOf(
         "go run ./cmd/cli-contract-gen --check",
         "go run ./cmd/repoctl validate",
-        "android:chrootctlDebugValidation",
+        "android:chrootctlAndroidAppSeal",
     )
 
     val androidInstrumentationSealChecks: List<String> = listOf(

@@ -12,7 +12,7 @@ CHR20 closes the remaining Android shell/adaptive/accessibility and final-gate f
 - Kept compact navigation labels visible at large font scale.
 - Added live-region semantics for dynamic status pills and selected-state semantics helpers for custom controls.
 - Cleared restored workspace names when the referenced chroot no longer exists.
-- Made the final gate executable through `.devtool-artifact/validate.sh`, `repoctl validate`, and Android `:chrootctlDebugValidation`.
+- Made the final gate executable through `.devtool-artifact/validate.sh`, `repoctl validate`, and Android `:chrootctlAndroidAppSeal`.
 
 ## Executable proof
 
@@ -22,7 +22,7 @@ CHR20 closes the remaining Android shell/adaptive/accessibility and final-gate f
 
 ## Final gate
 
-CHR20 is a gate overlay. Unlike the CHR11–CHR19 intermediate overlays, the apply command should run validation. The validator runs contract generation, CHR20 source-gate tests, `repoctl validate`, and Android `:chrootctlDebugValidation` when the Gradle wrapper is present.
+CHR20 is a gate overlay. Unlike the CHR11–CHR19 intermediate overlays, the apply command should run validation. The validator runs contract generation, CHR20 source-gate tests, `repoctl validate`, and Android `:chrootctlAndroidAppSeal` when the Gradle wrapper is present.
 
 ## v3 gate hotfix
 

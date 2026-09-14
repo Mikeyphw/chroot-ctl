@@ -617,8 +617,33 @@ func serviceEnvKeys(env map[string]string) string {
 	sort.Strings(keys)
 	return strings.Join(keys, ",")
 }
+
+const maxServiceLogBytes int64 = 4 * 1024 * 1024
+
+func rotateServiceLogIfNeeded(path string) error {
+	st, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() {
+		return fmt.Errorf("unsafe service log file: %s", path)
+	}
+	if st.Size() <= maxServiceLogBytes {
+		return nil
+	}
+	rotated := path + ".1"
+	_ = os.Remove(rotated)
+	return os.Rename(path, rotated)
+}
+
 func appendServiceLifecycle(path string, lines ...string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := rotateServiceLogIfNeeded(path); err != nil {
 		return err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|syscall.O_NOFOLLOW, 0o600)
@@ -643,7 +668,14 @@ func cleanupServiceIdentity(prefix string) error {
 	return first
 }
 
-func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground bool) (map[string]any, error) {
+func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground bool) (result map[string]any, err error) {
+	defer func() {
+		if s.C.DryRun {
+			return
+		}
+		auditErr := s.C.Audit().RecordMutation(context.WithoutCancel(ctx), "service.start", chroot+":"+name, err, map[string]string{"foreground": strconv.FormatBool(foreground)})
+		err = errors.Join(err, auditErr)
+	}()
 	u, e := s.get(name)
 	if e != nil {
 		return nil, e
@@ -746,7 +778,14 @@ func (s *UnitService) Start(ctx context.Context, name, chroot string, foreground
 	_ = appendServiceLifecycle(log, "running pid="+strconv.Itoa(pid))
 	return map[string]any{"service": u.Name, "chroot": ch, "status": "running", "pid": pid, "log_file": log}, nil
 }
-func (s *UnitService) Stop(ctx context.Context, name, chroot string) (map[string]any, error) {
+func (s *UnitService) Stop(ctx context.Context, name, chroot string) (result map[string]any, err error) {
+	defer func() {
+		if s.C.DryRun {
+			return
+		}
+		auditErr := s.C.Audit().RecordMutation(context.WithoutCancel(ctx), "service.stop", chroot+":"+name, err, nil)
+		err = errors.Join(err, auditErr)
+	}()
 	u, e := s.get(name)
 	if e != nil {
 		return nil, e
@@ -813,7 +852,14 @@ func (s *UnitService) Stop(ctx context.Context, name, chroot string) (map[string
 	}
 	return row, nil
 }
-func (s *UnitService) Restart(ctx context.Context, name, chroot string) (map[string]any, error) {
+func (s *UnitService) Restart(ctx context.Context, name, chroot string) (result map[string]any, err error) {
+	defer func() {
+		if s.C.DryRun {
+			return
+		}
+		auditErr := s.C.Audit().RecordMutation(context.WithoutCancel(ctx), "service.restart", chroot+":"+name, err, nil)
+		err = errors.Join(err, auditErr)
+	}()
 	st, e := s.Stop(ctx, name, chroot)
 	if e != nil {
 		return map[string]any{"stopped": st}, e
@@ -831,25 +877,24 @@ func (s *UnitService) Logs(ctx context.Context, name, chroot string, tail int) (
 		return nil, e
 	}
 	p := s.logPath(ch, u.Name)
-	b, e := os.ReadFile(p)
-	if os.IsNotExist(e) {
-		b = nil
-		e = nil
-	}
-	if e != nil {
-		return nil, fmt.Errorf("read service journal %s: %w", p, e)
-	}
-	lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
-	if len(lines) == 1 && lines[0] == "" {
+	lines, truncated, readErr := readRecentLogLines(p, tail, 0)
+	if os.IsNotExist(readErr) {
 		lines = nil
+		truncated = false
+	} else if readErr != nil {
+		return nil, fmt.Errorf("read service journal %s: %w", p, readErr)
 	}
-	if tail > 0 && len(lines) > tail {
-		lines = lines[len(lines)-tail:]
-	}
-	return map[string]any{"service": u.Name, "chroot": ch, "log_file": p, "lines": lines, "text": strings.Join(lines, "\n")}, nil
+	return map[string]any{"service": u.Name, "chroot": ch, "log_file": p, "lines": lines, "text": strings.Join(lines, "\n"), "truncated": truncated}, nil
 }
 
-func (s *UnitService) Enable(ctx context.Context, name, chroot, target string) (map[string]any, error) {
+func (s *UnitService) Enable(ctx context.Context, name, chroot, target string) (result map[string]any, err error) {
+	defer func() {
+		if s.C.DryRun {
+			return
+		}
+		auditErr := s.C.Audit().RecordMutation(context.WithoutCancel(ctx), "service.enable", chroot+":"+name, err, map[string]string{"target": target})
+		err = errors.Join(err, auditErr)
+	}()
 	u, e := s.get(name)
 	if e != nil {
 		return nil, e
@@ -871,7 +916,14 @@ func (s *UnitService) Enable(ctx context.Context, name, chroot, target string) (
 	}
 	return map[string]any{"service": u.Name, "chroot": ch, "enabled": true, "target": target}, nil
 }
-func (s *UnitService) Disable(ctx context.Context, name, chroot, target string) (map[string]any, error) {
+func (s *UnitService) Disable(ctx context.Context, name, chroot, target string) (result map[string]any, err error) {
+	defer func() {
+		if s.C.DryRun {
+			return
+		}
+		auditErr := s.C.Audit().RecordMutation(context.WithoutCancel(ctx), "service.disable", chroot+":"+name, err, map[string]string{"target": target})
+		err = errors.Join(err, auditErr)
+	}()
 	u, e := s.get(name)
 	if e != nil {
 		return nil, e

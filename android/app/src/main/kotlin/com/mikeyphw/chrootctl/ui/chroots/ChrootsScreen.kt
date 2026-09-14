@@ -1687,7 +1687,15 @@ private fun UserActionReviewSheet(
                     Text(stringResource(R.string.action_preview_command))
                 }
                 Button(
-                    onClick = { onStartUserOperation(operation, payload) },
+                    onClick = {
+                        val dispatchPayload = payload
+                        onStartUserOperation(operation, dispatchPayload)
+                        if (action == UserWorkspaceAction.SetPassword) {
+                            password = ""
+                            confirmPassword = ""
+                            confirmation = ""
+                        }
+                    },
                     enabled = canSubmit && preview.approvesOperation(operation),
                     modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
                 ) {

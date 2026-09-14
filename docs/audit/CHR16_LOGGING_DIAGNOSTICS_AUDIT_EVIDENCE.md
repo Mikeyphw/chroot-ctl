@@ -20,6 +20,11 @@ Status: implemented as overlay 16 of 20.
 - Support-bundle failures are fail-closed: evidence component errors abort the bundle rather than reporting partial success.
 - Support-bundle exports are atomically promoted, registered as managed artifacts, checksum-tagged, and recorded as audit events.
 - Android clears the in-memory import password immediately after dispatching a transfer-import operation.
+- Production audit events cover user mutations, service lifecycle mutations, catalog applies, snapshot creation, and support-bundle export; mutation failures are captured where the service boundary can observe them.
+- Human and JSON CLI error responses pass through the shared redaction boundary before emission.
+- Bounded log-tail reads scan backwards instead of loading the whole file, reject symlinks, cap individual records, and report exact truncation when an older matching record exists.
+- Service lifecycle logs rotate when oversized and remain private owner-only files.
+- Android live-log refreshes cancel the prior in-flight refresh before starting another, and user password/confirmation review state is cleared immediately after dispatch.
 
 ## Deferred to later overlays
 

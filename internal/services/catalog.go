@@ -149,6 +149,9 @@ func (s *CatalogService) Apply(ctx context.Context, names []string, progress fun
 		if beginErr = tx.Complete(ctx, map[string]any{"catalog_kind": s.Kind, "entry": name}); beginErr != nil {
 			return out, fmt.Errorf("catalog apply committed but terminal journal persistence failed: %w", beginErr)
 		}
+		if auditErr := s.C.Audit().RecordMutation(context.WithoutCancel(ctx), "catalog.apply", s.Name+":"+s.Kind+":"+name, nil, map[string]string{"catalog_kind": s.Kind, "entry": name}); auditErr != nil {
+			return out, auditErr
+		}
 		out = append(out, r)
 	}
 	return out, nil

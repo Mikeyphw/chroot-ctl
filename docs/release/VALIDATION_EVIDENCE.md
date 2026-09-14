@@ -143,7 +143,7 @@ The sandbox used a temporary sqlite module stub for compile/focused checks only;
 - Gate status: final validation gate, not an intermediate `--no-validate` overlay.
 - Evidence: navigation/back-stack policy, proven operation notification deep links, lazy destination warmups, height/font-scale adaptive navigation, selected/live-region accessibility semantics, removed workspace restore cleanup, Android instrumentation checklist, and final validator wiring.
 - Source gate: `ValidateNavigationAdaptiveFinalReleaseSeal`.
-- Required validation: `go run ./cmd/cli-contract-gen --check`, `go run ./cmd/repoctl validate`, and Android `:chrootctlDebugValidation` when the wrapper is available.
+- Required validation: `go run ./cmd/cli-contract-gen --check`, `go run ./cmd/repoctl validate`, and Android `:chrootctlAndroidAppSeal` when the wrapper is available.
 
 ### CHR20 v3 gate reconciliation
 
@@ -159,7 +159,7 @@ CHR20 sealed the Go/repoctl roadmap. CHR21 exists to prevent Android app changes
 
 ## CHR21 Android app validation seal v2
 
-This overlay is an Android gate retry after v1 confirmed the `chrootctl_android` target was running the intended Gradle graph but failed compilation. V2 fixed the Android compile blockers, then the native Termux gate reached lint and failed before source analysis while resolving the Maven-provided `androidLintTool` classpath. V3 keeps the Android app seal deterministic by requiring `:chrootctlAndroidAppSeal`, `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:chrootctlAndroidLintConfigurationSeal`; the full external lint engine remains `:chrootctlAndroidLintConfigurationSeal` as a separately rerunnable check after the dependency cache is available.
+This overlay is an Android gate retry after v1 confirmed the `chrootctl_android` target was running the intended Gradle graph but failed compilation. V2 fixed the Android compile blockers, then the native Termux gate reached lint and failed before source analysis while resolving the Maven-provided `androidLintTool` classpath. V3 keeps the Android app seal deterministic by requiring `:chrootctlAndroidAppSeal`, `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:chrootctlAndroidLintConfigurationSeal`; the deterministic gate remains `:chrootctlAndroidLintConfigurationSeal`; the full external lint engine remains `:app:lintDebug` as a separately rerunnable check after the dependency cache is available.
 
 ## CHR21 Android app validation seal v5
 
@@ -173,4 +173,12 @@ Android seal v4 reached the Android JVM unit-test gate and failed in `BridgeOutp
 ## CHR22 — Android configuration-cache task hotfix
 
 The post-CHR21 `devtool lint` run reached `:chrootctlAndroidLintConfigurationSeal` and marked it `UP-TO-DATE`, but Gradle 9.7.1 failed while storing the configuration cache because the Kotlin DSL action captured a build-script object through top-level variables. CHR22 moves every execution-time path used by the three custom Android verification actions into task-registration scope, removes the top-level provider variables, and adds policy coverage preventing those captures from returning. The hotfix intentionally keeps configuration cache enabled rather than suppressing the failure with `--no-configuration-cache`.
+
+## CHR23 — Roadmap convergence seal
+
+Overlay 23 of 23 restores a single composite release gate after the Android-only CHR21/CHR22 work. `.devtool-artifact/validate.sh` again runs `go run ./cmd/repoctl validate` before Android `:chrootctlAndroidAppSeal`, then replays `:chrootctlAndroidLintConfigurationSeal` to prove configuration-cache reuse.
+
+The convergence gate closes all 272 canonical roadmap findings, including the 16 CHR16-owned findings and their 42 source manifestations. It adds production mutation audit coverage, CLI error redaction, bounded/symlink-safe log tails, service-log rotation, Android password-state cleanup and non-overlapping live-log refreshes, exact CHR14–CHR20 audit-coverage enforcement, and one release evidence ID (`android_lint_configuration_seal`).
+
+Acceptance requires the Devtool overlay apply itself to complete with zero diagnostics; Android-only success is no longer sufficient to claim full roadmap closure.
 

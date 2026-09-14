@@ -225,7 +225,10 @@ func (a *App) logs(ctx context.Context) error {
 	if !a.Inv.Bool("follow") {
 		return nil
 	}
-	cfg, _ := a.Services.ConfigFor(n, "")
+	cfg, e := a.Services.ConfigFor(n, "")
+	if e != nil {
+		return e
+	}
 	return followFile(ctx, cfg.LogFile, a.Stdout, a.Inv.String("level"))
 }
 func cliLogSeverity(level string) int {

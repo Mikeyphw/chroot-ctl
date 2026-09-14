@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"chrootctl/internal/apperrors"
+	"chrootctl/internal/redaction"
 )
 
 const responseSchemaVersion = 1
@@ -56,15 +57,38 @@ func emitJSONEnvelope(w io.Writer, command string, ok bool, data any, err error,
 }
 
 func appErrorResponse(err error) apperrors.ErrorResponse {
+	var response apperrors.ErrorResponse
 	var ae apperrors.AppError
 	if errors.As(err, &ae) {
-		return ae.ToResponse()
+		response = ae.ToResponse()
+	} else {
+		var aep *apperrors.AppError
+		if errors.As(err, &aep) && aep != nil {
+			response = aep.ToResponse()
+		} else {
+			response = apperrors.AppError{Code: "command_failed", Title: "Command failed", Message: err.Error(), Details: map[string]any{}, StatusCode: 400}.ToResponse()
+		}
 	}
-	var aep *apperrors.AppError
-	if errors.As(err, &aep) && aep != nil {
-		return aep.ToResponse()
+	response.Title = redaction.String(response.Title)
+	response.Message = redaction.String(response.Message)
+	if clean, ok := redaction.Value(response.Details).(map[string]any); ok {
+		response.Details = clean
 	}
-	return apperrors.AppError{Code: "command_failed", Title: "Command failed", Message: err.Error(), Details: map[string]any{}, StatusCode: 400}.ToResponse()
+	for i := range response.Hints {
+		response.Hints[i] = redaction.String(response.Hints[i])
+	}
+	for i := range response.Actions {
+		response.Actions[i].Label = redaction.String(response.Actions[i].Label)
+		if response.Actions[i].Href != nil {
+			clean := redaction.String(*response.Actions[i].Href)
+			response.Actions[i].Href = &clean
+		}
+		if response.Actions[i].Command != nil {
+			clean := redaction.String(*response.Actions[i].Command)
+			response.Actions[i].Command = &clean
+		}
+	}
+	return response
 }
 
 func extractNextSteps(value any) []string {

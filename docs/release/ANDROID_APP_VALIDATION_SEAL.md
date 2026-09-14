@@ -1,6 +1,6 @@
 # Android app validation seal
 
-Overlay 21 of 21 adds a dedicated Android app gate after the CHR01–CHR20 Go/repoctl seal.
+CHR21 introduced a dedicated Android app gate after the CHR01–CHR20 Go/repoctl seal; CHR23 later converges that Android gate back into the composite repository release seal.
 
 ## Gate owner
 
@@ -57,7 +57,10 @@ The third Android seal reached `:app:compileDebugUnitTestKotlin` and exposed a t
 
 ## CHR22 configuration-cache hotfix
 
-Overlay 22 of 22 fixes the Gradle 9.7.1 configuration-cache serialization failure found after CHR21. The Android verification task actions no longer reference top-level Kotlin build-script variables or `Project` helpers at execution time. `verifyStableToolchainBaseline`, `chrootctlAndroidLintConfigurationSeal`, and `chrootctlAndroidAppSeal` resolve their files during task configuration and capture only serializable task-local state.
+CHR22 fixes the Gradle 9.7.1 configuration-cache serialization failure found after CHR21. The Android verification task actions no longer reference top-level Kotlin build-script variables or `Project` helpers at execution time. `verifyStableToolchainBaseline`, `chrootctlAndroidLintConfigurationSeal`, and `chrootctlAndroidAppSeal` resolve their files during task configuration and capture only serializable task-local state.
 
 The hotfix keeps `org.gradle.configuration-cache=true`; it does not hide the defect by disabling configuration cache. The expected post-fix lint phase is still `:chrootctlAndroidLintConfigurationSeal`, with `:app:lintDebug` remaining the separately rerunnable full external lint engine.
 
+## CHR23 composite-gate convergence
+
+CHR23 keeps `:chrootctlAndroidAppSeal` as the authoritative Android aggregate while restoring `go run ./cmd/repoctl validate` to `.devtool-artifact/validate.sh`. The final artifact validator therefore proves the Go roadmap and Android app seal in one run, then replays `:chrootctlAndroidLintConfigurationSeal` to exercise configuration-cache reuse.

@@ -108,7 +108,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateAndroidProductWorkspaceCorrectness(root); e != nil {
 			return e
 		}
-		return ValidateNavigationAdaptiveFinalReleaseSeal(root)
+		if e := ValidateNavigationAdaptiveFinalReleaseSeal(root); e != nil {
+			return e
+		}
+		return ValidateRoadmapConvergenceSeal(root)
 	}); err != nil {
 		return err
 	}
@@ -145,14 +148,14 @@ func FinalSeal(opts FinalSealOptions) error {
 	}
 
 	androidRoot := filepath.Join(root, "android")
-	androidCommand := "./gradlew --no-daemon --continue :chrootctlDebugValidation"
+	androidCommand := "./gradlew --no-daemon --continue :chrootctlAndroidAppSeal"
 	if err = recordCheckGroup(
 		checks,
-		[]string{"android_compileDebugKotlin", "android_testDebugUnitTest", "android_lintDebug"},
+		[]string{"android_compileDebugKotlin", "android_testDebugUnitTest", "android_lint_configuration_seal"},
 		androidCommand,
 		"subprocess",
 		func() error {
-			return run(androidRoot, nil, "./gradlew", "--no-daemon", "--continue", ":chrootctlDebugValidation")
+			return run(androidRoot, nil, "./gradlew", "--no-daemon", "--continue", ":chrootctlAndroidAppSeal")
 		},
 	); err != nil {
 		return err

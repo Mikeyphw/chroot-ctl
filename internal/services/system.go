@@ -2,11 +2,13 @@ package services
 
 import (
 	"bufio"
+	"bytes"
 	"chrootctl/internal/model"
 	"chrootctl/internal/redaction"
 	sys "chrootctl/internal/system"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -170,7 +172,7 @@ func checkLogFile(path string) (result, detail, next string) {
 	if st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() {
 		return "FAIL", path + " is not a regular non-symlink file", "Replace the log path with a regular file."
 	}
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return "FAIL", err.Error(), "Fix log readability."
 	}
@@ -326,6 +328,88 @@ func validLogLevel(level string) bool {
 	return logSeverityValue(level) != 0
 }
 
+func readRecentLogLines(path string, tail, threshold int) (lines []string, truncated bool, err error) {
+	st, err := os.Lstat(path)
+	if err != nil {
+		return nil, false, err
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("log path %s is not a regular non-symlink file", path)
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	if tail <= 0 {
+		scan := bufio.NewScanner(f)
+		scan.Buffer(make([]byte, 64*1024), 1024*1024)
+		for scan.Scan() {
+			line := redaction.String(scan.Text())
+			if threshold == 0 || logSeverityValue(logLineSeverity(line)) >= threshold {
+				lines = append(lines, line)
+			}
+		}
+		return lines, false, scan.Err()
+	}
+	st, err = f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	const chunkSize int64 = 64 * 1024
+	const maxLineBytes = 1024 * 1024
+	want := tail + 1 // collect one older matching record so Truncated is exact
+	pos := st.Size()
+	carry := []byte{}
+	reversed := make([]string, 0, want)
+	for pos > 0 && len(reversed) < want {
+		start := pos - chunkSize
+		if start < 0 {
+			start = 0
+		}
+		block := make([]byte, pos-start)
+		if _, err = f.ReadAt(block, start); err != nil && err != io.EOF {
+			return nil, false, err
+		}
+		data := append(block, carry...)
+		parts := bytes.Split(data, []byte{'\n'})
+		first := 0
+		if start > 0 {
+			carry = append(carry[:0], parts[0]...)
+			if len(carry) > maxLineBytes {
+				return nil, false, fmt.Errorf("log line exceeds %d bytes", maxLineBytes)
+			}
+			first = 1
+		} else {
+			carry = nil
+		}
+		for i := len(parts) - 1; i >= first && len(reversed) < want; i-- {
+			if len(parts[i]) == 0 && i == len(parts)-1 {
+				continue
+			}
+			line := redaction.String(string(parts[i]))
+			if threshold == 0 || logSeverityValue(logLineSeverity(line)) >= threshold {
+				reversed = append(reversed, line)
+			}
+		}
+		pos = start
+	}
+	if pos == 0 && len(carry) > 0 && len(reversed) < want {
+		line := redaction.String(string(carry))
+		if threshold == 0 || logSeverityValue(logLineSeverity(line)) >= threshold {
+			reversed = append(reversed, line)
+		}
+	}
+	truncated = len(reversed) > tail
+	if truncated {
+		reversed = reversed[:tail]
+	}
+	for i := len(reversed) - 1; i >= 0; i-- {
+		lines = append(lines, reversed[i])
+	}
+	return lines, truncated, nil
+}
+
 func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll bool, level string, follow bool) (model.LogSnapshot, error) {
 	cfg, e := s.C.ConfigFor(name, "")
 	if e != nil {
@@ -341,39 +425,17 @@ func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll
 	if tail < 0 {
 		return model.LogSnapshot{}, fmt.Errorf("tail must be non-negative")
 	}
-	lines := []string{}
-	matched := 0
-	readErr := ""
-	f, e := os.Open(cfg.LogFile)
-	if e != nil {
-		if os.IsNotExist(e) {
-			readErr = "log file has not been created yet"
-		} else {
-			readErr = e.Error()
-		}
-	} else {
-		defer f.Close()
-		scan := bufio.NewScanner(f)
-		buf := make([]byte, 64*1024)
-		scan.Buffer(buf, 1024*1024)
-		for scan.Scan() {
-			line := redaction.String(scan.Text())
-			sev := logSeverityValue(logLineSeverity(line))
-			if threshold == 0 || sev >= threshold {
-				matched++
-				lines = append(lines, line)
-				if !showAll && tail > 0 && len(lines) > tail {
-					copy(lines, lines[len(lines)-tail:])
-					lines = lines[:tail]
-				}
-			}
-		}
-		if e := scan.Err(); e != nil {
-			readErr = e.Error()
-		}
+	requestedTail := tail
+	if showAll {
+		requestedTail = 0
 	}
-	if !showAll && tail > 0 && len(lines) > tail {
-		lines = lines[len(lines)-tail:]
+	lines, truncated, readErr := readRecentLogLines(cfg.LogFile, requestedTail, threshold)
+	if os.IsNotExist(readErr) {
+		lines = []string{}
+		truncated = false
+		readErr = nil
+	} else if readErr != nil {
+		return model.LogSnapshot{}, fmt.Errorf("read log file %s: %w", cfg.LogFile, readErr)
 	}
 	entries := []model.LogEntry{}
 	for _, line := range lines {
@@ -403,7 +465,7 @@ func (s *SystemService) Logs(ctx context.Context, name string, tail int, showAll
 		target = &name
 		related = []model.LogLink{{Label: "Chroot · " + name, Href: "/chroots/" + name}, {Label: "Users · " + name, Href: "/chroots/" + name + "/users"}, {Label: "Status · " + name, Href: "/status?name=" + name}, {Label: "Doctor · " + name, Href: "/doctor?name=" + name}}
 	}
-	return model.LogSnapshot{LogFile: cfg.LogFile, Level: lp, Lines: lines, Follow: follow, Tail: tail, Count: matched, Truncated: !showAll && tail > 0 && matched > len(lines), ReadError: readErr, RefreshedAt: time.Now().UTC().Format(time.RFC3339Nano), TargetName: target, Entries: entries, RelatedLinks: related}, nil
+	return model.LogSnapshot{LogFile: cfg.LogFile, Level: lp, Lines: lines, Follow: follow, Tail: tail, Count: len(lines), Truncated: truncated, ReadError: "", RefreshedAt: time.Now().UTC().Format(time.RFC3339Nano), TargetName: target, Entries: entries, RelatedLinks: related}, nil
 }
 
 type DoctorService struct{ C *Container }

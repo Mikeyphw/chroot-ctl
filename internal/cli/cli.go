@@ -12,6 +12,7 @@ import (
 	"chrootctl/internal/bridge"
 	"chrootctl/internal/completion"
 	"chrootctl/internal/config"
+	"chrootctl/internal/redaction"
 	"chrootctl/internal/services"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/version"
@@ -58,7 +59,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		if requestedJSON(args) {
 			_ = emitJSONEnvelope(stdout, bestCommand(args), false, nil, err, false)
 		} else {
-			_, _ = fmt.Fprintln(stderr, "chrootctl:", err)
+			_, _ = fmt.Fprintln(stderr, "chrootctl:", redaction.String(err.Error()))
 			if spec, ok := HelpSpecForArgs(args); ok {
 				_, _ = fmt.Fprint(stderr, Help(spec))
 			} else {
@@ -112,7 +113,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			Values:     inv.Strings("values"),
 		}, stdout)
 		if err != nil {
-			_, _ = fmt.Fprintln(stderr, "chrootctl completion:", err)
+			_, _ = fmt.Fprintln(stderr, "chrootctl completion:", redaction.String(err.Error()))
 			return 1
 		}
 		return 0
@@ -212,7 +213,7 @@ func privilegeReexecArgs(inv Invocation, args []string) []string {
 func writeFailure(inv Invocation, stdout, stderr io.Writer, err error, partial any, code int) int {
 	if inv.Globals.JSON {
 		if e := emitJSONEnvelope(stdout, inv.Spec.Command, false, partial, err, partial != nil); e != nil {
-			_, _ = fmt.Fprintln(stderr, "chrootctl:", e)
+			_, _ = fmt.Fprintln(stderr, "chrootctl:", redaction.String(e.Error()))
 			return 1
 		}
 		return code
@@ -220,7 +221,7 @@ func writeFailure(inv Invocation, stdout, stderr io.Writer, err error, partial a
 	if partial != nil {
 		_ = writeHuman(stdout, "Partial result", partial)
 	}
-	_, _ = fmt.Fprintln(stderr, "chrootctl:", err)
+	_, _ = fmt.Fprintln(stderr, "chrootctl:", redaction.String(err.Error()))
 	return code
 }
 

@@ -22,7 +22,7 @@ CHR01 owns canonical findings **D37, U097, U098, and U099**. The repository-leve
 | `GRADLE-02` | Closed | Dedicated compile phase removed; README names `:app:compileDebugKotlin` only as an explicit focused gate. |
 | `GRADLE-03` | Closed | Dedicated resource phase removed; package/test own transitive resource work. |
 | `GRADLE-04` | Closed | `split_gradle = false`; Devtool emits one Android validation builder action. |
-| `GRADLE-05` | Closed | Repository no longer injects `--no-configuration-cache`; verifier is cache/configuration-cache safe. Audited Devtool may still force cache off for managed validation as an explicit SDK-provisioning policy; direct CI/repoctl Gradle uses the project cache setting. |
+| `GRADLE-05` | Closed | Repository no longer injects `--no-configuration-cache`; the current Devtool/Gradle path honors the project configuration-cache setting, and CHR22 makes all custom verification task actions configuration-cache safe. |
 | `GRADLE-06` | Closed | Verifier inputs/output/cache contract makes UP-TO-DATE/build-cache behavior meaningful. |
 | `GRADLE-07` | Closed | `preBuild` safety remains, but verifier can now be skipped/restored when unchanged. |
 | `GRADLE-08` | Closed | No separate normal compile gate remains; focused compile documentation standardizes on `:app:compileDebugKotlin`. |
@@ -30,7 +30,7 @@ CHR01 owns canonical findings **D37, U097, U098, and U099**. The repository-leve
 | `GRADLE-10` | Closed | Removed duplicated parallel/Kotlin incremental/compiler-strategy Devtool args. |
 | `GRADLE-11` | Closed | Removed `-XX:ActiveProcessorCount=2` and `org.gradle.workers.max=2`; Devtool resource policy can actually use four workers/CPUs. |
 | `GRADLE-12` | Closed | Single-module `affected_module_lint` disabled. |
-| `GRADLE-13` | Closed | CI invokes `:chrootctlDebugValidation` once with `--continue`. |
+| `GRADLE-13` | Closed | CI invokes the release-authoritative `:chrootctlAndroidAppSeal` once with `--continue`; its internal graph retains `:chrootctlDebugValidation`. |
 | `GRADLE-14` | Closed | `repoctl FinalSeal` invokes the same aggregate once and records all three historical Android evidence IDs from that shared execution. |
 | `GRADLE-15` | Closed | `clean` remains available but is absent from normal validation. |
 | `DCLI-01` | Closed | `chrootctl_go` is the normal CLI target with `runner = "go"`, `platform = "cli"`. |
@@ -59,7 +59,7 @@ CHR01 owns canonical findings **D37, U097, U098, and U099**. The repository-leve
 - `ValidateBuildFoundation` enforces canonical Devtool schema, scoped targets, resource policy, coalesced CI/repoctl Android validation, cache-aware verifier, current Android README, behavior ownership, and the direct orchestration test.
 - Final-seal evidence adds `audit_coverage`, which executes both audit-accounting and CHR01 build-foundation checks.
 - `verifyStableToolchainBaseline` is input/output declared, cache-eligible, and produces `build/verification/stable-toolchain-baseline.txt`.
-- `chrootctlDebugValidation` aggregates stable-toolchain verification, unit tests, assembleDebug, and lintDebug in one Gradle graph.
+- `chrootctlAndroidAppSeal` is the release-authoritative aggregate. Its internal `chrootctlDebugValidation` dependency covers stable-toolchain verification, unit tests, assembleDebug, and the deterministic lint-configuration seal in one Gradle graph.
 
 ## Local construction-time verification
 
@@ -73,4 +73,4 @@ CHR01 owns canonical findings **D37, U097, U098, and U099**. The repository-leve
 
 ## Configuration-cache note
 
-The audited Devtool source intentionally appends `--no-configuration-cache` for its managed Android **validation** action because SDK provisioning/repair can mutate SDK inputs immediately before Gradle and Devtool maintains its own durable phase cache. CHR01 removes the redundant repository custom argument and makes the verifier configuration-cache safe; direct Gradle, CI, and repoctl executions therefore use `org.gradle.configuration-cache=true`. This is an explicit tool policy, not configuration drift.
+The repository does not disable Gradle configuration cache. The current `chrootctl_android` validation path honors `org.gradle.configuration-cache=true`; CHR22 hardened `verifyStableToolchainBaseline`, `chrootctlAndroidLintConfigurationSeal`, and `chrootctlAndroidAppSeal` so their execution actions capture only task-local serializable state. CHR23 keeps that behavior in the composite release gate and replays the lint-configuration seal to prove cache reuse.

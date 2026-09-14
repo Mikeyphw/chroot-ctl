@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"chrootctl/internal/completion"
+	"chrootctl/internal/redaction"
 )
 
 const (
@@ -131,7 +132,7 @@ func InstallWrapper(inv Invocation, stdout, stderr io.Writer) int {
 }
 
 func wrapperFailure(stderr io.Writer, err error) int {
-	fmt.Fprintln(stderr, "chrootctl:", err)
+	fmt.Fprintln(stderr, "chrootctl:", redaction.String(err.Error()))
 	return 1
 }
 func bytesHaveMarker(data []byte, marker string) bool {

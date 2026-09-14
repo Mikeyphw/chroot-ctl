@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/user"
 	"strings"
@@ -39,9 +40,26 @@ func (s *AuditService) Record(ctx context.Context, eventType, target, result, me
 	for k, v := range metadata {
 		cleanMeta[k] = v
 	}
-	e, err := s.C.Registry.AddEvent(ctx, registry.EventInput{EventType: redaction.String(eventType), Actor: actor, Target: target, Result: redaction.String(result), Message: message, Metadata: cleanMeta})
+	e, err := s.C.Registry.AddEvent(ctx, registry.EventInput{EventType: redaction.String(eventType), Actor: redaction.String(actor), Target: redaction.String(target), Result: redaction.String(result), Message: redaction.String(message), Metadata: cleanMeta})
 	return eventModel(e), err
 }
+
+// RecordMutation records one production mutation outcome without ever persisting
+// caller secrets. Services use this at their mutation boundary so bridge/Android
+// callers receive the same audit coverage as the human CLI.
+func (s *AuditService) RecordMutation(ctx context.Context, eventType, target string, operationErr error, metadata map[string]string) error {
+	result := "ok"
+	message := eventType + " completed"
+	if operationErr != nil {
+		result = "failed"
+		message = operationErr.Error()
+	}
+	if _, err := s.Record(ctx, eventType, target, result, message, "", metadata); err != nil {
+		return fmt.Errorf("record %s audit event: %w", eventType, err)
+	}
+	return nil
+}
+
 func (s *AuditService) Recent(ctx context.Context, limit int) ([]model.AuditEvent, error) {
 	rows, e := s.C.Registry.ListEvents(ctx, limit)
 	out := make([]model.AuditEvent, 0, len(rows))

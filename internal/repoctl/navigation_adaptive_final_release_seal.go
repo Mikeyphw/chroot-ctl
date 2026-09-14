@@ -112,7 +112,8 @@ func ValidateNavigationAdaptiveFinalReleaseSeal(root string) error {
 	}
 	if err := mustContain(".devtool-artifact/validate.sh",
 		"go run ./cmd/repoctl validate",
-		":chrootctlDebugValidation",
+		":chrootctlAndroidAppSeal",
+		":chrootctlAndroidLintConfigurationSeal",
 	); err != nil {
 		return err
 	}

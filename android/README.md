@@ -28,10 +28,10 @@ Devtool exposes three separate products:
 The normal Android gate is one Gradle graph/process:
 
 ```bash
-./gradlew --no-daemon --continue :chrootctlDebugValidation
+./gradlew --no-daemon --continue :chrootctlAndroidAppSeal
 ```
 
-That aggregate runs stable-toolchain verification, debug unit tests, debug packaging, and a deterministic lint-configuration seal. `verifyStableToolchainBaseline` declares its inputs/output and is cache/up-to-date aware, so keeping it behind `preBuild` does not force a full re-scan on every build.
+`chrootctlAndroidAppSeal` runs stable-toolchain verification, debug unit tests, debug packaging, and the deterministic lint-configuration seal; its underlying `chrootctlDebugValidation` task remains an internal aggregate. `verifyStableToolchainBaseline` declares its inputs/output and is cache/up-to-date aware, so keeping it behind `preBuild` does not force a full re-scan on every build.
 
 For focused debugging, individual tasks such as `:app:compileDebugKotlin` remain available, but they are not separate phases in the normal full validation pipeline.
 

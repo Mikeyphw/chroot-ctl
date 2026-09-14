@@ -133,4 +133,26 @@ class AndroidAppSealPolicyTest {
         )
     }
 
+    @Test
+    fun `CHR23 convergence seal keeps full gate audit coverage and secret cleanup wired`() {
+        val root = repoRoot()
+        val validateScript = File(root, ".devtool-artifact/validate.sh").readText()
+        val releasePolicy = File(root, "android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/ReleaseUxPolicy.kt").readText()
+        val viewModel = File(root, "android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/MainViewModel.kt").readText()
+        val chrootsScreen = File(root, "android/app/src/main/kotlin/com/mikeyphw/chrootctl/ui/chroots/ChrootsScreen.kt").readText()
+        val roadmap = File(root, "docs/audit/roadmap-coverage.json").readText()
+        val auditService = File(root, "internal/services/audit.go").readText()
+
+        assertTrue("Final artifact gate must include Go repo validation", "go run ./cmd/repoctl validate" in validateScript)
+        assertTrue("Final artifact gate must include Android app seal", ":chrootctlAndroidAppSeal" in validateScript)
+        assertTrue("Release policy must name the Android app seal", "android:chrootctlAndroidAppSeal" in releasePolicy)
+        assertTrue("Log refresh must cancel the previous in-flight refresh", "logsRefreshJob?.cancel()" in viewModel)
+        assertTrue(
+            "Password review must clear both password fields after dispatch",
+            "password = \"\"" in chrootsScreen && "confirmPassword = \"\"" in chrootsScreen,
+        )
+        assertTrue("Roadmap coverage must have no planned canonical findings", "\"status\": \"planned\"" !in roadmap)
+        assertTrue("Audit service must expose the production mutation boundary", "RecordMutation" in auditService)
+    }
+
 }

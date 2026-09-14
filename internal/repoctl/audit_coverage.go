@@ -257,8 +257,8 @@ func ValidateAuditCoverage(root string) error {
 	if chr08Sources != 49 {
 		return fmt.Errorf("CHR08 source-manifestation coverage=%d, want 49", chr08Sources)
 	}
-	if d12 := canonical["D12"]; d12.OwnerOverlay != "CHR16" || d12.Status != "planned" {
-		return fmt.Errorf("CHR08 must not prematurely close CHR16-owned log retrieval/retention root cause D12")
+	if d12 := canonical["D12"]; d12.OwnerOverlay != "CHR16" || d12.Status == "planned" {
+		return fmt.Errorf("CHR16 must close the log retrieval/retention root cause D12 before final roadmap seal")
 	}
 
 	chr09 := []string{"D16", "D17"}
@@ -333,6 +333,52 @@ func ValidateAuditCoverage(root string) error {
 	}
 	if chr13Sources != 26 {
 		return fmt.Errorf("CHR13 source-manifestation coverage=%d, want 26", chr13Sources)
+	}
+
+	// CHR14-CHR20 closure is exact, not token-based. This deliberately checks
+	// owner identity, canonical IDs, source manifestation counts, and final status
+	// so an overlay-level "implemented" string cannot mask planned findings.
+	type overlayClosureSpec struct {
+		IDs         []string
+		SourceCount int
+	}
+	closure := map[string]overlayClosureSpec{
+		"CHR14": {IDs: []string{"D28"}, SourceCount: 20},
+		"CHR15": {IDs: []string{"D27", "U190", "U191", "U192", "U193", "U194", "U195", "U196", "U197", "U198", "U199", "U200", "U201"}, SourceCount: 25},
+		"CHR16": {IDs: []string{"D11", "D12", "D14", "D15", "D45", "U110", "U111", "U112", "U113", "U114", "U115", "U185", "U186", "U187", "U188", "U189"}, SourceCount: 42},
+		"CHR17": {IDs: []string{"D29", "D30", "D44", "U061", "U062", "U063", "U064", "U065", "U066", "U067", "U068", "U069", "U070", "U071", "U072", "U073", "U074", "U075", "U076", "U077", "U078", "U079", "U080"}, SourceCount: 44},
+		"CHR18": {IDs: []string{"D32", "D33", "D34", "U037", "U038", "U039", "U040", "U041", "U042", "U043", "U044", "U045", "U046", "U093", "U094", "U095", "U096"}, SourceCount: 41},
+		"CHR19": {IDs: []string{"D40", "U001", "U002", "U003", "U004", "U005", "U006", "U007", "U008", "U009", "U010", "U011", "U012", "U013", "U014", "U015", "U016", "U017", "U018", "U019", "U025", "U026", "U027"}, SourceCount: 23},
+		"CHR20": {IDs: []string{"D35", "D36", "D38"}, SourceCount: 19},
+	}
+	for overlayID, spec := range closure {
+		if overlays[overlayID].Status == "planned" {
+			return fmt.Errorf("audit overlay %s remains planned after final roadmap seal", overlayID)
+		}
+		ownedCount, sources := 0, 0
+		for _, finding := range canonical {
+			if finding.OwnerOverlay == overlayID {
+				ownedCount++
+			}
+		}
+		if ownedCount != len(spec.IDs) {
+			return fmt.Errorf("%s canonical ownership count=%d, want %d", overlayID, ownedCount, len(spec.IDs))
+		}
+		for _, id := range spec.IDs {
+			finding := canonical[id]
+			if finding.OwnerOverlay != overlayID || finding.Status == "planned" {
+				return fmt.Errorf("%s finding %s is not exactly closed", overlayID, id)
+			}
+			sources += len(finding.SourceFindings)
+		}
+		if sources != spec.SourceCount {
+			return fmt.Errorf("%s source-manifestation coverage=%d, want %d", overlayID, sources, spec.SourceCount)
+		}
+	}
+	for id, finding := range canonical {
+		if finding.Status == "planned" {
+			return fmt.Errorf("final roadmap seal leaves canonical finding %s planned", id)
+		}
 	}
 	return nil
 }

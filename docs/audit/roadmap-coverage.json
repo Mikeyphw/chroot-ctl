@@ -768,7 +768,7 @@
       "title": "Sensitive logging/redaction boundary is incomplete",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-01",
@@ -819,7 +819,7 @@
       "title": "Log retrieval/filter/follow/retention behavior is incorrect or unbounded",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH06-08",
@@ -998,7 +998,7 @@
       "title": "Support-bundle/evidence artifact contract is inconsistent, partial, or unsafe",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-14",
@@ -1063,7 +1063,7 @@
       "title": "Audit events are incomplete, misattributed, or not retention-safe",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-18",
@@ -3186,7 +3186,7 @@
       "title": "Secrets and sensitive state remain resident or inconsistently sanitized",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "BH07-08",
@@ -4957,7 +4957,7 @@
       "title": "HIGH — Log file is created with permissive `0644` mode",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-02",
@@ -4973,7 +4973,7 @@
       "title": "MEDIUM — `status --details` computes details and then discards them",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-08",
@@ -4989,7 +4989,7 @@
       "title": "MEDIUM — Registry/log doctor checks can hide broken state",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-12",
@@ -5005,7 +5005,7 @@
       "title": "MEDIUM — Diagnostic failures do not affect normal CLI exit status",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-13",
@@ -5021,7 +5021,7 @@
       "title": "MEDIUM — Host doctor has filesystem side effects",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-17",
@@ -5037,7 +5037,7 @@
       "title": "MEDIUM — JSON support is internally contradictory",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI03-19",
@@ -6169,7 +6169,7 @@
       "title": "HIGH — Production event coverage is effectively snapshot-only",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI14-01",
@@ -6185,7 +6185,7 @@
       "title": "CRITICAL CONTRACT BUG — Advertised tar.gz is actually ZIP",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI14-07",
@@ -6201,7 +6201,7 @@
       "title": "HIGH — Bundle generation suppresses component errors and can report partial success as complete success",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI14-13",
@@ -6217,7 +6217,7 @@
       "title": "HIGH — The CLI bundle does not include what its help promises",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI14-14",
@@ -6233,7 +6233,7 @@
       "title": "MEDIUM/HIGH — Default filename collides at one-second resolution",
       "ownerOverlay": "CHR16",
       "supportingOverlays": [],
-      "status": "planned",
+      "status": "implemented",
       "sourceFindings": [
         {
           "id": "CLI14-16",

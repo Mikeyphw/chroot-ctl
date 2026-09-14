@@ -49,7 +49,7 @@ func ValidateBuildFoundation(root string) error {
 		"outputs = [",
 		"split_gradle = false",
 		"memory_guard_mb = 0",
-		"preflight = [\":verifyStableToolchainBaseline\"]",
+		"preflight = [\":chrootctlAndroidAppSeal\"]",
 		"dependencies = []",
 		"compile = []",
 		"resources = []",
@@ -102,10 +102,13 @@ func ValidateBuildFoundation(root string) error {
 	}
 	for _, required := range []string{
 		"inputs.files(",
-		"outputs.file(stableBaselineStamp)",
+		"outputs.file(baselineStampFile)",
 		"outputs.cacheIf { true }",
 		"tasks.register(\"chrootctlDebugValidation\")",
-		"dependsOn(\":app:testDebugUnitTest\", \":app:assembleDebug\", \":app:lintDebug\")",
+		"dependsOn(chrootctlAndroidLintConfigurationSeal)",
+		"dependsOn(\":app:testDebugUnitTest\", \":app:assembleDebug\")",
+		"tasks.register(\"chrootctlAndroidAppSeal\")",
+		"dependsOn(chrootctlDebugValidation)",
 	} {
 		if !strings.Contains(rootBuild, required) {
 			return fmt.Errorf("CHR01 Gradle build contract missing %q", required)
@@ -116,23 +119,23 @@ func ValidateBuildFoundation(root string) error {
 	if err != nil {
 		return err
 	}
-	if strings.Count(ci, "./gradlew --no-daemon") != 1 || !strings.Contains(ci, "--continue :chrootctlDebugValidation") {
-		return fmt.Errorf("CHR01 CI must invoke one coalesced Android Gradle validation graph")
+	if strings.Count(ci, "./gradlew --no-daemon") != 1 || !strings.Contains(ci, "--continue :chrootctlAndroidAppSeal") {
+		return fmt.Errorf("CHR01 CI must invoke one authoritative Android app seal graph")
 	}
 
 	finalSeal, err := read("internal/repoctl/final_seal.go")
 	if err != nil {
 		return err
 	}
-	if strings.Count(finalSeal, `run(androidRoot, nil, "./gradlew"`) != 1 || !strings.Contains(finalSeal, `":chrootctlDebugValidation"`) {
-		return fmt.Errorf("CHR01 repoctl final seal must invoke one Android Gradle validation graph")
+	if strings.Count(finalSeal, `run(androidRoot, nil, "./gradlew"`) != 1 || !strings.Contains(finalSeal, `":chrootctlAndroidAppSeal"`) {
+		return fmt.Errorf("CHR01 repoctl final seal must invoke the authoritative Android app seal graph")
 	}
 
 	androidReadme, err := read("android/README.md")
 	if err != nil {
 		return err
 	}
-	for _, required := range []string{"Go-native chrootctl backend", "Home, Chroots, Install, Activity, and Tools", ":chrootctlDebugValidation"} {
+	for _, required := range []string{"Go-native chrootctl backend", "Home, Chroots, Install, Activity, and Tools", ":chrootctlAndroidAppSeal"} {
 		if !strings.Contains(androidReadme, required) {
 			return fmt.Errorf("CHR01 Android README is stale; missing %q", required)
 		}

@@ -24,6 +24,7 @@ import com.mikeyphw.chrootctl.model.CatalogPane
 import com.mikeyphw.chrootctl.model.DebugPane
 import com.mikeyphw.chrootctl.model.SystemSupportPane
 import com.mikeyphw.chrootctl.repository.BridgeRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -141,6 +142,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val debugPane = MutableStateFlow(DebugPane())
     private val destinationWarmups = mutableSetOf(AppDestination.Home)
     private var logsRefreshSerial: Long = 0L
+    private var logsRefreshJob: Job? = null
 
     private val selectedChrootDetail = combine(
         repository.chroots,
@@ -537,7 +539,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
     fun refreshLogs(name: String, level: String? = null) {
         val requestSerial = ++logsRefreshSerial
-        viewModelScope.launch {
+        logsRefreshJob?.cancel()
+        logsRefreshJob = viewModelScope.launch {
             val normalizedLevel = level?.takeIf(String::isNotBlank)
             logsPane.value = logsPane.value.copy(
                 targetName = name,
