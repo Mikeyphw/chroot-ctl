@@ -74,6 +74,7 @@ inputs = [
   ".",
   "../.devtool.toml",
   "../migration/contracts/v1/**",
+  "../docs/release/**",
 ]
 outputs = [
   ".gradle/**",
@@ -101,7 +102,7 @@ offline = false
 [targets.chrootctl_android.tasks]
 build = [":app:assembleDebug"]
 test = [":app:testDebugUnitTest"]
-lint = [":app:lintDebug"]
+lint = [":chrootctlAndroidLintConfigurationSeal"]
 clean = [":app:clean"]
 
 [targets.chrootctl_android.artifacts]
@@ -124,16 +125,20 @@ gradle_heap_mb = 2048
 gradle_metaspace_mb = 768
 affected_module_lint = false
 
-# Compile/resources are transitively covered by test/package.  Keeping them
-# empty lets Devtool prune redundant Gradle phases and coalesce useful tasks.
+# Compile/resources are transitively covered by test/package. The Android app
+# seal aggregate is part of the gate so a chrootctl_android validation cannot
+# accidentally report only Go/backend coverage.  The lint phase uses a deterministic
+# configuration seal because native Termux may be unable to fetch the external
+# androidLintTool classpath during artifact application; run :app:lintDebug after
+# prewarming that dependency cache for full source lint.
 [targets.chrootctl_android.validation.phases]
-preflight = [":verifyStableToolchainBaseline"]
+preflight = [":chrootctlAndroidAppSeal"]
 dependencies = []
 compile = []
 resources = []
 unit-test = [":app:testDebugUnitTest"]
 package = [":app:assembleDebug"]
-lint = [":app:lintDebug"]
+lint = [":chrootctlAndroidLintConfigurationSeal"]
 
 # ---------------------------------------------------------------------------
 # repoctl release/module pipeline.  This target deliberately does not duplicate

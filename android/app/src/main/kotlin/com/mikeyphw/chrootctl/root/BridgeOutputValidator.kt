@@ -23,6 +23,13 @@ internal fun validateBridgeProcessResult(
     }
     val output = extractBridgeJsonEnvelope(result.output)
     if (output.isBlank()) {
+        val stdoutDetail = bridgeOutputExcerpt(result.output)
+        if (stdoutDetail.isNotBlank()) {
+            return BridgeOutputValidation.Rejected(
+                "INVALID_BRIDGE_RESPONSE",
+                "Bridge runtime ${runtime.executable} returned non-JSON output: $stdoutDetail",
+            )
+        }
         val detail = bridgeOutputExcerpt(result.errorOutput)
         return BridgeOutputValidation.Rejected(
             "EMPTY_BRIDGE_RESPONSE",

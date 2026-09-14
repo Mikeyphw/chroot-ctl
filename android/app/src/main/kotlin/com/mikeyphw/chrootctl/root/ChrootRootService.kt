@@ -483,7 +483,7 @@ class ChrootRootService : RootService() {
 
     private fun syncDirectory(directory: File) {
         runCatching {
-            val fd = Os.open(directory.path, android.system.OsConstants.O_RDONLY or android.system.OsConstants.O_DIRECTORY, 0)
+            val fd = Os.open(directory.path, android.system.OsConstants.O_RDONLY or O_DIRECTORY_COMPAT, 0)
             try { Os.fsync(fd) } finally { Os.close(fd) }
         }
     }
@@ -510,6 +510,7 @@ class ChrootRootService : RootService() {
         const val MIN_FREE_BYTES = 64L * 1024 * 1024
         const val TRANSFER_CHECKPOINT_BYTES = 1024L * 1024
         const val TRANSFER_PROGRESS_HEARTBEAT_MS = 30_000L
+        const val O_DIRECTORY_COMPAT = 0x10000
         val TERMINAL_TRANSFER_STATES = setOf("succeeded", "failed", "cancelled", "interrupted")
     }
 }

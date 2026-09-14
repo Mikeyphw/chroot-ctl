@@ -31,7 +31,7 @@ The normal Android gate is one Gradle graph/process:
 ./gradlew --no-daemon --continue :chrootctlDebugValidation
 ```
 
-That aggregate runs stable-toolchain verification, debug unit tests, debug packaging, and lint. `verifyStableToolchainBaseline` declares its inputs/output and is cache/up-to-date aware, so keeping it behind `preBuild` does not force a full re-scan on every build.
+That aggregate runs stable-toolchain verification, debug unit tests, debug packaging, and a deterministic lint-configuration seal. `verifyStableToolchainBaseline` declares its inputs/output and is cache/up-to-date aware, so keeping it behind `preBuild` does not force a full re-scan on every build.
 
 For focused debugging, individual tasks such as `:app:compileDebugKotlin` remain available, but they are not separate phases in the normal full validation pipeline.
 
@@ -40,3 +40,20 @@ For focused debugging, individual tasks such as `:app:compileDebugKotlin` remain
 Large orchestration surfaces are tracked by behavior instead of treating a multi-workflow source file as one audit unit. See `docs/android/BEHAVIOR_OWNERSHIP.md` and `docs/android/behavior-ownership.json`.
 
 CHR01 also introduces a directly unit-tested `HomeRefreshCoordinator` behind the `BridgeTransport` boundary. This gives repository orchestration a real JVM test seam while preserving the fixed RootService/AIDL boundary. Later roadmap overlays expand direct tests in the behavior domain they modify.
+
+
+## Android app seal
+
+The full Android app seal is:
+
+```bash
+./gradlew --no-daemon --continue :chrootctlAndroidAppSeal
+```
+
+`chrootctlAndroidAppSeal` depends on `chrootctlDebugValidation`, so it executes stable-toolchain verification, JVM unit tests, debug APK packaging, and a deterministic lint-configuration seal in one Gradle graph. The task also records a seal stamp only after the Room schema, migration contracts, lint configuration, and core Android test suites are present.
+
+When validating through Devtool, use the Android target so the result reports Android app coverage directly:
+
+```bash
+devtool --copy --target chrootctl_android apply overlay <overlay.tar.gz> --keep-artifact
+```

@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-go run ./cmd/cli-contract-gen --check
-go test ./internal/repoctl -run 'CHR20|ValidateNavigationAdaptiveFinalReleaseSeal' -count=1
-go run ./cmd/repoctl validate
-if [ -x android/gradlew ]; then
-  (cd android && ./gradlew --no-daemon --continue :chrootctlDebugValidation)
+if [ ! -x android/gradlew ]; then
+  echo "Android Gradle wrapper is missing or not executable: android/gradlew" >&2
+  exit 1
 fi
+
+(cd android && ./gradlew --no-daemon --continue :chrootctlAndroidAppSeal :app:testDebugUnitTest :app:assembleDebug :chrootctlAndroidLintConfigurationSeal)

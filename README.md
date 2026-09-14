@@ -1,4 +1,4 @@
-# chrootctl CHR09 validator hotfix v4
+# chrootctl CHR09 validator hotfix v5
 
 This is a corrective overlay for `chrootctl_chr09_metadata_faithful_snapshots_v3.tar.gz`.
 
@@ -51,3 +51,17 @@ Overlay 17 of 20 adds response-shape metadata to bridge capabilities, wraps debu
 ### CHR20 gate hotfix v3
 
 Overlay 20 of 20 v3 keeps CHR20 as the validation gate and fixes the two gate regressions found after v2: Android/Termux external catalog parent validation now treats `/data`, `/data/data`, and `/data/user/<id>` only as trusted parent-chain ancestors while keeping configured catalog directories private, and the CHR15 module startup-target regression test now seeds a legacy corrupt registry row directly so modern Registry.Upsert identity validation does not short-circuit the module path-authority assertion.
+
+
+### CHR21 Android app validation seal
+
+Overlay 21 of 21 is a post-roadmap Android app seal. It moves the final Android app gate to the `chrootctl_android` Devtool target, wires the Gradle aggregate `:chrootctlAndroidAppSeal`, and requires stable toolchain verification, JVM unit tests, debug APK packaging, strict lint-configuration seal with warnings-as-errors, Room schema v5 presence, and migration contract availability before the Android app is considered sealed.
+
+
+### CHR21 Android app validation seal v2
+
+Overlay 21 of 21 v2 keeps the Android validation gate on `chrootctl_android` and fixes the compile blockers discovered by the first Android seal run: Android's `java.lang.Process` API does not expose `pid()` at this compile level, so bridge tree termination now resolves the root PID through the Android process implementation field with a safe fallback, and transfer journal directory fsync uses the Linux `O_DIRECTORY` numeric compatibility flag instead of the unavailable `OsConstants.O_DIRECTORY` symbol.
+
+### CHR21 Android app validation seal v5
+
+Overlay 21 of 21 v5 keeps the Android validation gate on `chrootctl_android` and fixes the JVM test compile drift discovered by v3. `HomeRefreshCoordinatorTest.FakeBridgeTransport` now implements the complete `BridgeTransport` contract, including transfer status and cancellation hooks, so `:app:testDebugUnitTest` can compile against the CHR10+ transport interface.

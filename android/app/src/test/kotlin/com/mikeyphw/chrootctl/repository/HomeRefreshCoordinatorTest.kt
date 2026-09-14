@@ -141,6 +141,8 @@ class HomeRefreshCoordinatorTest {
         override suspend fun cancelOperation(operationId: String): String = error("unused")
         override suspend fun transferFromDescriptor(requestJson: String, input: ParcelFileDescriptor): String = error("unused")
         override suspend fun transferToDescriptor(requestJson: String, output: ParcelFileDescriptor): String = error("unused")
+        override suspend fun transferState(requestId: String): String = error("unused")
+        override suspend fun cancelTransfer(requestId: String): String = error("unused")
         override suspend fun streamOperation(requestJson: String, onEvent: suspend (String) -> Unit): String = error("unused")
         override fun close() = Unit
 

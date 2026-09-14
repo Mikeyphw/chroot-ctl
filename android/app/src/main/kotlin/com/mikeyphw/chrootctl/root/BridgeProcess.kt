@@ -126,7 +126,7 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
     }
 
     private fun terminateProcessTree(process: Process) {
-        val rootPid = runCatching { process.pid().toInt() }.getOrDefault(-1)
+        val rootPid = processPidCompat(process)
         if (rootPid <= 0) {
             process.destroyForcibly()
             return
@@ -163,6 +163,14 @@ internal class BridgeProcess(private val runtime: BridgeRuntime) {
         }
     }
 
+
+    private fun processPidCompat(process: Process): Int = runCatching {
+        val field = process.javaClass.getDeclaredField("pid")
+        field.isAccessible = true
+        val value = field.get(process) as? Number
+        val pid = value?.toLong() ?: -1L
+        if (pid in 1L..Int.MAX_VALUE.toLong()) pid.toInt() else -1
+    }.getOrDefault(-1)
 
     private fun collectProcessTree(rootPid: Int): List<Int> {
         val seen = linkedSetOf<Int>()
