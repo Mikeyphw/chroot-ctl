@@ -4,33 +4,35 @@ plugins {
     alias(libs.plugins.ksp) apply false
 }
 
-val stableVersionsFile = layout.projectDirectory.file("gradle/libs.versions.toml")
-val stableAppBuildFile = layout.projectDirectory.file("app/build.gradle.kts")
-val stableWrapperFile = layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.properties")
-val stableDevtoolFile = layout.projectDirectory.file("../.devtool.toml")
-val stableGradlePropertiesFile = layout.projectDirectory.file("gradle.properties")
-val stableBaselineStamp = layout.buildDirectory.file("verification/stable-toolchain-baseline.txt")
-
 val verifyStableToolchainBaseline = tasks.register("verifyStableToolchainBaseline") {
     group = "verification"
     description = "Verifies the fleet-wide stable Android/Java toolchain baseline."
 
+    // Keep execution-time state task-local. Kotlin DSL task actions cannot capture
+    // top-level script variables when Gradle's configuration cache is enabled.
+    val versionsFile = layout.projectDirectory.file("gradle/libs.versions.toml").asFile
+    val appBuildFile = layout.projectDirectory.file("app/build.gradle.kts").asFile
+    val wrapperFile = layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.properties").asFile
+    val devtoolFile = layout.projectDirectory.file("../.devtool.toml").asFile
+    val gradlePropertiesFile = layout.projectDirectory.file("gradle.properties").asFile
+    val baselineStampFile = layout.buildDirectory.file("verification/stable-toolchain-baseline.txt").get().asFile
+
     inputs.files(
-        stableVersionsFile,
-        stableAppBuildFile,
-        stableWrapperFile,
-        stableDevtoolFile,
-        stableGradlePropertiesFile,
+        versionsFile,
+        appBuildFile,
+        wrapperFile,
+        devtoolFile,
+        gradlePropertiesFile,
     )
-    outputs.file(stableBaselineStamp)
+    outputs.file(baselineStampFile)
     outputs.cacheIf { true }
 
     doLast {
-        val versionsText = stableVersionsFile.asFile.readText()
-        val appBuildText = stableAppBuildFile.asFile.readText()
-        val wrapperText = stableWrapperFile.asFile.readText()
-        val devtoolText = stableDevtoolFile.asFile.readText()
-        val gradlePropertiesText = stableGradlePropertiesFile.asFile.readText()
+        val versionsText = versionsFile.readText()
+        val appBuildText = appBuildFile.readText()
+        val wrapperText = wrapperFile.readText()
+        val devtoolText = devtoolFile.readText()
+        val gradlePropertiesText = gradlePropertiesFile.readText()
 
         val requiredVersions = listOf(
             "agp" to "9.3.1",
@@ -42,7 +44,7 @@ val verifyStableToolchainBaseline = tasks.register("verifyStableToolchainBaselin
             "lifecycle" to "2.10.0",
         )
         requiredVersions.forEach { (name, version) ->
-            check(Regex("(?m)^${Regex.escape(name)}\\s*=\\s*\\\"${Regex.escape(version)}\\\"\\s*$").containsMatchIn(versionsText)) {
+            check(Regex("(?m)^${Regex.escape(name)}\\s*=\\s*\"${Regex.escape(version)}\"\\s*$").containsMatchIn(versionsText)) {
                 "Stable toolchain drift: expected $name=$version"
             }
         }
@@ -90,9 +92,8 @@ val verifyStableToolchainBaseline = tasks.register("verifyStableToolchainBaselin
                 }
             }
 
-        val stamp = stableBaselineStamp.get().asFile
-        stamp.parentFile.mkdirs()
-        stamp.writeText(
+        baselineStampFile.parentFile.mkdirs()
+        baselineStampFile.writeText(
             "schema=1\n" +
                 "gradle=9.7.1\n" +
                 "java=21\n" +
@@ -113,34 +114,41 @@ val chrootctlAndroidLintConfigurationSeal = tasks.register("chrootctlAndroidLint
     group = "verification"
     description = "Verifies that Android lint remains strictly configured without resolving the external lint engine."
 
+    // These Files are resolved during task configuration and are the only values
+    // captured by the action, keeping the task serializable by configuration cache.
+    val appBuildFile = layout.projectDirectory.file("app/build.gradle.kts").asFile
+    val lintXmlFile = layout.projectDirectory.file("app/lint.xml").asFile
+    val rootBuildFile = layout.projectDirectory.file("build.gradle.kts").asFile
+    val devtoolFile = layout.projectDirectory.file("../.devtool.toml").asFile
+    val stampFile = layout.buildDirectory.file("verification/chrootctl-android-lint-configuration-seal.txt").get().asFile
+
     inputs.files(
-        stableAppBuildFile,
-        layout.projectDirectory.file("app/lint.xml"),
-        layout.projectDirectory.file("build.gradle.kts"),
-        stableDevtoolFile,
+        appBuildFile,
+        lintXmlFile,
+        rootBuildFile,
+        devtoolFile,
     )
-    outputs.file(layout.buildDirectory.file("verification/chrootctl-android-lint-configuration-seal.txt"))
+    outputs.file(stampFile)
     outputs.cacheIf { true }
 
     doLast {
-        val appBuildText = stableAppBuildFile.asFile.readText()
-        val lintXml = layout.projectDirectory.file("app/lint.xml").asFile
-        check(lintXml.isFile) { "Android lint config missing: app/lint.xml" }
+        val appBuildText = appBuildFile.readText()
+        check(lintXmlFile.isFile) { "Android lint config missing: app/lint.xml" }
         check("abortOnError = true" in appBuildText) { "Android lint must abort on error" }
         check("warningsAsErrors = true" in appBuildText) { "Android lint warnings must be errors" }
         check("lintConfig = file(\"lint.xml\")" in appBuildText) { "Android lint must use app/lint.xml" }
 
-        val devtoolText = stableDevtoolFile.asFile.readText()
+        val devtoolText = devtoolFile.readText()
         check("lint = [\":chrootctlAndroidLintConfigurationSeal\"]" in devtoolText) {
             "Devtool Android lint phase must use the deterministic lint configuration seal"
         }
 
-        val stamp = layout.buildDirectory.file("verification/chrootctl-android-lint-configuration-seal.txt").get().asFile
-        stamp.parentFile.mkdirs()
-        stamp.writeText(
+        stampFile.parentFile.mkdirs()
+        stampFile.writeText(
             "schema=1\n" +
                 "seal=android-lint-configuration\n" +
                 "strictLint=true\n" +
+                "configurationCacheSafe=true\n" +
                 "externalLintEngine=:app:lintDebug\n" +
                 "reason=termux-maven-lint-tool-bootstrap-is-external\n",
         )
@@ -155,52 +163,73 @@ val chrootctlDebugValidation = tasks.register("chrootctlDebugValidation") {
     dependsOn(":app:testDebugUnitTest", ":app:assembleDebug")
 }
 
-val androidAppSealStamp = layout.buildDirectory.file("verification/chrootctl-android-app-seal.txt")
-
 tasks.register("chrootctlAndroidAppSeal") {
     group = "verification"
     description = "Runs and records the complete ChrootCTL Android app seal gate."
 
     dependsOn(chrootctlDebugValidation)
 
-    inputs.files(
-        stableVersionsFile,
-        stableAppBuildFile,
-        stableWrapperFile,
-        stableDevtoolFile,
-        stableGradlePropertiesFile,
-        layout.projectDirectory.file("settings.gradle.kts"),
-        layout.projectDirectory.file("app/lint.xml"),
-        layout.projectDirectory.file("app/schemas/com.mikeyphw.chrootctl.data.ChrootCtlDatabase/5.json"),
-        layout.projectDirectory.file("../migration/contracts/v1/bridge.json"),
-        layout.projectDirectory.file("../migration/contracts/v1/foundations.json"),
+    // Resolve every execution-time path in task-registration scope so the action
+    // captures plain File/String state rather than the Kotlin build script object.
+    val versionsFile = layout.projectDirectory.file("gradle/libs.versions.toml").asFile
+    val appBuildFile = layout.projectDirectory.file("app/build.gradle.kts").asFile
+    val wrapperFile = layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.properties").asFile
+    val devtoolFile = layout.projectDirectory.file("../.devtool.toml").asFile
+    val gradlePropertiesFile = layout.projectDirectory.file("gradle.properties").asFile
+    val settingsFile = layout.projectDirectory.file("settings.gradle.kts").asFile
+    val lintXmlFile = layout.projectDirectory.file("app/lint.xml").asFile
+    val roomSchemaFile = layout.projectDirectory.file("app/schemas/com.mikeyphw.chrootctl.data.ChrootCtlDatabase/5.json").asFile
+    val bridgeContractFile = layout.projectDirectory.file("../migration/contracts/v1/bridge.json").asFile
+    val foundationsContractFile = layout.projectDirectory.file("../migration/contracts/v1/foundations.json").asFile
+    val mainSourcesDir = layout.projectDirectory.dir("app/src/main/kotlin").asFile
+    val testSourcesDir = layout.projectDirectory.dir("app/src/test/kotlin").asFile
+    val rootBuildFile = layout.projectDirectory.file("build.gradle.kts").asFile
+    val appSealStampFile = layout.buildDirectory.file("verification/chrootctl-android-app-seal.txt").get().asFile
+    val requiredFiles = listOf(
+        "app/src/test/kotlin/com/mikeyphw/chrootctl/repository/HomeRefreshCoordinatorTest.kt" to
+            layout.projectDirectory.file("app/src/test/kotlin/com/mikeyphw/chrootctl/repository/HomeRefreshCoordinatorTest.kt").asFile,
+        "app/src/test/kotlin/com/mikeyphw/chrootctl/repository/OperationRecoveryContractTest.kt" to
+            layout.projectDirectory.file("app/src/test/kotlin/com/mikeyphw/chrootctl/repository/OperationRecoveryContractTest.kt").asFile,
+        "app/src/test/kotlin/com/mikeyphw/chrootctl/protocol/BridgeModelsTest.kt" to
+            layout.projectDirectory.file("app/src/test/kotlin/com/mikeyphw/chrootctl/protocol/BridgeModelsTest.kt").asFile,
+        "app/src/test/kotlin/com/mikeyphw/chrootctl/root/RootTrustBoundaryTest.kt" to
+            layout.projectDirectory.file("app/src/test/kotlin/com/mikeyphw/chrootctl/root/RootTrustBoundaryTest.kt").asFile,
+        "app/src/test/kotlin/com/mikeyphw/chrootctl/ui/NavigationReleasePolicyChr20Test.kt" to
+            layout.projectDirectory.file("app/src/test/kotlin/com/mikeyphw/chrootctl/ui/NavigationReleasePolicyChr20Test.kt").asFile,
+        "app/src/test/kotlin/com/mikeyphw/chrootctl/ui/ReleaseUxPolicyTest.kt" to
+            layout.projectDirectory.file("app/src/test/kotlin/com/mikeyphw/chrootctl/ui/ReleaseUxPolicyTest.kt").asFile,
+        "app/schemas/com.mikeyphw.chrootctl.data.ChrootCtlDatabase/5.json" to roomSchemaFile,
+        "../migration/contracts/v1/bridge.json" to bridgeContractFile,
+        "../migration/contracts/v1/foundations.json" to foundationsContractFile,
     )
-    inputs.dir(layout.projectDirectory.dir("app/src/main/kotlin"))
-    inputs.dir(layout.projectDirectory.dir("app/src/test/kotlin"))
-    outputs.file(androidAppSealStamp)
+
+    inputs.files(
+        versionsFile,
+        appBuildFile,
+        wrapperFile,
+        devtoolFile,
+        gradlePropertiesFile,
+        settingsFile,
+        lintXmlFile,
+        roomSchemaFile,
+        bridgeContractFile,
+        foundationsContractFile,
+    )
+    inputs.dir(mainSourcesDir)
+    inputs.dir(testSourcesDir)
+    outputs.file(appSealStampFile)
     outputs.cacheIf { true }
 
     doLast {
-        val requiredFiles = listOf(
-            "app/src/test/kotlin/com/mikeyphw/chrootctl/repository/HomeRefreshCoordinatorTest.kt",
-            "app/src/test/kotlin/com/mikeyphw/chrootctl/repository/OperationRecoveryContractTest.kt",
-            "app/src/test/kotlin/com/mikeyphw/chrootctl/protocol/BridgeModelsTest.kt",
-            "app/src/test/kotlin/com/mikeyphw/chrootctl/root/RootTrustBoundaryTest.kt",
-            "app/src/test/kotlin/com/mikeyphw/chrootctl/ui/NavigationReleasePolicyChr20Test.kt",
-            "app/src/test/kotlin/com/mikeyphw/chrootctl/ui/ReleaseUxPolicyTest.kt",
-            "app/schemas/com.mikeyphw.chrootctl.data.ChrootCtlDatabase/5.json",
-            "../migration/contracts/v1/bridge.json",
-            "../migration/contracts/v1/foundations.json",
-        )
-        requiredFiles.forEach { relativePath ->
-            check(file(relativePath).isFile) { "Android app seal missing required file: $relativePath" }
+        requiredFiles.forEach { (relativePath, requiredFile) ->
+            check(requiredFile.isFile) { "Android app seal missing required file: $relativePath" }
         }
 
-        val appBuildText = stableAppBuildFile.asFile.readText()
+        val appBuildText = appBuildFile.readText()
         check("abortOnError = true" in appBuildText) { "Android lint must abort on error" }
         check("warningsAsErrors = true" in appBuildText) { "Android lint warnings must be errors" }
 
-        val rootBuildText = layout.projectDirectory.file("build.gradle.kts").asFile.readText()
+        val rootBuildText = rootBuildFile.readText()
         listOf(
             "chrootctlDebugValidation",
             ":app:testDebugUnitTest",
@@ -210,7 +239,7 @@ tasks.register("chrootctlAndroidAppSeal") {
             check(token in rootBuildText) { "Android Gradle seal graph is missing $token" }
         }
 
-        val devtoolText = stableDevtoolFile.asFile.readText()
+        val devtoolText = devtoolFile.readText()
         listOf(
             "[targets.chrootctl_android]",
             "runner = \"android\"",
@@ -223,12 +252,12 @@ tasks.register("chrootctlAndroidAppSeal") {
             check(token in devtoolText) { "Android Devtool seal wiring is missing $token" }
         }
 
-        val stamp = androidAppSealStamp.get().asFile
-        stamp.parentFile.mkdirs()
-        stamp.writeText(
+        appSealStampFile.parentFile.mkdirs()
+        appSealStampFile.writeText(
             "schema=1\n" +
                 "seal=android-app\n" +
                 "toolchain=stable\n" +
+                "configurationCacheSafe=true\n" +
                 "tasks=:chrootctlAndroidAppSeal,:app:testDebugUnitTest,:app:assembleDebug,:chrootctlAndroidLintConfigurationSeal\n" +
                 "externalLintEngine=:app:lintDebug\n" +
                 "roomSchema=5\n" +

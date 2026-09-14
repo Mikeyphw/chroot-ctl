@@ -169,3 +169,8 @@ The v5 gate repair keeps the deterministic Android seal graph from v3 and fixes 
 ## CHR21 Android app validation seal v5
 
 Android seal v4 reached the Android JVM unit-test gate and failed in `BridgeOutputValidatorTest` because usage text on stdout was classified as `EMPTY_BRIDGE_RESPONSE`. v5 repairs the production validator classification and keeps the same Android seal tasks: `:chrootctlAndroidAppSeal`, `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:chrootctlAndroidLintConfigurationSeal`.
+
+## CHR22 — Android configuration-cache task hotfix
+
+The post-CHR21 `devtool lint` run reached `:chrootctlAndroidLintConfigurationSeal` and marked it `UP-TO-DATE`, but Gradle 9.7.1 failed while storing the configuration cache because the Kotlin DSL action captured a build-script object through top-level variables. CHR22 moves every execution-time path used by the three custom Android verification actions into task-registration scope, removes the top-level provider variables, and adds policy coverage preventing those captures from returning. The hotfix intentionally keeps configuration cache enabled rather than suppressing the failure with `--no-configuration-cache`.
+

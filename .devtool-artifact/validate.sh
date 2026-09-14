@@ -8,3 +8,8 @@ if [ ! -x android/gradlew ]; then
 fi
 
 (cd android && ./gradlew --no-daemon --continue :chrootctlAndroidAppSeal :app:testDebugUnitTest :app:assembleDebug :chrootctlAndroidLintConfigurationSeal)
+
+# CHR22 regression: the first graph must store cleanly and the focused lint seal
+# must then be reusable from Gradle's configuration cache.
+(cd android && ./gradlew --no-daemon :chrootctlAndroidLintConfigurationSeal)
+

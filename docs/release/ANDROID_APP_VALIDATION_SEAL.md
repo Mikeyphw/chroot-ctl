@@ -54,3 +54,10 @@ The third Android seal reached `:app:compileDebugUnitTestKotlin` and exposed a t
 - Preserves the Android app seal graph from v3/v4.
 - Fixes `BridgeOutputValidator` so non-empty non-JSON stdout is classified as `INVALID_BRIDGE_RESPONSE`, while genuinely empty stdout with stderr remains `EMPTY_BRIDGE_RESPONSE`.
 - Fixes `AndroidAppSealPolicyTest` to avoid nullable `System.getProperty("user.dir")` Kotlin type drift.
+
+## CHR22 configuration-cache hotfix
+
+Overlay 22 of 22 fixes the Gradle 9.7.1 configuration-cache serialization failure found after CHR21. The Android verification task actions no longer reference top-level Kotlin build-script variables or `Project` helpers at execution time. `verifyStableToolchainBaseline`, `chrootctlAndroidLintConfigurationSeal`, and `chrootctlAndroidAppSeal` resolve their files during task configuration and capture only serializable task-local state.
+
+The hotfix keeps `org.gradle.configuration-cache=true`; it does not hide the defect by disabling configuration cache. The expected post-fix lint phase is still `:chrootctlAndroidLintConfigurationSeal`, with `:app:lintDebug` remaining the separately rerunnable full external lint engine.
+

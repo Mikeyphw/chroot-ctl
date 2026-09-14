@@ -93,4 +93,44 @@ class AndroidAppSealPolicyTest {
         assertTrue("ChrootRootService must define the Linux O_DIRECTORY compatibility bit", "O_DIRECTORY_COMPAT = 0x10000" in rootService)
     }
 
+    @Test
+    fun `CHR22 Android seal task actions are configuration-cache safe`() {
+        val root = repoRoot()
+        val androidBuild = File(root, "android/build.gradle.kts").readText()
+        val gradleProperties = File(root, "android/gradle.properties").readText()
+
+        assertTrue(
+            "Android project must keep Gradle configuration cache enabled",
+            "org.gradle.configuration-cache=true" in gradleProperties,
+        )
+        assertTrue(
+            "Lint seal must resolve execution files inside task-registration scope",
+            "val appBuildFile = layout.projectDirectory.file(\"app/build.gradle.kts\").asFile" in androidBuild &&
+                "val stampFile = layout.buildDirectory.file(\"verification/chrootctl-android-lint-configuration-seal.txt\").get().asFile" in androidBuild,
+        )
+        assertTrue(
+            "Android app seal must resolve required paths before task execution",
+            "val requiredFiles = listOf(" in androidBuild &&
+                "check(requiredFile.isFile)" in androidBuild &&
+                "file(relativePath)" !in androidBuild,
+        )
+        listOf(
+            "stableVersionsFile",
+            "stableAppBuildFile",
+            "stableWrapperFile",
+            "stableDevtoolFile",
+            "stableGradlePropertiesFile",
+            "androidAppSealStamp",
+        ).forEach { forbiddenTopLevelCapture ->
+            assertTrue(
+                "Configuration-cache-unsafe top-level task state must stay removed: $forbiddenTopLevelCapture",
+                forbiddenTopLevelCapture !in androidBuild,
+            )
+        }
+        assertTrue(
+            "Seal stamps must record configuration-cache safety",
+            androidBuild.split("configurationCacheSafe=true").size == 3,
+        )
+    }
+
 }
