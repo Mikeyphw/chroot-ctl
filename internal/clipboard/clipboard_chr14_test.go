@@ -14,7 +14,11 @@ import (
 
 func chr14Config(t *testing.T) config.ChrootConfig {
 	t.Helper()
-	root := t.TempDir()
+	root, err := os.MkdirTemp("", "c14-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	cfg := config.Default(config.RuntimeContext{Home: root})
 	cfg.ChrootRoot = filepath.Join(root, "chroots")
 	cfg.DistroName = "work"
@@ -42,11 +46,24 @@ func TestCHR14DefaultPathsSharePrivateTermuxControlRoot(t *testing.T) {
 
 func TestCHR14CustomControlParentMustAlreadyBePrivate(t *testing.T) {
 	cfg := chr14Config(t)
-	pub := filepath.Join(t.TempDir(), "public")
+	pubRoot, err := os.MkdirTemp("", "c14pub-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(pubRoot) })
+	pub := filepath.Join(pubRoot, "public")
 	if err := os.MkdirAll(pub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := normalizePaths(cfg, Paths{SocketPath: filepath.Join(pub, "clipboard.sock")})
+	if err := os.Chmod(pub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(pub); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm()&0o077 == 0 {
+		t.Skip("filesystem did not preserve public directory mode")
+	}
+	_, err = normalizePaths(cfg, Paths{SocketPath: filepath.Join(pub, "clipboard.sock")})
 	if err == nil || !strings.Contains(err.Error(), "not private") {
 		t.Fatalf("expected private parent rejection, got %v", err)
 	}

@@ -46,3 +46,8 @@ Overlay 17 of 20 adds response-shape metadata to bridge capabilities, wraps debu
 
 
 - CHR18/20 implements the Android operation/Room/recovery engine: authoritative Room reconciliation, bounded foreground recovery, metadata-gated retries, exact request-id lookup and stale/missing-backend tombstones.
+- CHR20: Navigation, adaptive UI & final release seal closes the roadmap with a real back stack, proven deep links, lazy destination warmups, adaptive/a11y runtime policy, and final validation gate wiring.
+
+### CHR20 gate hotfix v3
+
+Overlay 20 of 20 v3 keeps CHR20 as the validation gate and fixes the two gate regressions found after v2: Android/Termux external catalog parent validation now treats `/data`, `/data/data`, and `/data/user/<id>` only as trusted parent-chain ancestors while keeping configured catalog directories private, and the CHR15 module startup-target regression test now seeds a legacy corrupt registry row directly so modern Registry.Upsert identity validation does not short-circuit the module path-authority assertion.

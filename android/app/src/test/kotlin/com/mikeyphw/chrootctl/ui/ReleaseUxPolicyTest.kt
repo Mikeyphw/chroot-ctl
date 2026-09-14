@@ -25,7 +25,12 @@ class ReleaseUxPolicyTest {
         assertTrue(ReleaseUxPolicy.supportsFontScale(200))
         assertFalse(ReleaseUxPolicy.supportsFontScale(201))
         assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("minimum-48dp-touch-targets"))
+        assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("system-predictive-back-stack"))
+        assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("notification-deeplink-proved-before-navigation"))
         assertTrue(ReleaseUxPolicy.accessibilitySealChecks.contains("no-automatic-mutating-replay"))
+        assertTrue(ReleaseUxPolicy.finalGateCommands.contains("go run ./cmd/repoctl validate"))
+        assertTrue(ReleaseUxPolicy.androidInstrumentationSealChecks.contains("binder-death-read-only-replay-once"))
+        assertTrue(ReleaseUxPolicy.androidInstrumentationSealChecks.contains("predictive-back-stack-pop"))
     }
     @Test
     fun `phase 41 accessibility seal covers pane state restoration and traversal`() {
@@ -46,8 +51,9 @@ class ReleaseUxPolicyTest {
         assertFalse(sectionHeaderStacks(900f, 1f))
         assertTrue(sectionHeaderStacks(900f, 2f))
         assertTrue(compactNavigationShowsVisualLabels(1.49f))
-        assertFalse(compactNavigationShowsVisualLabels(1.5f))
-        assertFalse(compactNavigationShowsVisualLabels(2f))
+        assertTrue(compactNavigationShowsVisualLabels(1.5f))
+        assertTrue(compactNavigationShowsVisualLabels(2f))
+        assertEquals(PrimaryNavigationType.BottomBar, primaryNavigationType(720f, 360f, 1f))
     }
 
     @Test

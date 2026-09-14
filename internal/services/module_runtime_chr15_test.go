@@ -6,15 +6,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"chrootctl/internal/registry"
 )
 
 func TestCHR15ModuleBuildTargetsRequireResolvedInstalledPath(t *testing.T) {
 	ctx := context.Background()
 	c := testContainer(t)
 	arch := "arm64"
-	if err := c.Registry.Upsert(ctx, registry.ChrootInput{Name: "work", Distro: "ubuntu", Path: filepath.Join(c.BaseConfig.ChrootRoot, "other"), Arch: &arch, Phase: "finalize", Installed: true}); err != nil {
+	// Insert a legacy/corrupt registry row directly: normal Registry.Upsert now
+	// rejects identity/path basename drift before it can reach module preflight,
+	// but module builds must still fail closed if an older database contains it.
+	if _, err := c.Registry.DB().ExecContext(ctx, `INSERT INTO chroots (name,distro,path,arch,phase,installed,metadata_json) VALUES (?,?,?,?,?,?,?)`, "work", "ubuntu", filepath.Join(c.BaseConfig.ChrootRoot, "other"), arch, "finalize", 1, "{}"); err != nil {
 		t.Fatal(err)
 	}
 	_, err := c.ModuleBuilder().ResolveStartupTargets(ctx, ModuleBuildRequest{StartupTargets: []string{"work"}})

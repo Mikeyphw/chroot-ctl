@@ -645,6 +645,11 @@
         "level",
         "lines",
         "follow",
+        "tail",
+        "count",
+        "truncated",
+        "read_error",
+        "refreshed_at",
         "target_name",
         "entries",
         "related_links"

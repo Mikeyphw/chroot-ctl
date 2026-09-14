@@ -105,7 +105,10 @@ func FinalSeal(opts FinalSealOptions) error {
 		if e := ValidateAndroidOperationRoomRecovery(root); e != nil {
 			return e
 		}
-		return ValidateAndroidProductWorkspaceCorrectness(root)
+		if e := ValidateAndroidProductWorkspaceCorrectness(root); e != nil {
+			return e
+		}
+		return ValidateNavigationAdaptiveFinalReleaseSeal(root)
 	}); err != nil {
 		return err
 	}

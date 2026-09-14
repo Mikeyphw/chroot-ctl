@@ -45,8 +45,10 @@ fun AdaptiveNavigationShell(
     content: @Composable (Modifier) -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val showCompactVisualLabels = compactNavigationShowsVisualLabels(LocalDensity.current.fontScale)
-        if (primaryNavigationType(maxWidth.value) == PrimaryNavigationType.Rail) {
+        val density = LocalDensity.current
+        val showCompactVisualLabels = compactNavigationShowsVisualLabels(density.fontScale)
+        val navigationType = primaryNavigationType(maxWidth.value, maxHeight.value, density.fontScale)
+        if (navigationType == PrimaryNavigationType.Rail) {
             Row(Modifier.fillMaxSize().safeDrawingPadding()) {
                 val appName = stringResource(R.string.app_name)
                 NavigationRail(

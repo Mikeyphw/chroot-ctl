@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -47,16 +48,25 @@ fun ChrootCtlApp(
     openOperationNonce: Long = 0L,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var destinationName by rememberSaveable { mutableStateOf(AppDestination.Home.name) }
+    var destinationStack by rememberSaveable { mutableStateOf(listOf(AppDestination.Home.name)) }
     var lastHandledSnapshotOperationId by rememberSaveable { mutableStateOf("") }
     var requestedChrootWorkspaceTabName by rememberSaveable { mutableStateOf("") }
     var requestedChrootWorkspaceTabNonce by rememberSaveable { mutableStateOf(0L) }
-    val destination = AppDestination.entries.firstOrNull { it.name == destinationName } ?: AppDestination.Home
+    var pendingOperationDeepLinkId by rememberSaveable { mutableStateOf("") }
+    var lastHandledOperationDeepLinkNonce by rememberSaveable { mutableStateOf(0L) }
+    val destination = AppDestination.entries.firstOrNull { it.name == NavigationReleasePolicy.sanitizeDestinationStack(destinationStack).lastOrNull() } ?: AppDestination.Home
     val destinationStateHolder = rememberSaveableStateHolder()
     fun navigate(item: AppDestination) {
-        destinationName = item.name
+        destinationStack = NavigationReleasePolicy.pushDestinationStack(destinationStack, item)
     }
 
+    BackHandler(enabled = NavigationReleasePolicy.sanitizeDestinationStack(destinationStack).size > 1) {
+        destinationStack = NavigationReleasePolicy.popDestinationStack(destinationStack)
+    }
+
+    LaunchedEffect(destination) {
+        viewModel.ensureDestinationLoaded(destination)
+    }
 
     LaunchedEffect(uiState.operations) {
         val completed = uiState.operations.firstOrNull { operation ->
@@ -79,10 +89,25 @@ fun ChrootCtlApp(
     }
 
     LaunchedEffect(openOperationId, openOperationNonce) {
-        openOperationId?.takeIf(String::isNotBlank)?.let { operationId ->
-            viewModel.selectOperation(operationId)
-            viewModel.refreshSelectedOperation()
-            navigate(AppDestination.Activity)
+        val operationId = openOperationId.orEmpty()
+        if (operationId.isNotBlank() && openOperationNonce != lastHandledOperationDeepLinkNonce) {
+            pendingOperationDeepLinkId = operationId
+            viewModel.refresh()
+        }
+    }
+
+    LaunchedEffect(pendingOperationDeepLinkId, uiState.operations) {
+        when (NavigationReleasePolicy.deepLinkDecision(pendingOperationDeepLinkId, uiState.operations.map { it.operationId }.toSet())) {
+            DeepLinkDecision.Open -> {
+                val operationId = pendingOperationDeepLinkId
+                viewModel.selectOperation(operationId)
+                viewModel.refreshSelectedOperation()
+                navigate(AppDestination.Activity)
+                pendingOperationDeepLinkId = ""
+                lastHandledOperationDeepLinkNonce = openOperationNonce
+            }
+            DeepLinkDecision.Ignore -> pendingOperationDeepLinkId = ""
+            DeepLinkDecision.WaitForSnapshot -> Unit
         }
     }
 

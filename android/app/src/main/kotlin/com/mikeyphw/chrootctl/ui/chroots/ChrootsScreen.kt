@@ -73,6 +73,7 @@ import com.mikeyphw.chrootctl.ui.defaultSnapshotName
 import com.mikeyphw.chrootctl.ui.matchingRecoverySnapshot
 import com.mikeyphw.chrootctl.ui.operationNeedsSnapshotRecovery
 import com.mikeyphw.chrootctl.ui.selectedChrootListFilter
+import com.mikeyphw.chrootctl.ui.restoreWorkspaceNameOrNull
 import com.mikeyphw.chrootctl.ui.selectedChrootWorkspaceTab
 import com.mikeyphw.chrootctl.ui.selectedLogWorkspaceFilter
 import com.mikeyphw.chrootctl.ui.selectedServiceWorkspaceFilter
@@ -97,6 +98,7 @@ import com.mikeyphw.chrootctl.ui.components.LoadingState
 import com.mikeyphw.chrootctl.ui.components.MetricCardData
 import com.mikeyphw.chrootctl.ui.components.PathText
 import com.mikeyphw.chrootctl.ui.components.ResponsiveMetricCards
+import com.mikeyphw.chrootctl.ui.components.releaseSelectionSemantics
 import com.mikeyphw.chrootctl.ui.components.SectionHeader
 import com.mikeyphw.chrootctl.ui.components.StatusCard
 import com.mikeyphw.chrootctl.ui.components.StatusPill
@@ -158,11 +160,16 @@ fun ChrootsScreen(
     var requestedWorkspaceSelection by remember { mutableStateOf(selectedName) }
     val filter = selectedChrootListFilter(filterName)
     val workspaceTab = selectedChrootWorkspaceTab(workspaceTabName)
+    val availableWorkspaceNames = chroots.map { it.name }.toSet()
     LaunchedEffect(requestedWorkspaceTab, requestedWorkspaceTabNonce) {
         requestedWorkspaceTab?.let { workspaceTabName = it.name }
     }
     val visibleChroots = chroots.filter { chroot ->
         chrootMatchesQuery(chroot, query) && chrootMatchesFilter(chroot, filter)
+    }
+    LaunchedEffect(workspaceName, availableWorkspaceNames) {
+        val restored = restoreWorkspaceNameOrNull(workspaceName, availableWorkspaceNames)
+        if (restored != workspaceName) workspaceName = restored
     }
     val workspaceChroot = workspaceName?.let { wanted ->
         detail.chroot?.takeIf { it.name == wanted } ?: chroots.firstOrNull { it.name == wanted }
@@ -309,9 +316,9 @@ private fun ChrootFilterButton(filter: ChrootListFilter, selected: Boolean, onSe
         ChrootListFilter.Attention -> stringResource(R.string.chroot_filter_attention)
     }
     if (selected) {
-        Button(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        Button(onClick = { onSelect(filter) }, modifier = Modifier.releaseSelectionSemantics(selected)) { Text(label) }
     } else {
-        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.releaseSelectionSemantics(selected)) { Text(label) }
     }
 }
 
@@ -568,13 +575,13 @@ private fun ChrootWorkspaceTabButton(
         Button(
             onClick = { onSelect(tab) },
             enabled = supported,
-            modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+            modifier = Modifier.releaseSelectionSemantics(selected),
         ) { Text(label) }
     } else {
         OutlinedButton(
             onClick = { onSelect(tab) },
             enabled = supported,
-            modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+            modifier = Modifier.releaseSelectionSemantics(selected),
         ) { Text(label) }
     }
 }
@@ -1514,9 +1521,9 @@ private fun UserFilterButton(
         UserWorkspaceFilter.SystemUsers -> stringResource(R.string.user_filter_system)
     }
     if (selected) {
-        Button(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        Button(onClick = { onSelect(filter) }, modifier = Modifier.releaseSelectionSemantics(selected)) { Text(label) }
     } else {
-        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.releaseSelectionSemantics(selected)) { Text(label) }
     }
 }
 
@@ -1857,9 +1864,9 @@ private fun ServiceFilterButton(
         ServiceWorkspaceFilter.Failed -> stringResource(R.string.service_filter_failed)
     }
     if (selected) {
-        Button(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        Button(onClick = { onSelect(filter) }, modifier = Modifier.releaseSelectionSemantics(selected)) { Text(label) }
     } else {
-        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(label) }
+        OutlinedButton(onClick = { onSelect(filter) }, modifier = Modifier.releaseSelectionSemantics(selected)) { Text(label) }
     }
 }
 

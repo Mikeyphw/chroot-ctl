@@ -1,7 +1,7 @@
 {
   "arbitraryShell": false,
   "contractSchemaVersion": 1,
-  "operationCount": 86,
+  "operationCount": 87,
   "operations": [
     {
       "description": "Return native dashboard state",
@@ -168,6 +168,17 @@
       "payloadFields": [
         "limit",
         "name"
+      ]
+    },
+    {
+      "description": "Find a persistent operation by its original bridge request id without a bounded recent-list scan",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "operations.find_request",
+      "payloadFields": [
+        "requestId",
+        "request_id"
       ]
     },
     {

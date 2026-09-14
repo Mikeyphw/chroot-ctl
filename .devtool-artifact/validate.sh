@@ -3,5 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 go run ./cmd/cli-contract-gen --check
-go test ./internal/services ./internal/bridge ./internal/repoctl -run 'CHR19|AndroidProductWorkspace|StorageStatus|Logs' -count=1
-go test ./... -run '^$' -count=1
+go test ./internal/repoctl -run 'CHR20|ValidateNavigationAdaptiveFinalReleaseSeal' -count=1
+go run ./cmd/repoctl validate
+if [ -x android/gradlew ]; then
+  (cd android && ./gradlew --no-daemon --continue :chrootctlDebugValidation)
+fi

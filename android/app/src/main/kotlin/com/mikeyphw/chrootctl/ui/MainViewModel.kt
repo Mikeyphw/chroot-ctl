@@ -139,6 +139,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private var artifactCleanupPreviewRequestPayload: String? = null
     private val systemSupportPane = MutableStateFlow(SystemSupportPane())
     private val debugPane = MutableStateFlow(DebugPane())
+    private val destinationWarmups = mutableSetOf(AppDestination.Home)
     private var logsRefreshSerial: Long = 0L
 
     private val selectedChrootDetail = combine(
@@ -288,11 +289,22 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             }
         }
         refresh()
-        refreshInstallForm()
-        refreshCatalog("tool")
-        refreshTransferArtifacts()
-        refreshSystemSupport()
-        refreshDebugWorkbench()
+    }
+
+    fun ensureDestinationLoaded(destination: AppDestination) {
+        if (!destinationWarmups.add(destination)) return
+        when (destination) {
+            AppDestination.Home -> refresh()
+            AppDestination.Install -> refreshInstallForm()
+            AppDestination.Activity -> Unit
+            AppDestination.Chroots -> Unit
+            AppDestination.Tools -> {
+                refreshCatalog("tool")
+                refreshTransferArtifacts()
+                refreshSystemSupport()
+                refreshDebugWorkbench()
+            }
+        }
     }
 
     fun refresh() {

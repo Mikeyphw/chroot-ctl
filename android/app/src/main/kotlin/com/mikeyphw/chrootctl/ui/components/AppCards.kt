@@ -33,7 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -184,7 +188,9 @@ fun StatusPill(label: String, tone: StatusTone, modifier: Modifier = Modifier) {
             color = foreground,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = ChrootSpacing.sm, vertical = ChrootSpacing.xs),
+            modifier = Modifier
+                .padding(horizontal = ChrootSpacing.sm, vertical = ChrootSpacing.xs)
+                .semantics { liveRegion = LiveRegionMode.Polite },
         )
     }
 }
@@ -193,6 +199,13 @@ fun Modifier.releaseTouchTarget(): Modifier = this.sizeIn(
     minWidth = ChrootLayout.MinimumTouchTarget,
     minHeight = ChrootLayout.MinimumTouchTarget,
 )
+
+fun Modifier.releaseSelectionSemantics(selected: Boolean): Modifier = this
+    .releaseTouchTarget()
+    .semantics {
+        this.selected = selected
+        stateDescription = if (selected) "Selected" else "Not selected"
+    }
 
 @Composable
 fun ActionFlowRow(

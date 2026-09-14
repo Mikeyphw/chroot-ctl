@@ -66,6 +66,15 @@ fun workspaceSelectionNeedsRebind(
     !restoredWorkspaceName.isNullOrBlank() &&
     restoredWorkspaceName != selectedWorkspaceName
 
+fun restoreWorkspaceNameOrNull(restoredWorkspaceName: String?, availableNames: Set<String>): String? {
+    val restored = restoredWorkspaceName?.takeIf { it.isNotBlank() } ?: return null
+    if (availableNames.isEmpty()) return restored
+    return restored.takeIf { it in availableNames }
+}
+
+fun restoredWorkspaceUnavailable(restoredWorkspaceName: String?, availableNames: Set<String>): Boolean =
+    availableNames.isNotEmpty() && !restoredWorkspaceName.isNullOrBlank() && restoredWorkspaceName !in availableNames
+
 fun supportedChrootWorkspaceTabs(availableOperations: Set<String>?): List<ChrootWorkspaceTab> =
     chrootWorkspaceTabs().filter { workspaceTabSupported(it, availableOperations) }
 

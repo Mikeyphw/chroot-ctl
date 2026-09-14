@@ -132,7 +132,7 @@ func TestCapabilitiesResponseShape(t *testing.T) {
 	if c["protocolVersion"] != 1 || c["arbitraryShell"] != false {
 		t.Fatalf("%v", c)
 	}
-	if len(c["operations"].([]map[string]any)) != 86 {
+	if len(c["operations"].([]map[string]any)) != 87 {
 		t.Fatal("capability count")
 	}
 }

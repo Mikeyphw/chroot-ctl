@@ -309,6 +309,10 @@ func readStable(path, label string) ([]byte, error) {
 }
 
 func safeExternalDir(path, label string) error {
+	return safeExternalDirWithRole(path, label, false)
+}
+
+func safeExternalDirWithRole(path, label string, parent bool) error {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return err
@@ -319,16 +323,50 @@ func safeExternalDir(path, label string) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("%s must be a real directory: %s", label, path)
 	}
-	if info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0 {
-		return fmt.Errorf("%s must not be group/world writable unless sticky: %s", label, path)
+	// Android exposes app-private Termux trees below /data and /data/data. Those
+	// system-owned ancestors are not controlled by the Termux UID, but they are
+	// unavoidable trusted ancestors for app-private children. Only parent-chain
+	// validation may skip owner/mode checks for them; configured manifest/script
+	// directories themselves still have to be private and owned by root/current UID.
+	if parent && trustedAndroidSystemAncestor(path) {
+		return nil
 	}
+	trustedOwner := false
 	if st, ok := info.Sys().(*syscall.Stat_t); ok {
 		uid := uint32(os.Geteuid())
 		if st.Uid != 0 && st.Uid != uid {
 			return fmt.Errorf("%s has untrusted owner uid %d: %s", label, st.Uid, path)
 		}
+		trustedOwner = st.Uid == uid
+	}
+	if info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0 && !trustedAndroidAppPrivateDir(path, trustedOwner) {
+		return fmt.Errorf("%s must not be group/world writable unless sticky: %s", label, path)
 	}
 	return nil
+}
+
+func trustedAndroidSystemAncestor(path string) bool {
+	clean := filepath.ToSlash(filepath.Clean(path))
+	if clean == "/data" || clean == "/data/data" || clean == "/data/user" {
+		return true
+	}
+	parts := strings.Split(strings.Trim(clean, "/"), "/")
+	return len(parts) == 3 && parts[0] == "data" && parts[1] == "user" && parts[2] != ""
+}
+
+func trustedAndroidAppPrivateDir(path string, trustedOwner bool) bool {
+	if !trustedOwner {
+		return false
+	}
+	clean := filepath.ToSlash(filepath.Clean(path))
+	parts := strings.Split(strings.Trim(clean, "/"), "/")
+	if len(parts) >= 4 && parts[0] == "data" && parts[1] == "data" && parts[2] != "" && parts[3] == "files" {
+		return true
+	}
+	if len(parts) >= 5 && parts[0] == "data" && parts[1] == "user" && parts[2] != "" && parts[3] != "" && parts[4] == "files" {
+		return true
+	}
+	return false
 }
 
 func safeExternalParentChain(path, label string) error {
@@ -338,7 +376,7 @@ func safeExternalParentChain(path, label string) error {
 	}
 	cur := filepath.Dir(abs)
 	for {
-		if err := safeExternalDir(cur, label+" parent"); err != nil {
+		if err := safeExternalDirWithRole(cur, label+" parent", true); err != nil {
 			return err
 		}
 		next := filepath.Dir(cur)

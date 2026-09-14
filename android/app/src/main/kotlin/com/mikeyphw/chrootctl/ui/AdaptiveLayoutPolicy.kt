@@ -6,6 +6,7 @@ const val DESKTOP_CONTENT_BREAKPOINT_DP: Float = 1180f
 const val COMPACT_LANDSCAPE_HEIGHT_LIMIT_DP: Float = 480f
 const val LARGE_TYPE_LAYOUT_THRESHOLD: Float = 1.5f
 const val STACKED_HEADER_BREAKPOINT_DP: Float = 560f
+const val MAX_RAIL_FONT_SCALE: Float = 2.0f
 
 enum class PrimaryNavigationType {
     BottomBar,
@@ -24,14 +25,18 @@ fun sectionHeaderStacks(availableWidthDp: Float, fontScale: Float): Boolean =
     availableWidthDp < STACKED_HEADER_BREAKPOINT_DP || fontScale >= LARGE_TYPE_LAYOUT_THRESHOLD
 
 fun compactNavigationShowsVisualLabels(fontScale: Float): Boolean =
-    fontScale < LARGE_TYPE_LAYOUT_THRESHOLD
+    fontScale <= MAX_RAIL_FONT_SCALE
 
-fun primaryNavigationType(availableWidthDp: Float): PrimaryNavigationType {
-    return if (availableWidthDp >= COMPACT_NAVIGATION_BREAKPOINT_DP) {
-        PrimaryNavigationType.Rail
-    } else {
-        PrimaryNavigationType.BottomBar
-    }
+fun primaryNavigationType(
+    availableWidthDp: Float,
+    availableHeightDp: Float = Float.MAX_VALUE,
+    fontScale: Float = 1f,
+): PrimaryNavigationType {
+    val profile = releaseWindowProfile(availableWidthDp, availableHeightDp)
+    val railAllowed = supportsNavigationRail(profile) &&
+        availableHeightDp > COMPACT_LANDSCAPE_HEIGHT_LIMIT_DP &&
+        fontScale < MAX_RAIL_FONT_SCALE
+    return if (railAllowed) PrimaryNavigationType.Rail else PrimaryNavigationType.BottomBar
 }
 
 fun releaseWindowProfile(availableWidthDp: Float, availableHeightDp: Float): ReleaseWindowProfile {

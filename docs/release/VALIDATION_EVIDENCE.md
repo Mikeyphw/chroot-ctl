@@ -136,3 +136,15 @@ The sandbox used a temporary sqlite module stub for compile/focused checks only;
 - Source gate: `ValidateAndroidProductWorkspaceCorrectness`.
 - Focused local checks: `go test ./internal/services ./internal/bridge ./internal/repoctl -run 'CHR19|AndroidProductWorkspace|StorageStatus|Logs' -count=1`; `go test ./... -run '^$' -count=1`.
 - Android Gradle validation remains deferred to the final gate overlay per intermediate-overlay policy.
+
+## CHR20 — Navigation, adaptive UI & final release seal
+
+- Overlay: 20 of 20.
+- Gate status: final validation gate, not an intermediate `--no-validate` overlay.
+- Evidence: navigation/back-stack policy, proven operation notification deep links, lazy destination warmups, height/font-scale adaptive navigation, selected/live-region accessibility semantics, removed workspace restore cleanup, Android instrumentation checklist, and final validator wiring.
+- Source gate: `ValidateNavigationAdaptiveFinalReleaseSeal`.
+- Required validation: `go run ./cmd/cli-contract-gen --check`, `go run ./cmd/repoctl validate`, and Android `:chrootctlDebugValidation` when the wrapper is available.
+
+### CHR20 v3 gate reconciliation
+
+The v2 Termux gate applied and built successfully, then failed two legacy overlay checks: CHR13 external catalog parent validation rejected `/data/data` because Android system ancestors are not owned by the Termux UID, and CHR15's module runtime test attempted to create an invalid identity/path row through the modern registry writer. v3 narrows the Android ancestor exemption to parent-chain validation only and updates the CHR15 test fixture to seed the legacy corrupt row directly before asserting module startup-target path validation.

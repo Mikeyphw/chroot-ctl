@@ -13,6 +13,8 @@ object ReleaseUxPolicy {
     const val supportedFontScalePercent: Int = 200
     const val maximumContentWidthDp: Int = 1180
     const val liveLogPollingSeconds: Int = 3
+    const val maxNavigationBackStackDepth: Int = 32
+    const val maximumNavigationRailFontScale: Float = MAX_RAIL_FONT_SCALE
 
     val smokeProfiles: List<ReleaseSmokeProfile> = listOf(
         ReleaseSmokeProfile("phone-portrait", minWidthDp = 360, maxWidthDp = 479, minHeightDp = 720, navigationType = PrimaryNavigationType.BottomBar),
@@ -26,18 +28,39 @@ object ReleaseUxPolicy {
 
     val accessibilitySealChecks: List<String> = listOf(
         "minimum-48dp-touch-targets",
+        "system-predictive-back-stack",
+        "notification-deeplink-proved-before-navigation",
+        "runtime-window-policy-executable",
         "pane-title-per-destination",
         "pane-title-per-workspace-room",
         "heading-per-screen",
         "font-scale-200-percent",
         "talkback-labels-for-navigation",
+        "selected-semantics-for-custom-controls",
+        "live-region-status-announcements",
+        "lazy-collection-semantics",
         "keyboard-traversal-groups",
         "bounded-live-log-polling",
         "no-automatic-mutating-replay",
         "mutation-review-state-not-saveable",
+        "binder-lifecycle-instrumentation-plan",
+        "final-gate-validates-all-overlays",
     )
 
     val workspaceStateSealChecks: Set<WorkspacePaneState> = WorkspacePaneState.entries.toSet()
+
+    val finalGateCommands: List<String> = listOf(
+        "go run ./cmd/cli-contract-gen --check",
+        "go run ./cmd/repoctl validate",
+        "android:chrootctlDebugValidation",
+    )
+
+    val androidInstrumentationSealChecks: List<String> = listOf(
+        "binder-death-read-only-replay-once",
+        "binder-death-mutation-not-replayed",
+        "operation-notification-deeplink-proven",
+        "predictive-back-stack-pop",
+    )
 
     val realDeviceWorkspaceSmokeChecks: List<String> = listOf(
         "root-module-discovery",
@@ -63,6 +86,9 @@ object ReleaseUxPolicy {
             smokeProfiles.size == ChrootReleaseA11y.SmokeProfileCount &&
             releaseRoutes == AppDestination.entries &&
             workspaceStateSealChecks == WorkspacePaneState.entries.toSet() &&
-            realDeviceWorkspaceSmokeChecks.size == ChrootReleaseA11y.WorkspaceSmokeCheckCount
+            realDeviceWorkspaceSmokeChecks.size == ChrootReleaseA11y.WorkspaceSmokeCheckCount &&
+            maxNavigationBackStackDepth == NavigationReleasePolicy.maxBackStackDepth &&
+            finalGateCommands.contains("go run ./cmd/repoctl validate") &&
+            androidInstrumentationSealChecks.contains("binder-death-read-only-replay-once")
     }
 }
