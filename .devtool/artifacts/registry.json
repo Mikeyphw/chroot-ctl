@@ -2,6 +2,271 @@
   "schema_version": 2,
   "items": [
     {
+      "id": "972f3214b416",
+      "name": "app-debug.apk",
+      "path": ".devtool/build-artifacts/app-debug.apk",
+      "canonical_path": ".devtool/build-artifacts/app-debug.apk",
+      "source_path": "android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": ".devtool/build-artifacts/app-debug.apk",
+      "type": "apk",
+      "size": 13491004,
+      "sha256": "8a6a69ee68c990922a9c5d9c6c0b7d9ae0216c379ab3cd2255fdeecadedb745c",
+      "commit": "4bef1882184ec9fb2103a89e54915b2056e6be77",
+      "run_id": "ea98afacd0964c0bbad69210dcd38a3c",
+      "producer": "android",
+      "command": "build",
+      "target": "chrootctl_android",
+      "variant": "",
+      "state": "reused",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-14T04:37:42.342617Z",
+      "registered_at": "2026-09-14T04:37:42.342617Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "build",
+        "target": "chrootctl_android",
+        "variant": "",
+        "run_id": "ea98afacd0964c0bbad69210dcd38a3c",
+        "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 13491004,
+        "sha256": "8a6a69ee68c990922a9c5d9c6c0b7d9ae0216c379ab3cd2255fdeecadedb745c",
+        "valid": true,
+        "state": "reused",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "passed",
+            "detail": ""
+          }
+        ],
+        "metadata": {
+          "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 13491004,
+          "sha256": "8a6a69ee68c990922a9c5d9c6c0b7d9ae0216c379ab3cd2255fdeecadedb745c",
+          "valid": true,
+          "package_id": "com.mikeyphw.chrootctl.debug",
+          "version_code": "1",
+          "version_name": "0.1.0-phase29-debug",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.chrootctl.MainActivity",
+          "signed": true,
+          "signer_sha256": "05dc3841cf0d755362112481bce91e156535922feee72a23beb1c888d92aa4a3",
+          "abis": [
+            "arm64-v8a",
+            "armeabi-v7a",
+            "x86",
+            "x86_64"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "passed",
+              "detail": ""
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.chrootctl.debug",
+        "version_code": "1",
+        "version_name": "0.1.0-phase29-debug",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.chrootctl.MainActivity",
+        "signed": true,
+        "signer_sha256": "05dc3841cf0d755362112481bce91e156535922feee72a23beb1c888d92aa4a3",
+        "abis": [
+          "arm64-v8a",
+          "armeabi-v7a",
+          "x86",
+          "x86_64"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "ea98afacd0964c0bbad69210dcd38a3c:8a6a69ee68c990922a9c5d9c6c0b7d9ae0216c379ab3cd2255fdeecadedb745c:972f3214b416"
+    },
+    {
+      "id": "ec2ebe1073a0",
+      "name": "chrootctl",
+      "path": ".devtool/build/go/chrootctl",
+      "canonical_path": ".devtool/build/go/chrootctl",
+      "source_path": ".devtool/build/go/chrootctl",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 13827376,
+      "sha256": "0ddaf4938b4396331768b8c8f5ef6abaf26d9d069f370e9f379ff71e0cbc9ade",
+      "commit": "745ebfded99ea68f30b3376f605eb23cb9cb7a9c",
+      "run_id": "fdb795f7fa37400f8f3509f21636046f",
+      "producer": "go",
+      "command": "build",
+      "target": "chrootctl_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "chrootctl/cmd/chrootctl",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-14T01:20:56.243765Z",
+      "registered_at": "2026-09-14T01:20:56.243765Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "chrootctl_go",
+        "variant": "",
+        "run_id": "fdb795f7fa37400f8f3509f21636046f",
+        "path": ".devtool/build/go/chrootctl",
+        "source_path": ".devtool/build/go/chrootctl",
+        "type": "go-binary",
+        "size": 13827376,
+        "sha256": "0ddaf4938b4396331768b8c8f5ef6abaf26d9d069f370e9f379ff71e0cbc9ade",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "chrootctl/cmd/chrootctl",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.1"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "chrootctl/cmd/chrootctl",
+          "go_output_name": "chrootctl",
+          "go_build_info": {
+            "package_path": "chrootctl/cmd/chrootctl",
+            "go_version": "go1.27.1",
+            "module_path": "chrootctl",
+            "module_version": "v0.0.0-20260913223618-745ebfded99e+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "745ebfded99ea68f30b3376f605eb23cb9cb7a9c",
+              "vcs.time": "2026-09-13T22:36:18Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "745ebfded99ea68f30b3376f605eb23cb9cb7a9c",
+            "vcs_time": "2026-09-13T22:36:18Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "chrootctl/cmd/chrootctl",
+        "go_output_name": "chrootctl",
+        "go_build_info": {
+          "package_path": "chrootctl/cmd/chrootctl",
+          "go_version": "go1.27.1",
+          "module_path": "chrootctl",
+          "module_version": "v0.0.0-20260913223618-745ebfded99e+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "745ebfded99ea68f30b3376f605eb23cb9cb7a9c",
+            "vcs.time": "2026-09-13T22:36:18Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "745ebfded99ea68f30b3376f605eb23cb9cb7a9c",
+          "vcs_time": "2026-09-13T22:36:18Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "fdb795f7fa37400f8f3509f21636046f:0ddaf4938b4396331768b8c8f5ef6abaf26d9d069f370e9f379ff71e0cbc9ade:ec2ebe1073a0"
+    },
+    {
       "id": "8ae0a21a0360",
       "name": "chrootctl",
       "path": ".devtool/build/go/chrootctl",
@@ -1720,6 +1985,6 @@
       }
     }
   ],
-  "updated_at": "2026-09-13T21:09:39.891011Z",
+  "updated_at": "2026-09-14T04:37:42.343502Z",
   "verifications": []
 }
