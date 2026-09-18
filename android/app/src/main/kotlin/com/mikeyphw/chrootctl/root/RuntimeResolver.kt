@@ -71,12 +71,14 @@ internal data class BinaryResolutionReport(
             .put("exitCode", probe.exitCode ?: JSONObject.NULL).put("detail", probe.detail) }))
 
     companion object {
-        fun initial() = BinaryResolutionReport("NOT_PROBED", null, null, false, false, false, false, rootBridgeEnvironment().getValue("PATH"), "not-probed", Build.SUPPORTED_ABIS.firstOrNull() ?: Build.CPU_ABI, emptyList())
+        fun initial() = BinaryResolutionReport("NOT_PROBED", null, null, false, false, false, false, rootBridgeEnvironment().getValue("PATH"), "not-probed", "unknown", emptyList())
     }
 }
 
 private data class BinaryCandidate(val path: File, val source: String, val moduleInternal: Boolean)
 private data class CompatibilityProbe(val compatible: Boolean, val exitCode: Int?, val detail: String)
+
+private fun currentDeviceAbi(): String = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
 
 internal object RuntimeResolver {
     private val dataRoot = File(File.separator, "data")
@@ -191,7 +193,7 @@ internal object RuntimeResolver {
                 pendingUpdate = pending.isNotEmpty(),
                 path = rootBridgeEnvironment().getValue("PATH"),
                 rootProvider = detectRootProvider(),
-                abi = Build.SUPPORTED_ABIS.firstOrNull() ?: Build.CPU_ABI,
+                abi = currentDeviceAbi(),
                 candidates = probes,
             )
             cachedRuntime = selected?.let { runtime -> runtimeGeneration(runtime)?.let { generation -> CachedRuntime(runtime, generation) } }
