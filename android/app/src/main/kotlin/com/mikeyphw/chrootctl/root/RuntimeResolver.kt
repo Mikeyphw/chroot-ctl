@@ -1,5 +1,6 @@
 package com.mikeyphw.chrootctl.root
 
+import android.os.Build
 import android.system.Os
 import java.io.File
 import java.security.MessageDigest
@@ -11,6 +12,72 @@ internal data class BridgeRuntime(
     val executable: String,
 )
 
+internal data class BinaryCandidateProbe(
+    val path: String,
+    val source: String,
+    val exists: Boolean,
+    val executable: Boolean,
+    val trusted: Boolean,
+    val compatible: Boolean,
+    val exitCode: Int?,
+    val detail: String,
+)
+
+internal data class BinaryResolutionReport(
+    val code: String,
+    val selectedPath: String?,
+    val selectedSource: String?,
+    val moduleInstalled: Boolean,
+    val moduleDisabled: Boolean,
+    val moduleSealReady: Boolean,
+    val pendingUpdate: Boolean,
+    val path: String,
+    val rootProvider: String,
+    val abi: String,
+    val candidates: List<BinaryCandidateProbe>,
+) {
+    fun summary(): String {
+        if (code == "OK") return "Using compatible chrootctl bridge at $selectedPath ($selectedSource)"
+        val checked = candidates.joinToString("; ") { probe -> "${probe.path}: ${probe.detail}" }
+        val action = when (code) {
+            "MODULE_NOT_INSTALLED" -> "Install the chrootctl root module and reboot."
+            "MODULE_DISABLED" -> "Enable the chrootctl root module and reboot."
+            "MODULE_SEAL_INVALID" -> "Reinstall/update the chrootctl module; its package/runtime seal is invalid."
+            "BINARY_NOT_EXECUTABLE" -> "Reinstall/update the module so its launcher has executable permissions."
+            "BINARY_VERSION_INCOMPATIBLE" -> "Update the chrootctl module and Android app to compatible versions."
+            "BINARY_EXEC_FAILED" -> "The launcher was found but could not run; inspect its exit details and reinstall the module if needed."
+            "VERSION_PROBE_FAILED" -> "The launcher did not complete its compatibility probe; inspect the candidate details."
+            "UNSUPPORTED_ABI" -> "This module runtime requires arm64-v8a; install a build matching this device ABI."
+            "BINARY_UNTRUSTED" -> "Reinstall the module so the launcher is root-owned and not writable by group/others."
+            else -> "Reinstall/update the chrootctl module and reboot so a public launcher is exposed."
+        }
+        return "$code. $action Checked: $checked" + if (pendingUpdate) " A pending module update exists and requires reboot." else ""
+    }
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("code", code)
+        .put("selectedPath", selectedPath ?: JSONObject.NULL)
+        .put("selectedSource", selectedSource ?: JSONObject.NULL)
+        .put("moduleInstalled", moduleInstalled)
+        .put("moduleDisabled", moduleDisabled)
+        .put("moduleSealReady", moduleSealReady)
+        .put("pendingUpdate", pendingUpdate)
+        .put("path", path)
+        .put("rootProvider", rootProvider)
+        .put("abi", abi)
+        .put("candidates", org.json.JSONArray(candidates.map { probe -> JSONObject()
+            .put("path", probe.path).put("source", probe.source).put("exists", probe.exists)
+            .put("executable", probe.executable).put("trusted", probe.trusted).put("compatible", probe.compatible)
+            .put("exitCode", probe.exitCode ?: JSONObject.NULL).put("detail", probe.detail) }))
+
+    companion object {
+        fun initial() = BinaryResolutionReport("NOT_PROBED", null, null, false, false, false, false, rootBridgeEnvironment().getValue("PATH"), "not-probed", Build.SUPPORTED_ABIS.firstOrNull() ?: Build.CPU_ABI, emptyList())
+    }
+}
+
+private data class BinaryCandidate(val path: File, val source: String, val moduleInternal: Boolean)
+private data class CompatibilityProbe(val compatible: Boolean, val exitCode: Int?, val detail: String)
+
 internal object RuntimeResolver {
     private val dataRoot = File(File.separator, "data")
     private val adbRoot = File(dataRoot, "adb")
@@ -20,18 +87,21 @@ internal object RuntimeResolver {
         File(adbRoot, "modules_update/chrootctl-magisk"),
         File(ksuRoot, "modules_update/chrootctl-magisk"),
     )
+    // Public launchers come first. The app executes the resolved absolute path;
+    // PATH is discovery context only, never an execution contract.
+    private val publicExecutableCandidates = listOf(
+        File(adbRoot, "chrootctl/bin/chrootctl"),
+        File(File.separator, "system/bin/chrootctl"),
+        File(File.separator, "system/xbin/chrootctl"),
+    )
     private val rootModuleExecutableCandidates = listOf(
         File(activeModuleDir, "system/bin/chrootctl"),
-    )
-    private val externalExecutableCandidates = listOf(
-        File(File.separator, "system/bin/chrootctl"),
-        File(adbRoot, "chrootctl/bin/chrootctl"),
     )
 
     private data class CachedRuntime(val runtime: BridgeRuntime, val generation: String)
 
     @Volatile private var cachedRuntime: CachedRuntime? = null
-    @Volatile private var lastDiagnostic: String = "No compatible chrootctl Android bridge runtime has been resolved"
+    @Volatile private var lastReport: BinaryResolutionReport = BinaryResolutionReport.initial()
 
     fun resolve(): BridgeRuntime? {
         cachedRuntime?.let { cached ->
@@ -43,42 +113,95 @@ internal object RuntimeResolver {
                 if (runtimeGeneration(cached.runtime) == cached.generation) return@synchronized cached.runtime
                 cachedRuntime = null
             }
-            val activeModuleClaimsAuthority = activeModuleDir.exists() &&
-                !File(activeModuleDir, "disable").exists() &&
-                !File(activeModuleDir, "remove").exists()
-            val candidates = buildList {
-                rootModuleExecutableCandidates.filter(::isActiveModuleExecutable).forEach { executable ->
-                    add(BridgeRuntime(listOf(executable.path, "app"), "chrootctl-module", executable.path))
-                }
-                // Once an enabled module exists it owns runtime resolution. A
-                // corrupt or stale module must fail closed instead of silently
-                // executing an unrelated external development runtime. GO14
-                // deliberately removed every Python-module fallback.
-                if (!activeModuleClaimsAuthority) {
-                    externalExecutableCandidates.filter(::isTrustedRootExecutable).forEach { executable ->
-                        add(BridgeRuntime(listOf(executable.path, "app"), "chrootctl", executable.path))
+            val moduleInstalled = activeModuleDir.exists()
+            val moduleDisabled = File(activeModuleDir, "disable").exists() || File(activeModuleDir, "remove").exists()
+            val activeModuleClaimsAuthority = moduleInstalled && !moduleDisabled
+            val moduleSealReady = activeModuleClaimsAuthority && isModulePackageSealReady() && isNativeRuntimeReady()
+            val pending = pendingModuleDirs.filter(File::exists)
+
+            val ordered = mutableListOf<BinaryCandidate>().apply {
+                // A healthy active module authorizes its public launchers. This lets
+                // /data/adb/chrootctl/bin survive magic-mount differences while still
+                // failing closed if the installed module package/runtime seal is bad.
+                if (!activeModuleClaimsAuthority || moduleSealReady) {
+                    publicExecutableCandidates.forEach { path ->
+                        add(BinaryCandidate(path, "public-launcher", false))
                     }
                 }
-            }
-            val selected = selectCompatibleRuntime(candidates, ::isCompatible)
-            if (selected == null) {
-                val pending = pendingModuleDirs.filter(File::exists)
-                val pendingNote = if (pending.isEmpty()) "" else " Pending module update(s) were detected but are intentionally not executable until activation after reboot."
-                val base = when {
-                    activeModuleClaimsAuthority -> "An enabled chrootctl module is installed, but its sealed bundled-native runtime is unsafe, incompatible, or did not expose the protocol-1 Android bridge; external runtime fallback was refused"
-                    candidates.isEmpty() -> "No active root-managed Go chrootctl executable was found in the module, /system, or /data/adb/chrootctl"
-                    else -> "Found root-managed Go chrootctl executable candidates, but none exposed the protocol-1 Android bridge"
+                rootModuleExecutableCandidates.forEach { path ->
+                    add(BinaryCandidate(path, "module-launcher", true))
                 }
-                lastDiagnostic = base + pendingNote
-            } else {
-                lastDiagnostic = "Using compatible bridge runtime at ${selected.executable}"
             }
+
+            val probes = mutableListOf<BinaryCandidateProbe>()
+            val shellLookup = discoverFromRootPath()
+            if (shellLookup != null && ordered.none { it.path.path == shellLookup }) {
+                ordered.add(BinaryCandidate(File(shellLookup), "root-path", false))
+            }
+            var selected: BridgeRuntime? = null
+            for (candidate in ordered) {
+                val path = candidate.path
+                val exists = path.isFile
+                val executable = exists && path.canExecute()
+                val trusted = when {
+                    !exists -> false
+                    candidate.moduleInternal -> isActiveModuleExecutable(path)
+                    activeModuleClaimsAuthority && !moduleSealReady -> false
+                    else -> isTrustedRootExecutable(path)
+                }
+                if (!exists || !executable || !trusted) {
+                    probes += BinaryCandidateProbe(path.path, candidate.source, exists, executable, trusted, false, null,
+                        when {
+                            !exists -> "not found"
+                            !executable -> "not executable"
+                            !trusted -> "failed root ownership/path trust checks"
+                            else -> "rejected"
+                        })
+                    continue
+                }
+                val runtime = BridgeRuntime(listOf(path.path, "app"), candidate.source, path.path)
+                val probe = probeCompatibility(runtime)
+                probes += BinaryCandidateProbe(path.path, candidate.source, true, true, true, probe.compatible, probe.exitCode, probe.detail)
+                if (probe.compatible) {
+                    selected = runtime
+                    break
+                }
+            }
+
+            val code = when {
+                selected != null -> "OK"
+                !moduleInstalled && probes.none { it.exists } -> "MODULE_NOT_INSTALLED"
+                moduleDisabled -> "MODULE_DISABLED"
+                activeModuleClaimsAuthority && !moduleSealReady -> "MODULE_SEAL_INVALID"
+                Build.SUPPORTED_ABIS.none { it == "arm64-v8a" } -> "UNSUPPORTED_ABI"
+                probes.any { it.exists && !it.executable } -> "BINARY_NOT_EXECUTABLE"
+                probes.any { it.trusted && !it.compatible && it.detail.startsWith("execution failed") } -> "BINARY_EXEC_FAILED"
+                probes.any { it.trusted && !it.compatible && it.detail.contains("timed out") } -> "VERSION_PROBE_FAILED"
+                probes.any { it.trusted && !it.compatible } -> "BINARY_VERSION_INCOMPATIBLE"
+                probes.any { it.exists && !it.trusted } -> "BINARY_UNTRUSTED"
+                else -> "PUBLIC_LAUNCHER_MISSING"
+            }
+            lastReport = BinaryResolutionReport(
+                code = code,
+                selectedPath = selected?.executable,
+                selectedSource = selected?.backend,
+                moduleInstalled = moduleInstalled,
+                moduleDisabled = moduleDisabled,
+                moduleSealReady = moduleSealReady,
+                pendingUpdate = pending.isNotEmpty(),
+                path = rootBridgeEnvironment().getValue("PATH"),
+                rootProvider = detectRootProvider(),
+                abi = Build.SUPPORTED_ABIS.firstOrNull() ?: Build.CPU_ABI,
+                candidates = probes,
+            )
             cachedRuntime = selected?.let { runtime -> runtimeGeneration(runtime)?.let { generation -> CachedRuntime(runtime, generation) } }
             selected
         }
     }
 
-    fun diagnostic(): String = lastDiagnostic
+    fun diagnostic(): String = lastReport.summary()
+
+    fun diagnosticJson(): JSONObject = lastReport.toJson()
 
     fun invalidate(runtime: BridgeRuntime) {
         synchronized(this) {
@@ -86,16 +209,44 @@ internal object RuntimeResolver {
         }
     }
 
-    private fun isCompatible(runtime: BridgeRuntime): Boolean {
+    private fun discoverFromRootPath(): String? = runCatching {
+        val process = ProcessBuilder(
+            "/system/bin/sh", "-c",
+            "PATH=/data/adb/chrootctl/bin:/system/bin:/system/xbin:/vendor/bin:/product/bin; command -v chrootctl",
+        ).redirectErrorStream(true).start()
+        if (!process.waitFor(PROBE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            return@runCatching null
+        }
+        if (process.exitValue() != 0) return@runCatching null
+        process.inputStream.bufferedReader().use { it.readLine() }
+            ?.trim()?.takeIf { it.startsWith("/") && !it.contains('\n') }
+    }.getOrNull()
+
+    private fun detectRootProvider(): String = when {
+        File(adbRoot, "ksu").exists() -> "KernelSU"
+        File(adbRoot, "ap").exists() -> "APatch"
+        File(adbRoot, "magisk").exists() || File(adbRoot, "magisk.db").exists() -> "Magisk"
+        else -> "unknown"
+    }
+
+    private fun probeCompatibility(runtime: BridgeRuntime): CompatibilityProbe {
         val result = runCatching {
             BridgeProcess(runtime).invoke(listOf("capabilities"), timeoutSeconds = PROBE_TIMEOUT_SECONDS)
-        }.getOrNull() ?: return false
-        val accepted = validateBridgeProcessResult(runtime, result) as? BridgeOutputValidation.Accepted ?: return false
-        val envelope = runCatching { JSONObject(accepted.json) }.getOrNull() ?: return false
-        val data = envelope.optJSONObject("data") ?: return false
-        return result.exitCode == 0 &&
-            envelope.optBoolean("ok") &&
-            data.optInt("protocolVersion", -1) == BRIDGE_PROTOCOL_VERSION
+        }.getOrElse { error ->
+            return CompatibilityProbe(false, null, "execution failed: ${error.message ?: error.javaClass.simpleName}")
+        }
+        if (result.timedOut) return CompatibilityProbe(false, result.exitCode, "capabilities probe timed out")
+        val validation = validateBridgeProcessResult(runtime, result)
+        val accepted = validation as? BridgeOutputValidation.Accepted
+            ?: return CompatibilityProbe(false, result.exitCode, (validation as BridgeOutputValidation.Rejected).message)
+        val envelope = runCatching { JSONObject(accepted.json) }.getOrNull()
+            ?: return CompatibilityProbe(false, result.exitCode, "capabilities returned invalid JSON")
+        val data = envelope.optJSONObject("data")
+            ?: return CompatibilityProbe(false, result.exitCode, "capabilities response had no data object")
+        val protocol = data.optInt("protocolVersion", -1)
+        val compatible = result.exitCode == 0 && envelope.optBoolean("ok") && protocol == BRIDGE_PROTOCOL_VERSION
+        return CompatibilityProbe(compatible, result.exitCode, if (compatible) "protocol-$protocol bridge ready" else "protocol $protocol is incompatible; expected $BRIDGE_PROTOCOL_VERSION")
     }
 
 
@@ -294,10 +445,14 @@ internal object RuntimeResolver {
             if (File(activeModuleDir, "disable").exists() || File(activeModuleDir, "remove").exists()) return null
             if (!activeModuleDir.exists()) return null
         }
-        val files = if (active) {
+        val moduleClaimsAuthority = activeModuleDir.exists()
+        val files = if (active || moduleClaimsAuthority) {
             val runtimeRoot = File(activeModuleDir, NATIVE_RUNTIME_ROOT)
             buildList {
+                add(executable)
                 add(activeModuleDir)
+                add(File(activeModuleDir, "disable"))
+                add(File(activeModuleDir, "remove"))
                 add(File(activeModuleDir, "module.prop"))
                 add(File(activeModuleDir, "config/chrootctl/compatibility-manifest.json"))
                 add(File(activeModuleDir, MODULE_PACKAGE_MANIFEST_PATH))

@@ -11,6 +11,7 @@ data class RootBridgeInfo(
     val backend: String,
     val executable: String?,
     val message: String,
+    val binaryResolutionJson: String? = null,
 ) {
     fun toJson(): String = JSONObject()
         .put("ok", ok)
@@ -20,6 +21,7 @@ data class RootBridgeInfo(
         .put("backend", backend)
         .put("executable", executable ?: JSONObject.NULL)
         .put("message", message)
+        .put("binaryResolution", binaryResolutionJson?.let { JSONObject(it) } ?: JSONObject.NULL)
         .toString()
 
     companion object {
@@ -33,6 +35,7 @@ data class RootBridgeInfo(
                 backend = json.optString("backend", "unavailable"),
                 executable = json.optString("executable").takeIf(String::isNotBlank),
                 message = json.optString("message", "Root bridge did not provide a status message"),
+                binaryResolutionJson = json.optJSONObject("binaryResolution")?.toString(),
             )
         }
     }

@@ -355,6 +355,7 @@ private fun SystemHealthCard(
     operations: List<OperationSummary>,
     modifier: Modifier = Modifier,
 ) {
+    var binaryDetailsExpanded by rememberSaveable { mutableStateOf(false) }
     val readyRows = snapshot.readinessRows.count { it.state == ReadinessState.Ready }
     val runningChroots = chroots.count { isRunningChrootStatus(it.status) }
     val activeOperations = operations.count { isRunningOperationState(it.state) }
@@ -386,6 +387,15 @@ private fun SystemHealthCard(
             detail = stringResource(R.string.home_health_root_service_detail, snapshot.bridgeInfo.backend, snapshot.bridgeInfo.pid),
             state = if (snapshot.bridgeInfo.ok) ReadinessState.Ready else ReadinessState.Blocked,
         )
+        snapshot.bridgeInfo.binaryResolutionJson?.let { raw ->
+            TextButton(onClick = { binaryDetailsExpanded = !binaryDetailsExpanded }) {
+                Text(if (binaryDetailsExpanded) "Hide binary technical details" else "Binary technical details")
+            }
+            if (binaryDetailsExpanded) {
+                val detail = runCatching { org.json.JSONObject(raw).toString(2) }.getOrDefault(raw)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         HealthRow(
             label = stringResource(R.string.home_health_runtime),
             detail = stringResource(

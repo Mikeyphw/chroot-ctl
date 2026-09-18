@@ -49,6 +49,7 @@ class ChrootRootService : RootService() {
                 .put("pid", Process.myPid())
                 .put("backend", runtime?.backend ?: "unavailable")
                 .put("executable", runtime?.executable ?: JSONObject.NULL)
+                .put("binaryResolution", RuntimeResolver.diagnosticJson())
                 .put("arbitraryShell", false)
                 .put(
                     "message",
