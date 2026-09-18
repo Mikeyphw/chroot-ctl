@@ -2,6 +2,153 @@
   "schema_version": 2,
   "items": [
     {
+      "id": "c0ee894eb711",
+      "name": "app-debug-3.apk",
+      "path": ".devtool/build-artifacts/app-debug-3.apk",
+      "canonical_path": ".devtool/build-artifacts/app-debug-3.apk",
+      "source_path": "android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": ".devtool/build-artifacts/app-debug-3.apk",
+      "type": "apk",
+      "size": 13095839,
+      "sha256": "11caea5b20c5bbca0fb2e5732abc5763c90c8b5791b778a5206c982b7a909613",
+      "commit": "817c890f3fc880d1fea0d9ef2356e5e368779dfb",
+      "run_id": "6235144921894b99a78ce4a0d56d0310",
+      "producer": "android",
+      "command": "build",
+      "target": "chrootctl_android",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-18T16:06:30.995757Z",
+      "registered_at": "2026-09-18T16:06:30.995757Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "build",
+        "target": "chrootctl_android",
+        "variant": "",
+        "run_id": "6235144921894b99a78ce4a0d56d0310",
+        "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 13095839,
+        "sha256": "11caea5b20c5bbca0fb2e5732abc5763c90c8b5791b778a5206c982b7a909613",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "passed",
+            "detail": ""
+          }
+        ],
+        "metadata": {
+          "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 13095839,
+          "sha256": "11caea5b20c5bbca0fb2e5732abc5763c90c8b5791b778a5206c982b7a909613",
+          "valid": true,
+          "package_id": "com.mikeyphw.chrootctl.debug",
+          "version_code": "1",
+          "version_name": "0.1.0-phase29-debug",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.chrootctl.MainActivity",
+          "signed": true,
+          "signer_sha256": "05dc3841cf0d755362112481bce91e156535922feee72a23beb1c888d92aa4a3",
+          "abis": [
+            "arm64-v8a",
+            "armeabi-v7a",
+            "x86",
+            "x86_64"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "passed",
+              "detail": ""
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.chrootctl.debug",
+        "version_code": "1",
+        "version_name": "0.1.0-phase29-debug",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.chrootctl.MainActivity",
+        "signed": true,
+        "signer_sha256": "05dc3841cf0d755362112481bce91e156535922feee72a23beb1c888d92aa4a3",
+        "abis": [
+          "arm64-v8a",
+          "armeabi-v7a",
+          "x86",
+          "x86_64"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "6235144921894b99a78ce4a0d56d0310:11caea5b20c5bbca0fb2e5732abc5763c90c8b5791b778a5206c982b7a909613:c0ee894eb711"
+    },
+    {
       "id": "6f752143b576",
       "name": "app-debug-2.apk",
       "path": ".devtool/build-artifacts/app-debug-2.apk",
@@ -2132,6 +2279,6 @@
       }
     }
   ],
-  "updated_at": "2026-09-14T19:23:59.904716Z",
+  "updated_at": "2026-09-18T16:06:30.996777Z",
   "verifications": []
 }

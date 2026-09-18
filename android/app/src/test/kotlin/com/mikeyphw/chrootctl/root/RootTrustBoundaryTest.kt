@@ -23,4 +23,14 @@ class RootTrustBoundaryTest {
         assertFalse(trustedRootExecutableMetadata(uid = 0, mode = 0x81FD))
         assertFalse(trustedRootExecutableMetadata(uid = 0, mode = 0x81EF))
     }
+
+    @Test
+    fun `module manager state markers are excluded from sealed payload inventory`() {
+        listOf("update", "disable", "remove", "skip_mount").forEach { marker ->
+            assertTrue(RuntimeResolver.isModuleManagerMetadata(marker))
+        }
+        listOf("system/bin/update", "metadata", "manager/update", "unexpected-root-file").forEach { payload ->
+            assertFalse(RuntimeResolver.isModuleManagerMetadata(payload))
+        }
+    }
 }

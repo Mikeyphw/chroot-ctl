@@ -182,7 +182,7 @@ internal object RuntimeResolver {
         val actual = activeModuleDir.walkTopDown()
             .filter { it.isFile }
             .map { it.relativeTo(activeModuleDir).invariantSeparatorsPath }
-            .filter { it != MODULE_PACKAGE_MANIFEST_PATH }
+            .filter { it != MODULE_PACKAGE_MANIFEST_PATH && !isModuleManagerMetadata(it) }
             .toSet()
         return actual == seen &&
             "system/bin/chrootctl" in seen &&
@@ -242,6 +242,12 @@ internal object RuntimeResolver {
         val segments = path.replace('\\', '/').split('/')
         return segments.none { it.isBlank() || it == "." || it == ".." }
     }
+
+    // Root module managers own these top-level state markers. They are not
+    // package payload and may be created after the package seal is generated.
+    // Keep the allow-list deliberately narrow: nested files and arbitrary
+    // manager additions must still fail the exact sealed-inventory check.
+    internal fun isModuleManagerMetadata(path: String): Boolean = path in MODULE_MANAGER_METADATA
 
     private fun sha256(path: File): String = runCatching {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -329,6 +335,7 @@ internal object RuntimeResolver {
     private const val MIN_SUPPORTED_MODULE_VERSION_CODE = 15
     private const val EXPECTED_BACKEND_IMPLEMENTATION = "go"
     private const val EXPECTED_BACKEND_VERSION = "0.11.0"
+    private val MODULE_MANAGER_METADATA = setOf("update", "disable", "remove", "skip_mount")
 }
 
 
