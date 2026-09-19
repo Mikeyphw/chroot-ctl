@@ -11,7 +11,7 @@ import (
 // ValidateTransferArtifactPlane is the executable CHR10 source seal. It keeps
 // transfer/import/archive paths on the managed artifact plane and prevents
 // regressions that would reintroduce unchecked imports, silently orphaned
-// artifacts, or Android staged archives without checksum evidence.
+// artifacts, or Android staged archives without integrity evidence.
 func ValidateTransferArtifactPlane(root string) error {
 	read := func(rel string) (string, error) {
 		b, err := os.ReadFile(filepath.Join(root, rel))
@@ -37,6 +37,9 @@ func ValidateTransferArtifactPlane(root string) error {
 		"maxManagedArtifactBytes",
 		"maxArchiveExpandedBytes",
 		"func requireArchiveChecksum(",
+		"os.IsNotExist(err)",
+		`return "computed_on_import"`,
+		"archive checksum verification failed",
 		"func validateImportManifest(",
 		"func (s *TransferService) ReconcileArtifacts(",
 		"RegisterArtifact(commitCtx, archive, \"chroot-export\"",
@@ -101,7 +104,8 @@ func ValidateTransferArtifactPlane(root string) error {
 	}
 	if err := mustContain("migration/contracts/v1/cli.json",
 		"\"command\": \"artifacts cleanup\"",
-		"required .sha256 sidecar",
+		"An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
+		"--allow-legacy-metadata",
 		"managed transfer artifact root",
 	); err != nil {
 		return err
