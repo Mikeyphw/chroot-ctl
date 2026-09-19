@@ -17,8 +17,11 @@ func (s *PreviewService) Install(ctx context.Context, request model.InstallReque
 func (s *PreviewService) Export(ctx context.Context, name, archive string) (map[string]any, error) {
 	return s.C.Chroots().ExportPreview(ctx, name, archive)
 }
-func (s *PreviewService) Import(ctx context.Context, archive, name, conflict, password string) (map[string]any, error) {
-	inspection, err := s.C.Transfer().Inspect(ctx, archive, password)
+func (s *PreviewService) Import(ctx context.Context, archive, name, conflict, password string, allowLegacyMetadata bool) (map[string]any, error) {
+	// Preview always permits reading a legacy manifest so the caller can receive
+	// an actionable blocking reason and explicitly opt in. The actual import
+	// still fails closed unless allowLegacyMetadata is carried into execution.
+	inspection, err := s.C.Transfer().InspectWithControl(ctx, archive, password, TransferControl{AllowLegacyMetadata: true})
 	if err != nil {
 		return nil, err
 	}
@@ -29,13 +32,22 @@ func (s *PreviewService) Import(ctx context.Context, archive, name, conflict, pa
 		conflict = "rename"
 	}
 	blocking := []map[string]string{}
+	warnings := []string{}
 	if conflict != "rename" && conflict != "overwrite" {
 		blocking = append(blocking, map[string]string{"code": "invalid_conflict", "message": "Conflict strategy must be rename or overwrite."})
+	}
+	if inspection.Metadata["metadata_fidelity"] == "legacy_unverified" {
+		message := "This archive predates the CHR09 rootfs metadata contract. Ownership, special bits, ACL/xattr/capability, device-node, sparse-file, and related metadata fidelity cannot be proven from the archive manifest."
+		if allowLegacyMetadata {
+			warnings = append(warnings, message+" Import is allowed only because legacy compatibility was explicitly enabled; the imported chroot will be permanently marked metadata_fidelity=legacy_unverified.")
+		} else {
+			blocking = append(blocking, map[string]string{"code": "legacy_metadata_unverified", "message": message + " Explicitly enable legacy metadata compatibility to continue."})
+		}
 	}
 	return map[string]any{
 		"ok": len(blocking) == 0, "kind": "import", "archive": archive,
 		"inspection": inspection, "conflict": conflict, "blocking": blocking,
-		"warnings": []string{},
+		"warnings": warnings, "allowLegacyMetadata": allowLegacyMetadata,
 	}, nil
 }
 func (s *PreviewService) Delete(ctx context.Context, name string) (map[string]any, error) {

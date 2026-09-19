@@ -380,6 +380,8 @@
       "mode": "query",
       "name": "transfer.inspect_import",
       "payloadFields": [
+        "allowLegacyMetadata",
+        "allow_legacy_metadata",
         "archive",
         "password",
         "path"
@@ -436,6 +438,8 @@
       "mode": "preview",
       "name": "transfer.import_preview",
       "payloadFields": [
+        "allowLegacyMetadata",
+        "allow_legacy_metadata",
         "archive",
         "conflict",
         "name",
@@ -1002,6 +1006,8 @@
       "mode": "operation",
       "name": "transfer.import",
       "payloadFields": [
+        "allowLegacyMetadata",
+        "allow_legacy_metadata",
         "archive",
         "conflict",
         "name",

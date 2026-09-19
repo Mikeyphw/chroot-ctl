@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -183,6 +185,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		ctx = lockedCtx
 	}
 	if err = app.Dispatch(ctx); err != nil {
+		app.finishProgressLine()
 		var partial *PartialResultError
 		if errors.As(err, &partial) {
 			code := partial.ExitCode
@@ -193,6 +196,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		return signalExitCode(ctx, writeFailure(inv, stdout, stderr, err, nil, 1))
 	}
+	app.finishProgressLine()
 	return signalExitCode(ctx, app.ExitCode)
 }
 
@@ -248,12 +252,14 @@ func bestCommand(args []string) string {
 }
 
 type App struct {
-	Services *services.Container
-	Inv      Invocation
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
-	ExitCode int
+	Services            *services.Container
+	Inv                 Invocation
+	Stdin               io.Reader
+	Stdout              io.Writer
+	Stderr              io.Writer
+	ExitCode            int
+	progressLineOpen    bool
+	progressTTYOverride *bool
 }
 
 func (a *App) emit(title string, value any) error {
@@ -283,9 +289,32 @@ func (a *App) progress(value any) error {
 			message = strings.TrimSpace(fmt.Sprint(detail["phase"]))
 		}
 		if message != "" && message != "<nil>" {
+			if isLiveProgress(detail) {
+				message = formatLiveProgressMessage(message, detail)
+			}
 			if percent, ok := cliProgressPercent(detail["percent"]); ok {
-				_, err := fmt.Fprintf(a.Stderr, "[%3d%%] %s\n", percent, message)
+				line := fmt.Sprintf("[%3d%%] %s", percent, message)
+				if isLiveProgress(detail) && a.progressIsTerminal() {
+					_, err := fmt.Fprintf(a.Stderr, "\r%s\x1b[K", line)
+					if err == nil {
+						a.progressLineOpen = true
+					}
+					return err
+				}
+				if a.progressLineOpen {
+					if _, err := fmt.Fprintln(a.Stderr); err != nil {
+						return err
+					}
+					a.progressLineOpen = false
+				}
+				_, err := fmt.Fprintln(a.Stderr, line)
 				return err
+			}
+			if a.progressLineOpen {
+				if _, err := fmt.Fprintln(a.Stderr); err != nil {
+					return err
+				}
+				a.progressLineOpen = false
 			}
 			_, err := fmt.Fprintf(a.Stderr, "%s\n", message)
 			return err
@@ -295,8 +324,124 @@ func (a *App) progress(value any) error {
 	if err != nil {
 		return err
 	}
+	if a.progressLineOpen {
+		if _, err = fmt.Fprintln(a.Stderr); err != nil {
+			return err
+		}
+		a.progressLineOpen = false
+	}
 	_, err = fmt.Fprintf(a.Stderr, "%s\n", b)
 	return err
+}
+
+func (a *App) finishProgressLine() {
+	if !a.progressLineOpen {
+		return
+	}
+	_, _ = fmt.Fprintln(a.Stderr)
+	a.progressLineOpen = false
+}
+
+func isLiveProgress(detail map[string]any) bool {
+	v, ok := detail["live"].(bool)
+	return ok && v
+}
+
+func (a *App) progressIsTerminal() bool {
+	if a.progressTTYOverride != nil {
+		return *a.progressTTYOverride
+	}
+	return writerIsTerminal(a.Stderr)
+}
+
+func writerIsTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	st, err := f.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+func formatLiveProgressMessage(base string, detail map[string]any) string {
+	parts := []string{base}
+	done, doneOK := int64ProgressValue(detail["bytes_done"])
+	total, totalOK := int64ProgressValue(detail["bytes_total"])
+	if doneOK && totalOK && total > 0 {
+		parts = append(parts, fmt.Sprintf("%s / %s", formatBinaryBytes(done), formatBinaryBytes(total)))
+	}
+	if entries, ok := int64ProgressValue(detail["entries"]); ok && entries > 0 {
+		parts = append(parts, fmt.Sprintf("%s entries", formatCount(entries)))
+	}
+	path := strings.TrimSpace(fmt.Sprint(detail["current_path"]))
+	if path != "" && path != "<nil>" {
+		parts = append(parts, truncateProgressPath(path, 56))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func int64ProgressValue(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	default:
+		return 0, false
+	}
+}
+
+func formatBinaryBytes(n int64) string {
+	if n < 0 {
+		n = 0
+	}
+	const unit = int64(1024)
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	units := []string{"KiB", "MiB", "GiB", "TiB"}
+	value := float64(n)
+	idx := -1
+	for value >= 1024 && idx+1 < len(units) {
+		value /= 1024
+		idx++
+	}
+	if idx < 0 {
+		return fmt.Sprintf("%d B", n)
+	}
+	return fmt.Sprintf("%.1f %s", value, units[idx])
+}
+
+func formatCount(n int64) string {
+	text := fmt.Sprintf("%d", n)
+	if len(text) <= 3 {
+		return text
+	}
+	first := len(text) % 3
+	if first == 0 {
+		first = 3
+	}
+	var b strings.Builder
+	b.WriteString(text[:first])
+	for i := first; i < len(text); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(text[i : i+3])
+	}
+	return b.String()
+}
+
+func truncateProgressPath(path string, max int) string {
+	path = filepath.ToSlash(path)
+	if max < 8 || len(path) <= max {
+		return path
+	}
+	return "…" + path[len(path)-(max-1):]
 }
 
 func cliProgressPercent(value any) (int, bool) {

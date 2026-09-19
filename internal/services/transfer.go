@@ -349,8 +349,9 @@ func (s *TransferService) DeleteTemp(ctx context.Context, id, path string, all b
 type TransferProgress func(any) error
 
 type TransferControl struct {
-	Progress  TransferProgress
-	Cancelled func() bool
+	Progress            TransferProgress
+	Cancelled           func() bool
+	AllowLegacyMetadata bool
 }
 
 func (c TransferControl) check(ctx context.Context) error {
@@ -364,13 +365,21 @@ func (c TransferControl) check(ctx context.Context) error {
 }
 
 func (c TransferControl) emit(ctx context.Context, phase string, percent int, message string) error {
+	return c.emitDetail(ctx, phase, percent, message, nil)
+}
+
+func (c TransferControl) emitDetail(ctx context.Context, phase string, percent int, message string, detail map[string]any) error {
 	if err := c.check(ctx); err != nil {
 		return err
 	}
 	if c.Progress == nil {
 		return nil
 	}
-	return c.Progress(map[string]any{"phase": phase, "percent": percent, "message": message})
+	event := map[string]any{"phase": phase, "percent": percent, "message": message}
+	for key, value := range detail {
+		event[key] = value
+	}
+	return c.Progress(event)
 }
 
 func transferRunner(base *sys.Runner, cancelled func() bool) sys.Runner {
@@ -670,8 +679,14 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 	if e != nil {
 		return model.ChrootArchiveInspection{}, e
 	}
-	if e = validateImportManifest(manifest); e != nil {
+	metadataFidelity, e := validateImportManifest(manifest, control.AllowLegacyMetadata)
+	if e != nil {
 		return model.ChrootArchiveInspection{}, e
+	}
+	if metadataFidelity == "legacy_unverified" {
+		if e = control.emit(ctx, "legacy-metadata", 24, "Legacy archive metadata contract missing; continuing with explicit compatibility opt-in"); e != nil {
+			return model.ChrootArchiveInspection{}, e
+		}
 	}
 	pathName := fmt.Sprint(manifest["path_name"])
 	sourceName := fmt.Sprint(manifest["name"])
@@ -680,7 +695,15 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 	}
 	target, _ := s.C.Registry.Get(ctx, sourceName)
 	created := st.ModTime().UTC().Format(time.RFC3339)
-	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: stringMetadataAny(manifest["metadata"]), SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, IntegritySource: checksumIntegritySource(verified), Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
+	metadata := stringMetadataAny(manifest["metadata"])
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	metadata["metadata_fidelity"] = metadataFidelity
+	if metadataFidelity == "legacy_unverified" {
+		metadata["legacy_archive_compatibility"] = "explicit_opt_in"
+	}
+	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: metadata, SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, IntegritySource: checksumIntegritySource(verified), Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
 }
 func validateArchiveFileSize(path string, size int64) error {
 	if size <= 0 {
@@ -749,59 +772,72 @@ func checksumIntegritySource(verified *bool) string {
 
 func manifestText(m map[string]any, key string) string { return strings.TrimSpace(fmt.Sprint(m[key])) }
 
-func validateImportManifest(manifest map[string]any) error {
-	if contract := manifestText(manifest, "rootfs_metadata_contract"); contract != "chrootctl-rootfs-v1" {
-		return fmt.Errorf("archive is not proven metadata-faithful (rootfs_metadata_contract=%q); re-export it with CHR09 or newer", contract)
+func validateImportManifest(manifest map[string]any, allowLegacyMetadata bool) (string, error) {
+	contractValue, contractPresent := manifest["rootfs_metadata_contract"]
+	contract := ""
+	if contractPresent && contractValue != nil {
+		contract = strings.TrimSpace(fmt.Sprint(contractValue))
+	}
+	metadataFidelity := "proven"
+	if contract == "" || contract == "<nil>" {
+		if !allowLegacyMetadata {
+			return "", fmt.Errorf("archive is not proven metadata-faithful (rootfs_metadata_contract=%q); re-export it with CHR09 or newer, or retry with --allow-legacy-metadata to explicitly accept unverified legacy metadata fidelity", contract)
+		}
+		metadataFidelity = "legacy_unverified"
+	} else if contract != "chrootctl-rootfs-v1" {
+		return "", fmt.Errorf("unsupported rootfs metadata contract %q; refusing to bypass an unknown metadata contract", contract)
 	}
 	if _, err := validation.ChrootNameField(manifestText(manifest, "name"), "manifest.name"); err != nil {
-		return err
+		return "", err
 	}
 	if _, err := validation.ChrootNameField(manifestText(manifest, "path_name"), "manifest.path_name"); err != nil {
-		return err
+		return "", err
 	}
 	distro := manifestText(manifest, "distro")
 	if distro != "ubuntu" && distro != "arch" {
-		return fmt.Errorf("unsupported archive distro: %s", distro)
+		return "", fmt.Errorf("unsupported archive distro: %s", distro)
 	}
 	arch := manifestText(manifest, "arch")
 	if arch != "" && arch != "arm64" && arch != "amd64" {
-		return fmt.Errorf("unsupported archive architecture: %s", arch)
+		return "", fmt.Errorf("unsupported archive architecture: %s", arch)
 	}
 	phase := manifestText(manifest, "phase")
 	validPhase := map[string]bool{"registered": true, "extract": true, "bootstrap": true, "desktop": true, "finalize": true, "ready": true}
 	if phase == "" || !validPhase[phase] {
-		return fmt.Errorf("unsupported archive phase: %s", phase)
+		return "", fmt.Errorf("unsupported archive phase: %s", phase)
 	}
 	if _, ok := manifest["installed"].(bool); !ok {
-		return fmt.Errorf("archive manifest installed must be a boolean")
+		return "", fmt.Errorf("archive manifest installed must be a boolean")
 	}
 	metadata, hasMetadata := manifest["metadata"]
 	if !hasMetadata {
-		return fmt.Errorf("archive manifest metadata field is missing")
+		return "", fmt.Errorf("archive manifest metadata field is missing")
 	}
 	if metadata != nil {
 		if _, ok := metadata.(map[string]any); !ok {
-			return fmt.Errorf("archive manifest metadata must be an object")
+			return "", fmt.Errorf("archive manifest metadata must be an object")
 		}
 	}
-	features, ok := manifest["rootfs_metadata_features"].([]any)
-	if !ok || len(features) == 0 {
-		return fmt.Errorf("archive manifest missing rootfs metadata feature list")
-	}
-	required := map[string]bool{"uid_gid": false, "mode_special_bits": false, "hardlinks": false, "symlinks": false}
-	for _, item := range features {
-		if text, ok := item.(string); ok {
-			if _, needed := required[text]; needed {
-				required[text] = true
+	if metadataFidelity == "proven" {
+		features, ok := manifest["rootfs_metadata_features"].([]any)
+		if !ok || len(features) == 0 {
+			return "", fmt.Errorf("archive manifest missing rootfs metadata feature list")
+		}
+		required := map[string]bool{"uid_gid": false, "mode_special_bits": false, "hardlinks": false, "symlinks": false}
+		for _, item := range features {
+			if text, ok := item.(string); ok {
+				if _, needed := required[text]; needed {
+					required[text] = true
+				}
+			}
+		}
+		for name, present := range required {
+			if !present {
+				return "", fmt.Errorf("archive manifest missing rootfs metadata feature %s", name)
 			}
 		}
 	}
-	for name, present := range required {
-		if !present {
-			return fmt.Errorf("archive manifest missing rootfs metadata feature %s", name)
-		}
-	}
-	return nil
+	return metadataFidelity, nil
 }
 
 func stringMetadataAny(v any) map[string]string { m, _ := v.(map[string]any); return stringMetadata(m) }
@@ -965,7 +1001,7 @@ func (s *TransferService) materializeTarWithControl(ctx context.Context, archive
 		}
 	}
 	tarPath := filepath.Join(tmp, "archive.tar")
-	if e := decompressZstdFile(ctx, control, source, tarPath, 30, 45); e != nil {
+	if e := decompressZstdFile(ctx, control, source, tarPath, 25, 30); e != nil {
 		return "", e
 	}
 	return tarPath, nil
@@ -998,15 +1034,119 @@ func safeExtractParent(root, path string) error {
 	}
 	return nil
 }
+
+const (
+	extractProgressMinInterval = 250 * time.Millisecond
+	extractProgressMinDelta    = 1
+)
+
+type extractionProgressReporter struct {
+	ctx              context.Context
+	control          TransferControl
+	totalBytes       int64
+	start            int
+	end              int
+	lastPercent      int
+	lastLocalPercent int
+	lastEmit         time.Time
+	lastBytesRead    int64
+	lastEntries      int64
+	lastCurrentPath  string
+	now              func() time.Time
+}
+
+func newExtractionProgressReporter(ctx context.Context, control TransferControl, totalBytes int64, start, end int) *extractionProgressReporter {
+	return &extractionProgressReporter{
+		ctx:              ctx,
+		control:          control,
+		totalBytes:       totalBytes,
+		start:            start,
+		end:              end,
+		lastPercent:      start,
+		lastLocalPercent: 0,
+		lastEmit:         time.Now(),
+		now:              time.Now,
+	}
+}
+
+func (r *extractionProgressReporter) report(progress fsmeta.ExtractProgress) error {
+	if r.totalBytes <= 0 {
+		return nil
+	}
+	bytesRead := progress.BytesRead
+	if bytesRead < 0 {
+		bytesRead = 0
+	}
+	if bytesRead > r.totalBytes {
+		bytesRead = r.totalBytes
+	}
+	r.lastBytesRead = bytesRead
+	r.lastEntries = progress.Entries
+	r.lastCurrentPath = progress.CurrentPath
+	localPercent := int((bytesRead * 100) / r.totalBytes)
+	if localPercent > 100 {
+		localPercent = 100
+	}
+	span := r.end - r.start
+	percent := r.start
+	if span > 0 {
+		percent += int((int64(localPercent) * int64(span)) / 100)
+	}
+	if percent >= r.end {
+		percent = r.end - 1
+	}
+	now := r.now()
+	if localPercent-r.lastLocalPercent < extractProgressMinDelta || now.Sub(r.lastEmit) < extractProgressMinInterval {
+		return nil
+	}
+	detail := map[string]any{
+		"live":         true,
+		"bytes_done":   bytesRead,
+		"bytes_total":  r.totalBytes,
+		"entries":      progress.Entries,
+		"current_path": progress.CurrentPath,
+	}
+	if err := r.control.emitDetail(r.ctx, "extract", percent, "Extracting root filesystem", detail); err != nil {
+		return err
+	}
+	r.lastEmit = now
+	r.lastPercent = percent
+	r.lastLocalPercent = localPercent
+	return nil
+}
+
+func (r *extractionProgressReporter) finish() error {
+	if r.totalBytes <= 0 {
+		return r.control.emit(r.ctx, "extract", r.end, "Root filesystem extracted")
+	}
+	detail := map[string]any{
+		"live":         true,
+		"bytes_done":   r.totalBytes,
+		"bytes_total":  r.totalBytes,
+		"entries":      r.lastEntries,
+		"current_path": r.lastCurrentPath,
+	}
+	return r.control.emitDetail(r.ctx, "extract", r.end, "Root filesystem extracted", detail)
+}
+
 func extractRootFromTar(ctx context.Context, control TransferControl, tarPath, destRoot, pathName string) error {
 	f, err := os.Open(tarPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return fsmeta.ExtractTarRoot(ctx, f, destRoot, pathName, fsmeta.CopyControl{
-		Check: func(checkCtx context.Context) error { return control.check(checkCtx) },
-	})
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	reporter := newExtractionProgressReporter(ctx, control, st.Size(), 30, 75)
+	if err := fsmeta.ExtractTarRoot(ctx, f, destRoot, pathName, fsmeta.CopyControl{
+		Check:           func(checkCtx context.Context) error { return control.check(checkCtx) },
+		ExtractProgress: reporter.report,
+	}); err != nil {
+		return err
+	}
+	return reporter.finish()
 }
 
 func (s *TransferService) Import(ctx context.Context, archive, name, conflict, password, postImport string) (model.ChrootImportResult, error) {
@@ -1049,7 +1189,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 			return model.ChrootImportResult{}, e
 		}
 		ok := true
-		return model.ChrootImportResult{Name: safe, Archive: archive, Arch: inspection.Arch, Path: filepath.Join(s.C.BaseConfig.ChrootRoot, safe), ChecksumVerified: inspection.ChecksumVerified, IntegritySource: inspection.IntegritySource, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: strings.HasSuffix(archive, ".enc"), ValidationOk: &ok, ValidationSummary: "dry-run: archive structure and manifest validated; checksum integrity source recorded; extraction and publication were not performed", PostImportAction: postImport}, nil
+		return model.ChrootImportResult{Name: safe, Archive: archive, Arch: inspection.Arch, Path: filepath.Join(s.C.BaseConfig.ChrootRoot, safe), ChecksumVerified: inspection.ChecksumVerified, IntegritySource: inspection.IntegritySource, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: strings.HasSuffix(archive, ".enc"), ValidationOk: &ok, ValidationSummary: fmt.Sprintf("dry-run: archive structure and manifest validated; checksum integrity source recorded; metadata fidelity=%s; extraction and publication were not performed", inspection.Metadata["metadata_fidelity"]), PostImportAction: postImport}, nil
 	}
 	if e := control.emit(ctx, "inspect", 5, "Inspecting import archive"); e != nil {
 		return model.ChrootImportResult{}, e
@@ -1059,7 +1199,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		return model.ChrootImportResult{}, e
 	}
 	if managedArchive, managedErr := s.managed(archive); managedErr == nil {
-		metadata := map[string]any{"integrity_source": inspection.IntegritySource}
+		metadata := map[string]any{"integrity_source": inspection.IntegritySource, "metadata_fidelity": inspection.Metadata["metadata_fidelity"]}
 		if inspection.Checksum != nil {
 			metadata["checksum"] = *inspection.Checksum
 		}
@@ -1131,7 +1271,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		return model.ChrootImportResult{}, e
 	}
 	defer os.RemoveAll(tmp)
-	if e = control.emit(ctx, "materialize", 25, "Materializing import archive"); e != nil {
+	if e = control.emit(ctx, "materialize", 24, "Preparing import archive"); e != nil {
 		return model.ChrootImportResult{}, e
 	}
 	tarPath, e := s.materializeTarWithControl(ctx, archive, password, tmp, control)
@@ -1142,15 +1282,11 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
-	if e = control.emit(ctx, "extract", 50, "Extracting root filesystem"); e != nil {
+	if e = control.emit(ctx, "extract", 30, "Extracting root filesystem"); e != nil {
 		cleanupErr := os.RemoveAll(stage)
 		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
 	if e = extractRootFromTar(ctx, control, tarPath, stage, inspection.PathName); e != nil {
-		cleanupErr := os.RemoveAll(stage)
-		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
-	}
-	if e = control.emit(ctx, "extract", 72, "Root filesystem extracted"); e != nil {
 		cleanupErr := os.RemoveAll(stage)
 		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
@@ -1170,7 +1306,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		}
 		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
-	if e = control.emit(ctx, "commit", 80, "Committing imported root filesystem"); e != nil {
+	if e = control.emit(ctx, "commit", 85, "Committing imported root filesystem"); e != nil {
 		cleanupErr := os.RemoveAll(stage)
 		state := registry.FSMutationRolledBack
 		detail := map[string]any{"cancelled": true, "stage": stage, "backup": backup}
@@ -1303,6 +1439,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		}
 		return model.ChrootImportResult{}, errors.Join(e, rollbackErr)
 	}
+	_ = control.emit(context.WithoutCancel(ctx), "validate", 92, "Validating imported root filesystem")
 	validationSummary, e := s.C.Chroots().ValidateImport(ctx, name)
 	if e != nil {
 		return model.ChrootImportResult{}, fmt.Errorf("import committed but post-import validation failed: %w", e)
@@ -1310,6 +1447,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	if ok, _ := validationSummary["validation_ok"].(bool); !ok {
 		return model.ChrootImportResult{}, fmt.Errorf("import committed but post-import validation reported blocking issues")
 	}
+	_ = control.emit(context.WithoutCancel(ctx), "finalize", 96, "Finalizing import")
 	if e = tx.Transition(context.WithoutCancel(ctx), registry.FSMutationCommitted, map[string]any{"backup": backup, "had_existing": had, "validation": validationSummary}); e != nil {
 		return model.ChrootImportResult{}, fmt.Errorf("import committed but mutation journal commit failed: %w", e)
 	}
@@ -1331,6 +1469,9 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	summary := "archive imported, registry committed, and post-import validation passed"
 	if cleanupDebt {
 		summary = "archive imported and validated; old backup cleanup is pending recovery"
+	}
+	if inspection.Metadata["metadata_fidelity"] == "legacy_unverified" {
+		summary += "; legacy archive imported with unverified rootfs metadata fidelity by explicit opt-in"
 	}
 	summary = applyPostImportSummary(summary, postImport)
 	if cleanupErr := s.cleanupManagedImportStage(context.WithoutCancel(ctx), archive); cleanupErr != nil {

@@ -3,6 +3,8 @@
 package fsmeta
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -105,5 +107,51 @@ func TestArchiveRejectsLiveSocket(t *testing.T) {
 	}
 	if err := ArchiveTreeGzip(context.Background(), src, filepath.Join(root, "x.tar.gz"), CopyControl{}); err == nil {
 		t.Fatal("expected socket rejection")
+	}
+}
+
+func TestExtractTarRootReportsConsumedBytesEntriesAndCurrentPath(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	uid, gid := os.Geteuid(), os.Getegid()
+	if err := tw.WriteHeader(&tar.Header{Name: "root", Typeflag: tar.TypeDir, Mode: 0o755, Uid: uid, Gid: gid}); err != nil {
+		t.Fatal(err)
+	}
+	payload := bytes.Repeat([]byte("x"), 384*1024)
+	if err := tw.WriteHeader(&tar.Header{Name: "root/usr/lib/payload.bin", Typeflag: tar.TypeReg, Mode: 0o644, Uid: uid, Gid: gid, Size: int64(len(payload))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var samples []ExtractProgress
+	if err := ExtractTarRoot(context.Background(), bytes.NewReader(buf.Bytes()), t.TempDir(), "root", CopyControl{
+		ExtractProgress: func(progress ExtractProgress) error {
+			samples = append(samples, progress)
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) < 3 {
+		t.Fatalf("progress samples=%d, want multiple live samples", len(samples))
+	}
+	last := samples[len(samples)-1]
+	if last.BytesRead <= 0 || last.Entries < 2 {
+		t.Fatalf("last progress=%+v", last)
+	}
+	foundPath := false
+	for _, sample := range samples {
+		if sample.CurrentPath == "usr/lib/payload.bin" {
+			foundPath = true
+			break
+		}
+	}
+	if !foundPath {
+		t.Fatalf("current path never reported: %+v", samples)
 	}
 }

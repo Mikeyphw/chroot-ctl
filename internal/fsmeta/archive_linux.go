@@ -21,9 +21,16 @@ import (
 
 const xattrPAXPrefix = "CHROOTCTL.xattr."
 
+type ExtractProgress struct {
+	BytesRead   int64
+	Entries     int64
+	CurrentPath string
+}
+
 type CopyControl struct {
-	Check    func(context.Context) error
-	Progress func(int64) error
+	Check           func(context.Context) error
+	Progress        func(int64) error
+	ExtractProgress func(ExtractProgress) error
 }
 
 func (c CopyControl) check(ctx context.Context) error {
@@ -40,6 +47,23 @@ func (c CopyControl) add(n int64) error {
 		return c.Progress(n)
 	}
 	return nil
+}
+func (c CopyControl) reportExtract(progress ExtractProgress) error {
+	if c.ExtractProgress != nil {
+		return c.ExtractProgress(progress)
+	}
+	return nil
+}
+
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	r.n += int64(n)
+	return n, err
 }
 
 type inodeKey struct{ Dev, Ino uint64 }
@@ -206,7 +230,8 @@ func ExtractTarRoot(ctx context.Context, r io.Reader, dest, archiveRoot string, 
 	if archiveRoot == "" || filepath.Base(archiveRoot) != archiveRoot {
 		return fmt.Errorf("invalid archive root name: %q", archiveRoot)
 	}
-	return extractTar(ctx, tar.NewReader(r), filepath.Clean(dest), archiveRoot, control)
+	counted := &countingReader{r: r}
+	return extractTarTracked(ctx, tar.NewReader(counted), filepath.Clean(dest), archiveRoot, control, counted)
 }
 
 type deferredMeta struct {
@@ -215,6 +240,10 @@ type deferredMeta struct {
 }
 
 func extractTar(ctx context.Context, tr *tar.Reader, dest, stripRoot string, control CopyControl) error {
+	return extractTarTracked(ctx, tr, dest, stripRoot, control, nil)
+}
+
+func extractTarTracked(ctx context.Context, tr *tar.Reader, dest, stripRoot string, control CopyControl, counted *countingReader) error {
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return err
 	}
@@ -223,6 +252,14 @@ func extractTar(ctx context.Context, tr *tar.Reader, dest, stripRoot string, con
 	prefix := ""
 	if stripRoot != "" {
 		prefix = stripRoot + "/"
+	}
+	var entries int64
+	currentPath := ""
+	report := func() error {
+		if counted == nil {
+			return nil
+		}
+		return control.reportExtract(ExtractProgress{BytesRead: counted.n, Entries: entries, CurrentPath: currentPath})
 	}
 	for {
 		if err := control.check(ctx); err != nil {
@@ -235,13 +272,22 @@ func extractTar(ctx context.Context, tr *tar.Reader, dest, stripRoot string, con
 		if err != nil {
 			return err
 		}
+		entries++
 		raw := filepath.ToSlash(filepath.Clean(h.Name))
 		if raw == "." && stripRoot == "" {
+			currentPath = "."
+			if err := report(); err != nil {
+				return err
+			}
 			dirs = append(dirs, deferredMeta{dest, *h})
 			continue
 		}
 		if stripRoot != "" {
 			if raw == stripRoot {
+				currentPath = "."
+				if err := report(); err != nil {
+					return err
+				}
 				dirs = append(dirs, deferredMeta{dest, *h})
 				continue
 			}
@@ -252,6 +298,10 @@ func extractTar(ctx context.Context, tr *tar.Reader, dest, stripRoot string, con
 		}
 		if raw == "" || raw == "." || filepath.IsAbs(raw) || raw == ".." || strings.HasPrefix(raw, "../") {
 			return fmt.Errorf("unsafe archive member: %s", h.Name)
+		}
+		currentPath = raw
+		if err := report(); err != nil {
+			return err
 		}
 		target, err := safeTarget(dest, filepath.FromSlash(raw))
 		if err != nil {
@@ -274,7 +324,7 @@ func extractTar(ctx context.Context, tr *tar.Reader, dest, stripRoot string, con
 			if err != nil {
 				return err
 			}
-			copyErr := sparseCopy(ctx, control, out, tr, h.Size)
+			copyErr := sparseCopyTracked(ctx, control, out, tr, h.Size, report)
 			syncErr := out.Sync()
 			closeErr := out.Close()
 			if copyErr != nil {
@@ -362,6 +412,9 @@ func extractTar(ctx context.Context, tr *tar.Reader, dest, stripRoot string, con
 			return fmt.Errorf("unsupported rootfs archive entry type %d for %s", h.Typeflag, h.Name)
 		}
 	}
+	if err := report(); err != nil {
+		return err
+	}
 	for i := len(dirs) - 1; i >= 0; i-- {
 		if err := applyMeta(dirs[i].path, dirs[i].h, false); err != nil {
 			return err
@@ -401,6 +454,10 @@ func copyChecked(ctx context.Context, control CopyControl, dst io.Writer, src io
 }
 
 func sparseCopy(ctx context.Context, control CopyControl, out *os.File, src io.Reader, size int64) error {
+	return sparseCopyTracked(ctx, control, out, src, size, nil)
+}
+
+func sparseCopyTracked(ctx context.Context, control CopyControl, out *os.File, src io.Reader, size int64, afterChunk func() error) error {
 	buf := make([]byte, 128*1024)
 	var written int64
 	for written < size {
@@ -431,6 +488,11 @@ func sparseCopy(ctx context.Context, control CopyControl, out *os.File, src io.R
 		written += int64(n)
 		if err := control.add(int64(n)); err != nil {
 			return err
+		}
+		if afterChunk != nil {
+			if err := afterChunk(); err != nil {
+				return err
+			}
 		}
 		if er == io.ErrUnexpectedEOF {
 			break

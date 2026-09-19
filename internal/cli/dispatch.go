@@ -579,7 +579,7 @@ func (a *App) chroots(ctx context.Context) error {
 		}
 		return a.emit("Chroot Export", v)
 	case "chroots import":
-		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress})
+		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata")})
 		if e != nil {
 			return e
 		}
@@ -682,13 +682,13 @@ func (a *App) transfer(ctx context.Context) error {
 		}
 		return a.emit("Transfer Export", v)
 	case "transfer inspect":
-		v, e := a.Services.Transfer().InspectWithControl(ctx, a.Inv.String("archive"), a.Inv.String("password"), services.TransferControl{Progress: a.progress})
+		v, e := a.Services.Transfer().InspectWithControl(ctx, a.Inv.String("archive"), a.Inv.String("password"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata")})
 		if e != nil {
 			return e
 		}
 		return a.emit("Transfer Inspect", v)
 	case "transfer import":
-		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress})
+		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata")})
 		if e != nil {
 			return e
 		}

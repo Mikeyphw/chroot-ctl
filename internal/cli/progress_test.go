@@ -27,3 +27,57 @@ func TestJSONProgressStaysOffStderr(t *testing.T) {
 		t.Fatalf("JSON progress polluted stderr: %q", stderr.String())
 	}
 }
+
+func TestLiveProgressRendersBytesEntriesAndPathForLogs(t *testing.T) {
+	var stderr bytes.Buffer
+	a := &App{Inv: Invocation{Globals: Globals{JSON: false}}, Stderr: &stderr}
+	if err := a.progress(map[string]any{
+		"phase": "extract", "percent": 61, "message": "Extracting root filesystem", "live": true,
+		"bytes_done": int64(5 * 1024 * 1024 * 1024), "bytes_total": int64(10 * 1024 * 1024 * 1024),
+		"entries": int64(33921), "current_path": "usr/lib/aarch64-linux-gnu/example/library.so",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := stderr.String()
+	for _, want := range []string{"[ 61%] Extracting root filesystem", "5.0 GiB / 10.0 GiB", "33,921 entries", "usr/lib/aarch64-linux-gnu/example/library.so"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("progress output %q missing %q", got, want)
+		}
+	}
+}
+
+func TestLiveProgressPathIsTruncatedFromTheLeft(t *testing.T) {
+	path := "very/long/path/that/keeps/going/through/usr/lib/aarch64-linux-gnu/libsomething.so"
+	got := truncateProgressPath(path, 32)
+	if len(got) > 34 { // ellipsis is multi-byte UTF-8; visible width remains <= 32.
+		t.Fatalf("truncated path too long: %q", got)
+	}
+	if !strings.HasPrefix(got, "…") || !strings.HasSuffix(got, "libsomething.so") {
+		t.Fatalf("unexpected truncation: %q", got)
+	}
+}
+
+func TestLiveTTYProgressUpdatesOneLineInPlace(t *testing.T) {
+	var stderr bytes.Buffer
+	tty := true
+	a := &App{Inv: Invocation{Globals: Globals{JSON: false}}, Stderr: &stderr, progressTTYOverride: &tty}
+	first := map[string]any{"phase": "extract", "percent": 54, "message": "Extracting root filesystem", "live": true, "bytes_done": int64(1024), "bytes_total": int64(4096), "entries": int64(4), "current_path": "usr/bin/a"}
+	second := map[string]any{"phase": "extract", "percent": 58, "message": "Extracting root filesystem", "live": true, "bytes_done": int64(2048), "bytes_total": int64(4096), "entries": int64(8), "current_path": "usr/bin/b"}
+	if err := a.progress(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.progress(second); err != nil {
+		t.Fatal(err)
+	}
+	beforeFinish := stderr.String()
+	if strings.Contains(beforeFinish, "\n") {
+		t.Fatalf("TTY live progress should stay on one line: %q", beforeFinish)
+	}
+	if strings.Count(beforeFinish, "\r") != 2 {
+		t.Fatalf("TTY updates=%q", beforeFinish)
+	}
+	a.finishProgressLine()
+	if !strings.HasSuffix(stderr.String(), "\n") {
+		t.Fatalf("finished progress line missing newline: %q", stderr.String())
+	}
+}

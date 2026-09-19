@@ -474,7 +474,11 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		if a == "" {
 			return nil, protocolError("MISSING_ARCHIVE", "payload.archive is required", nil)
 		}
-		return s.Transfer().Inspect(ctx, a, optText(p, "password"))
+		allowLegacy, e := optBool(p, []string{"allowLegacyMetadata", "allow_legacy_metadata"}, false)
+		if e != nil {
+			return nil, e
+		}
+		return s.Transfer().InspectWithControl(ctx, a, optText(p, "password"), services.TransferControl{AllowLegacyMetadata: allowLegacy})
 	case "artifacts.list":
 		return s.Transfer().TempState(ctx)
 	case "transfer.artifact_root":
@@ -627,7 +631,11 @@ func (b *ServicesBackend) preview(ctx context.Context, op string, p map[string]a
 		if a == "" {
 			a = optText(p, "path")
 		}
-		return s.Preview().Import(ctx, a, optText(p, "name"), optText(p, "conflict"), optText(p, "password"))
+		allowLegacy, e := optBool(p, []string{"allowLegacyMetadata", "allow_legacy_metadata"}, false)
+		if e != nil {
+			return nil, e
+		}
+		return s.Preview().Import(ctx, a, optText(p, "name"), optText(p, "conflict"), optText(p, "password"), allowLegacy)
 	case "transfer.preview_export":
 		n, e := reqName(p)
 		if e != nil {
@@ -1153,7 +1161,12 @@ func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string
 		if post == "" {
 			post = optText(p, "post_import")
 		}
+		allowLegacy, e := optBool(p, []string{"allowLegacyMetadata", "allow_legacy_metadata"}, false)
+		if e != nil {
+			return nil, e
+		}
 		return s.Transfer().ImportWithControl(ctx, a, optText(p, "name"), defaultText(optText(p, "conflict"), "fail"), optText(p, "password"), post, services.TransferControl{
+			AllowLegacyMetadata: allowLegacy,
 			Progress: func(v any) error {
 				if e := emit(progress, v); e != nil {
 					return e

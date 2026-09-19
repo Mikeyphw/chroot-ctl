@@ -1988,7 +1988,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive with a required .sha256 sidecar.",
+          "help": "Source tar.zst archive. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2068,11 +2068,27 @@
           "required": false,
           "type": null,
           "completion": ""
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "allow_legacy_metadata",
+          "help": "Explicitly allow an archive that predates the CHR09 rootfs metadata contract. The imported chroot is permanently marked metadata_fidelity=legacy_unverified.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--allow-legacy-metadata"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
         }
       ],
       "command": "chroots import",
       "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
-      "epilog": "examples:\n  chrootctl chroots import /tmp/work.tar.zst\n  chrootctl chroots import /tmp/work.tar.zst --name phone-work",
+      "epilog": "examples:\n  chrootctl chroots import /tmp/work.tar.zst\n  chrootctl chroots import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl chroots import /tmp/legacy.tar.zst --allow-legacy-metadata",
       "path": [
         "chroots",
         "import"
@@ -2529,7 +2545,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive with a required .sha256 sidecar.",
+          "help": "Source tar.zst archive. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2552,11 +2568,27 @@
           "required": false,
           "type": null,
           "completion": ""
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "allow_legacy_metadata",
+          "help": "Explicitly allow an archive that predates the CHR09 rootfs metadata contract. The imported chroot is permanently marked metadata_fidelity=legacy_unverified.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--allow-legacy-metadata"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
         }
       ],
       "command": "transfer inspect",
       "description": "Verify archive checksum sidecar and embedded manifest before import.",
-      "epilog": "examples:\n  chrootctl transfer inspect /tmp/work.tar.zst",
+      "epilog": "examples:\n  chrootctl transfer inspect /tmp/work.tar.zst\nlegacy archive:\n  chrootctl transfer inspect /tmp/legacy.tar.zst --allow-legacy-metadata",
       "path": [
         "transfer",
         "inspect"
@@ -2587,7 +2619,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive with a required .sha256 sidecar.",
+          "help": "Source tar.zst archive. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2667,11 +2699,27 @@
           "required": false,
           "type": null,
           "completion": ""
+        },
+        {
+          "action": "_StoreTrueAction",
+          "choices": null,
+          "const": true,
+          "default": false,
+          "dest": "allow_legacy_metadata",
+          "help": "Explicitly allow an archive that predates the CHR09 rootfs metadata contract. The imported chroot is permanently marked metadata_fidelity=legacy_unverified.",
+          "metavar": null,
+          "nargs": 0,
+          "optionStrings": [
+            "--allow-legacy-metadata"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
         }
       ],
       "command": "transfer import",
       "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
-      "epilog": "examples:\n  chrootctl transfer import /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work",
+      "epilog": "examples:\n  chrootctl transfer import /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl transfer import /tmp/legacy.tar.zst --allow-legacy-metadata",
       "path": [
         "transfer",
         "import"
