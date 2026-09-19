@@ -339,3 +339,43 @@ func TestCHR15ValidateZipArchiveUsesPackageSeal(t *testing.T) {
 		t.Fatalf("expected boot target/package manifest mismatch rejection, got %v", err)
 	}
 }
+
+func TestPostFSProvisionsStableLauncherForKernelSULegacy(t *testing.T) {
+	raw := postFS()
+	for _, want := range []string{"/data/adb/chrootctl", "BIN_DIR=\"$STATE_ROOT/bin\"", "SOURCE=\"$MODDIR/system/bin/chrootctl\"", "chmod 0755", "mv -f \"$PUBLIC.tmp\" \"$PUBLIC\""} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("post-fs-data missing %q", want)
+		}
+	}
+}
+
+func TestUninstallRemovesStableLauncher(t *testing.T) {
+	raw := uninstall()
+	if !strings.Contains(raw, "$STATE_ROOT/bin/chrootctl") {
+		t.Fatal("uninstall does not remove stable launcher")
+	}
+}
+
+
+func TestPostFSActuallyProvisionsStableLauncherWithoutMagicMount(t *testing.T) {
+    root := t.TempDir()
+    mod := filepath.Join(root, "modules", "chrootctl-magisk")
+    state := filepath.Join(root, "state")
+    source := filepath.Join(mod, "system", "bin", "chrootctl")
+    if err := os.MkdirAll(filepath.Dir(source), 0755); err != nil { t.Fatal(err) }
+    if err := os.WriteFile(source, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil { t.Fatal(err) }
+    script := filepath.Join(root, "post-fs-data.sh")
+    if err := os.WriteFile(script, []byte(postFS()), 0755); err != nil { t.Fatal(err) }
+    cmd := exec.Command("sh", script)
+    cmd.Env = append(os.Environ(), "CHROOTCTL_MODULE_DIR="+mod, "CHROOTCTL_STATE_ROOT="+state)
+    if out, err := cmd.CombinedOutput(); err != nil { t.Fatalf("post-fs-data failed: %v: %s", err, out) }
+    launcher := filepath.Join(state, "bin", "chrootctl")
+    info, err := os.Stat(launcher)
+    if err != nil { t.Fatalf("stable launcher not provisioned: %v", err) }
+    if info.Mode().Perm() != 0755 { t.Fatalf("stable launcher mode=%#o want 0755", info.Mode().Perm()) }
+    body, err := os.ReadFile(launcher)
+    if err != nil { t.Fatal(err) }
+    if !strings.Contains(string(body), "/data/adb/modules/chrootctl-magisk") {
+        t.Fatalf("stable launcher does not target canonical active module: %s", body)
+    }
+}

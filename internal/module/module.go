@@ -573,10 +573,38 @@ return 0 2>/dev/null || exit 0
 `
 }
 
-func postFS() string { return "#!/system/bin/sh\nexit 0\n" }
-func uninstall() string {
-	return "#!/system/bin/sh\nset -u\nSTATE_ROOT=/data/adb/chrootctl\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
+func postFS() string {
+	return `#!/system/bin/sh
+set -u
+MODDIR="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}"
+STATE_ROOT="${CHROOTCTL_STATE_ROOT:-/data/adb/chrootctl}"
+BIN_DIR="$STATE_ROOT/bin"
+PUBLIC="$BIN_DIR/chrootctl"
+SOURCE="$MODDIR/system/bin/chrootctl"
+
+# KernelSU legacy does not necessarily expose module system/bin through magic
+# mount. Maintain a root-owned stable launcher outside the module mount tree.
+[ -d "$MODDIR" ] || exit 0
+[ -f "$SOURCE" ] && [ -x "$SOURCE" ] && [ ! -L "$SOURCE" ] || exit 0
+mkdir -p "$BIN_DIR" || exit 0
+chown 0:0 "$STATE_ROOT" "$BIN_DIR" 2>/dev/null || true
+chmod 0700 "$STATE_ROOT" "$BIN_DIR" 2>/dev/null || true
+cat > "$PUBLIC.tmp" <<'EOF'
+#!/system/bin/sh
+MODDIR="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}"
+exec "$MODDIR/system/bin/chrootctl" "$@"
+EOF
+chown 0:0 "$PUBLIC.tmp" 2>/dev/null || true
+chmod 0755 "$PUBLIC.tmp" || { rm -f "$PUBLIC.tmp"; exit 0; }
+mv -f "$PUBLIC.tmp" "$PUBLIC"
+restorecon "$PUBLIC" 2>/dev/null || true
+exit 0
+`
 }
+func uninstall() string {
+	return "#!/system/bin/sh\nset -u\nSTATE_ROOT=\"${CHROOTCTL_STATE_ROOT:-/data/adb/chrootctl}\"\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/bin/chrootctl\" 2>/dev/null || true\n  rmdir \"$STATE_ROOT/bin\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
+}
+
 func helper() string {
 	return "#!/system/bin/sh\nset -u\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-${0%/bin/*}}\"\nCHROOTCTL=\"$MODDIR/system/bin/chrootctl\"\n[ -x \"$CHROOTCTL\" ] || { echo \"bundled chrootctl runtime is unavailable\" >&2; exit 127; }\ncase \"$CMD\" in\n  __module-boot|__module-service)\n    rc=0\n    \"$CHROOTCTL\" clipboard daemon start >/dev/null 2>&1 || true\n    for target in \"$@\"; do\n      \"$CHROOTCTL\" --name \"$target\" mount || rc=1\n    done\n    \"$CHROOTCTL\" run --boot || rc=1\n    exit \"$rc\"\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
 }

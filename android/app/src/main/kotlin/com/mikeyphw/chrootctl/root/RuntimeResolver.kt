@@ -21,6 +21,10 @@ internal data class BinaryCandidateProbe(
     val compatible: Boolean,
     val exitCode: Int?,
     val detail: String,
+    val uid: Int? = null,
+    val gid: Int? = null,
+    val mode: Int? = null,
+    val canonicalPath: String? = null,
 )
 
 internal data class BinaryResolutionReport(
@@ -42,7 +46,11 @@ internal data class BinaryResolutionReport(
         val action = when (code) {
             "MODULE_NOT_INSTALLED" -> "Install the chrootctl root module and reboot."
             "MODULE_DISABLED" -> "Enable the chrootctl root module and reboot."
-            "MODULE_SEAL_INVALID" -> "Reinstall/update the chrootctl module; its package/runtime seal is invalid."
+            "MODULE_PACKAGE_SEAL_INVALID" -> "Reinstall/update the chrootctl module; its sealed package inventory failed validation."
+            "MODULE_RUNTIME_SEAL_INVALID" -> "Reinstall/update the chrootctl module; its native runtime seal failed validation."
+            "BINARY_OWNER_INVALID" -> "The launcher is not root-owned; reinstall the module."
+            "UNSAFE_BINARY_PERMISSIONS" -> "The launcher permissions are unsafe; reinstall the module."
+            "UNTRUSTED_BINARY_PATH" -> "The launcher resolved outside an approved canonical location; reinstall the module."
             "BINARY_NOT_EXECUTABLE" -> "Reinstall/update the module so its launcher has executable permissions."
             "BINARY_VERSION_INCOMPATIBLE" -> "Update the chrootctl module and Android app to compatible versions."
             "BINARY_EXEC_FAILED" -> "The launcher was found but could not run; inspect its exit details and reinstall the module if needed."
@@ -68,7 +76,10 @@ internal data class BinaryResolutionReport(
         .put("candidates", org.json.JSONArray(candidates.map { probe -> JSONObject()
             .put("path", probe.path).put("source", probe.source).put("exists", probe.exists)
             .put("executable", probe.executable).put("trusted", probe.trusted).put("compatible", probe.compatible)
-            .put("exitCode", probe.exitCode ?: JSONObject.NULL).put("detail", probe.detail) }))
+            .put("exitCode", probe.exitCode ?: JSONObject.NULL).put("detail", probe.detail)
+            .put("uid", probe.uid ?: JSONObject.NULL).put("gid", probe.gid ?: JSONObject.NULL)
+            .put("mode", probe.mode?.let { Integer.toOctalString(it and 0x1ff) } ?: JSONObject.NULL)
+            .put("canonicalPath", probe.canonicalPath ?: JSONObject.NULL) }))
 
     companion object {
         fun initial() = BinaryResolutionReport("NOT_PROBED", null, null, false, false, false, false, rootBridgeEnvironment().getValue("PATH"), "not-probed", "unknown", emptyList())
@@ -118,7 +129,9 @@ internal object RuntimeResolver {
             val moduleInstalled = activeModuleDir.exists()
             val moduleDisabled = File(activeModuleDir, "disable").exists() || File(activeModuleDir, "remove").exists()
             val activeModuleClaimsAuthority = moduleInstalled && !moduleDisabled
-            val moduleSealReady = activeModuleClaimsAuthority && isModulePackageSealReady() && isNativeRuntimeReady()
+            val packageSealReady = activeModuleClaimsAuthority && isModulePackageSealReady()
+            val runtimeSealReady = activeModuleClaimsAuthority && isNativeRuntimeReady()
+            val moduleSealReady = packageSealReady && runtimeSealReady
             val pending = pendingModuleDirs.filter(File::exists)
 
             val ordered = mutableListOf<BinaryCandidate>().apply {
@@ -152,18 +165,30 @@ internal object RuntimeResolver {
                     else -> isTrustedRootExecutable(path)
                 }
                 if (!exists || !executable || !trusted) {
-                    probes += BinaryCandidateProbe(path.path, candidate.source, exists, executable, trusted, false, null,
-                        when {
-                            !exists -> "not found"
-                            !executable -> "not executable"
-                            !trusted -> "failed root ownership/path trust checks"
-                            else -> "rejected"
-                        })
+                    val stat = if (exists) runCatching { Os.lstat(path.path) }.getOrNull() else null
+                    val canonical = if (exists) runCatching { path.canonicalPath }.getOrNull() else null
+                    val detail = when {
+                        !exists -> "not found"
+                        !executable -> "not executable"
+                        candidate.moduleInternal && !moduleSealReady -> when {
+                            !packageSealReady -> "module package seal validation failed"
+                            !runtimeSealReady -> "native runtime seal validation failed"
+                            else -> "module seal validation failed"
+                        }
+                        stat != null && stat.st_uid.toInt() != 0 -> "owner uid ${stat.st_uid} is not root (expected 0)"
+                        stat != null && (stat.st_mode and 0x12) != 0 -> "unsafe writable mode ${Integer.toOctalString(stat.st_mode and 0x1ff)}"
+                        canonical != path.absolutePath -> "canonical path mismatch: ${canonical ?: "unavailable"}"
+                        else -> "failed binary trust checks"
+                    }
+                    probes += BinaryCandidateProbe(path.path, candidate.source, exists, executable, trusted, false, null, detail,
+                        stat?.st_uid?.toInt(), stat?.st_gid?.toInt(), stat?.st_mode, canonical)
                     continue
                 }
                 val runtime = BridgeRuntime(listOf(path.path, "app"), candidate.source, path.path)
                 val probe = probeCompatibility(runtime)
-                probes += BinaryCandidateProbe(path.path, candidate.source, true, true, true, probe.compatible, probe.exitCode, probe.detail)
+                val stat = runCatching { Os.lstat(path.path) }.getOrNull()
+                probes += BinaryCandidateProbe(path.path, candidate.source, true, true, true, probe.compatible, probe.exitCode, probe.detail,
+                    stat?.st_uid?.toInt(), stat?.st_gid?.toInt(), stat?.st_mode, runCatching { path.canonicalPath }.getOrNull())
                 if (probe.compatible) {
                     selected = runtime
                     break
@@ -174,12 +199,16 @@ internal object RuntimeResolver {
                 selected != null -> "OK"
                 !moduleInstalled && probes.none { it.exists } -> "MODULE_NOT_INSTALLED"
                 moduleDisabled -> "MODULE_DISABLED"
-                activeModuleClaimsAuthority && !moduleSealReady -> "MODULE_SEAL_INVALID"
+                activeModuleClaimsAuthority && !packageSealReady -> "MODULE_PACKAGE_SEAL_INVALID"
+                activeModuleClaimsAuthority && !runtimeSealReady -> "MODULE_RUNTIME_SEAL_INVALID"
                 Build.SUPPORTED_ABIS.none { it == "arm64-v8a" } -> "UNSUPPORTED_ABI"
                 probes.any { it.exists && !it.executable } -> "BINARY_NOT_EXECUTABLE"
                 probes.any { it.trusted && !it.compatible && it.detail.startsWith("execution failed") } -> "BINARY_EXEC_FAILED"
                 probes.any { it.trusted && !it.compatible && it.detail.contains("timed out") } -> "VERSION_PROBE_FAILED"
                 probes.any { it.trusted && !it.compatible } -> "BINARY_VERSION_INCOMPATIBLE"
+                probes.any { it.exists && !it.trusted && it.detail.startsWith("owner uid") } -> "BINARY_OWNER_INVALID"
+                probes.any { it.exists && !it.trusted && it.detail.startsWith("unsafe writable mode") } -> "UNSAFE_BINARY_PERMISSIONS"
+                probes.any { it.exists && !it.trusted && it.detail.startsWith("canonical path mismatch") } -> "UNTRUSTED_BINARY_PATH"
                 probes.any { it.exists && !it.trusted } -> "BINARY_UNTRUSTED"
                 else -> "PUBLIC_LAUNCHER_MISSING"
             }
@@ -254,7 +283,10 @@ internal object RuntimeResolver {
 
 
     private fun isActiveModuleExecutable(path: File): Boolean {
-        if (!isExecutable(path)) return false
+        // Internal module launchers are authorized by the package/runtime seals,
+        // but still must satisfy the same root-owner and non-writable metadata
+        // boundary as public launchers. A valid hash is not permission safety.
+        if (!isTrustedRootExecutable(path)) return false
         val activeCanonical = runCatching { activeModuleDir.canonicalFile }.getOrNull() ?: return false
         if (activeCanonical != activeModuleDir.absoluteFile || activeModuleDir.toPath().let(java.nio.file.Files::isSymbolicLink)) return false
         val executableCanonical = runCatching { path.canonicalFile }.getOrNull() ?: return false
