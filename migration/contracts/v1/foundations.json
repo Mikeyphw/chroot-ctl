@@ -438,6 +438,7 @@
         "checksum",
         "checksum_path",
         "checksum_verified",
+        "integrity_source",
         "encrypted",
         "target_exists",
         "conflict_strategy_options"
@@ -472,6 +473,7 @@
         "arch",
         "path",
         "checksum_verified",
+        "integrity_source",
         "checksum_path",
         "conflict_strategy",
         "encrypted",

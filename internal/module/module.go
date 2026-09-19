@@ -577,7 +577,8 @@ func postFS() string {
 	return `#!/system/bin/sh
 set -u
 MODDIR="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}"
-STATE_ROOT="${CHROOTCTL_STATE_ROOT:-/data/adb/chrootctl}"
+STATE_ROOT=/data/adb/chrootctl
+[ -n "${CHROOTCTL_STATE_ROOT:-}" ] && STATE_ROOT="$CHROOTCTL_STATE_ROOT"
 BIN_DIR="$STATE_ROOT/bin"
 PUBLIC="$BIN_DIR/chrootctl"
 SOURCE="$MODDIR/system/bin/chrootctl"
@@ -602,7 +603,7 @@ exit 0
 `
 }
 func uninstall() string {
-	return "#!/system/bin/sh\nset -u\nSTATE_ROOT=\"${CHROOTCTL_STATE_ROOT:-/data/adb/chrootctl}\"\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/bin/chrootctl\" 2>/dev/null || true\n  rmdir \"$STATE_ROOT/bin\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
+	return "#!/system/bin/sh\nset -u\nSTATE_ROOT=/data/adb/chrootctl\n[ -n \"${CHROOTCTL_STATE_ROOT:-}\" ] && STATE_ROOT=\"$CHROOTCTL_STATE_ROOT\"\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/bin/chrootctl\" 2>/dev/null || true\n  rmdir \"$STATE_ROOT/bin\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
 }
 
 func helper() string {

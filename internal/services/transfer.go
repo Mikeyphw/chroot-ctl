@@ -682,7 +682,7 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 	}
 	target, _ := s.C.Registry.Get(ctx, sourceName)
 	created := st.ModTime().UTC().Format(time.RFC3339)
-	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: stringMetadataAny(manifest["metadata"]), SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
+	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: stringMetadataAny(manifest["metadata"]), SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, IntegritySource: checksumIntegritySource(verified), Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
 }
 func validateArchiveFileSize(path string, size int64) error {
 	if size <= 0 {
@@ -698,7 +698,18 @@ func requireArchiveChecksum(ctx context.Context, control TransferControl, archiv
 	sumPath := archive + ".sha256"
 	text, err := os.ReadFile(sumPath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("archive checksum sidecar is required: %s", sumPath)
+		if os.IsNotExist(err) {
+			// A missing export sidecar is not proof of corruption. Compute the
+			// archive digest for local/import tracking, but keep verification false
+			// so callers never confuse it with the original export checksum.
+			actual, hashErr := sha256FileControl(ctx, control, archive)
+			if hashErr != nil {
+				return nil, nil, nil, hashErr
+			}
+			verified := false
+			return &actual, nil, &verified, nil
+		}
+		return nil, nil, nil, fmt.Errorf("archive checksum sidecar could not be read: %s: %w", sumPath, err)
 	}
 	fields := strings.Fields(string(text))
 	if len(fields) == 0 {
@@ -723,6 +734,13 @@ func requireArchiveChecksum(ctx context.Context, control TransferControl, archiv
 		return nil, nil, nil, fmt.Errorf("archive checksum verification failed")
 	}
 	return &want, &sumPath, &ok, nil
+}
+
+func checksumIntegritySource(verified *bool) string {
+	if verified != nil && *verified {
+		return "export_sidecar_verified"
+	}
+	return "computed_on_import"
 }
 
 func manifestText(m map[string]any, key string) string { return strings.TrimSpace(fmt.Sprint(m[key])) }
@@ -952,7 +970,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 			return model.ChrootImportResult{}, e
 		}
 		ok := true
-		return model.ChrootImportResult{Name: safe, Archive: archive, Arch: inspection.Arch, Path: filepath.Join(s.C.BaseConfig.ChrootRoot, safe), ChecksumVerified: inspection.ChecksumVerified, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: strings.HasSuffix(archive, ".enc"), ValidationOk: &ok, ValidationSummary: "dry-run: archive checksum and manifest validated; extraction and publication were not performed", PostImportAction: postImport}, nil
+		return model.ChrootImportResult{Name: safe, Archive: archive, Arch: inspection.Arch, Path: filepath.Join(s.C.BaseConfig.ChrootRoot, safe), ChecksumVerified: inspection.ChecksumVerified, IntegritySource: inspection.IntegritySource, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: strings.HasSuffix(archive, ".enc"), ValidationOk: &ok, ValidationSummary: "dry-run: archive structure and manifest validated; checksum integrity source recorded; extraction and publication were not performed", PostImportAction: postImport}, nil
 	}
 	if e := control.emit(ctx, "inspect", 5, "Inspecting import archive"); e != nil {
 		return model.ChrootImportResult{}, e
@@ -961,11 +979,15 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
-	if inspection.ChecksumVerified == nil || !*inspection.ChecksumVerified {
-		return model.ChrootImportResult{}, fmt.Errorf("archive checksum verification failed")
-	}
 	if managedArchive, managedErr := s.managed(archive); managedErr == nil {
-		_, e = s.RegisterArtifact(ctx, managedArchive, "staged-import", "", nil, map[string]any{"checksum_path": archive + ".sha256"})
+		metadata := map[string]any{"integrity_source": inspection.IntegritySource}
+		if inspection.Checksum != nil {
+			metadata["checksum"] = *inspection.Checksum
+		}
+		if inspection.ChecksumPath != nil {
+			metadata["checksum_path"] = *inspection.ChecksumPath
+		}
+		_, e = s.RegisterArtifact(ctx, managedArchive, "staged-import", "", nil, metadata)
 		if e != nil {
 			return model.ChrootImportResult{}, e
 		}
@@ -1232,7 +1254,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		summary += "; managed staged archive cleanup pending: " + cleanupErr.Error()
 	}
 	_ = control.emit(context.WithoutCancel(ctx), "complete", 100, "Import completed")
-	return model.ChrootImportResult{Name: name, Archive: archive, Arch: arch, Path: target, ChecksumVerified: inspection.ChecksumVerified, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: inspection.Encrypted, ValidationOk: &validationOK, ValidationSummary: summary, PostImportAction: postImport}, nil
+	return model.ChrootImportResult{Name: name, Archive: archive, Arch: arch, Path: target, ChecksumVerified: inspection.ChecksumVerified, IntegritySource: inspection.IntegritySource, ChecksumPath: inspection.ChecksumPath, ConflictStrategy: conflict, Encrypted: inspection.Encrypted, ValidationOk: &validationOK, ValidationSummary: summary, PostImportAction: postImport}, nil
 }
 
 func validatePostImportAction(action string) error {

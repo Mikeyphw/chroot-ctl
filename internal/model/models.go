@@ -40,6 +40,7 @@ type ChrootImportResult struct {
 	Arch              string  `json:"arch"`
 	Path              string  `json:"path"`
 	ChecksumVerified  *bool   `json:"checksum_verified"`
+	IntegritySource   string  `json:"integrity_source"`
 	ChecksumPath      *string `json:"checksum_path"`
 	ConflictStrategy  string  `json:"conflict_strategy"`
 	Encrypted         bool    `json:"encrypted"`
@@ -84,6 +85,7 @@ type ChrootArchiveInspection struct {
 	Checksum                *string           `json:"checksum"`
 	ChecksumPath            *string           `json:"checksum_path"`
 	ChecksumVerified        *bool             `json:"checksum_verified"`
+	IntegritySource         string            `json:"integrity_source"`
 	Encrypted               bool              `json:"encrypted"`
 	TargetExists            bool              `json:"target_exists"`
 	ConflictStrategyOptions []string          `json:"conflict_strategy_options"`
