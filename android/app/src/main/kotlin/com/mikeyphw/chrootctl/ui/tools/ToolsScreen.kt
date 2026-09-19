@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -73,6 +74,7 @@ fun ToolsScreen(
     onUpdateTransferImportArchive: (String) -> Unit,
     onUpdateTransferImportTarget: (String) -> Unit,
     onUpdateTransferImportPassword: (String) -> Unit,
+    onUpdateTransferImportAllowLegacyMetadata: (Boolean) -> Unit,
     onUpdateTransferExportTarget: (String) -> Unit,
     onUpdateTransferExportArchive: (String) -> Unit,
     onInspectTransferImport: () -> Unit,
@@ -134,6 +136,7 @@ fun ToolsScreen(
                 onUpdateImportArchive = onUpdateTransferImportArchive,
                 onUpdateImportTarget = onUpdateTransferImportTarget,
                 onUpdateImportPassword = onUpdateTransferImportPassword,
+                onUpdateImportAllowLegacyMetadata = onUpdateTransferImportAllowLegacyMetadata,
                 onUpdateExportTarget = onUpdateTransferExportTarget,
                 onUpdateExportArchive = onUpdateTransferExportArchive,
                 onInspectImport = onInspectTransferImport,
@@ -317,6 +320,7 @@ private fun TransferCard(
     onUpdateImportArchive: (String) -> Unit,
     onUpdateImportTarget: (String) -> Unit,
     onUpdateImportPassword: (String) -> Unit,
+    onUpdateImportAllowLegacyMetadata: (Boolean) -> Unit,
     onUpdateExportTarget: (String) -> Unit,
     onUpdateExportArchive: (String) -> Unit,
     onInspectImport: () -> Unit,
@@ -344,10 +348,28 @@ private fun TransferCard(
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
             )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Checkbox(
+                    checked = pane.allowLegacyMetadata,
+                    onCheckedChange = onUpdateImportAllowLegacyMetadata,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(stringResource(R.string.transfer_import_allow_legacy_metadata_label), fontWeight = FontWeight.Medium)
+                    Text(
+                        stringResource(R.string.transfer_import_allow_legacy_metadata_help),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPickImportArchive, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_pick_archive_action)) }
-                Button(onClick = onInspectImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_inspect_action)) }
-                Button(onClick = onStartImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = pane.importInspection.approvesOperation("transfer.import")) { Text(stringResource(R.string.transfer_import_action)) }
+                Button(onClick = onPickImportArchive, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.importInspecting) { Text(stringResource(R.string.transfer_pick_archive_action)) }
+                Button(onClick = onInspectImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.importInspecting) { Text(stringResource(R.string.transfer_inspect_action)) }
+                Button(onClick = onStartImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.importInspecting && pane.importInspection.approvesOperation("transfer.import")) { Text(stringResource(R.string.transfer_import_action)) }
+            }
+            if (pane.importInspecting) {
+                Text(stringResource(R.string.transfer_import_inspecting_progress), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             pane.importInspection?.let { PreviewBlock(it) }
             OutlinedTextField(value = pane.exportTargetName, onValueChange = onUpdateExportTarget, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_export_target_label)) })

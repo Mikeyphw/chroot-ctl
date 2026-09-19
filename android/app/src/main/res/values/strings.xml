@@ -384,6 +384,9 @@
     <string name="action_continue">Continue</string>
     <string name="transfer_import_target_label">Import as name</string>
     <string name="transfer_import_password_label">Archive password (if encrypted)</string>
+    <string name="transfer_import_allow_legacy_metadata_label">Allow legacy archive metadata compatibility</string>
+    <string name="transfer_import_allow_legacy_metadata_help">Use only for pre-CHR09 exports. Rootfs metadata fidelity cannot be proven, and the imported chroot will be permanently marked legacy_unverified.</string>
+    <string name="transfer_import_inspecting_progress">Inspecting and validating the import archive…</string>
     <string name="transfer_pick_archive_action">Pick import archive</string>
     <string name="transfer_export_target_label">Export chroot name</string>
     <string name="transfer_preview_export_action">Preview export</string>

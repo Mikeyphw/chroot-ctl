@@ -366,6 +366,7 @@ data class TransferPane(
     val importArchive: String = "",
     val importTargetName: String = "",
     val importPassword: String = "",
+    val allowLegacyMetadata: Boolean = false,
     val exportTargetName: String = "",
     val exportArchive: String = "",
     val conflict: String = "rename",
@@ -374,6 +375,7 @@ data class TransferPane(
     val exportPreview: PreviewSummary? = null,
     val artifactCleanupPreview: PreviewSummary? = null,
     val refreshing: Boolean = false,
+    val importInspecting: Boolean = false,
     val errorMessage: String? = null,
 )
 

@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.Locale
 
 internal interface HomeSnapshotStore {
     suspend fun replace(
@@ -411,8 +412,17 @@ class BridgeRepository(
         data.toPackageCompareSummary()
     }
 
-    suspend fun inspectTransferImport(archive: String, name: String = "", conflict: String = "rename", password: String = ""): Result<PreviewSummary> = runCatching {
-        val payload = JSONObject().put("archive", archive).put("conflict", conflict)
+    suspend fun inspectTransferImport(
+        archive: String,
+        name: String = "",
+        conflict: String = "rename",
+        password: String = "",
+        allowLegacyMetadata: Boolean = false,
+    ): Result<PreviewSummary> = runCatching {
+        val payload = JSONObject()
+            .put("archive", archive)
+            .put("conflict", conflict)
+            .put("allowLegacyMetadata", allowLegacyMetadata)
         if (name.isNotBlank()) payload.put("name", name)
         if (password.isNotBlank()) payload.put("password", password)
         val data = BridgeEnvelope.fromJson(
@@ -736,6 +746,48 @@ private fun JSONObject.toStorageSummary(): StorageSummary = StorageSummary(
     stale = optBoolean("stale", false),
 )
 
+internal fun JSONObject.operationProgressDisplay(fallback: String): String {
+    val base = firstString("message", "state").ifBlank { fallback }
+    if (!optBoolean("live", false)) return base
+
+    val pieces = mutableListOf(base)
+    val done = optLong("bytes_done", -1L)
+    val total = optLong("bytes_total", -1L)
+    if (done >= 0L && total > 0L) {
+        pieces += "${formatProgressBytes(done)} / ${formatProgressBytes(total)}"
+    }
+    val entries = optLong("entries", -1L)
+    if (entries > 0L) {
+        pieces += "${formatProgressCount(entries)} entries"
+    }
+    firstString("current_path").takeIf(String::isNotBlank)?.let { path ->
+        pieces += truncateProgressPath(path, 56)
+    }
+    return pieces.joinToString(" · ")
+}
+
+private fun formatProgressBytes(bytes: Long): String {
+    val safe = bytes.coerceAtLeast(0L)
+    if (safe < 1024L) return "$safe B"
+    val units = arrayOf("KiB", "MiB", "GiB", "TiB")
+    var value = safe.toDouble()
+    var index = -1
+    while (value >= 1024.0 && index + 1 < units.size) {
+        value /= 1024.0
+        index++
+    }
+    if (index < 0) return "$safe B"
+    return String.format(Locale.US, "%.1f %s", value, units[index])
+}
+
+private fun formatProgressCount(count: Long): String = String.format(Locale.US, "%,d", count)
+
+private fun truncateProgressPath(path: String, maxChars: Int): String {
+    val normalized = path.replace('\\', '/')
+    if (maxChars < 8 || normalized.length <= maxChars) return normalized
+    return "…" + normalized.takeLast(maxChars - 1)
+}
+
 private fun JSONObject.toOperationEntity(now: Long, stale: Boolean): OperationEntity {
     val request = OperationRecoveryContract.requestFromRecord(this)
     val retry = OperationRecoveryContract.retryFromRecord(this)
@@ -751,7 +803,9 @@ private fun JSONObject.toOperationEntity(now: Long, stale: Boolean): OperationEn
         targetName = firstString("targetName", "target_name", "name").takeIf(String::isNotBlank),
         phase = firstString("phase").takeIf(String::isNotBlank),
         progressPercent = optNullableInt("progressPercent", "progress_percent"),
-        progressText = firstString("progressText", "progress_text").ifBlank { state.ifBlank { "Queued" } },
+        progressText = (optJSONObject("progressDetail") ?: optJSONObject("progress_detail"))
+            ?.operationProgressDisplay(firstString("progressText", "progress_text").ifBlank { state.ifBlank { "Queued" } })
+            ?: firstString("progressText", "progress_text").ifBlank { state.ifBlank { "Queued" } },
         createdAt = optEpochMillis("createdAt", "created_at") ?: now,
         startedAt = optEpochMillis("startedAt", "started_at"),
         finishedAt = optEpochMillis("finishedAt", "finished_at"),
@@ -799,7 +853,7 @@ private fun JSONObject.toOperationEntity(existing: OperationEntity?, fallbackKin
         targetName = existing?.targetName ?: payload.firstString("targetName", "target_name", "name").takeIf(String::isNotBlank),
         phase = payload.firstString("phase").takeIf(String::isNotBlank) ?: existing?.phase,
         progressPercent = payload.optNullableInt("percent", "progressPercent") ?: existing?.progressPercent,
-        progressText = payload.firstString("message", "state").ifBlank { existing?.progressText ?: state.replaceFirstChar { it.uppercase() } },
+        progressText = payload.operationProgressDisplay(existing?.progressText ?: state.replaceFirstChar { it.uppercase() }),
         createdAt = existing?.createdAt ?: now,
         startedAt = existing?.startedAt ?: if (state == "running") now else null,
         finishedAt = OperationRecoveryContract.finishedAtFor(state, now, existing?.finishedAt),

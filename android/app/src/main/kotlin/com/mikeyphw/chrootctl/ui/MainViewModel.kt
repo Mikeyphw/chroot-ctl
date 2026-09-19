@@ -136,6 +136,8 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
     private val packagePane = MutableStateFlow(PackagePane())
     private val transferPane = MutableStateFlow(TransferPane())
     private var transferImportPreviewRequestPayload: String? = null
+    private var pendingLegacyImportCompletionArchive: String? = null
+    private var pendingLegacyImportDispatchedAt: Long = 0L
     private var transferExportPreviewRequestPayload: String? = null
     private var artifactCleanupPreviewRequestPayload: String? = null
     private val systemSupportPane = MutableStateFlow(SystemSupportPane())
@@ -288,6 +290,19 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             repository.chroots.collect { rows ->
                 val selected = selectedChrootName.value ?: return@collect
                 if (rows.none { it.name == selected }) clearSelectedChroot(selected)
+            }
+        }
+        viewModelScope.launch {
+            repository.operations.collect { rows ->
+                val archive = pendingLegacyImportCompletionArchive ?: return@collect
+                if (rows.any { operation -> legacyImportCompletionMatches(operation.kind, operation.state, operation.requestJson, archive, operation.createdAt, pendingLegacyImportDispatchedAt) }) {
+                    pendingLegacyImportCompletionArchive = null
+                    pendingLegacyImportDispatchedAt = 0L
+                    if (transferPane.value.importArchive == archive) {
+                        transferPane.value = transferPane.value.copy(allowLegacyMetadata = false, importInspection = null)
+                        transferImportPreviewRequestPayload = null
+                    }
+                }
             }
         }
         refresh()
@@ -950,17 +965,43 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
     fun updateTransferImportArchive(path: String) {
         transferImportPreviewRequestPayload = null
-        transferPane.value = transferPane.value.copy(importArchive = path, importInspection = null, refreshing = false, errorMessage = null)
+        pendingLegacyImportCompletionArchive = null
+        pendingLegacyImportDispatchedAt = 0L
+        transferPane.value = transferPane.value.copy(
+            importArchive = path,
+            allowLegacyMetadata = false,
+            importInspection = null,
+            refreshing = false,
+            importInspecting = false,
+            errorMessage = null,
+        )
     }
 
     fun updateTransferImportTarget(name: String) {
         transferImportPreviewRequestPayload = null
-        transferPane.value = transferPane.value.copy(importTargetName = name, importInspection = null, refreshing = false, errorMessage = null)
+        pendingLegacyImportCompletionArchive = null
+        pendingLegacyImportDispatchedAt = 0L
+        transferPane.value = transferPane.value.copy(importTargetName = name, importInspection = null, refreshing = false, importInspecting = false, errorMessage = null)
     }
 
     fun updateTransferImportPassword(password: String) {
         transferImportPreviewRequestPayload = null
-        transferPane.value = transferPane.value.copy(importPassword = password, importInspection = null, refreshing = false, errorMessage = null)
+        pendingLegacyImportCompletionArchive = null
+        pendingLegacyImportDispatchedAt = 0L
+        transferPane.value = transferPane.value.copy(importPassword = password, importInspection = null, refreshing = false, importInspecting = false, errorMessage = null)
+    }
+
+    fun updateTransferImportAllowLegacyMetadata(enabled: Boolean) {
+        transferImportPreviewRequestPayload = null
+        pendingLegacyImportCompletionArchive = null
+        pendingLegacyImportDispatchedAt = 0L
+        transferPane.value = transferPane.value.copy(
+            allowLegacyMetadata = enabled,
+            importInspection = null,
+            refreshing = false,
+            importInspecting = false,
+            errorMessage = null,
+        )
     }
 
     fun updateTransferExportTarget(name: String) {
@@ -985,16 +1026,22 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         val requestPayload = transferImportPreviewIdentity(request)
         transferImportPreviewRequestPayload = requestPayload
         viewModelScope.launch {
-            transferPane.value = transferPane.value.copy(refreshing = true, errorMessage = null)
-            repository.inspectTransferImport(request.importArchive, request.importTargetName, request.conflict, request.importPassword)
+            transferPane.value = transferPane.value.copy(refreshing = true, importInspecting = true, errorMessage = null)
+            repository.inspectTransferImport(
+                request.importArchive,
+                request.importTargetName,
+                request.conflict,
+                request.importPassword,
+                request.allowLegacyMetadata,
+            )
                 .onSuccess { preview ->
                     if (transferImportPreviewRequestPayload == requestPayload && transferImportPreviewIdentity(transferPane.value) == requestPayload) {
-                        transferPane.value = transferPane.value.copy(importInspection = preview, refreshing = false, errorMessage = null)
+                        transferPane.value = transferPane.value.copy(importInspection = preview, refreshing = false, importInspecting = false, errorMessage = null)
                     }
                 }
                 .onFailure { error ->
                     if (transferImportPreviewRequestPayload == requestPayload && transferImportPreviewIdentity(transferPane.value) == requestPayload) {
-                        transferPane.value = transferPane.value.copy(refreshing = false, errorMessage = error.message ?: error.javaClass.simpleName)
+                        transferPane.value = transferPane.value.copy(refreshing = false, importInspecting = false, errorMessage = error.message ?: error.javaClass.simpleName)
                     }
                 }
         }
@@ -1027,7 +1074,10 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
     fun clearTransferImportSecretsAfterDispatch() {
         transferImportPreviewRequestPayload = null
-        transferPane.value = transferPane.value.copy(importPassword = "", importInspection = null)
+        val current = transferPane.value
+        pendingLegacyImportCompletionArchive = current.importArchive.takeIf { current.allowLegacyMetadata && it.isNotBlank() }
+        pendingLegacyImportDispatchedAt = if (pendingLegacyImportCompletionArchive != null) System.currentTimeMillis() else 0L
+        transferPane.value = current.copy(importPassword = "", importInspection = null, importInspecting = false)
     }
 
     fun clearTransferExportPreview() {
@@ -1048,7 +1098,10 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
 
     fun transferImportPayloadJson(): String {
         val current = transferPane.value
-        val payload = JSONObject().put("archive", current.importArchive).put("conflict", current.conflict)
+        val payload = JSONObject()
+            .put("archive", current.importArchive)
+            .put("conflict", current.conflict)
+            .put("allowLegacyMetadata", current.allowLegacyMetadata)
         current.importTargetName.takeIf(String::isNotBlank)?.let { payload.put("name", it) }
         current.importPassword.takeIf(String::isNotBlank)?.let { payload.put("password", it) }
         return payload.withPreviewContract(current.importInspection, "transfer.import").toString()
@@ -1266,11 +1319,26 @@ private fun InstallDraft.toJsonPayload(): JSONObject = JSONObject()
     .put("version", version.takeIf(String::isNotBlank) ?: JSONObject.NULL)
     .put("mirror", mirror)
 
+internal fun legacyImportCompletionMatches(
+    kind: String,
+    state: String,
+    requestJson: String?,
+    archive: String,
+    createdAt: Long,
+    dispatchedAt: Long,
+): Boolean {
+    if (kind != "transfer.import" || state != "succeeded" || archive.isBlank() || requestJson.isNullOrBlank()) return false
+    if (dispatchedAt <= 0L || createdAt < dispatchedAt) return false
+    val request = runCatching { JSONObject(requestJson) }.getOrNull() ?: return false
+    return request.optString("archive") == archive && request.optBoolean("allowLegacyMetadata", request.optBoolean("allow_legacy_metadata", false))
+}
+
 private fun transferImportPreviewIdentity(pane: TransferPane): String = JSONObject()
     .put("archive", pane.importArchive)
     .put("name", pane.importTargetName)
     .put("conflict", pane.conflict)
     .put("password", pane.importPassword)
+    .put("allowLegacyMetadata", pane.allowLegacyMetadata)
     .toString()
 
 private fun transferExportPreviewIdentity(pane: TransferPane): String = JSONObject()
