@@ -573,13 +573,13 @@ func (a *App) chroots(ctx context.Context) error {
 		if arc == "" {
 			arc = services.ManagedArchive(n, "tar.zst")
 		}
-		v, e := a.Services.Transfer().Export(ctx, n, arc, a.Inv.String("password"))
+		v, e := a.Services.Transfer().ExportWithControl(ctx, n, arc, a.Inv.String("password"), services.TransferControl{Progress: a.progress})
 		if e != nil {
 			return e
 		}
 		return a.emit("Chroot Export", v)
 	case "chroots import":
-		v, e := a.Services.Transfer().Import(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"))
+		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress})
 		if e != nil {
 			return e
 		}
@@ -676,19 +676,19 @@ func (a *App) transfer(ctx context.Context) error {
 		if arc == "" {
 			arc = services.ManagedArchive(n, "tar.zst")
 		}
-		v, e := a.Services.Transfer().Export(ctx, n, arc, a.Inv.String("password"))
+		v, e := a.Services.Transfer().ExportWithControl(ctx, n, arc, a.Inv.String("password"), services.TransferControl{Progress: a.progress})
 		if e != nil {
 			return e
 		}
 		return a.emit("Transfer Export", v)
 	case "transfer inspect":
-		v, e := a.Services.Transfer().Inspect(ctx, a.Inv.String("archive"), a.Inv.String("password"))
+		v, e := a.Services.Transfer().InspectWithControl(ctx, a.Inv.String("archive"), a.Inv.String("password"), services.TransferControl{Progress: a.progress})
 		if e != nil {
 			return e
 		}
 		return a.emit("Transfer Inspect", v)
 	case "transfer import":
-		v, e := a.Services.Transfer().Import(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"))
+		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress})
 		if e != nil {
 			return e
 		}

@@ -267,12 +267,61 @@ func (a *App) progress(value any) error {
 	if a.Inv.Globals.JSON {
 		return nil
 	}
+	var detail map[string]any
+	if m, ok := value.(map[string]any); ok {
+		detail = m
+	} else {
+		b, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		_ = json.Unmarshal(b, &detail)
+	}
+	if detail != nil {
+		message := strings.TrimSpace(fmt.Sprint(detail["message"]))
+		if message == "" || message == "<nil>" {
+			message = strings.TrimSpace(fmt.Sprint(detail["phase"]))
+		}
+		if message != "" && message != "<nil>" {
+			if percent, ok := cliProgressPercent(detail["percent"]); ok {
+				_, err := fmt.Fprintf(a.Stderr, "[%3d%%] %s\n", percent, message)
+				return err
+			}
+			_, err := fmt.Fprintf(a.Stderr, "%s\n", message)
+			return err
+		}
+	}
 	b, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(a.Stderr, "%s\n", b)
 	return err
+}
+
+func cliProgressPercent(value any) (int, bool) {
+	var n int
+	switch v := value.(type) {
+	case int:
+		n = v
+	case int32:
+		n = int(v)
+	case int64:
+		n = int(v)
+	case float32:
+		n = int(v)
+	case float64:
+		n = int(v)
+	default:
+		return 0, false
+	}
+	if n < 0 {
+		n = 0
+	}
+	if n > 100 {
+		n = 100
+	}
+	return n, true
 }
 
 func RootHelp() string {

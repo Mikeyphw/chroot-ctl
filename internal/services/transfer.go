@@ -22,6 +22,7 @@ import (
 	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/validation"
+	"chrootctl/internal/zstd"
 )
 
 var artifactTTL = map[string]time.Duration{
@@ -659,14 +660,11 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 		}
 	}
 	tarPath := filepath.Join(tmp, "archive.tar")
-	res, e := runner.Run(ctx, []string{"zstd", "-d", "-q", "-f", source, "-o", tarPath}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
-	if e != nil || res.ReturnCode != 0 {
-		return model.ChrootArchiveInspection{}, fmt.Errorf("zstd decompression failed: %s", strings.TrimSpace(res.Stderr))
+	if e = decompressZstdFile(ctx, control, source, tarPath, 12, 20); e != nil {
+		return model.ChrootArchiveInspection{}, e
 	}
-	if expanded, statErr := os.Stat(tarPath); statErr != nil {
-		return model.ChrootArchiveInspection{}, statErr
-	} else if expanded.Size() > maxArchiveExpandedBytes {
-		return model.ChrootArchiveInspection{}, fmt.Errorf("expanded archive exceeds %d bytes", maxArchiveExpandedBytes)
+	if e = control.emit(ctx, "manifest", 22, "Validating archive manifest"); e != nil {
+		return model.ChrootArchiveInspection{}, e
 	}
 	manifest, size, e := inspectTar(ctx, control, tarPath)
 	if e != nil {
@@ -702,6 +700,9 @@ func requireArchiveChecksum(ctx context.Context, control TransferControl, archiv
 			// A missing export sidecar is not proof of corruption. Compute the
 			// archive digest for local/import tracking, but keep verification false
 			// so callers never confuse it with the original export checksum.
+			if emitErr := control.emit(ctx, "checksum", 8, "Computing SHA-256 (original export sidecar unavailable)"); emitErr != nil {
+				return nil, nil, nil, emitErr
+			}
 			actual, hashErr := sha256FileControl(ctx, control, archive)
 			if hashErr != nil {
 				return nil, nil, nil, hashErr
@@ -724,6 +725,9 @@ func requireArchiveChecksum(ctx context.Context, control TransferControl, archiv
 	}
 	if len(fields) > 1 && filepath.Base(fields[1]) != filepath.Base(archive) {
 		return nil, nil, nil, fmt.Errorf("archive checksum sidecar names %s, want %s", filepath.Base(fields[1]), filepath.Base(archive))
+	}
+	if emitErr := control.emit(ctx, "checksum", 8, "Verifying export checksum"); emitErr != nil {
+		return nil, nil, nil, emitErr
 	}
 	actual, err := sha256FileControl(ctx, control, archive)
 	if err != nil {
@@ -856,6 +860,87 @@ func max64(a, b int64) int64 {
 	return b
 }
 
+type transferProgressReader struct {
+	ctx      context.Context
+	control  TransferControl
+	r        io.Reader
+	total    int64
+	read     int64
+	start    int
+	end      int
+	nextEmit int
+}
+
+func (r *transferProgressReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	r.read += int64(n)
+	if n > 0 && r.total > 0 && r.control.Progress != nil {
+		span := r.end - r.start
+		percent := r.start + int((r.read*int64(span))/r.total)
+		if percent > r.end {
+			percent = r.end
+		}
+		if percent >= r.nextEmit {
+			compressedPercent := int((r.read * 100) / r.total)
+			if compressedPercent > 100 {
+				compressedPercent = 100
+			}
+			if emitErr := r.control.emit(r.ctx, "decompress", percent, fmt.Sprintf("Decompressing archive (%d%% of compressed input)", compressedPercent)); emitErr != nil {
+				return n, emitErr
+			}
+			r.nextEmit = percent + 5
+		}
+	}
+	return n, err
+}
+
+func decompressZstdFile(ctx context.Context, control TransferControl, source, destination string, startPercent, endPercent int) error {
+	if err := control.emit(ctx, "decompress", startPercent, "Decompressing zstd archive"); err != nil {
+		return err
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return fmt.Errorf("open zstd archive %s: %w", source, err)
+	}
+	defer in.Close()
+	st, err := in.Stat()
+	if err != nil {
+		return fmt.Errorf("stat zstd archive %s: %w", source, err)
+	}
+	out, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create decompressed archive %s: %w", destination, err)
+	}
+	ok := false
+	defer func() {
+		_ = out.Close()
+		if !ok {
+			_ = os.Remove(destination)
+		}
+	}()
+	progressSource := &transferProgressReader{ctx: ctx, control: control, r: in, total: st.Size(), start: startPercent, end: endPercent, nextEmit: startPercent + 5}
+	decoder := zstd.NewReader(progressSource)
+	limited := &io.LimitedReader{R: decoder, N: maxArchiveExpandedBytes + 1}
+	written, err := copyWithControl(ctx, control, out, limited)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("zstd decompression failed for %s: %w", source, err)
+	}
+	if written > maxArchiveExpandedBytes {
+		return fmt.Errorf("expanded archive exceeds %d bytes", maxArchiveExpandedBytes)
+	}
+	if err = out.Sync(); err != nil {
+		return fmt.Errorf("sync decompressed archive: %w", err)
+	}
+	if err = out.Close(); err != nil {
+		return fmt.Errorf("close decompressed archive: %w", err)
+	}
+	ok = true
+	return control.emit(ctx, "decompress", endPercent, "Archive decompressed")
+}
+
 func (s *TransferService) materializeTar(ctx context.Context, archive, password, tmp string) (string, error) {
 	return s.materializeTarWithControl(ctx, archive, password, tmp, TransferControl{})
 }
@@ -880,14 +965,8 @@ func (s *TransferService) materializeTarWithControl(ctx context.Context, archive
 		}
 	}
 	tarPath := filepath.Join(tmp, "archive.tar")
-	res, e := runner.Run(ctx, []string{"zstd", "-d", "-q", "-f", source, "-o", tarPath}, sys.RunOptions{MaxCaptureBytes: 256 * 1024})
-	if e != nil || res.ReturnCode != 0 {
-		return "", fmt.Errorf("zstd decompression failed: %s", strings.TrimSpace(res.Stderr))
-	}
-	if st, statErr := os.Stat(tarPath); statErr != nil {
-		return "", statErr
-	} else if st.Size() > maxArchiveExpandedBytes {
-		return "", fmt.Errorf("expanded archive exceeds %d bytes", maxArchiveExpandedBytes)
+	if e := decompressZstdFile(ctx, control, source, tarPath, 30, 45); e != nil {
+		return "", e
 	}
 	return tarPath, nil
 }
@@ -1068,6 +1147,10 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
 	if e = extractRootFromTar(ctx, control, tarPath, stage, inspection.PathName); e != nil {
+		cleanupErr := os.RemoveAll(stage)
+		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
+	}
+	if e = control.emit(ctx, "extract", 72, "Root filesystem extracted"); e != nil {
 		cleanupErr := os.RemoveAll(stage)
 		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
