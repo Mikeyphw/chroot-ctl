@@ -20,7 +20,7 @@ func functionBodyForSourceInvariant(t *testing.T, source, signature string) stri
 	return source[start : start+len(signature)+next]
 }
 
-func TestImportPipelineReusesPreparedTarWithoutSecondDecompression(t *testing.T) {
+func TestImportPipelineUsesOnePreparedTarDecompressionInStagedMode(t *testing.T) {
 	b, err := os.ReadFile("transfer.go")
 	if err != nil {
 		t.Fatal(err)
@@ -34,10 +34,17 @@ func TestImportPipelineReusesPreparedTarWithoutSecondDecompression(t *testing.T)
 		t.Fatal("obsolete second materialization/decompression path is still present")
 	}
 	importBody := functionBodyForSourceInvariant(t, source, "func (s *TransferService) ImportWithControl")
-	if got := strings.Count(importBody, "prepareImportArchive(ctx, archive, password, tmp, control)"); got != 1 {
-		t.Fatalf("ImportWithControl prepared-tar calls=%d, want exactly 1", got)
+	if got := strings.Count(importBody, "prepareImportExecution(ctx, archive, password, tmp, control)"); got != 1 {
+		t.Fatalf("ImportWithControl preparation calls=%d, want exactly 1", got)
 	}
 	if strings.Contains(importBody, "decompressZstdFile(") {
 		t.Fatal("ImportWithControl performs an extra direct decompression")
+	}
+	execution := functionBodyForSourceInvariant(t, source, "func (s *TransferService) prepareImportExecution")
+	if got := strings.Count(execution, "prepareImportArchive(ctx, archive, password, tmp, control)"); got != 1 {
+		t.Fatalf("staged strategy prepared-tar calls=%d, want exactly 1", got)
+	}
+	if !strings.Contains(execution, "space-efficient streaming import; zstd will be decoded once for preflight and once for extraction") {
+		t.Fatal("streaming strategy must explicitly document its two decoder passes")
 	}
 }

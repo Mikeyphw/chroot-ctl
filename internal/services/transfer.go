@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"chrootctl/internal/fsmeta"
 	"chrootctl/internal/model"
 	"chrootctl/internal/mutation"
+	"chrootctl/internal/rcloneops"
 	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/validation"
@@ -354,6 +356,8 @@ type TransferControl struct {
 	Progress            TransferProgress
 	Cancelled           func() bool
 	AllowLegacyMetadata bool
+	ImportStrategy      string
+	InspectionOnly      bool
 }
 
 func (c TransferControl) check(ctx context.Context) error {
@@ -485,6 +489,12 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 	}
 	if archive == "" {
 		archive = ManagedArchive(name, "tar.zst")
+	}
+	if rcloneops.IsLocation(archive) {
+		return s.exportRemoteWithControl(ctx, name, archive, password, control)
+	}
+	if strings.Contains(archive, "://") {
+		return model.ChrootExportResult{}, fmt.Errorf("unsupported export location %q; use a local path or rclone://remote/path", archive)
 	}
 	archive, _ = filepath.Abs(archive)
 	if password != "" && !strings.HasSuffix(archive, ".enc") {
@@ -645,8 +655,16 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 		return model.ChrootArchiveInspection{}, e
 	}
 	defer os.RemoveAll(tmp)
-	inspection, _, e := s.prepareImportArchive(ctx, archive, password, tmp, control)
-	return inspection, e
+	inspectionControl := control
+	inspectionControl.InspectionOnly = true
+	prepared, e := s.prepareImportExecution(ctx, archive, password, tmp, inspectionControl)
+	if e != nil {
+		return model.ChrootArchiveInspection{}, e
+	}
+	if prepared.cleanup != nil {
+		defer prepared.cleanup()
+	}
+	return prepared.inspection, nil
 }
 
 // prepareImportArchive performs the expensive archive materialization exactly once
@@ -787,6 +805,423 @@ func checksumIntegritySource(verified *bool) string {
 	return "computed_on_import"
 }
 
+type preparedImport struct {
+	inspection model.ChrootArchiveInspection
+	extract    func(context.Context, TransferControl, string) error
+	cleanup    func()
+}
+
+func normalizeImportStrategy(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		value = "auto"
+	}
+	switch value {
+	case "auto", "staged", "streaming":
+		return value, nil
+	default:
+		return "", fmt.Errorf("unsupported import strategy %q; expected auto, staged, or streaming", value)
+	}
+}
+
+func existingFilesystemAnchor(path string) string {
+	path = filepath.Clean(path)
+	for {
+		if st, err := os.Stat(path); err == nil && st.IsDir() {
+			return path
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return path
+		}
+		path = parent
+	}
+}
+
+func withDecryptedReader(ctx context.Context, encrypted bool, password string, source io.Reader, consume func(io.Reader) error) error {
+	if !encrypted {
+		return consume(source)
+	}
+	if password == "" {
+		return fmt.Errorf("password required for encrypted archive")
+	}
+	cmd := exec.CommandContext(ctx, "openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-pass", "env:CHROOTCTL_IMPORT_PASSWORD")
+	cmd.Env = append(os.Environ(), "CHROOTCTL_IMPORT_PASSWORD="+password)
+	cmd.Stdin = source
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err = cmd.Start(); err != nil {
+		return fmt.Errorf("start archive decryption: %w", err)
+	}
+	consumeErr := consume(stdout)
+	if consumeErr != nil {
+		_ = cmd.Process.Kill()
+	}
+	waitErr := cmd.Wait()
+	if consumeErr != nil {
+		return consumeErr
+	}
+	if waitErr != nil {
+		return fmt.Errorf("encrypted archive could not be opened: %s", strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func withZstdTarReader(ctx context.Context, control TransferControl, source io.Reader, compressedTotal int64, password string, encrypted bool, startPercent, endPercent int, consume func(io.Reader) error) error {
+	var wrapped io.Reader = source
+	if compressedTotal > 0 {
+		wrapped = &transferProgressReader{ctx: ctx, control: control, r: source, total: compressedTotal, start: startPercent, end: endPercent, nextEmit: startPercent}
+	}
+	return withDecryptedReader(ctx, encrypted, password, wrapped, func(decrypted io.Reader) error {
+		zr := zstd.NewReader(decrypted)
+		if err := consume(zr); err != nil {
+			return err
+		}
+		// Force the decoder to observe the stream terminator/checksum even when a
+		// consumer stops at the logical end of the tar archive.
+		_, err := io.Copy(io.Discard, zr)
+		return err
+	})
+}
+
+func buildImportInspection(ctx context.Context, s *TransferService, archive string, sourceSize int64, created time.Time, manifest map[string]any, payloadBytes int64, sum, sumPath *string, verified *bool, allowLegacy bool) (model.ChrootArchiveInspection, error) {
+	metadataFidelity, err := validateImportManifest(manifest, allowLegacy)
+	if err != nil {
+		return model.ChrootArchiveInspection{}, err
+	}
+	pathName := fmt.Sprint(manifest["path_name"])
+	sourceName := fmt.Sprint(manifest["name"])
+	if sourceName == "" || sourceName == "<nil>" {
+		sourceName = pathName
+	}
+	target, _ := s.C.Registry.Get(ctx, sourceName)
+	metadata := stringMetadataAny(manifest["metadata"])
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	metadata["metadata_fidelity"] = metadataFidelity
+	if metadataFidelity == "legacy_unverified" {
+		metadata["legacy_archive_compatibility"] = "explicit_opt_in"
+	}
+	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: metadata, SizeBytes: int(sourceSize), ExtractedSizeBytes: int(payloadBytes), CreatedAt: created.UTC().Format(time.RFC3339), Checksum: sum, ChecksumPath: sumPath, ChecksumVerified: verified, IntegritySource: checksumIntegritySource(verified), Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
+}
+
+func parseChecksumSidecar(text []byte, archive string) (string, error) {
+	fields := strings.Fields(string(text))
+	if len(fields) == 0 {
+		return "", fmt.Errorf("archive checksum sidecar is empty")
+	}
+	want := strings.ToLower(fields[0])
+	if len(want) != sha256.Size*2 {
+		return "", fmt.Errorf("archive checksum sidecar is malformed")
+	}
+	if _, err := hex.DecodeString(want); err != nil {
+		return "", fmt.Errorf("archive checksum sidecar is malformed")
+	}
+	if len(fields) > 1 && filepath.Base(fields[1]) != rcloneops.BaseName(archive) {
+		return "", fmt.Errorf("archive checksum sidecar names %s, want %s", filepath.Base(fields[1]), rcloneops.BaseName(archive))
+	}
+	return want, nil
+}
+
+func (s *TransferService) inspectRemoteArchive(ctx context.Context, archive, password string, control TransferControl) (model.ChrootArchiveInspection, int64, string, error) {
+	runtime, err := s.C.RcloneRuntime()
+	if err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	entry, err := runtime.Stat(ctx, archive)
+	if err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	return s.inspectRemoteArchiveWithEntry(ctx, archive, password, control, runtime, entry)
+}
+
+func (s *TransferService) inspectRemoteArchiveWithEntry(ctx context.Context, archive, password string, control TransferControl, runtime rcloneops.Runtime, entry rcloneops.Entry) (model.ChrootArchiveInspection, int64, string, error) {
+	var err error
+	if entry.IsDir {
+		return model.ChrootArchiveInspection{}, 0, "", fmt.Errorf("remote import source is a directory: %s", archive)
+	}
+	if err = validateArchiveFileSize(archive, entry.Size); err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	var expected string
+	var sumPath *string
+	verified := false
+	if raw, ok, readErr := runtime.ReadSmall(ctx, archive+".sha256", 1024*1024); readErr != nil {
+		return model.ChrootArchiveInspection{}, 0, "", readErr
+	} else if ok {
+		expected, err = parseChecksumSidecar(raw, archive)
+		if err != nil {
+			return model.ChrootArchiveInspection{}, 0, "", err
+		}
+		p := archive + ".sha256"
+		sumPath = &p
+		if err = control.emit(ctx, "checksum", 8, "Verifying remote export checksum"); err != nil {
+			return model.ChrootArchiveInspection{}, 0, "", err
+		}
+	} else if err = control.emit(ctx, "checksum", 8, "Computing SHA-256 (remote export sidecar unavailable)"); err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	if err = control.emit(ctx, "remote", 10, "Streaming remote archive for structural preflight"); err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	h := sha256.New()
+	var manifest map[string]any
+	var payloadBytes, tarBytes int64
+	err = runtime.StreamRead(ctx, archive, rcloneops.StreamOptions{Cancelled: control.Cancelled, Progress: func(progress rcloneops.Progress) {
+		emitRcloneProgress(ctx, control, "remote-preflight", 10, 20, "Streaming remote archive for structural preflight", archive, progress)
+	}}, func(source io.Reader) error {
+		tee := io.TeeReader(source, h)
+		return withZstdTarReader(ctx, control, tee, entry.Size, password, strings.HasSuffix(archive, ".enc"), 12, 20, func(tarStream io.Reader) error {
+			var e error
+			manifest, payloadBytes, tarBytes, e = inspectTarReader(ctx, control, tarStream)
+			return e
+		})
+	})
+	if err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+	if expected != "" && actual != expected {
+		return model.ChrootArchiveInspection{}, 0, "", fmt.Errorf("archive checksum verification failed")
+	}
+	if expected != "" {
+		verified = true
+	} else {
+		expected = actual
+	}
+	if err = control.emit(ctx, "manifest", 22, "Validating archive manifest and structure"); err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	inspection, err := buildImportInspection(ctx, s, archive, entry.Size, entry.ModTime, manifest, payloadBytes, &expected, sumPath, &verified, control.AllowLegacyMetadata)
+	if err != nil {
+		return model.ChrootArchiveInspection{}, 0, "", err
+	}
+	if inspection.Metadata["metadata_fidelity"] == "legacy_unverified" {
+		if err = control.emit(ctx, "legacy-metadata", 24, "Legacy archive metadata contract missing; continuing with explicit compatibility opt-in"); err != nil {
+			return model.ChrootArchiveInspection{}, 0, "", err
+		}
+	}
+	return inspection, tarBytes, actual, nil
+}
+
+func extractRootFromReader(ctx context.Context, control TransferControl, reader io.Reader, totalBytes int64, destRoot, pathName string) error {
+	reporter := newExtractionProgressReporter(ctx, control, totalBytes, 30, 75)
+	if err := fsmeta.ExtractTarRoot(ctx, reader, destRoot, pathName, fsmeta.CopyControl{Check: func(checkCtx context.Context) error { return control.check(checkCtx) }, ExtractProgress: reporter.report, SkipArchiveMembers: map[string]bool{exportManifestMember: true}}); err != nil {
+		return err
+	}
+	return reporter.finish()
+}
+
+func (s *TransferService) prepareImportExecution(ctx context.Context, archive, password, tmp string, control TransferControl) (preparedImport, error) {
+	strategy, err := normalizeImportStrategy(control.ImportStrategy)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	if rcloneops.IsLocation(archive) {
+		runtime, runtimeErr := s.C.RcloneRuntime()
+		if runtimeErr != nil {
+			return preparedImport{}, runtimeErr
+		}
+		entry, statErr := runtime.Stat(ctx, archive)
+		if statErr != nil {
+			return preparedImport{}, statErr
+		}
+		if entry.IsDir {
+			return preparedImport{}, fmt.Errorf("remote import source is a directory: %s", archive)
+		}
+		plan, planErr := buildImportStoragePlan(entry.Size, tmp, s.C.BaseConfig.ChrootRoot, true)
+		if planErr != nil {
+			return preparedImport{}, planErr
+		}
+		if strategy == "auto" {
+			if control.InspectionOnly {
+				strategy = "streaming"
+			} else {
+				strategy = plan.autoStrategy()
+			}
+			message := "Auto-selected space-efficient remote streaming import"
+			if strategy == "staged" {
+				message = "Auto-selected single-download staged remote import"
+			}
+			if emitErr := control.emitDetail(ctx, "storage", 9, message, plan.details(strategy)); emitErr != nil {
+				return preparedImport{}, emitErr
+			}
+		} else if emitErr := control.emitDetail(ctx, "storage", 9, "Using explicitly selected remote import strategy", plan.details(strategy)); emitErr != nil {
+			return preparedImport{}, emitErr
+		}
+		if strategy == "staged" {
+			if err := plan.stagedSpaceError(); err != nil {
+				return preparedImport{}, err
+			}
+			return s.prepareRemoteStaged(ctx, archive, password, tmp, control)
+		}
+		inspection, tarBytes, preflightHash, err := s.inspectRemoteArchiveWithEntry(ctx, archive, password, control, runtime, entry)
+		if err != nil {
+			return preparedImport{}, err
+		}
+		extract := func(runCtx context.Context, runControl TransferControl, dest string) error {
+			if e := runControl.emit(runCtx, "strategy", 28, "Using space-efficient remote streaming import; archive will be read twice"); e != nil {
+				return e
+			}
+			h := sha256.New()
+			e := runtime.StreamRead(runCtx, archive, rcloneops.StreamOptions{Cancelled: runControl.Cancelled, Progress: func(progress rcloneops.Progress) {
+				emitRcloneProgress(runCtx, runControl, "remote-stream", 30, 36, "Streaming remote archive for extraction", archive, progress)
+			}}, func(source io.Reader) error {
+				tee := io.TeeReader(source, h)
+				return withZstdTarReader(runCtx, runControl, tee, entry.Size, password, strings.HasSuffix(archive, ".enc"), 30, 36, func(tarStream io.Reader) error {
+					return extractRootFromReader(runCtx, runControl, tarStream, tarBytes, dest, inspection.PathName)
+				})
+			})
+			if e != nil {
+				return e
+			}
+			if hex.EncodeToString(h.Sum(nil)) != preflightHash {
+				return fmt.Errorf("remote archive changed between preflight and extraction")
+			}
+			return nil
+		}
+		return preparedImport{inspection: inspection, extract: extract, cleanup: func() {}}, nil
+	}
+	absolute, err := filepath.Abs(archive)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	archive = absolute
+	localStat, statErr := os.Stat(archive)
+	if statErr != nil {
+		return preparedImport{}, statErr
+	}
+	plan, planErr := buildImportStoragePlan(localStat.Size(), tmp, s.C.BaseConfig.ChrootRoot, false)
+	if planErr != nil {
+		return preparedImport{}, planErr
+	}
+	if strategy == "auto" {
+		strategy = plan.autoStrategy()
+		message := "Auto-selected space-efficient streaming import"
+		if strategy == "staged" {
+			message = "Auto-selected single-decompression staged import"
+		}
+		if e := control.emitDetail(ctx, "storage", 9, message, plan.details(strategy)); e != nil {
+			return preparedImport{}, e
+		}
+	} else if e := control.emitDetail(ctx, "storage", 9, "Using explicitly selected local import strategy", plan.details(strategy)); e != nil {
+		return preparedImport{}, e
+	}
+	if strategy == "staged" {
+		if err := plan.stagedSpaceError(); err != nil {
+			return preparedImport{}, err
+		}
+		inspection, tarPath, err := s.prepareImportArchive(ctx, archive, password, tmp, control)
+		if err != nil {
+			return preparedImport{}, err
+		}
+		return preparedImport{inspection: inspection, extract: func(runCtx context.Context, runControl TransferControl, dest string) error {
+			return extractRootFromTar(runCtx, runControl, tarPath, dest, inspection.PathName)
+		}, cleanup: func() {}}, nil
+	}
+	st, err := os.Stat(archive)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	if err = validateArchiveFileSize(archive, st.Size()); err != nil {
+		return preparedImport{}, err
+	}
+	sum, sumPath, verified, err := requireArchiveChecksum(ctx, control, archive)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	if err = control.emit(ctx, "strategy", 10, "Using space-efficient streaming import; zstd will be decoded once for preflight and once for extraction"); err != nil {
+		return preparedImport{}, err
+	}
+	var manifest map[string]any
+	var payloadBytes, tarBytes int64
+	f, err := os.Open(archive)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	err = withZstdTarReader(ctx, control, f, st.Size(), password, strings.HasSuffix(archive, ".enc"), 12, 20, func(tarStream io.Reader) error {
+		var e error
+		manifest, payloadBytes, tarBytes, e = inspectTarReader(ctx, control, tarStream)
+		return e
+	})
+	f.Close()
+	if err != nil {
+		return preparedImport{}, err
+	}
+	if err = control.emit(ctx, "manifest", 22, "Validating archive manifest and structure"); err != nil {
+		return preparedImport{}, err
+	}
+	inspection, err := buildImportInspection(ctx, s, archive, st.Size(), st.ModTime(), manifest, payloadBytes, sum, sumPath, verified, control.AllowLegacyMetadata)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	if inspection.Metadata["metadata_fidelity"] == "legacy_unverified" {
+		if err = control.emit(ctx, "legacy-metadata", 24, "Legacy archive metadata contract missing; continuing with explicit compatibility opt-in"); err != nil {
+			return preparedImport{}, err
+		}
+	}
+	extract := func(runCtx context.Context, runControl TransferControl, dest string) error {
+		file, e := os.Open(archive)
+		if e != nil {
+			return e
+		}
+		defer file.Close()
+		return withZstdTarReader(runCtx, runControl, file, st.Size(), password, strings.HasSuffix(archive, ".enc"), 30, 36, func(tarStream io.Reader) error {
+			return extractRootFromReader(runCtx, runControl, tarStream, tarBytes, dest, inspection.PathName)
+		})
+	}
+	return preparedImport{inspection: inspection, extract: extract, cleanup: func() {}}, nil
+}
+
+func (s *TransferService) prepareRemoteStaged(ctx context.Context, archive, password, tmp string, control TransferControl) (preparedImport, error) {
+	runtime, err := s.C.RcloneRuntime()
+	if err != nil {
+		return preparedImport{}, err
+	}
+	entry, err := runtime.Stat(ctx, archive)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	local := filepath.Join(tmp, rcloneops.BaseName(archive))
+	f, err := os.OpenFile(local, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	err = runtime.StreamRead(ctx, archive, rcloneops.StreamOptions{Cancelled: control.Cancelled, Progress: func(progress rcloneops.Progress) {
+		emitRcloneProgress(ctx, control, "remote-download", 5, 15, "Downloading remote archive", archive, progress)
+	}}, func(r io.Reader) error { _, e := copyWithControl(ctx, control, f, r); return e })
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return preparedImport{}, err
+	}
+	// Preserve a remote checksum sidecar locally when one exists so the normal
+	// local verifier retains its strict supplied-sidecar semantics.
+	if raw, ok, e := runtime.ReadSmall(ctx, archive+".sha256", 1024*1024); e != nil {
+		return preparedImport{}, e
+	} else if ok {
+		if e = os.WriteFile(local+".sha256", raw, 0o600); e != nil {
+			return preparedImport{}, e
+		}
+	}
+	inner := control
+	inner.ImportStrategy = "staged"
+	prep, err := s.prepareImportExecution(ctx, local, password, tmp, inner)
+	if err != nil {
+		return preparedImport{}, err
+	}
+	prep.inspection.Archive = archive
+	prep.inspection.SizeBytes = int(entry.Size)
+	return prep, nil
+}
+
 func manifestText(m map[string]any, key string) string { return strings.TrimSpace(fmt.Sprint(m[key])) }
 
 func validateImportManifest(manifest map[string]any, allowLegacyMetadata bool) (string, error) {
@@ -864,16 +1299,18 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 		return nil, 0, e
 	}
 	defer f.Close()
-	tr := tar.NewReader(f)
+	manifest, payloadBytes, _, e := inspectTarReader(ctx, control, f)
+	return manifest, payloadBytes, e
+}
+
+func inspectTarReader(ctx context.Context, control TransferControl, reader io.Reader) (map[string]any, int64, int64, error) {
+	counted := &countingImportReader{r: reader}
+	tr := tar.NewReader(counted)
 	var manifest map[string]any
 	var total int64
 	members := 0
 	manifestMembers := 0
 	observedRoot := ""
-	// Track the topology the real extractor will observe so structural failures
-	// (hardlink ordering, symlink/non-directory parents, unsafe collisions) are
-	// rejected during the cheap tar-header preflight rather than after a large
-	// rootfs has already been materialized.
 	pathKinds := map[string]string{}
 	ensureParents := func(rel string) error {
 		parts := strings.Split(rel, "/")
@@ -893,151 +1330,156 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 				}
 				continue
 			}
-			// Extraction creates absent parent directories on demand.
 			pathKinds[cur] = "dir"
 		}
 		return nil
 	}
 	for {
 		if err := control.check(ctx); err != nil {
-			return nil, 0, err
+			return nil, 0, counted.n, err
 		}
 		h, e := tr.Next()
 		if e == io.EOF {
 			break
 		}
 		if e != nil {
-			return nil, 0, e
+			return nil, 0, counted.n, e
 		}
 		name := filepath.ToSlash(filepath.Clean(h.Name))
 		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") {
-			return nil, 0, fmt.Errorf("unsafe archive member: %s", h.Name)
+			return nil, 0, counted.n, fmt.Errorf("unsafe archive member: %s", h.Name)
 		}
 		members++
 		if members > maxArchiveMembers {
-			return nil, 0, fmt.Errorf("archive contains too many members")
+			return nil, 0, counted.n, fmt.Errorf("archive contains too many members")
 		}
 		total += max64(h.Size, 0)
 		if total > maxArchiveExpandedBytes {
-			return nil, 0, fmt.Errorf("archive expanded payload exceeds %d bytes", maxArchiveExpandedBytes)
+			return nil, 0, counted.n, fmt.Errorf("archive expanded payload exceeds %d bytes", maxArchiveExpandedBytes)
 		}
 		if name == exportManifestMember {
 			manifestMembers++
 			if manifestMembers > 1 {
-				return nil, 0, fmt.Errorf("archive contains duplicate %s", exportManifestMember)
+				return nil, 0, counted.n, fmt.Errorf("archive contains duplicate %s", exportManifestMember)
 			}
 			if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA {
-				return nil, 0, fmt.Errorf("archive control member %s must be a regular file", exportManifestMember)
+				return nil, 0, counted.n, fmt.Errorf("archive control member %s must be a regular file", exportManifestMember)
 			}
 			if h.Size > 1024*1024 {
-				return nil, 0, fmt.Errorf("archive control member %s is too large", exportManifestMember)
+				return nil, 0, counted.n, fmt.Errorf("archive control member %s is too large", exportManifestMember)
 			}
 			b, e := io.ReadAll(io.LimitReader(tr, 1024*1024))
 			if e != nil {
-				return nil, 0, e
+				return nil, 0, counted.n, e
 			}
 			if e = json.Unmarshal(b, &manifest); e != nil {
-				return nil, 0, e
+				return nil, 0, counted.n, e
 			}
 			continue
 		}
-
 		root := name
 		if i := strings.IndexByte(root, '/'); i >= 0 {
 			root = root[:i]
 		}
 		if root == "" || root == "." {
-			return nil, 0, fmt.Errorf("unsafe archive member: %s", h.Name)
+			return nil, 0, counted.n, fmt.Errorf("unsafe archive member: %s", h.Name)
 		}
 		if observedRoot == "" {
 			observedRoot = root
 		} else if root != observedRoot {
-			return nil, 0, fmt.Errorf("unexpected archive member outside root %s: %s", observedRoot, h.Name)
+			return nil, 0, counted.n, fmt.Errorf("unexpected archive member outside root %s: %s", observedRoot, h.Name)
 		}
 		rel := "."
 		if name != observedRoot {
 			prefix := observedRoot + "/"
 			if !strings.HasPrefix(name, prefix) {
-				return nil, 0, fmt.Errorf("unexpected archive member outside root %s: %s", observedRoot, h.Name)
+				return nil, 0, counted.n, fmt.Errorf("unexpected archive member outside root %s: %s", observedRoot, h.Name)
 			}
 			rel = strings.TrimPrefix(name, prefix)
 		}
 		if rel == "" || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, "../") {
-			return nil, 0, fmt.Errorf("unsafe archive member: %s", h.Name)
+			return nil, 0, counted.n, fmt.Errorf("unsafe archive member: %s", h.Name)
 		}
 		if rel == "." {
 			if h.Typeflag != tar.TypeDir {
-				return nil, 0, fmt.Errorf("archive root %s must be a directory", observedRoot)
+				return nil, 0, counted.n, fmt.Errorf("archive root %s must be a directory", observedRoot)
 			}
 			if kind, ok := pathKinds[rel]; ok && kind != "dir" {
-				return nil, 0, fmt.Errorf("archive root %s collides with %s entry", observedRoot, kind)
+				return nil, 0, counted.n, fmt.Errorf("archive root %s collides with %s entry", observedRoot, kind)
 			}
 			pathKinds[rel] = "dir"
 			continue
 		}
 		if err := ensureParents(rel); err != nil {
-			return nil, 0, err
+			return nil, 0, counted.n, err
 		}
 		existing, exists := pathKinds[rel]
 		switch h.Typeflag {
 		case tar.TypeDir:
 			if exists && existing != "dir" {
-				return nil, 0, fmt.Errorf("archive directory %s collides with %s entry", rel, existing)
+				return nil, 0, counted.n, fmt.Errorf("archive directory %s collides with %s entry", rel, existing)
 			}
 			pathKinds[rel] = "dir"
 		case tar.TypeReg, tar.TypeRegA:
-			// The extractor deliberately permits a later regular file to replace
-			// an earlier regular file, but never a directory/symlink/device.
 			if exists && existing != "regular" {
-				return nil, 0, fmt.Errorf("archive file %s collides with %s entry", rel, existing)
+				return nil, 0, counted.n, fmt.Errorf("archive file %s collides with %s entry", rel, existing)
 			}
 			pathKinds[rel] = "regular"
 		case tar.TypeSymlink:
 			if exists {
-				return nil, 0, fmt.Errorf("duplicate archive member: %s", rel)
+				return nil, 0, counted.n, fmt.Errorf("duplicate archive member: %s", rel)
 			}
 			pathKinds[rel] = "symlink"
 		case tar.TypeLink:
 			if exists {
-				return nil, 0, fmt.Errorf("duplicate archive member: %s", rel)
+				return nil, 0, counted.n, fmt.Errorf("duplicate archive member: %s", rel)
 			}
 			linkName := filepath.ToSlash(filepath.Clean(h.Linkname))
 			prefix := observedRoot + "/"
 			if filepath.IsAbs(linkName) || linkName == ".." || strings.HasPrefix(linkName, "../") || !strings.HasPrefix(linkName, prefix) {
-				return nil, 0, fmt.Errorf("unsafe hardlink target: %s", h.Linkname)
+				return nil, 0, counted.n, fmt.Errorf("unsafe hardlink target: %s", h.Linkname)
 			}
 			linkRel := strings.TrimPrefix(linkName, prefix)
 			if linkRel == "" || pathKinds[linkRel] != "regular" {
-				return nil, 0, fmt.Errorf("hardlink target is not a previously declared regular file: %s", h.Linkname)
+				return nil, 0, counted.n, fmt.Errorf("hardlink target is not a previously declared regular file: %s", h.Linkname)
 			}
 			pathKinds[rel] = "regular"
 		case tar.TypeFifo, tar.TypeChar, tar.TypeBlock:
 			if exists {
-				return nil, 0, fmt.Errorf("duplicate archive member: %s", rel)
+				return nil, 0, counted.n, fmt.Errorf("duplicate archive member: %s", rel)
 			}
 			pathKinds[rel] = "special"
 		case tar.TypeXGlobalHeader, tar.TypeXHeader:
-			// archive/tar normally consumes PAX extension headers internally, but
-			// retain parity with the extractor if one is surfaced.
 			continue
 		default:
-			return nil, 0, fmt.Errorf("unsupported rootfs archive entry type %d for %s", h.Typeflag, h.Name)
+			return nil, 0, counted.n, fmt.Errorf("unsupported rootfs archive entry type %d for %s", h.Typeflag, h.Name)
 		}
 	}
 	if manifest == nil {
-		return nil, 0, fmt.Errorf("archive missing %s", exportManifestMember)
+		return nil, 0, counted.n, fmt.Errorf("archive missing %s", exportManifestMember)
 	}
 	pathName := strings.TrimSpace(fmt.Sprint(manifest["path_name"]))
 	if pathName == "" || pathName == "<nil>" {
-		return nil, 0, fmt.Errorf("archive manifest path_name is missing")
+		return nil, 0, counted.n, fmt.Errorf("archive manifest path_name is missing")
 	}
 	if observedRoot == "" {
-		return nil, 0, fmt.Errorf("archive missing declared root %s", pathName)
+		return nil, 0, counted.n, fmt.Errorf("archive missing declared root %s", pathName)
 	}
 	if observedRoot != pathName {
-		return nil, 0, fmt.Errorf("archive root %s does not match manifest path_name %s", observedRoot, pathName)
+		return nil, 0, counted.n, fmt.Errorf("archive root %s does not match manifest path_name %s", observedRoot, pathName)
 	}
-	return manifest, total, nil
+	return manifest, total, counted.n, nil
+}
+
+type countingImportReader struct {
+	r io.Reader
+	n int64
+}
+
+func (r *countingImportReader) Read(p []byte) (int, error) {
+	n, e := r.r.Read(p)
+	r.n += int64(n)
+	return n, e
 }
 
 func max64(a, b int64) int64 {
@@ -1276,10 +1718,28 @@ func (s *TransferService) Import(ctx context.Context, archive, name, conflict, p
 	return s.ImportWithControl(ctx, archive, name, conflict, password, postImport, TransferControl{})
 }
 
+func importExtractionCapacity(root string, expandedBytes int64) (free uint64, required uint64, reserve uint64, err error) {
+	anchor := existingFilesystemAnchor(root)
+	var fs syscall.Statfs_t
+	if err = syscall.Statfs(anchor, &fs); err != nil {
+		return 0, 0, 0, err
+	}
+	free = uint64(fs.Bavail) * uint64(fs.Bsize)
+	expanded := uint64(max64(expandedBytes, 0))
+	reserve = expanded / 10
+	if reserve < 2*1024*1024*1024 {
+		reserve = 2 * 1024 * 1024 * 1024
+	}
+	required = expanded + reserve
+	return free, required, reserve, nil
+}
+
 func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, conflict, password, postImport string, control TransferControl) (model.ChrootImportResult, error) {
-	archive, _ = filepath.Abs(archive)
-	if _, e := os.Stat(archive); e != nil {
-		return model.ChrootImportResult{}, e
+	if !rcloneops.IsLocation(archive) {
+		archive, _ = filepath.Abs(archive)
+		if _, e := os.Stat(archive); e != nil {
+			return model.ChrootImportResult{}, e
+		}
 	}
 	if conflict == "" {
 		conflict = "rename"
@@ -1322,21 +1782,27 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		return model.ChrootImportResult{}, e
 	}
 	defer os.RemoveAll(tmp)
-	inspection, tarPath, e := s.prepareImportArchive(ctx, archive, password, tmp, control)
+	prepared, e := s.prepareImportExecution(ctx, archive, password, tmp, control)
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
-	if managedArchive, managedErr := s.managed(archive); managedErr == nil {
-		metadata := map[string]any{"integrity_source": inspection.IntegritySource, "metadata_fidelity": inspection.Metadata["metadata_fidelity"]}
-		if inspection.Checksum != nil {
-			metadata["checksum"] = *inspection.Checksum
-		}
-		if inspection.ChecksumPath != nil {
-			metadata["checksum_path"] = *inspection.ChecksumPath
-		}
-		_, e = s.RegisterArtifact(ctx, managedArchive, "staged-import", "", nil, metadata)
-		if e != nil {
-			return model.ChrootImportResult{}, e
+	if prepared.cleanup != nil {
+		defer prepared.cleanup()
+	}
+	inspection := prepared.inspection
+	if !rcloneops.IsLocation(archive) {
+		if managedArchive, managedErr := s.managed(archive); managedErr == nil {
+			metadata := map[string]any{"integrity_source": inspection.IntegritySource, "metadata_fidelity": inspection.Metadata["metadata_fidelity"]}
+			if inspection.Checksum != nil {
+				metadata["checksum"] = *inspection.Checksum
+			}
+			if inspection.ChecksumPath != nil {
+				metadata["checksum_path"] = *inspection.ChecksumPath
+			}
+			_, e = s.RegisterArtifact(ctx, managedArchive, "staged-import", "", nil, metadata)
+			if e != nil {
+				return model.ChrootImportResult{}, e
+			}
 		}
 	}
 	if name == "" {
@@ -1350,6 +1816,22 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	root := s.C.BaseConfig.ChrootRoot
 	if e = os.MkdirAll(root, 0755); e != nil {
 		return model.ChrootImportResult{}, e
+	}
+	freeBytes, requiredBytes, reserveBytes, capacityErr := importExtractionCapacity(root, int64(inspection.ExtractedSizeBytes))
+	if capacityErr != nil {
+		return model.ChrootImportResult{}, fmt.Errorf("inspect import target capacity: %w", capacityErr)
+	}
+	if e = control.emitDetail(ctx, "storage", 27, "Checking target filesystem capacity", map[string]any{
+		"target_filesystem":    existingFilesystemAnchor(root),
+		"free_bytes":           freeBytes,
+		"expanded_bytes":       inspection.ExtractedSizeBytes,
+		"safety_reserve_bytes": reserveBytes,
+		"required_bytes":       requiredBytes,
+	}); e != nil {
+		return model.ChrootImportResult{}, e
+	}
+	if freeBytes < requiredBytes {
+		return model.ChrootImportResult{}, exactImportSpaceError(root, freeBytes, uint64(max64(int64(inspection.ExtractedSizeBytes), 0)), reserveBytes, requiredBytes)
 	}
 	target := filepath.Join(root, name)
 	existing, e := s.C.Registry.Get(ctx, name)
@@ -1405,7 +1887,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 		cleanupErr := os.RemoveAll(stage)
 		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}
-	if e = extractRootFromTar(ctx, control, tarPath, stage, inspection.PathName); e != nil {
+	if e = prepared.extract(ctx, control, stage); e != nil {
 		cleanupErr := os.RemoveAll(stage)
 		return model.ChrootImportResult{}, errors.Join(e, cleanupErr)
 	}

@@ -31,7 +31,7 @@ func cliMutationScope(inv Invocation) string {
 		return "none"
 	}
 	switch inv.Spec.Command {
-	case "install", "chroots import", "transfer import", "support-bundle", "magisk render",
+	case "install", "chroots import", "transfer import", "remotes config import", "support-bundle", "magisk render",
 		"clipboard daemon start", "clipboard daemon stop", "clipboard daemon run", "clipboard set":
 		return "global"
 	case "run":
@@ -50,7 +50,7 @@ func cliMutationScope(inv Invocation) string {
 }
 
 func mutationTarget(ctx context.Context, app *App, inv Invocation) (string, error) {
-	if inv.Spec.Command == "install" || inv.Spec.Command == "chroots import" || inv.Spec.Command == "transfer import" {
+	if inv.Spec.Command == "install" || inv.Spec.Command == "chroots import" || inv.Spec.Command == "transfer import" || inv.Spec.Command == "remotes config import" {
 		return "", nil
 	}
 	return app.resolveTarget(ctx, false)

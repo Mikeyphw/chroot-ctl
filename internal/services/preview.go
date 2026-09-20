@@ -17,11 +17,11 @@ func (s *PreviewService) Install(ctx context.Context, request model.InstallReque
 func (s *PreviewService) Export(ctx context.Context, name, archive string) (map[string]any, error) {
 	return s.C.Chroots().ExportPreview(ctx, name, archive)
 }
-func (s *PreviewService) Import(ctx context.Context, archive, name, conflict, password string, allowLegacyMetadata bool) (map[string]any, error) {
+func (s *PreviewService) Import(ctx context.Context, archive, name, conflict, password string, allowLegacyMetadata bool, importStrategy string) (map[string]any, error) {
 	// Preview always permits reading a legacy manifest so the caller can receive
 	// an actionable blocking reason and explicitly opt in. The actual import
 	// still fails closed unless allowLegacyMetadata is carried into execution.
-	inspection, err := s.C.Transfer().InspectWithControl(ctx, archive, password, TransferControl{AllowLegacyMetadata: true})
+	inspection, err := s.C.Transfer().InspectWithControl(ctx, archive, password, TransferControl{AllowLegacyMetadata: true, ImportStrategy: importStrategy})
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (s *PreviewService) Import(ctx context.Context, archive, name, conflict, pa
 	return map[string]any{
 		"ok": len(blocking) == 0, "kind": "import", "archive": archive,
 		"inspection": inspection, "conflict": conflict, "blocking": blocking,
-		"warnings": warnings, "allowLegacyMetadata": allowLegacyMetadata,
+		"warnings": warnings, "allowLegacyMetadata": allowLegacyMetadata, "importStrategy": importStrategy,
 	}, nil
 }
 func (s *PreviewService) Delete(ctx context.Context, name string) (map[string]any, error) {

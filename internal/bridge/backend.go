@@ -478,7 +478,19 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		if e != nil {
 			return nil, e
 		}
-		return s.Transfer().InspectWithControl(ctx, a, optText(p, "password"), services.TransferControl{AllowLegacyMetadata: allowLegacy})
+		strategy := optText(p, "importStrategy")
+		if strategy == "" {
+			strategy = optText(p, "import_strategy")
+		}
+		return s.Transfer().InspectWithControl(ctx, a, optText(p, "password"), services.TransferControl{AllowLegacyMetadata: allowLegacy, ImportStrategy: strategy})
+	case "remote.rclone.status":
+		return s.Transfer().RcloneStatus(ctx)
+	case "remote.rclone.list":
+		location := optText(p, "location")
+		if location == "" {
+			return nil, protocolError("MISSING_REMOTE_LOCATION", "payload.location is required", nil)
+		}
+		return s.Transfer().RcloneList(ctx, location)
 	case "artifacts.list":
 		return s.Transfer().TempState(ctx)
 	case "transfer.artifact_root":
@@ -635,7 +647,11 @@ func (b *ServicesBackend) preview(ctx context.Context, op string, p map[string]a
 		if e != nil {
 			return nil, e
 		}
-		return s.Preview().Import(ctx, a, optText(p, "name"), optText(p, "conflict"), optText(p, "password"), allowLegacy)
+		strategy := optText(p, "importStrategy")
+		if strategy == "" {
+			strategy = optText(p, "import_strategy")
+		}
+		return s.Preview().Import(ctx, a, optText(p, "name"), optText(p, "conflict"), optText(p, "password"), allowLegacy, strategy)
 	case "transfer.preview_export":
 		n, e := reqName(p)
 		if e != nil {
@@ -1149,6 +1165,26 @@ func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string
 			}
 			return cancelled(isCancelled, "Catalog apply was cancelled")
 		})
+	case "remote.rclone.config_import":
+		path := optText(p, "path")
+		if path == "" {
+			path = optText(p, "stagedPath")
+		}
+		if path == "" {
+			path = optText(p, "staged_path")
+		}
+		if path == "" {
+			return nil, protocolError("MISSING_RCLONE_CONFIG", "payload.path is required", nil)
+		}
+		if e := emit(progress, map[string]any{"phase": "rclone-config", "percent": 20, "message": "Validating staged rclone config"}); e != nil {
+			return nil, e
+		}
+		result, e := s.Transfer().RcloneImportConfigFromStaging(ctx, path)
+		if e != nil {
+			return nil, e
+		}
+		_ = emit(progress, map[string]any{"phase": "complete", "percent": 100, "message": "Rclone config imported"})
+		return result, nil
 	case "transfer.import":
 		a := optText(p, "archive")
 		if a == "" {
@@ -1165,8 +1201,13 @@ func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string
 		if e != nil {
 			return nil, e
 		}
+		strategy := optText(p, "importStrategy")
+		if strategy == "" {
+			strategy = optText(p, "import_strategy")
+		}
 		return s.Transfer().ImportWithControl(ctx, a, optText(p, "name"), defaultText(optText(p, "conflict"), "fail"), optText(p, "password"), post, services.TransferControl{
 			AllowLegacyMetadata: allowLegacy,
+			ImportStrategy:      strategy,
 			Progress: func(v any) error {
 				if e := emit(progress, v); e != nil {
 					return e

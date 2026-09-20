@@ -356,26 +356,84 @@ func TestUninstallRemovesStableLauncher(t *testing.T) {
 	}
 }
 
-
 func TestPostFSActuallyProvisionsStableLauncherWithoutMagicMount(t *testing.T) {
-    root := t.TempDir()
-    mod := filepath.Join(root, "modules", "chrootctl-magisk")
-    state := filepath.Join(root, "state")
-    source := filepath.Join(mod, "system", "bin", "chrootctl")
-    if err := os.MkdirAll(filepath.Dir(source), 0755); err != nil { t.Fatal(err) }
-    if err := os.WriteFile(source, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil { t.Fatal(err) }
-    script := filepath.Join(root, "post-fs-data.sh")
-    if err := os.WriteFile(script, []byte(postFS()), 0755); err != nil { t.Fatal(err) }
-    cmd := exec.Command("sh", script)
-    cmd.Env = append(os.Environ(), "CHROOTCTL_MODULE_DIR="+mod, "CHROOTCTL_STATE_ROOT="+state)
-    if out, err := cmd.CombinedOutput(); err != nil { t.Fatalf("post-fs-data failed: %v: %s", err, out) }
-    launcher := filepath.Join(state, "bin", "chrootctl")
-    info, err := os.Stat(launcher)
-    if err != nil { t.Fatalf("stable launcher not provisioned: %v", err) }
-    if info.Mode().Perm() != 0755 { t.Fatalf("stable launcher mode=%#o want 0755", info.Mode().Perm()) }
-    body, err := os.ReadFile(launcher)
-    if err != nil { t.Fatal(err) }
-    if !strings.Contains(string(body), "/data/adb/modules/chrootctl-magisk") {
-        t.Fatalf("stable launcher does not target canonical active module: %s", body)
-    }
+	root := t.TempDir()
+	mod := filepath.Join(root, "modules", "chrootctl-magisk")
+	state := filepath.Join(root, "state")
+	source := filepath.Join(mod, "system", "bin", "chrootctl")
+	if err := os.MkdirAll(filepath.Dir(source), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(root, "post-fs-data.sh")
+	if err := os.WriteFile(script, []byte(postFS()), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Env = append(os.Environ(), "CHROOTCTL_MODULE_DIR="+mod, "CHROOTCTL_STATE_ROOT="+state)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("post-fs-data failed: %v: %s", err, out)
+	}
+	launcher := filepath.Join(state, "bin", "chrootctl")
+	info, err := os.Stat(launcher)
+	if err != nil {
+		t.Fatalf("stable launcher not provisioned: %v", err)
+	}
+	if info.Mode().Perm() != 0755 {
+		t.Fatalf("stable launcher mode=%#o want 0755", info.Mode().Perm())
+	}
+	body, err := os.ReadFile(launcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "/data/adb/modules/chrootctl-magisk") {
+		t.Fatalf("stable launcher does not target canonical active module: %s", body)
+	}
+}
+
+func TestModuleCarriesOptionalRcloneRuntimeAndPrivateConfigState(t *testing.T) {
+	r := fakeRuntime(t)
+	rclonePath := filepath.Join(r, "rclone")
+	payload := fakeAndroidArm64ELF(183)
+	if err := os.WriteFile(rclonePath, payload, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(r, "runtime-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest runtimeManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	sum, _ := shaFile(rclonePath)
+	manifest.Files = append(manifest.Files, runtimeFile{Path: "rclone", Size: int64(len(payload)), SHA256: sum, Executable: true})
+	raw, _ = json.Marshal(manifest)
+	if err := os.WriteFile(filepath.Join(r, "runtime-manifest.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRuntime(r); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "module")
+	if err := Render(Options{OutputDir: out, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "runtime", RuntimeABI, "rclone")); err != nil {
+		t.Fatalf("bundled rclone missing from module: %v", err)
+	}
+	customizeRaw, _ := os.ReadFile(filepath.Join(out, "customize.sh"))
+	postRaw, _ := os.ReadFile(filepath.Join(out, "post-fs-data.sh"))
+	for _, pair := range []struct{ text, token string }{
+		{string(customizeRaw), `runtime/arm64-v8a/rclone`},
+		{string(postRaw), `RCLONE_DIR="$STATE_ROOT/rclone"`},
+		{string(postRaw), `chmod 0700 "$STATE_ROOT" "$BIN_DIR" "$RCLONE_DIR"`},
+		{string(postRaw), `chmod 0600 "$RCLONE_DIR/rclone.conf"`},
+	} {
+		if !strings.Contains(pair.text, pair.token) {
+			t.Fatalf("module script missing %q", pair.token)
+		}
+	}
 }

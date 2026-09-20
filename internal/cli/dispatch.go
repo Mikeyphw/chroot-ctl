@@ -56,6 +56,8 @@ func (a *App) Dispatch(ctx context.Context) error {
 		return a.snapshots(ctx)
 	case "transfer":
 		return a.transfer(ctx)
+	case "remotes":
+		return a.remotes(ctx)
 	case "artifacts":
 		return a.artifacts(ctx)
 	case "events":
@@ -579,7 +581,7 @@ func (a *App) chroots(ctx context.Context) error {
 		}
 		return a.emit("Chroot Export", v)
 	case "chroots import":
-		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata")})
+		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata"), ImportStrategy: a.Inv.String("import_strategy")})
 		if e != nil {
 			return e
 		}
@@ -682,13 +684,13 @@ func (a *App) transfer(ctx context.Context) error {
 		}
 		return a.emit("Transfer Export", v)
 	case "transfer inspect":
-		v, e := a.Services.Transfer().InspectWithControl(ctx, a.Inv.String("archive"), a.Inv.String("password"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata")})
+		v, e := a.Services.Transfer().InspectWithControl(ctx, a.Inv.String("archive"), a.Inv.String("password"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata"), ImportStrategy: a.Inv.String("import_strategy")})
 		if e != nil {
 			return e
 		}
 		return a.emit("Transfer Inspect", v)
 	case "transfer import":
-		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata")})
+		v, e := a.Services.Transfer().ImportWithControl(ctx, a.Inv.String("archive"), a.Inv.String("import_name"), a.Inv.String("conflict"), a.Inv.String("password"), a.Inv.String("post_import"), services.TransferControl{Progress: a.progress, AllowLegacyMetadata: a.Inv.Bool("allow_legacy_metadata"), ImportStrategy: a.Inv.String("import_strategy")})
 		if e != nil {
 			return e
 		}
@@ -696,6 +698,40 @@ func (a *App) transfer(ctx context.Context) error {
 	}
 	return errors.New("unsupported transfer command")
 }
+
+func (a *App) remotes(ctx context.Context) error {
+	switch a.Inv.Spec.Command {
+	case "remotes":
+		return errors.New("remotes subcommand is required")
+	case "remotes status":
+		v, e := a.Services.Transfer().RcloneStatus(ctx)
+		if e != nil {
+			return e
+		}
+		return a.emit("Rclone Remote Status", v)
+	case "remotes list":
+		v, e := a.Services.Transfer().RcloneStatus(ctx)
+		if e != nil {
+			return e
+		}
+		return a.emit("Configured Rclone Remotes", v["remotes"])
+	case "remotes ls":
+		v, e := a.Services.Transfer().RcloneList(ctx, a.Inv.String("location"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Rclone Remote Listing", v)
+	case "remotes config import":
+		v, e := a.Services.Transfer().RcloneImportConfig(ctx, a.Inv.String("config_path"))
+		if e != nil {
+			return e
+		}
+		return a.emit("Rclone Config Import", v)
+	default:
+		return errors.New("unsupported remotes command")
+	}
+}
+
 func (a *App) artifacts(ctx context.Context) error {
 	switch a.Inv.Spec.Command {
 	case "artifacts":

@@ -13,6 +13,7 @@ import (
 
 	"chrootctl/internal/model"
 	"chrootctl/internal/mutation"
+	"chrootctl/internal/rcloneops"
 	"chrootctl/internal/registry"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/validation"
@@ -523,8 +524,34 @@ func (s *ChrootService) ExportPreview(ctx context.Context, name, archive string)
 		return nil, e
 	}
 	blocking := []map[string]string{}
+	warnings := []any{}
+	size := directorySize(source)
 	if archive == "" {
 		archive = ManagedArchive(name, "tar.zst")
+	}
+	if rcloneops.IsLocation(archive) {
+		canonical, err := rcloneops.CanonicalURI(archive)
+		if err != nil {
+			blocking = append(blocking, map[string]string{"code": "invalid_remote_archive", "message": err.Error()})
+		} else {
+			archive = canonical
+			runtime, runtimeErr := s.C.RcloneRuntime()
+			if runtimeErr != nil {
+				blocking = append(blocking, map[string]string{"code": "rclone_unavailable", "message": runtimeErr.Error()})
+			} else if configErr := runtime.ValidateLocation(archive); configErr != nil {
+				blocking = append(blocking, map[string]string{"code": "rclone_unconfigured", "message": configErr.Error()})
+			}
+		}
+		warnings = append(warnings, "Remote export streams the compressed archive directly through rclone; provider credentials remain in the private rclone configuration.")
+		return map[string]any{
+			"ok": len(blocking) == 0, "kind": "export", "name": name, "archive": archive,
+			"size_bytes": size, "required_bytes": 0, "free_bytes": 0, "enough_space": true,
+			"remote": true, "streaming": true, "blocking": blocking, "warnings": warnings,
+		}, nil
+	}
+	if strings.Contains(archive, "://") {
+		blocking = append(blocking, map[string]string{"code": "unsupported_remote_archive", "message": "Remote exports must use rclone://REMOTE/path."})
+		return map[string]any{"ok": false, "kind": "export", "name": name, "archive": archive, "size_bytes": size, "blocking": blocking, "warnings": warnings}, nil
 	}
 	archive, _ = filepath.Abs(archive)
 	if managedRoot, err := EnsureManagedTransferRoot(); err != nil {
@@ -537,12 +564,11 @@ func (s *ChrootService) ExportPreview(ctx context.Context, name, archive string)
 	if rel, _ := filepath.Rel(source, archive); rel != "" && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
 		blocking = append(blocking, map[string]string{"code": "archive_inside_source", "message": "archive path must be outside the chroot source"})
 	}
-	size := directorySize(source)
 	_, _, free := diskUsage(filepath.Dir(archive))
 	if free < uint64(size) {
 		blocking = append(blocking, map[string]string{"code": "insufficient_space", "message": "The export destination does not have enough free space."})
 	}
-	return map[string]any{"ok": len(blocking) == 0, "kind": "export", "name": name, "archive": archive, "size_bytes": size, "required_bytes": size, "free_bytes": free, "enough_space": free >= uint64(size), "blocking": blocking, "warnings": []any{}}, nil
+	return map[string]any{"ok": len(blocking) == 0, "kind": "export", "name": name, "archive": archive, "size_bytes": size, "required_bytes": size, "free_bytes": free, "enough_space": free >= uint64(size), "blocking": blocking, "warnings": warnings}, nil
 }
 func (s *ChrootService) ValidateImport(ctx context.Context, name string) (map[string]any, error) {
 	name, err := validation.ChrootNameField(name, "imported chroot name")

@@ -1,7 +1,7 @@
 {
   "arbitraryShell": false,
   "contractSchemaVersion": 1,
-  "operationCount": 87,
+  "operationCount": 90,
   "operations": [
     {
       "description": "Return native dashboard state",
@@ -374,6 +374,24 @@
       ]
     },
     {
+      "description": "Return rclone runtime readiness and configured remote names without secret option values",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "remote.rclone.status",
+      "payloadFields": []
+    },
+    {
+      "description": "List one configured rclone remote directory",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "remote.rclone.list",
+      "payloadFields": [
+        "location"
+      ]
+    },
+    {
       "description": "Inspect a staged import archive",
       "destructive": false,
       "lockScope": "none",
@@ -383,6 +401,8 @@
         "allowLegacyMetadata",
         "allow_legacy_metadata",
         "archive",
+        "importStrategy",
+        "import_strategy",
         "password",
         "path"
       ]
@@ -442,6 +462,8 @@
         "allow_legacy_metadata",
         "archive",
         "conflict",
+        "importStrategy",
+        "import_strategy",
         "name",
         "password",
         "path"
@@ -1000,6 +1022,18 @@
       ]
     },
     {
+      "description": "Import a staged rclone.conf into root-owned chrootctl state",
+      "destructive": false,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "remote.rclone.config_import",
+      "payloadFields": [
+        "path",
+        "stagedPath",
+        "staged_path"
+      ]
+    },
+    {
       "description": "Import a staged chroot archive",
       "destructive": false,
       "lockScope": "global",
@@ -1010,6 +1044,8 @@
         "allow_legacy_metadata",
         "archive",
         "conflict",
+        "importStrategy",
+        "import_strategy",
         "name",
         "password",
         "path",

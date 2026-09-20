@@ -197,7 +197,7 @@
       "prog": "chrootctl app reconcile"
     }
   ],
-  "commandNodeCount": 78,
+  "commandNodeCount": 83,
   "commandNodes": [
     {
       "arguments": [],
@@ -1988,7 +1988,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
+          "help": "Source local tar.zst/.enc archive or credential-free rclone://REMOTE/path. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2084,11 +2084,31 @@
           "required": false,
           "type": null,
           "completion": ""
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "auto",
+            "staged",
+            "streaming"
+          ],
+          "const": null,
+          "default": "auto",
+          "dest": "import_strategy",
+          "help": "Import storage strategy. auto prefers single-pass staged import only when free-space heuristics are safely satisfied; streaming minimizes temporary disk usage.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--import-strategy"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
         }
       ],
       "command": "chroots import",
       "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
-      "epilog": "examples:\n  chrootctl chroots import /tmp/work.tar.zst\n  chrootctl chroots import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl chroots import /tmp/legacy.tar.zst --allow-legacy-metadata",
+      "epilog": "examples:\n  chrootctl chroots import /tmp/work.tar.zst\n  chrootctl chroots import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl chroots import /tmp/legacy.tar.zst --allow-legacy-metadata\nremote example:\n  chrootctl chroots import rclone://drive/chroots/work.tar.zst",
       "path": [
         "chroots",
         "import"
@@ -2487,7 +2507,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Destination tar.zst path under the managed transfer artifact root. Defaults to the managed artifact root.",
+          "help": "Destination local path under the managed transfer root, or credential-free rclone://REMOTE/path. Defaults to the managed local artifact root.",
           "metavar": null,
           "nargs": "?",
           "optionStrings": [],
@@ -2513,8 +2533,8 @@
         }
       ],
       "command": "transfer export",
-      "description": "Create a metadata-faithful tar.zst archive inside the managed transfer artifact root.",
-      "epilog": "examples:\n  chrootctl --name work transfer export\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work transfer export /tmp/chrootctl-transfer/work.tar.zst",
+      "description": "Create a metadata-faithful tar.zst archive locally or publish it to an rclone:// remote.",
+      "epilog": "examples:\n  chrootctl --name work transfer export\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work transfer export /tmp/chrootctl-transfer/work.tar.zst\nremote example:\n  chrootctl --name work transfer export rclone://drive/chroots/work.tar.zst",
       "path": [
         "transfer",
         "export"
@@ -2545,7 +2565,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
+          "help": "Source local tar.zst/.enc archive or credential-free rclone://REMOTE/path. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2584,11 +2604,31 @@
           "required": false,
           "type": null,
           "completion": ""
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "auto",
+            "staged",
+            "streaming"
+          ],
+          "const": null,
+          "default": "auto",
+          "dest": "import_strategy",
+          "help": "Import storage strategy. auto prefers single-pass staged import only when free-space heuristics are safely satisfied; streaming minimizes temporary disk usage.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--import-strategy"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
         }
       ],
       "command": "transfer inspect",
       "description": "Verify archive checksum sidecar and embedded manifest before import.",
-      "epilog": "examples:\n  chrootctl transfer inspect /tmp/work.tar.zst\nlegacy archive:\n  chrootctl transfer inspect /tmp/legacy.tar.zst --allow-legacy-metadata",
+      "epilog": "examples:\n  chrootctl transfer inspect /tmp/work.tar.zst\nlegacy archive:\n  chrootctl transfer inspect /tmp/legacy.tar.zst --allow-legacy-metadata\nremote example:\n  chrootctl transfer inspect rclone://drive/chroots/work.tar.zst",
       "path": [
         "transfer",
         "inspect"
@@ -2619,7 +2659,7 @@
           "const": null,
           "default": null,
           "dest": "archive",
-          "help": "Source tar.zst archive. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
+          "help": "Source local tar.zst/.enc archive or credential-free rclone://REMOTE/path. An adjacent .sha256 sidecar is verified when present; otherwise SHA-256 is computed on import.",
           "metavar": null,
           "nargs": null,
           "optionStrings": [],
@@ -2715,11 +2755,31 @@
           "required": false,
           "type": null,
           "completion": ""
+        },
+        {
+          "action": "_StoreAction",
+          "choices": [
+            "auto",
+            "staged",
+            "streaming"
+          ],
+          "const": null,
+          "default": "auto",
+          "dest": "import_strategy",
+          "help": "Import storage strategy. auto prefers single-pass staged import only when free-space heuristics are safely satisfied; streaming minimizes temporary disk usage.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--import-strategy"
+          ],
+          "required": false,
+          "type": null,
+          "completion": ""
         }
       ],
       "command": "transfer import",
       "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
-      "epilog": "examples:\n  chrootctl transfer import /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl transfer import /tmp/legacy.tar.zst --allow-legacy-metadata",
+      "epilog": "examples:\n  chrootctl transfer import /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl transfer import /tmp/legacy.tar.zst --allow-legacy-metadata\nremote example:\n  chrootctl transfer import rclone://drive/chroots/work.tar.zst",
       "path": [
         "transfer",
         "import"
@@ -2741,6 +2801,171 @@
       "requireOneOfGroups": [],
       "jsonForbiddenWhen": [],
       "privilegeRules": []
+    },
+    {
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [],
+      "command": "remotes",
+      "description": "Inspect and configure credential-isolated rclone remotes used by chroot import/export.",
+      "epilog": "examples:\n  chrootctl remotes status\n  chrootctl remotes list\n  chrootctl remotes ls rclone://drive/chroots",
+      "path": [
+        "remotes"
+      ],
+      "prog": "chrootctl remotes",
+      "handler": "remotes",
+      "group": true,
+      "privilege": "none",
+      "mutability": "read"
+    },
+    {
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [],
+      "command": "remotes status",
+      "description": "Probe the selected rclone runtime and report configured remote names without exposing secrets.",
+      "epilog": null,
+      "path": [
+        "remotes",
+        "status"
+      ],
+      "prog": "chrootctl remotes status",
+      "handler": "remotes",
+      "group": false,
+      "privilege": "read-root",
+      "mutability": "read"
+    },
+    {
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [],
+      "command": "remotes list",
+      "description": "List configured rclone remote names without exposing option values or credentials.",
+      "epilog": null,
+      "path": [
+        "remotes",
+        "list"
+      ],
+      "prog": "chrootctl remotes list",
+      "handler": "remotes",
+      "group": false,
+      "privilege": "read-root",
+      "mutability": "read"
+    },
+    {
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "location",
+          "help": "Credential-free rclone://REMOTE/path to browse.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": null,
+          "completion": ""
+        }
+      ],
+      "command": "remotes ls",
+      "description": "List one rclone remote directory.",
+      "epilog": "example:\n  chrootctl remotes ls rclone://drive/chroots",
+      "path": [
+        "remotes",
+        "ls"
+      ],
+      "prog": "chrootctl remotes ls",
+      "handler": "remotes",
+      "group": false,
+      "privilege": "read-root",
+      "mutability": "read"
+    },
+    {
+      "hidden": false,
+      "completionExposed": true,
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "streamMode": "none",
+      "healthExitPolicy": "informational",
+      "exclusiveGroups": [],
+      "requireOneOfGroups": [],
+      "jsonForbiddenWhen": [],
+      "privilegeRules": [],
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "const": null,
+          "default": null,
+          "dest": "config_path",
+          "help": "Staged rclone.conf path. The config is copied into root-owned /data/adb/chrootctl/rclone/rclone.conf with mode 0600.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [],
+          "required": true,
+          "type": "Path",
+          "completion": "path"
+        }
+      ],
+      "command": "remotes config import",
+      "description": "Import a staged rclone.conf into chrootctl private root state.",
+      "epilog": "example:\n  chrootctl remotes config import /data/local/tmp/chrootctl-transfer/<staged>-rclone.conf",
+      "path": [
+        "remotes",
+        "config",
+        "import"
+      ],
+      "prog": "chrootctl remotes config import",
+      "handler": "remotes",
+      "group": false,
+      "privilege": "mutate-root",
+      "mutability": "mutate"
     },
     {
       "arguments": [],

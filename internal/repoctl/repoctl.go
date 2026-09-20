@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"crypto/sha256"
+	"debug/buildinfo"
+	"debug/elf"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -209,6 +211,112 @@ func run(root string, env []string, args ...string) error {
 	return cmd.Run()
 }
 
+func copyRuntimeFile(source, target string, mode os.FileMode) error {
+	src, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	st, err := src.Stat()
+	if err != nil {
+		return err
+	}
+	if !st.Mode().IsRegular() {
+		return fmt.Errorf("runtime source is not a regular file: %s", source)
+	}
+	dst, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		_ = dst.Close()
+		if !ok {
+			_ = os.Remove(target)
+		}
+	}()
+	if _, err = io.Copy(dst, src); err != nil {
+		return err
+	}
+	if err = dst.Sync(); err != nil {
+		return err
+	}
+	if err = dst.Close(); err != nil {
+		return err
+	}
+	if err = os.Chmod(target, mode); err != nil {
+		return err
+	}
+	ok = true
+	return nil
+}
+
+func isAndroidArm64Runtime(path string) bool {
+	ef, err := elf.Open(path)
+	if err != nil {
+		return false
+	}
+	defer ef.Close()
+	return ef.Class == elf.ELFCLASS64 && ef.Data == elf.ELFDATA2LSB && ef.Machine == elf.EM_AARCH64 && ef.Type == elf.ET_DYN
+}
+
+func isRcloneAndroidArm64Runtime(path string) bool {
+	if !isAndroidArm64Runtime(path) {
+		return false
+	}
+	info, err := buildinfo.ReadFile(path)
+	if err != nil || info.Main.Path != "github.com/rclone/rclone" {
+		return false
+	}
+	settings := map[string]string{}
+	for _, setting := range info.Settings {
+		settings[setting.Key] = setting.Value
+	}
+	return settings["GOOS"] == "android" && settings["GOARCH"] == "arm64" && settings["CGO_ENABLED"] == "1"
+}
+
+func resolveRcloneRuntimeSource(root string) (string, bool, error) {
+	candidates := []string{}
+	if explicit := strings.TrimSpace(os.Getenv("CHROOTCTL_RCLONE_PATH")); explicit != "" {
+		candidates = append(candidates, explicit)
+	}
+	candidates = append(candidates,
+		filepath.Join(root, "out", "rclone", chmodule.RuntimeABI, "rclone"),
+		filepath.Join(root, "out", "native-runtime", chmodule.RuntimeABI, "rclone"),
+	)
+	if path, err := exec.LookPath("rclone"); err == nil {
+		candidates = append(candidates, path)
+	}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		abs, err := filepath.Abs(candidate)
+		if err != nil || seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		st, err := os.Lstat(abs)
+		if err != nil {
+			continue
+		}
+		explicit := strings.TrimSpace(os.Getenv("CHROOTCTL_RCLONE_PATH"))
+		unsafe := st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() || st.Mode().Perm()&0o111 == 0 || !isRcloneAndroidArm64Runtime(abs)
+		if unsafe {
+			if explicit != "" {
+				explicitAbs, _ := filepath.Abs(explicit)
+				if explicitAbs == abs {
+					return "", false, fmt.Errorf("CHROOTCTL_RCLONE_PATH is not a verified Android/arm64 rclone executable: %s", abs)
+				}
+			}
+			continue
+		}
+		return abs, true, nil
+	}
+	return "", false, nil
+}
+
 func BuildRuntime(opts RuntimeOptions) (string, error) {
 	root, e := repoRoot()
 	if e != nil {
@@ -248,7 +356,30 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	m := runtimeManifest{SchemaVersion: chmodule.RuntimeSchemaVersion, RuntimeKind: chmodule.RuntimeKind, Platform: "android", ABI: chmodule.RuntimeABI, Entrypoint: chmodule.RuntimeEntrypoint, BackendVersion: chmodule.BackendVersion, BridgeProtocolVersion: chmodule.BridgeProtocolVersion, Files: []runtimeFile{{Path: chmodule.RuntimeEntrypoint, Size: st.Size(), SHA256: sum, Executable: true}}}
+	runtimeFiles := []runtimeFile{{Path: chmodule.RuntimeEntrypoint, Size: st.Size(), SHA256: sum, Executable: true}}
+	if rcloneSource, found, resolveErr := resolveRcloneRuntimeSource(root); resolveErr != nil {
+		return "", resolveErr
+	} else if found {
+		rcloneTarget := filepath.Join(tmp, "rclone")
+		if e = copyRuntimeFile(rcloneSource, rcloneTarget, 0o755); e != nil {
+			return "", fmt.Errorf("bundle rclone runtime: %w", e)
+		}
+		rcloneInfo, statErr := os.Stat(rcloneTarget)
+		if statErr != nil {
+			return "", statErr
+		}
+		rcloneSum, hashErr := shaFile(rcloneTarget)
+		if hashErr != nil {
+			return "", hashErr
+		}
+		runtimeFiles = append(runtimeFiles, runtimeFile{Path: "rclone", Size: rcloneInfo.Size(), SHA256: rcloneSum, Executable: true})
+		fmt.Fprintf(os.Stderr, "repoctl: bundled Android rclone runtime: %s\n", rcloneSource)
+	} else if strings.TrimSpace(os.Getenv("CHROOTCTL_REQUIRE_RCLONE")) == "1" {
+		return "", errors.New("CHROOTCTL_REQUIRE_RCLONE=1 but no trusted Android/arm64 rclone runtime was found; set CHROOTCTL_RCLONE_PATH or run install-rclone-android-runtime.sh")
+	} else {
+		fmt.Fprintln(os.Stderr, "repoctl: rclone runtime not bundled (remote transport will remain unavailable until CHROOTCTL_RCLONE_PATH is provided at runtime)")
+	}
+	m := runtimeManifest{SchemaVersion: chmodule.RuntimeSchemaVersion, RuntimeKind: chmodule.RuntimeKind, Platform: "android", ABI: chmodule.RuntimeABI, Entrypoint: chmodule.RuntimeEntrypoint, BackendVersion: chmodule.BackendVersion, BridgeProtocolVersion: chmodule.BridgeProtocolVersion, Files: runtimeFiles}
 	raw, _ := json.MarshalIndent(m, "", "  ")
 	raw = append(raw, '\n')
 	if e = os.WriteFile(filepath.Join(tmp, "runtime-manifest.json"), raw, 0644); e != nil {

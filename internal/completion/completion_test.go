@@ -8,7 +8,7 @@ import (
 )
 
 func TestCommandCountAndNames(t *testing.T) {
-	if len(CommandNodes) != 78 {
+	if len(CommandNodes) != 83 {
 		t.Fatalf("nodes=%d", len(CommandNodes))
 	}
 	z, err := GenerateZsh()

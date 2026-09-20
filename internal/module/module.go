@@ -89,7 +89,7 @@ func CompatibilityPayload() map[string]any {
 		"project":               "chrootctl",
 		"bridgeProtocolVersion": BridgeProtocolVersion,
 		"backend":               map[string]any{"implementation": "go", "version": BackendVersion},
-		"nativeRuntime":         map[string]any{"schemaVersion": RuntimeSchemaVersion, "kind": RuntimeKind, "platform": "android", "abi": RuntimeABI, "entrypoint": RuntimeEntrypoint},
+		"nativeRuntime":         map[string]any{"schemaVersion": RuntimeSchemaVersion, "kind": RuntimeKind, "platform": "android", "abi": RuntimeABI, "entrypoint": RuntimeEntrypoint, "optionalExecutables": []string{"rclone"}},
 		"androidApp":            map[string]any{"applicationId": "com.mikeyphw.chrootctl", "versionName": "0.1.0-phase29", "versionCode": 1, "minimumSupportedModuleVersionCode": ModuleVersionCode},
 		"module":                map[string]any{"id": ModuleID, "version": ModuleVersion, "versionCode": ModuleVersionCode, "minimumSupportedBridgeProtocolVersion": BridgeProtocolVersion},
 	}
@@ -205,13 +205,25 @@ func ValidateRuntime(root string) error {
 	if st.Mode().Perm()&0111 == 0 {
 		return errors.New("native runtime entrypoint is not executable")
 	}
-	ef, e := elf.Open(ep)
-	if e != nil {
-		return fmt.Errorf("native runtime entrypoint is not a valid ELF: %w", e)
+	if err := validateAndroidArm64RuntimeELF(ep, "native runtime entrypoint"); err != nil {
+		return err
+	}
+	if seen["rclone"] {
+		if err := validateAndroidArm64RuntimeELF(filepath.Join(root, "rclone"), "bundled rclone runtime"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAndroidArm64RuntimeELF(path, label string) error {
+	ef, err := elf.Open(path)
+	if err != nil {
+		return fmt.Errorf("%s is not a valid ELF: %w", label, err)
 	}
 	defer ef.Close()
 	if ef.Class != elf.ELFCLASS64 || ef.Data != elf.ELFDATA2LSB || ef.Machine != elf.EM_AARCH64 || ef.Type != elf.ET_DYN {
-		return fmt.Errorf("native runtime ELF identity mismatch: class=%s data=%s machine=%s type=%s", ef.Class, ef.Data, ef.Machine, ef.Type)
+		return fmt.Errorf("%s ELF identity mismatch: class=%s data=%s machine=%s type=%s", label, ef.Class, ef.Data, ef.Machine, ef.Type)
 	}
 	interpreter := ""
 	for _, prog := range ef.Progs {
@@ -220,16 +232,16 @@ func ValidateRuntime(root string) error {
 		}
 		raw, readErr := io.ReadAll(io.LimitReader(prog.Open(), 256))
 		if readErr != nil {
-			return fmt.Errorf("read native runtime interpreter: %w", readErr)
+			return fmt.Errorf("read %s interpreter: %w", label, readErr)
 		}
 		interpreter = strings.TrimRight(string(raw), "\x00")
 		break
 	}
 	if interpreter != "/system/bin/linker64" {
-		return fmt.Errorf("native runtime Android interpreter mismatch: %q", interpreter)
+		return fmt.Errorf("%s Android interpreter mismatch: %q", label, interpreter)
 	}
 	if err := validateDynamicLibraries(ef); err != nil {
-		return err
+		return fmt.Errorf("%s: %w", label, err)
 	}
 	return nil
 }
@@ -557,6 +569,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755
     set_perm "$MODPATH/runtime/arm64-v8a/chrootctl" 0 0 0755
+    [ ! -f "$MODPATH/runtime/arm64-v8a/rclone" ] || set_perm "$MODPATH/runtime/arm64-v8a/rclone" 0 0 0755
   else
     chmod 0755 "$MODPATH/customize.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/post-fs-data.sh" 2>/dev/null || true
@@ -566,6 +579,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     chmod 0755 "$MODPATH/system/bin/chrootctl" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl-magisk-helper" 2>/dev/null || true
     chmod 0755 "$MODPATH/runtime/arm64-v8a/chrootctl" 2>/dev/null || true
+    [ ! -f "$MODPATH/runtime/arm64-v8a/rclone" ] || chmod 0755 "$MODPATH/runtime/arm64-v8a/rclone" 2>/dev/null || true
   fi
 fi
 
@@ -580,6 +594,7 @@ MODDIR="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}"
 STATE_ROOT=/data/adb/chrootctl
 [ -n "${CHROOTCTL_STATE_ROOT:-}" ] && STATE_ROOT="$CHROOTCTL_STATE_ROOT"
 BIN_DIR="$STATE_ROOT/bin"
+RCLONE_DIR="$STATE_ROOT/rclone"
 PUBLIC="$BIN_DIR/chrootctl"
 SOURCE="$MODDIR/system/bin/chrootctl"
 
@@ -587,9 +602,10 @@ SOURCE="$MODDIR/system/bin/chrootctl"
 # mount. Maintain a root-owned stable launcher outside the module mount tree.
 [ -d "$MODDIR" ] || exit 0
 [ -f "$SOURCE" ] && [ -x "$SOURCE" ] && [ ! -L "$SOURCE" ] || exit 0
-mkdir -p "$BIN_DIR" || exit 0
-chown 0:0 "$STATE_ROOT" "$BIN_DIR" 2>/dev/null || true
-chmod 0700 "$STATE_ROOT" "$BIN_DIR" 2>/dev/null || true
+mkdir -p "$BIN_DIR" "$RCLONE_DIR" || exit 0
+chown 0:0 "$STATE_ROOT" "$BIN_DIR" "$RCLONE_DIR" 2>/dev/null || true
+chmod 0700 "$STATE_ROOT" "$BIN_DIR" "$RCLONE_DIR" 2>/dev/null || true
+[ ! -f "$RCLONE_DIR/rclone.conf" ] || { chown 0:0 "$RCLONE_DIR/rclone.conf" 2>/dev/null || true; chmod 0600 "$RCLONE_DIR/rclone.conf" 2>/dev/null || true; }
 cat > "$PUBLIC.tmp" <<'EOF'
 #!/system/bin/sh
 MODDIR="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}"

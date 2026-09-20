@@ -15,8 +15,8 @@ func validRequest(op string, p map[string]any) []byte {
 	b, _ := json.Marshal(map[string]any{"protocolVersion": 1, "requestId": "req-1", "operation": op, "payload": p})
 	return b
 }
-func TestFrozenCapabilitiesCoverAll87Operations(t *testing.T) {
-	if got := len(orderedSpecs); got != 87 {
+func TestFrozenCapabilitiesCoverAll90Operations(t *testing.T) {
+	if got := len(orderedSpecs); got != 90 {
 		t.Fatalf("spec count=%d", got)
 	}
 	modes := map[string]int{}
@@ -28,7 +28,7 @@ func TestFrozenCapabilitiesCoverAll87Operations(t *testing.T) {
 			t.Fatalf("resolve %s: %v", s.Name, e)
 		}
 	}
-	if modes["query"] != 37 || modes["preview"] != 16 || modes["operation"] != 34 {
+	if modes["query"] != 39 || modes["preview"] != 16 || modes["operation"] != 35 {
 		t.Fatalf("modes=%v", modes)
 	}
 	if locks["none"] == 0 || locks["target"] == 0 || locks["global"] == 0 {
@@ -132,7 +132,7 @@ func TestCapabilitiesResponseShape(t *testing.T) {
 	if c["protocolVersion"] != 1 || c["arbitraryShell"] != false {
 		t.Fatalf("%v", c)
 	}
-	if len(c["operations"].([]map[string]any)) != 87 {
+	if len(c["operations"].([]map[string]any)) != 90 {
 		t.Fatal("capability count")
 	}
 }
