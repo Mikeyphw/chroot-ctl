@@ -292,3 +292,149 @@ func TestFixTTYDoesNotSkipPrivateDevPopulation(t *testing.T) {
 		t.Fatal("FixTTY does not delegate to EnsureDeviceNodes")
 	}
 }
+
+func TestMountTopologyCoversPromisedCoreTargets(t *testing.T) {
+	cfg := testCfg(t)
+	c := New(cfg, &sys.Runner{DryRun: true}, nil)
+	base := cfg.ChrootBase()
+	got := map[string]MountSpec{}
+	for _, spec := range c.MountSpecs() {
+		got[filepath.Clean(spec.Target)] = spec
+	}
+	checks := []struct {
+		target, source, fstype string
+		bind                   bool
+	}{
+		{filepath.Join(base, "dev"), "tmpfs", "tmpfs", false},
+		{filepath.Join(base, "dev/pts"), "devpts", "devpts", false},
+		{filepath.Join(base, "dev/shm"), "tmpfs", "tmpfs", false},
+		{filepath.Join(base, "proc"), "/proc", "", true},
+		{filepath.Join(base, "sys"), "/sys", "", true},
+	}
+	for _, want := range checks {
+		spec, ok := got[filepath.Clean(want.target)]
+		if !ok {
+			t.Fatalf("missing mount target %s", want.target)
+		}
+		if spec.Source != want.source || spec.FSType != want.fstype || spec.Bind != want.bind {
+			t.Fatalf("mount %s = %+v, want source=%s fstype=%s bind=%v", want.target, spec, want.source, want.fstype, want.bind)
+		}
+	}
+}
+
+func TestConfigBindMountTargetsRemainCovered(t *testing.T) {
+	cfg := testCfg(t)
+	cfg.ExtraBindMounts = []config.BindMount{{Source: "/tmp", Target: "mnt/host-tmp", Enabled: true, ReadOnly: true}}
+	c := New(cfg, &sys.Runner{DryRun: true}, nil)
+	wantTarget := filepath.Join(cfg.ChrootBase(), "mnt/host-tmp")
+	for _, spec := range c.MountSpecs() {
+		if filepath.Clean(spec.Target) == filepath.Clean(wantTarget) {
+			if !spec.Bind || spec.Source != "/tmp" || !spec.ReadOnly {
+				t.Fatalf("unexpected bind spec: %+v", spec)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing configured bind mount %s", wantTarget)
+}
+
+func TestMountTargetDiagnosticNamesHostGuestAndExecutionContext(t *testing.T) {
+	cfg := testCfg(t)
+	c := New(cfg, &sys.Runner{}, nil)
+	spec := MountSpec{Source: "tmpfs", Target: filepath.Join(cfg.ChrootBase(), "dev/shm"), FSType: "tmpfs"}
+	err := c.mountTargetDiagnostic(spec, "synthetic failure")
+	text := err.Error()
+	for _, want := range []string{"MOUNT_TARGET_NOT_VISIBLE", "host_target=" + spec.Target, "guest_target=/dev/shm", "source=tmpfs", "fstype=tmpfs", "execution_context=host-pre-chroot", "synthetic failure"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("diagnostic %q missing %q", text, want)
+		}
+	}
+}
+
+func TestPrivateDevEssentialNodesAndLinksContract(t *testing.T) {
+	src, err := os.ReadFile("controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{`"tty": {"5", "0", "666"}`, `"console": {"5", "1", "600"}`, `"null": {"1", "3", "666"}`, `"zero": {"1", "5", "666"}`, `"random": {"1", "8", "666"}`, `"urandom": {"1", "9", "666"}`, `"fd": "/proc/self/fd"`, `"ptmx": "pts/ptmx"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("private /dev contract missing %s", want)
+		}
+	}
+}
+
+func TestAllMountFailurePathsUseContextDiagnostic(t *testing.T) {
+	src, err := os.ReadFile("controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{
+		`mountTargetDiagnostic(spec, "mount command failed: "+err.Error())`,
+		`mountTargetDiagnostic(spec, detail)`,
+		`mountTargetDiagnostic(dev, "private guest /dev is not mounted")`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing contextual mount diagnostic path %q", want)
+		}
+	}
+	if strings.Contains(text, `MOUNT_TARGET_NOT_VISIBLE: target=%s source=tmpfs`) {
+		t.Fatal("legacy target-only FixTTY diagnostic remains")
+	}
+}
+
+func TestEssentialDeviceNodesRejectNonDevices(t *testing.T) {
+	src, err := os.ReadFile("controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{"DEVICE_NODE_INVALID", "os.ModeDevice", "os.ModeCharDevice"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("device-node validation missing %q", want)
+		}
+	}
+}
+
+func TestExistingDeviceNodesValidateMajorMinor(t *testing.T) {
+	src, err := os.ReadFile("controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{"linuxDeviceMajorMinor", "actual_major=", "actual_minor="} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("device identity validation missing %q", want)
+		}
+	}
+}
+
+func TestConventionalDeviceLinksAreValidated(t *testing.T) {
+	src, err := os.ReadFile("controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{"DEVICE_LINK_INVALID", "os.ModeSymlink", "os.Readlink(path)", "actual != target"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("device link validation missing %q", want)
+		}
+	}
+}
+
+func TestMountMismatchAndReadOnlyRemountUseContextDiagnostic(t *testing.T) {
+	src, err := os.ReadFile("controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{
+		`mountTargetDiagnostic(spec, "existing mount does not match requested topology: "+matchErr.Error())`,
+		`mountTargetDiagnostic(spec, "read-only bind remount failed: "+err.Error())`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("contextual mount failure diagnostic missing %q", want)
+		}
+	}
+}

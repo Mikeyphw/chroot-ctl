@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"chrootctl/internal/config"
 	"chrootctl/internal/model"
@@ -158,6 +159,16 @@ func (c *Controller) ensureDirs() error {
 	return nil
 }
 
+func (c *Controller) mountTargetDiagnostic(spec MountSpec, detail string) error {
+	base := filepath.Clean(c.Config.ChrootBase())
+	hostTarget := filepath.Clean(spec.Target)
+	guestTarget := "/"
+	if rel, err := filepath.Rel(base, hostTarget); err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		guestTarget = "/" + filepath.ToSlash(rel)
+	}
+	return fmt.Errorf("MOUNT_TARGET_NOT_VISIBLE: host_target=%s guest_target=%s source=%s fstype=%s execution_context=host-pre-chroot: %s", hostTarget, guestTarget, spec.Source, spec.FSType, detail)
+}
+
 func (c *Controller) ensureMountTarget(spec MountSpec) error {
 	if c.Runner != nil && c.Runner.DryRun {
 		return nil
@@ -165,14 +176,14 @@ func (c *Controller) ensureMountTarget(spec MountSpec) error {
 	// Parent mounts can hide directories created by ensureDirs. Re-create each
 	// target immediately before its mount in the namespace where mount(2) runs.
 	if err := os.MkdirAll(spec.Target, 0o755); err != nil {
-		return fmt.Errorf("prepare mount target %s: %w", spec.Target, err)
+		return c.mountTargetDiagnostic(spec, fmt.Sprintf("cannot prepare target: %v", err))
 	}
 	st, err := os.Stat(spec.Target)
 	if err != nil {
-		return fmt.Errorf("MOUNT_TARGET_NOT_VISIBLE: target=%s source=%s fstype=%s: %w", spec.Target, spec.Source, spec.FSType, err)
+		return c.mountTargetDiagnostic(spec, err.Error())
 	}
 	if !st.IsDir() {
-		return fmt.Errorf("MOUNT_TARGET_NOT_VISIBLE: target=%s source=%s fstype=%s: target is not a directory", spec.Target, spec.Source, spec.FSType)
+		return c.mountTargetDiagnostic(spec, "target is not a directory")
 	}
 	return nil
 }
@@ -315,7 +326,8 @@ func (c *Controller) Mount(ctx context.Context) model.OperationResult {
 		}
 		ok, matchErr := mountMatches(spec, records)
 		if matchErr != nil {
-			result.AddFailure(matchErr.Error())
+			diagnostic := c.mountTargetDiagnostic(spec, "existing mount does not match requested topology: "+matchErr.Error())
+			result.AddFailure(diagnostic.Error())
 			result.Errors = append(result.Errors, c.rollbackMounts(ctx, created)...)
 			break
 		}
@@ -339,14 +351,16 @@ func (c *Controller) Mount(ctx context.Context) model.OperationResult {
 			argv = append(argv, spec.Source, spec.Target)
 		}
 		if err := c.runRequired(ctx, argv, sys.RunOptions{MaxCaptureBytes: 64 * 1024}); err != nil {
-			result.AddFailure(err.Error())
+			diagnostic := c.mountTargetDiagnostic(spec, "mount command failed: "+err.Error())
+			result.AddFailure(diagnostic.Error())
 			result.Errors = append(result.Errors, c.rollbackMounts(ctx, created)...)
 			break
 		}
 		created = append(created, spec.Target)
 		if spec.Bind && spec.ReadOnly {
 			if err := c.runRequired(ctx, []string{"busybox", "mount", "-o", "remount,bind,ro", spec.Target}, sys.RunOptions{MaxCaptureBytes: 64 * 1024}); err != nil {
-				result.AddFailure(err.Error())
+				diagnostic := c.mountTargetDiagnostic(spec, "read-only bind remount failed: "+err.Error())
+				result.AddFailure(diagnostic.Error())
 				result.Errors = append(result.Errors, c.rollbackMounts(ctx, created)...)
 				break
 			}
@@ -359,10 +373,12 @@ func (c *Controller) Mount(ctx context.Context) model.OperationResult {
 				break
 			}
 			if ok, verifyErr := mountMatches(spec, records); verifyErr != nil || !ok {
-				if verifyErr == nil {
-					verifyErr = fmt.Errorf("mount %s was not visible after mount", spec.Target)
+				detail := "mount was not visible after mount"
+				if verifyErr != nil {
+					detail = "post-mount verification failed: " + verifyErr.Error()
 				}
-				result.AddFailure(verifyErr.Error())
+				diagnostic := c.mountTargetDiagnostic(spec, detail)
+				result.AddFailure(diagnostic.Error())
 				result.Errors = append(result.Errors, c.rollbackMounts(ctx, created)...)
 				break
 			}
@@ -433,7 +449,7 @@ func (c *Controller) FixTTY(ctx context.Context) model.OperationResult {
 		return result
 	}
 	if !ok {
-		result.AddFailure(fmt.Sprintf("MOUNT_TARGET_NOT_VISIBLE: target=%s source=tmpfs fstype=tmpfs: private guest /dev is not mounted", dev.Target))
+		result.AddFailure(c.mountTargetDiagnostic(dev, "private guest /dev is not mounted").Error())
 		return result
 	}
 	// /dev is a fresh tmpfs, so its essential device nodes and conventional
@@ -441,6 +457,17 @@ func (c *Controller) FixTTY(ctx context.Context) model.OperationResult {
 	// guest with only the child mountpoints and makes /dev/null, /dev/tty, etc.
 	// unavailable inside the chroot.
 	return c.EnsureDeviceNodes(ctx)
+}
+
+func linuxDeviceMajorMinor(info os.FileInfo) (uint64, uint64, bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, false
+	}
+	rdev := uint64(st.Rdev)
+	major := ((rdev >> 8) & 0xfff) | ((rdev >> 32) & 0xfffff000)
+	minor := (rdev & 0xff) | ((rdev >> 12) & 0xffffff00)
+	return major, minor, true
 }
 
 func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResult {
@@ -453,7 +480,7 @@ func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResul
 		result.AddFailure(err.Error())
 		return result
 	}
-	nodes := map[string][3]string{"tty": {"5", "0", "666"}, "console": {"5", "1", "600"}, "null": {"1", "3", "666"}, "zero": {"1", "5", "666"}, "random": {"1", "8", "644"}, "urandom": {"1", "9", "644"}}
+	nodes := map[string][3]string{"tty": {"5", "0", "666"}, "console": {"5", "1", "600"}, "null": {"1", "3", "666"}, "zero": {"1", "5", "666"}, "random": {"1", "8", "666"}, "urandom": {"1", "9", "666"}}
 	dev := filepath.Join(c.Config.ChrootBase(), "dev")
 	if c.Runner == nil || !c.Runner.DryRun {
 		if err := os.MkdirAll(dev, 0o755); err != nil {
@@ -469,8 +496,23 @@ func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResul
 	}
 	for name, value := range nodes {
 		target := filepath.Join(dev, name)
-		if _, err := os.Stat(target); err == nil {
+		if st, err := os.Stat(target); err == nil {
+			if st.Mode()&os.ModeDevice == 0 || st.Mode()&os.ModeCharDevice == 0 {
+				result.AddFailure(fmt.Sprintf("DEVICE_NODE_INVALID: path=%s expected=char-device major=%s minor=%s", target, value[0], value[1]))
+				continue
+			}
+			wantMajor, wantMinor := uint64(0), uint64(0)
+			fmt.Sscan(value[0], &wantMajor)
+			fmt.Sscan(value[1], &wantMinor)
+			major, minor, ok := linuxDeviceMajorMinor(st)
+			if !ok || major != wantMajor || minor != wantMinor {
+				result.AddFailure(fmt.Sprintf("DEVICE_NODE_INVALID: path=%s expected=char-device major=%s minor=%s actual_major=%d actual_minor=%d", target, value[0], value[1], major, minor))
+				continue
+			}
 			result.AddSkipped()
+			continue
+		} else if !os.IsNotExist(err) {
+			result.AddFailure(fmt.Sprintf("DEVICE_NODE_INVALID: path=%s: %v", target, err))
 			continue
 		}
 		if err := c.runRequired(ctx, []string{"busybox", "mknod", "-m", value[2], target, "c", value[0], value[1]}, sys.RunOptions{MaxCaptureBytes: 64 * 1024}); err != nil {
@@ -487,7 +529,15 @@ func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResul
 		}
 		for name, target := range links {
 			path := filepath.Join(dev, name)
-			if _, err := os.Lstat(path); err == nil {
+			if st, err := os.Lstat(path); err == nil {
+				if st.Mode()&os.ModeSymlink == 0 {
+					result.AddFailure(fmt.Sprintf("DEVICE_LINK_INVALID: path=%s expected_symlink_target=%s", path, target))
+					continue
+				}
+				actual, readErr := os.Readlink(path)
+				if readErr != nil || actual != target {
+					result.AddFailure(fmt.Sprintf("DEVICE_LINK_INVALID: path=%s expected_symlink_target=%s actual=%s error=%v", path, target, actual, readErr))
+				}
 				continue
 			} else if !os.IsNotExist(err) {
 				result.AddFailure(err.Error())
