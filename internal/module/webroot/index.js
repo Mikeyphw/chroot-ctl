@@ -1,107 +1,22 @@
 import { invoke, isAvailable } from './chrootctl.js';
-
-const SECTIONS = Object.freeze({
-  chroots: {
-    kicker: 'Chroots',
-    title: 'WebUI foundation ready',
-    description: 'The module-hosted interface is connected through a typed chrootctl bridge. Chroot management arrives in overlay 2 of 8.',
-    copy: 'Chroot cards, lifecycle actions, details, rename, and safe removal are implemented in overlay 2 of 8.',
-  },
-  create: {
-    kicker: 'Create',
-    title: 'Create section reserved',
-    description: 'Distribution, architecture, profile, username, tools, add-ons, and install progress arrive in overlay 3 of 8.',
-    copy: 'The foundation intentionally does not expose install mutations yet.',
-  },
-  transfer: {
-    kicker: 'Transfer',
-    title: 'Transfer section reserved',
-    description: 'Local import/export, integrity state, strategy selection, and live transfer progress arrive in overlay 4 of 8.',
-    copy: 'Transfer mutations remain unavailable until their section-specific safety contract is added.',
-  },
-  rclone: {
-    kicker: 'Rclone',
-    title: 'Rclone section reserved',
-    description: 'Remote status, configuration, browsing, and streaming transfer workflows arrive in overlay 5 of 8.',
-    copy: 'No rclone credentials or remote commands are exposed by the foundation layer.',
-  },
-  operations: {
-    kicker: 'Operations',
-    title: 'Operations section reserved',
-    description: 'Persistent operation state, progress, cancellation, and history arrive in overlay 6 of 8.',
-    copy: 'Long-running process lifecycle behavior is added with the operations section.',
-  },
-  logs: {
-    kicker: 'Logs',
-    title: 'Logs & diagnostics reserved',
-    description: 'Logs, journals, doctor output, live follow mode, and redaction arrive in overlay 7 of 8.',
-    copy: 'The foundation displays only bounded backend readiness information.',
-  },
-  settings: {
-    kicker: 'Settings',
-    title: 'Settings & convergence reserved',
-    description: 'Configuration, accessibility, hardening, integration tests, and the final package seal arrive in overlay 8 of 8.',
-    copy: 'Final convergence closes cross-section gaps after all functional sections land.',
-  },
-});
-
-const byId = (id) => document.getElementById(id);
-
-function setStatus(kind, label, message) {
-  const chip = byId('backend-chip');
-  chip.classList.remove('ready', 'error', 'neutral');
-  chip.classList.add(kind);
-  byId('backend-chip-label').textContent = label;
-  byId('bridge-state').textContent = label;
-  byId('backend-message').textContent = message;
-}
-
-function showSection(name) {
-  const section = SECTIONS[name] || SECTIONS.chroots;
-  document.querySelectorAll('.nav-item').forEach((button) => {
-    const active = button.dataset.section === name;
-    button.classList.toggle('active', active);
-    if (active) button.setAttribute('aria-current', 'page');
-    else button.removeAttribute('aria-current');
-  });
-  byId('section-kicker').textContent = section.kicker;
-  byId('section-title').textContent = section.title;
-  byId('section-description').textContent = section.description;
-  byId('placeholder-copy').textContent = section.copy;
-}
-
-async function refreshBackend() {
-  const button = byId('refresh-backend');
-  button.disabled = true;
-  setStatus('neutral', 'Checking backend', 'Probing the allow-listed chrootctl version operation.');
-
-  if (!isAvailable()) {
-    setStatus('error', 'Bridge unavailable', 'KernelSU APIs are not available. Open this WebUI from a KernelSU-compatible module manager.');
-    button.disabled = false;
-    return;
-  }
-
-  try {
-    const envelope = await invoke('version');
-    const data = envelope.data || {};
-    byId('backend-version').textContent = String(data.version || 'unknown');
-    byId('backend-kind').textContent = String(data.backend || 'unknown');
-    byId('backend-commit').textContent = String(data.commit || 'unknown');
-    setStatus('ready', 'Backend ready', 'The KernelSU process bridge and chrootctl JSON contract are responding correctly.');
-  } catch (error) {
-    byId('backend-version').textContent = '—';
-    byId('backend-kind').textContent = '—';
-    byId('backend-commit').textContent = '—';
-    const code = typeof error?.code === 'string' ? error.code : 'WEBUI_BACKEND_ERROR';
-    setStatus('error', 'Backend unavailable', `${code}: ${error?.message || 'Unable to contact chrootctl.'}`);
-  } finally {
-    button.disabled = false;
-  }
-}
-
-document.querySelectorAll('.nav-item').forEach((button) => {
-  button.addEventListener('click', () => showSection(button.dataset.section));
-});
-byId('refresh-backend').addEventListener('click', refreshBackend);
-showSection('chroots');
-refreshBackend();
+const $=id=>document.getElementById(id);let currentSection='chroots',selected=null,busy=false,toastTimer;
+const RESERVED={create:['Create','Distribution, architecture, profile, username, tools, add-ons, and install progress arrive in overlay 3 of 8.'],transfer:['Transfer','Local import/export, integrity, strategies, and live progress arrive in overlay 4 of 8.'],rclone:['Rclone','Remote configuration, browsing, and streaming transfers arrive in overlay 5 of 8.'],operations:['Operations','Persistent progress, cancellation, and history arrive in overlay 6 of 8.'],logs:['Logs','Logs, journals, doctor output, and redaction arrive in overlay 7 of 8.'],settings:['Settings','Configuration, accessibility, hardening, and final convergence arrive in overlay 8 of 8.']};
+function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3500)}
+function err(e){toast(`${e?.code||'ERROR'}: ${e?.message||'Operation failed'}`)}
+function dataOf(env){return env?.data??{}}
+function records(data){if(Array.isArray(data))return data;for(const k of ['chroots','items','records'])if(Array.isArray(data?.[k]))return data[k];return []}
+function mounted(r){const raw=r.mount_state??r.mountState??r.mounted??r.status?.mount_state??r.status?.mountState??r.status?.mounted; if(typeof raw==='boolean')return raw?'mounted':'unmounted';return String(raw??'unknown').toLowerCase()}
+function stateOf(r){const m=mounted(r);if(['mounted','running','full','fully_mounted'].includes(m))return ['running','Running'];if(['partial','partially_mounted'].includes(m))return ['partial','Partially mounted'];if(['unmounted','stopped','none','false'].includes(m))return ['stopped',r.installed===false?'Incomplete':'Stopped'];return ['partial',r.status_error?'State unavailable':'State unknown']}
+function text(v,f='—'){return v===undefined||v===null||v===''?f:String(v)}
+function escapeText(v){const n=document.createElement('span');n.textContent=text(v);return n.innerHTML}
+function card(r){const name=text(r.name,'unknown'),[cls,label]=stateOf(r),knownState=['running','stopped','partial'].includes(cls)&&!String(label).toLowerCase().includes('unknown')&&!String(label).toLowerCase().includes('unavailable'),canStart=knownState&&cls==='stopped'&&r.installed!==false,canStop=knownState&&(cls==='running'||cls==='partial'),canRestart=knownState&&cls==='running';return `<article class="card chroot-card" data-name="${escapeText(name)}"><div class="card-heading"><div><p class="eyebrow">${escapeText(r.distro||r.distribution||'Chroot')}</p><h3>${escapeText(name)}</h3></div><span class="badge state ${cls}">${label}</span></div><div class="meta"><div><span>Architecture</span><strong>${escapeText(r.arch||r.architecture)}</strong></div><div><span>Profile</span><strong>${escapeText(r.profile)}</strong></div><div><span>User</span><strong>${escapeText(r.username||r.user)}</strong></div><div><span>Path</span><strong>${escapeText(r.path)}</strong></div></div>${r.details_error?`<p class="notice">Details unavailable: ${escapeText(r.details_error)}</p>`:''}<div class="actions"><button class="button secondary" data-action="details">Details</button>${canStart?'<button class="button primary" data-action="start">Start</button>':''}${canStop?'<button class="button secondary" data-action="stop">Stop</button>':''}${canRestart?'<button class="button secondary" data-action="restart">Restart</button>':''}<button class="button secondary" data-action="rename">Rename</button><button class="button danger" data-action="remove">Remove</button></div></article>`}
+async function loadChroots(){if(busy)return;busy=true;$('refresh-section').disabled=true;$('chroots-list').innerHTML='<div class="card skeleton">Refreshing registered chroots…</div>';try{if(!isAvailable())throw Object.assign(new Error('Open this WebUI from a KernelSU-compatible module manager.'),{code:'WEBUI_BRIDGE_UNAVAILABLE'});const env=await invoke('chrootsList'),baseRows=records(dataOf(env));const rows=[];for(const base of baseRows){let merged={...base};try{const shown=dataOf(await invoke('chrootShow',{name:base.name}));merged={...merged,...(shown.chroot||shown.record||shown)}}catch(e){merged.details_error=e?.code||'DETAILS_UNAVAILABLE'}try{const st=dataOf(await invoke('chrootStatus',{name:base.name}));merged={...merged,...st,status:st}}catch(e){merged.status_error=e?.code||'STATUS_UNAVAILABLE'}rows.push(merged)}$('chroots-summary').innerHTML=`<span class="badge">${rows.length} registered</span><span class="badge">${rows.filter(r=>stateOf(r)[0]==='running').length} running</span>`;$('chroots-list').innerHTML=rows.length?rows.map(card).join(''):'<div class="card"><h3>No registered chroots</h3><p class="muted">Create one from the Create section when overlay 3 lands.</p></div>';}catch(e){$('chroots-list').innerHTML=`<div class="card"><h3>Unable to load chroots</h3><p class="notice">${escapeText(e?.code||'WEBUI_BACKEND_ERROR')}: ${escapeText(e?.message||'Unknown error')}</p></div>`;}finally{busy=false;$('refresh-section').disabled=false}}
+async function detail(name){const env=await invoke('chrootShow',{name}),d=dataOf(env);let r=d.chroot||d.record||d;try{const st=dataOf(await invoke('chrootStatus',{name}));r={...r,...st,status:st}}catch(e){r={...r,status_error:e?.code||'STATUS_UNAVAILABLE'}}selected=r;$('details-title').textContent=text(r.name,name);const [_,state]=stateOf(r);$('details-body').innerHTML=`<div class="detail-facts"><div><strong>State</strong><br>${escapeText(state)}</div><div><strong>Distribution</strong><br>${escapeText(r.distro||r.distribution)}</div><div><strong>Architecture</strong><br>${escapeText(r.arch||r.architecture)}</div><div><strong>Profile</strong><br>${escapeText(r.profile)}</div><div><strong>User</strong><br>${escapeText(r.username||r.user)}</div><div><strong>Registered path</strong><br>${escapeText(r.path)}</div><div><strong>Installed</strong><br>${r.installed===false?'No':'Yes'}</div></div>`;$('details-dialog').showModal()}
+async function mutate(op,payload,success){if(busy)return;busy=true;try{await invoke(op,payload);toast(success);await loadAfterMutation()}catch(e){err(e)}finally{busy=false}}
+async function loadAfterMutation(){busy=false;await loadChroots();busy=true}
+$('chroots-list').addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;const article=b.closest('[data-name]'),name=article?.dataset.name,action=b.dataset.action;try{if(action==='details')await detail(name);else if(action==='start')await mutate('chrootStart',{name},`${name} started`);else if(action==='stop')await mutate('chrootStop',{name},`${name} stopped`);else if(action==='restart')await mutate('chrootRestart',{name},`${name} restarted`);else if(action==='rename'){selected={name};$('rename-title').textContent=`Rename ${name}`;$('rename-input').value='';$('rename-dialog').showModal()}else if(action==='remove'){const env=await invoke('chrootShow',{name}),d=dataOf(env),r=d.chroot||d.record||d;selected=r;$('remove-title').textContent=`Remove ${name}`;$('remove-path').textContent=`Registered path: ${text(r.path)}`;$('remove-confirm').value='';$('remove-submit').disabled=true;$('remove-dialog').showModal()}}catch(x){err(x)}});
+$('rename-form').addEventListener('submit',async e=>{e.preventDefault();const old=selected?.name,next=$('rename-input').value.trim();$('rename-dialog').close();await mutate('chrootRename',{name:old,newName:next},`${old} renamed to ${next}`)});
+$('remove-confirm').addEventListener('input',()=>{$('remove-submit').disabled=$('remove-confirm').value!==selected?.name});$('remove-form').addEventListener('submit',async e=>{e.preventDefault();const name=selected?.name,confirm=$('remove-confirm').value;if(confirm!==name)return;$('remove-dialog').close();await mutate('chrootRemove',{name,confirm},`${name} removed`)});
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>$(b.dataset.close).close()));
+function showSection(name){currentSection=name;document.querySelectorAll('.nav-item').forEach(b=>{const on=b.dataset.section===name;b.classList.toggle('active',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});const isChroots=name==='chroots';$('chroots-panel').classList.toggle('hidden',!isChroots);$('placeholder-panel').classList.toggle('hidden',isChroots);if(isChroots){$('section-kicker').textContent='Chroots';$('section-title').textContent='Chroot environments';$('section-description').textContent='Inspect and control registered chroots through allow-listed chrootctl operations.';$('refresh-section').classList.remove('hidden');loadChroots()}else{const [title,copy]=RESERVED[name];$('section-kicker').textContent=title;$('section-title').textContent=`${title} section reserved`;$('section-description').textContent=copy;$('placeholder-copy').textContent=copy;$('refresh-section').classList.add('hidden')}}
+document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>showSection(b.dataset.section)));$('refresh-section').addEventListener('click',loadChroots);showSection('chroots');
