@@ -17,11 +17,11 @@ func (s *Container) RcloneRuntime() (rcloneops.Runtime, error) {
 func (s *TransferService) RcloneStatus(ctx context.Context) (map[string]any, error) {
 	runtime, err := s.C.RcloneRuntime()
 	if err != nil {
-		return map[string]any{"available": false, "configured": false, "error": err.Error()}, nil
+		return map[string]any{"available": false, "configured": false, "error": "bundled rclone runtime is unavailable"}, nil
 	}
 	info, err := runtime.Probe(ctx)
 	if err != nil {
-		return nil, err
+		return map[string]any{"available": false, "configured": false, "error": "bundled rclone runtime probe failed"}, nil
 	}
 	names := append([]string(nil), info.ConfiguredRemotes...)
 	sort.Strings(names)
@@ -29,8 +29,6 @@ func (s *TransferService) RcloneStatus(ctx context.Context) (map[string]any, err
 		"available":  true,
 		"configured": len(names) > 0,
 		"version":    info.Version,
-		"executable": info.Executable,
-		"config":     info.Config,
 		"remotes":    names,
 		"checked_at": time.Now().UTC().Format(time.RFC3339),
 	}, nil
@@ -104,7 +102,8 @@ func (s *TransferService) rcloneImportConfig(ctx context.Context, sourcePath str
 		}
 		stagedRemoved = true
 	}
-	return map[string]any{"configured": len(rows) > 0, "config": path, "remotes": rows, "staged_config_removed": stagedRemoved}, nil
+	_ = path
+	return map[string]any{"configured": len(rows) > 0, "remotes": rows, "staged_config_removed": stagedRemoved}, nil
 }
 
 func (s *TransferService) RcloneImportConfig(ctx context.Context, sourcePath string) (map[string]any, error) {
