@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"debug/elf"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,34 @@ const (
 	ModulePackageSchemaVersion = 1
 	ModulePackageManifestPath  = "config/chrootctl/module-package-manifest.json"
 )
+
+// webUIFS is compiled into repoctl so module rendering is deterministic and
+// does not depend on the caller's working directory.
+//
+//go:embed webroot/*
+var webUIFS embed.FS
+
+var webUIAssetPaths = []string{
+	"index.html",
+	"index.css",
+	"index.js",
+	"kernelsu.js",
+	"chrootctl.js",
+}
+
+func requiredModuleFiles() []string {
+	required := []string{
+		"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh",
+		"bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper",
+		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json",
+		"runtime/" + RuntimeABI + "/runtime-manifest.json",
+		"runtime/" + RuntimeABI + "/" + RuntimeEntrypoint,
+	}
+	for _, asset := range webUIAssetPaths {
+		required = append(required, "webroot/"+asset)
+	}
+	return required
+}
 
 type Options struct {
 	OutputDir        string
@@ -274,6 +303,22 @@ func writeFile(root, rel, content string, mode fs.FileMode) error {
 	return os.WriteFile(p, []byte(content), mode)
 }
 
+func writeWebUI(root string) error {
+	for _, asset := range webUIAssetPaths {
+		raw, err := webUIFS.ReadFile("webroot/" + asset)
+		if err != nil {
+			return fmt.Errorf("read embedded WebUI asset %s: %w", asset, err)
+		}
+		if len(raw) == 0 {
+			return fmt.Errorf("embedded WebUI asset is empty: %s", asset)
+		}
+		if err = writeFile(root, "webroot/"+asset, string(raw), 0644); err != nil {
+			return fmt.Errorf("write WebUI asset %s: %w", asset, err)
+		}
+	}
+	return nil
+}
+
 func ignoredLocalArtifact(rel string) bool {
 	base := filepath.Base(filepath.ToSlash(rel))
 	return strings.HasPrefix(base, ".chrootctl-module-") || strings.HasSuffix(base, ".zip") || strings.HasSuffix(base, ".zip.tmp")
@@ -449,7 +494,7 @@ func ValidatePackageManifest(root string) error {
 	for _, f := range got.Files {
 		seen[f.Path] = true
 	}
-	for _, required := range []string{"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh", "bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper", "config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", "runtime/" + RuntimeABI + "/runtime-manifest.json", "runtime/" + RuntimeABI + "/" + RuntimeEntrypoint} {
+	for _, required := range requiredModuleFiles() {
 		if !seen[required] {
 			return fmt.Errorf("module package manifest missing required file: %s", required)
 		}
@@ -533,7 +578,15 @@ func ValidateZipArchive(path string) error {
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	want := modulePackageManifest{SchemaVersion: ModulePackageSchemaVersion, ModuleID: ModuleID, ModuleName: ModuleName, ModuleVersion: ModuleVersion, ModuleVersionCode: ModuleVersionCode, BackendVersion: BackendVersion, BridgeProtocolVersion: BridgeProtocolVersion, RuntimeSchemaVersion: RuntimeSchemaVersion, RuntimeKind: RuntimeKind, RuntimeABI: RuntimeABI, RuntimeEntrypoint: RuntimeEntrypoint, StartupTargets: append([]string(nil), got.StartupTargets...), Files: files}
 	sort.Strings(want.StartupTargets)
-	return comparePackageManifests(got, want)
+	if err = comparePackageManifests(got, want); err != nil {
+		return err
+	}
+	for _, required := range requiredModuleFiles() {
+		if _, ok := entries[required]; !ok {
+			return fmt.Errorf("module ZIP missing required file: %s", required)
+		}
+	}
+	return nil
 }
 func moduleProp() string {
 	return fmt.Sprintf("id=%s\nname=%s\nversion=%s\nversionCode=%d\nauthor=chrootctl\ndescription=Self-contained chrootctl Magisk/KernelSU runtime with a bundled Android Go backend.\n", ModuleID, ModuleName, ModuleVersion, ModuleVersionCode)
@@ -700,6 +753,9 @@ func Render(opts Options) error {
 			return e
 		}
 	}
+	if e := writeWebUI(out); e != nil {
+		return e
+	}
 	dst := filepath.Join(out, "runtime", RuntimeABI)
 	if e := os.MkdirAll(dst, 0755); e != nil {
 		return e
@@ -839,7 +895,7 @@ func Zip(root, path string) error {
 	return nil
 }
 func ValidateRendered(root string) error {
-	required := []string{"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh", "bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper", "config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", ModulePackageManifestPath, "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl"}
+	required := append(requiredModuleFiles(), ModulePackageManifestPath)
 	for _, rel := range required {
 		if _, e := safeRegular(filepath.Join(root, filepath.FromSlash(rel))); e != nil {
 			return e

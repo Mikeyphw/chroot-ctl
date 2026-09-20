@@ -437,3 +437,178 @@ func TestModuleCarriesOptionalRcloneRuntimeAndPrivateConfigState(t *testing.T) {
 		}
 	}
 }
+
+func TestWebUIFoundationIsRenderedSealedAndShellFree(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	zipPath := filepath.Join(t.TempDir(), "module.zip")
+	if err := Render(Options{OutputDir: out, ZipPath: zipPath, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, asset := range webUIAssetPaths {
+		path := filepath.Join(out, "webroot", asset)
+		st, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("missing WebUI asset %s: %v", asset, err)
+		}
+		if st.Mode().Perm() != 0o644 {
+			t.Fatalf("WebUI asset %s mode=%04o, want 0644", asset, st.Mode().Perm())
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join(out, ModulePackageManifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest modulePackageManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	sealed := map[string]bool{}
+	for _, file := range manifest.Files {
+		sealed[file.Path] = true
+	}
+	for _, asset := range webUIAssetPaths {
+		path := "webroot/" + asset
+		if !sealed[path] {
+			t.Fatalf("module package manifest does not seal %s", path)
+		}
+	}
+
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	zipped := map[string]bool{}
+	for _, entry := range zr.File {
+		zipped[entry.Name] = true
+	}
+	for _, asset := range webUIAssetPaths {
+		path := "webroot/" + asset
+		if !zipped[path] {
+			t.Fatalf("module ZIP missing %s", path)
+		}
+	}
+
+	bridgeRaw, err := os.ReadFile(filepath.Join(out, "webroot", "kernelsu.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapperRaw, err := os.ReadFile(filepath.Join(out, "webroot", "chrootctl.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := string(bridgeRaw) + "\n" + string(wrapperRaw)
+	for _, forbidden := range []string{"ksu.exec(", "eval(", "new Function(", "su -c", "sh -c", "/system/bin/sh"} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("WebUI foundation contains forbidden shell bridge token %q", forbidden)
+		}
+	}
+	for _, required := range []string{"OPERATIONS", "version", "--json", "spawn(executable", "WEBUI_OPERATION_NOT_ALLOWED"} {
+		if !strings.Contains(string(wrapperRaw), required) {
+			t.Fatalf("typed chrootctl wrapper missing %q", required)
+		}
+	}
+
+	indexRaw, err := os.ReadFile(filepath.Join(out, "webroot", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexRaw)
+	for _, required := range []string{"Content-Security-Policy", "data-section=\"chroots\"", "data-section=\"create\"", "data-section=\"transfer\"", "data-section=\"rclone\"", "data-section=\"operations\"", "data-section=\"logs\"", "data-section=\"settings\""} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("WebUI navigation/security shell missing %q", required)
+		}
+	}
+	if strings.Contains(index, "http://") || strings.Contains(index, "https://") {
+		t.Fatal("WebUI foundation must not depend on remote assets")
+	}
+}
+
+func TestValidateRenderedRequiresWebUIFoundation(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	if err := Render(Options{OutputDir: out, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(out, "webroot", "chrootctl.js")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRendered(out); err == nil || !strings.Contains(err.Error(), "chrootctl.js") {
+		t.Fatalf("expected missing WebUI foundation asset rejection, got %v", err)
+	}
+}
+
+func TestValidateZipArchiveRequiresWebUIEvenWithSelfConsistentManifest(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	goodZip := filepath.Join(t.TempDir(), "good.zip")
+	if err := Render(Options{OutputDir: out, ZipPath: goodZip, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+
+	good, err := zip.OpenReader(goodZip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer good.Close()
+
+	badZip := filepath.Join(t.TempDir(), "missing-webui.zip")
+	badFile, err := os.Create(badZip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(badFile)
+	for _, entry := range good.File {
+		if entry.Name == "webroot/chrootctl.js" {
+			continue
+		}
+		rc, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.Name == ModulePackageManifestPath {
+			var manifest modulePackageManifest
+			if err := json.Unmarshal(raw, &manifest); err != nil {
+				t.Fatal(err)
+			}
+			filtered := manifest.Files[:0]
+			for _, file := range manifest.Files {
+				if file.Path != "webroot/chrootctl.js" {
+					filtered = append(filtered, file)
+				}
+			}
+			manifest.Files = filtered
+			raw, err = json.MarshalIndent(manifest, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw = append(raw, '\n')
+		}
+		header := entry.FileHeader
+		w, err := zw.CreateHeader(&header)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := badFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ValidateZipArchive(badZip); err == nil || !strings.Contains(err.Error(), "webroot/chrootctl.js") {
+		t.Fatalf("expected required WebUI file rejection, got %v", err)
+	}
+}

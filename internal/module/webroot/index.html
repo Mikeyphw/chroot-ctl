@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>chrootctl</title>
+  <link rel="stylesheet" href="./index.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">KernelSU WebUI</p>
+        <h1>chrootctl</h1>
+      </div>
+      <div id="backend-chip" class="status-chip neutral" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="backend-chip-label">Checking backend</span>
+      </div>
+    </header>
+
+    <main class="content" id="main-content">
+      <section class="hero" aria-labelledby="section-title">
+        <div>
+          <p class="eyebrow" id="section-kicker">Chroots</p>
+          <h2 id="section-title">WebUI foundation ready</h2>
+          <p class="lead" id="section-description">The module-hosted interface is connected through a typed chrootctl bridge. Chroot management arrives in overlay 2 of 8.</p>
+        </div>
+        <button id="refresh-backend" class="button secondary" type="button">Refresh backend</button>
+      </section>
+
+      <section class="card backend-card" aria-labelledby="backend-title">
+        <div class="card-heading">
+          <div>
+            <p class="eyebrow">Backend</p>
+            <h3 id="backend-title">Runtime readiness</h3>
+          </div>
+          <span id="bridge-state" class="badge">Probe pending</span>
+        </div>
+        <dl class="facts">
+          <div><dt>Version</dt><dd id="backend-version">—</dd></div>
+          <div><dt>Backend</dt><dd id="backend-kind">—</dd></div>
+          <div><dt>Commit</dt><dd id="backend-commit">—</dd></div>
+          <div><dt>Transport</dt><dd>KernelSU process bridge</dd></div>
+        </dl>
+        <p class="notice" id="backend-message" aria-live="polite">Waiting for the KernelSU bridge.</p>
+      </section>
+
+      <section class="card security-card" aria-labelledby="security-title">
+        <p class="eyebrow">Foundation contract</p>
+        <h3 id="security-title">No arbitrary shell bridge</h3>
+        <p>The WebUI calls allow-listed chrootctl operations as an executable plus an argument array. It does not expose a free-form shell command box or a generic shell executor.</p>
+      </section>
+
+      <section class="card section-placeholder" aria-labelledby="placeholder-title">
+        <p class="eyebrow">Roadmap</p>
+        <h3 id="placeholder-title">Current section</h3>
+        <p id="placeholder-copy">Chroot cards, lifecycle actions, details, rename, and safe removal are implemented in overlay 2 of 8.</p>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="WebUI sections">
+      <button type="button" class="nav-item active" data-section="chroots" aria-current="page"><span>Chroots</span><small>2/8</small></button>
+      <button type="button" class="nav-item" data-section="create"><span>Create</span><small>3/8</small></button>
+      <button type="button" class="nav-item" data-section="transfer"><span>Transfer</span><small>4/8</small></button>
+      <button type="button" class="nav-item" data-section="rclone"><span>Rclone</span><small>5/8</small></button>
+      <button type="button" class="nav-item" data-section="operations"><span>Operations</span><small>6/8</small></button>
+      <button type="button" class="nav-item" data-section="logs"><span>Logs</span><small>7/8</small></button>
+      <button type="button" class="nav-item" data-section="settings"><span>Settings</span><small>8/8</small></button>
+    </nav>
+  </div>
+
+  <script type="module" src="./index.js"></script>
+</body>
+</html>
