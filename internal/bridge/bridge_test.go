@@ -162,3 +162,32 @@ func TestRunAppRejectsMalformedRequestBeforeConfigServices(t *testing.T) {
 		t.Fatalf("config was touched before protocol rejection: %s", out.String())
 	}
 }
+
+func TestParseAppArgsAcceptsBoundedInlineRequestJSON(t *testing.T) {
+	raw := `{"protocolVersion":1,"requestId":"webui-create","operation":"install.form","payload":{"distro":"ubuntu"}}`
+	o, err := ParseAppArgs([]string{"query", "--request-json", raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.RequestJSON != raw || o.RequestFile != "-" {
+		t.Fatalf("unexpected options: %#v", o)
+	}
+	if _, err = ParseAppArgs([]string{"query", "--request-file", "/tmp/request.json", "--request-json", raw}); err == nil {
+		t.Fatal("expected request source conflict")
+	}
+}
+
+func TestRunAppRejectsMalformedInlineRequestBeforeConfigServices(t *testing.T) {
+	var out strings.Builder
+	raw := `{"protocolVersion":2,"requestId":"webui-create","operation":"install.form","payload":{}}`
+	code := RunApp(context.Background(), []string{"--config", "/definitely/missing/config.yaml", "query", "--request-json", raw}, strings.NewReader(""), &out, &out)
+	if code != 2 {
+		t.Fatalf("code=%d out=%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), `"code":"UNSUPPORTED_PROTOCOL_VERSION"`) {
+		t.Fatalf("out=%s", out.String())
+	}
+	if strings.Contains(out.String(), "no such file") {
+		t.Fatalf("config was touched before inline protocol rejection: %s", out.String())
+	}
+}

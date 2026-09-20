@@ -20,6 +20,7 @@ type AppOptions struct {
 	DryRun, Verbose bool
 	Command         string
 	RequestFile     string
+	RequestJSON     string
 	OperationID     string
 	Events          string
 }
@@ -66,7 +67,19 @@ func ParseAppArgs(args []string) (AppOptions, error) {
 				if i+1 >= len(args) {
 					return o, fmt.Errorf("--request-file requires a value")
 				}
+				if o.RequestJSON != "" {
+					return o, fmt.Errorf("--request-file and --request-json are mutually exclusive")
+				}
 				o.RequestFile = args[i+1]
+				i += 2
+			case "--request-json":
+				if i+1 >= len(args) {
+					return o, fmt.Errorf("--request-json requires a value")
+				}
+				if o.RequestFile != "-" {
+					return o, fmt.Errorf("--request-file and --request-json are mutually exclusive")
+				}
+				o.RequestJSON = args[i+1]
 				i += 2
 			case "--events":
 				if o.Command != "run" || i+1 >= len(args) {
@@ -112,7 +125,11 @@ func RunApp(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	var parsed *Request
 	var raw []byte
 	if o.Command == "query" || o.Command == "preview" || o.Command == "run" {
-		raw, e = readRequest(stdin, o.RequestFile)
+		if o.RequestJSON != "" {
+			raw, e = readInlineRequest(o.RequestJSON)
+		} else {
+			raw, e = readRequest(stdin, o.RequestFile)
+		}
 		if e != nil {
 			id := ExtractRequestIDSafely(raw)
 			if id == "" {
@@ -195,6 +212,14 @@ func RunApp(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	}
 	return 2
 }
+func readInlineRequest(value string) ([]byte, error) {
+	b := []byte(value)
+	if len(b) > MaxRequestBytes {
+		return b, protocolError("REQUEST_TOO_LARGE", fmt.Sprintf("Bridge request must not exceed %d bytes", MaxRequestBytes), nil)
+	}
+	return b, nil
+}
+
 func readRequest(stdin io.Reader, path string) ([]byte, error) {
 	if path == "-" {
 		lr := io.LimitReader(stdin, MaxRequestBytes+1)
@@ -236,9 +261,9 @@ func AppHelp() string {
 Commands:
   capabilities
   state
-  query --request-file FILE
-  preview --request-file FILE
-  run --request-file FILE --events ndjson
+  query (--request-file FILE | --request-json JSON)
+  preview (--request-file FILE | --request-json JSON)
+  run (--request-file FILE | --request-json JSON) --events ndjson
   operation OPERATION_ID
   cancel OPERATION_ID
   reconcile OPERATION_ID`) + "\n"

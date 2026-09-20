@@ -6,6 +6,7 @@ import (
 	"chrootctl/internal/model"
 	"chrootctl/internal/registry"
 	"context"
+	"os"
 	"strings"
 	"testing"
 )
@@ -117,4 +118,54 @@ func contains(values []string, target string) bool {
 
 func testStringPtr(value string) *string {
 	return &value
+}
+
+func TestCHR11InstallPreviewBlocksExistingUnownedTarget(t *testing.T) {
+	svc := newCHR11InstallService(t)
+	root := svc.C.BaseConfig.ChrootRoot + "/demo"
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := svc.C.Preview().Install(context.Background(), model.InstallRequest{Distro: "ubuntu", Name: "demo", Username: "mike", Arch: "arm64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := plan["ok"].(bool); ok {
+		t.Fatalf("preview must block existing unowned target: %+v", plan)
+	}
+	blocking, _ := plan["blocking"].([]map[string]string)
+	found := false
+	for _, issue := range blocking {
+		if issue["code"] == "target_collision" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing target_collision: %+v", blocking)
+	}
+}
+
+func TestCHR11InstallPreviewBlocksAlreadyRegisteredName(t *testing.T) {
+	svc := newCHR11InstallService(t)
+	ctx := context.Background()
+	if err := svc.C.Registry.Upsert(ctx, model.ChrootRecord{Name: "demo", Distro: "ubuntu", Arch: "arm64", Path: svc.C.BaseConfig.ChrootRoot + "/demo", Phase: "finalize", Installed: true}); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := svc.C.Preview().Install(ctx, model.InstallRequest{Distro: "ubuntu", Name: "demo", Username: "mike", Arch: "arm64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := plan["ok"].(bool); ok {
+		t.Fatalf("preview must block registered create target: %+v", plan)
+	}
+	blocking, _ := plan["blocking"].([]map[string]string)
+	found := false
+	for _, issue := range blocking {
+		if issue["code"] == "target_registered" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing target_registered: %+v", blocking)
+	}
 }

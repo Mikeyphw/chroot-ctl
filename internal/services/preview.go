@@ -12,7 +12,25 @@ import (
 type PreviewService struct{ C *Container }
 
 func (s *PreviewService) Install(ctx context.Context, request model.InstallRequest) (map[string]any, error) {
-	return s.C.Install().PreviewInstall(request), nil
+	svc := s.C.Install()
+	plan := svc.PreviewInstall(request)
+	_, normalized, _ := svc.normalizedRequest(request)
+	if ok, _ := plan["ok"].(bool); ok {
+		blocking, _ := plan["blocking"].([]map[string]string)
+		if rec, err := s.C.Registry.Get(ctx, normalized.Name); err != nil {
+			return nil, err
+		} else if rec != nil && !normalized.Resume && !normalized.Repair && !normalized.OverwriteExisting {
+			blocking = append(blocking, map[string]string{"code": "target_registered", "message": "A chroot named " + normalized.Name + " is already registered. Choose a new name or use an explicit resume/repair workflow."})
+		} else if err := svc.checkExistingTarget(ctx, normalized); err != nil {
+			blocking = append(blocking, map[string]string{"code": "target_collision", "message": err.Error()})
+		}
+		if len(blocking) > 0 {
+			plan["blocking"] = blocking
+			plan["ok"] = false
+			plan["message"] = "Install preview has blocking issues."
+		}
+	}
+	return plan, nil
 }
 func (s *PreviewService) Export(ctx context.Context, name, archive string) (map[string]any, error) {
 	return s.C.Chroots().ExportPreview(ctx, name, archive)
