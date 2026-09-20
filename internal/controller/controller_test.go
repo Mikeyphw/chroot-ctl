@@ -216,3 +216,79 @@ func TestCHR08StatusFailsClosedWhenMountTableUnreadable(t *testing.T) {
 		t.Fatal("missing mount table must fail doctor")
 	}
 }
+
+func TestAndroidGuestDevUsesPrivateTmpfsBeforeChildMounts(t *testing.T) {
+	c := New(testCfg(t), &sys.Runner{DryRun: true}, nil)
+	specs := c.MountSpecs()
+	base := c.Config.ChrootBase()
+	dev, pts, shm := -1, -1, -1
+	for i, spec := range specs {
+		switch filepath.Clean(spec.Target) {
+		case filepath.Join(base, "dev"):
+			dev = i
+			if spec.Bind || spec.FSType != "tmpfs" || spec.Source != "tmpfs" {
+				t.Fatalf("guest /dev must be private tmpfs, got %+v", spec)
+			}
+		case filepath.Join(base, "dev/pts"):
+			pts = i
+		case filepath.Join(base, "dev/shm"):
+			shm = i
+		}
+	}
+	if dev < 0 || pts < 0 || shm < 0 || !(dev < pts && dev < shm) {
+		t.Fatalf("mount ordering must establish guest /dev before children: dev=%d pts=%d shm=%d specs=%+v", dev, pts, shm, specs)
+	}
+}
+
+func TestEnsureMountTargetRecreatesChildHiddenByParentMount(t *testing.T) {
+	cfg := testCfg(t)
+	c := New(cfg, &sys.Runner{}, nil)
+	target := filepath.Join(cfg.ChrootBase(), "dev/shm")
+	if err := c.ensureMountTarget(MountSpec{Source: "tmpfs", Target: target, FSType: "tmpfs"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(target)
+	if err != nil || !st.IsDir() {
+		t.Fatalf("target not prepared: st=%v err=%v", st, err)
+	}
+}
+
+func TestGuestDevShmUsesSharedMemoryPermissions(t *testing.T) {
+	cfg := testCfg(t)
+	c := &Controller{Config: cfg}
+	var found *MountSpec
+	for _, spec := range c.MountSpecs() {
+		if spec.Target == filepath.Join(cfg.ChrootBase(), "dev/shm") {
+			s := spec
+			found = &s
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("missing /dev/shm mount spec")
+	}
+	opts := strings.Join(found.Options, ",")
+	for _, want := range []string{"mode=1777", "nosuid", "nodev"} {
+		if !strings.Contains(opts, want) {
+			t.Fatalf("/dev/shm options %q missing %q", opts, want)
+		}
+	}
+}
+
+func TestFixTTYDoesNotSkipPrivateDevPopulation(t *testing.T) {
+	// Regression guard for the private-/dev topology: FixTTY must not return a
+	// successful skip merely because tmpfs /dev is already mounted. The mounted
+	// tmpfs starts empty and still requires EnsureDeviceNodes.
+	src, err := os.ReadFile("controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	bad := "if ok {\n\t\tresult.AddSkipped()\n\t\treturn result"
+	if strings.Contains(text, bad) {
+		t.Fatal("FixTTY still skips device-node population when private /dev is mounted")
+	}
+	if !strings.Contains(text, "return c.EnsureDeviceNodes(ctx)") {
+		t.Fatal("FixTTY does not delegate to EnsureDeviceNodes")
+	}
+}

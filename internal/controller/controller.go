@@ -66,9 +66,14 @@ func (c *Controller) ConfigMountSpecs(mounts []config.BindMount) []MountSpec {
 func (c *Controller) MountSpecs() []MountSpec {
 	base := c.Config.ChrootBase()
 	specs := []MountSpec{
-		{Source: "/dev", Target: filepath.Join(base, "dev"), Bind: true}, {Source: "/sys", Target: filepath.Join(base, "sys"), Bind: true},
+		// Android's host /dev commonly has no /dev/shm. Binding it over the guest
+		// /dev hides the guest dev/pts and dev/shm directories, so subsequent
+		// child mounts fail with ENOENT even though those paths existed before the
+		// bind. Give the guest an independent /dev and populate the minimal device
+		// nodes in FixTTY/EnsureDeviceNodes instead.
+		{Source: "tmpfs", Target: filepath.Join(base, "dev"), FSType: "tmpfs", Options: []string{"mode=755", "nosuid"}}, {Source: "/sys", Target: filepath.Join(base, "sys"), Bind: true},
 		{Source: "/proc", Target: filepath.Join(base, "proc"), Bind: true}, {Source: "devpts", Target: filepath.Join(base, "dev/pts"), FSType: "devpts"},
-		{Source: "tmpfs", Target: filepath.Join(base, "dev/shm"), FSType: "tmpfs", Options: []string{"size=" + c.Config.DevShmSize}},
+		{Source: "tmpfs", Target: filepath.Join(base, "dev/shm"), FSType: "tmpfs", Options: []string{"size=" + c.Config.DevShmSize, "mode=1777", "nosuid", "nodev"}},
 		{Source: "/sdcard", Target: filepath.Join(base, "sdcard"), Bind: true},
 		{Source: filepath.Join(c.Config.TermuxPrefix, "tmp"), Target: filepath.Join(base, "tmp"), Bind: true},
 		{Source: c.Config.TermuxHome, Target: c.Config.TermuxHomeInChroot(), Bind: true},
@@ -149,6 +154,25 @@ func (c *Controller) ensureDirs() error {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (c *Controller) ensureMountTarget(spec MountSpec) error {
+	if c.Runner != nil && c.Runner.DryRun {
+		return nil
+	}
+	// Parent mounts can hide directories created by ensureDirs. Re-create each
+	// target immediately before its mount in the namespace where mount(2) runs.
+	if err := os.MkdirAll(spec.Target, 0o755); err != nil {
+		return fmt.Errorf("prepare mount target %s: %w", spec.Target, err)
+	}
+	st, err := os.Stat(spec.Target)
+	if err != nil {
+		return fmt.Errorf("MOUNT_TARGET_NOT_VISIBLE: target=%s source=%s fstype=%s: %w", spec.Target, spec.Source, spec.FSType, err)
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("MOUNT_TARGET_NOT_VISIBLE: target=%s source=%s fstype=%s: target is not a directory", spec.Target, spec.Source, spec.FSType)
 	}
 	return nil
 }
@@ -299,6 +323,11 @@ func (c *Controller) Mount(ctx context.Context) model.OperationResult {
 			result.AddSkipped()
 			continue
 		}
+		if err := c.ensureMountTarget(spec); err != nil {
+			result.AddFailure(err.Error())
+			result.Errors = append(result.Errors, c.rollbackMounts(ctx, created)...)
+			break
+		}
 		var argv []string
 		if spec.Bind {
 			argv = []string{"busybox", "mount", "--bind", spec.Source, spec.Target}
@@ -397,16 +426,20 @@ func (c *Controller) FixTTY(ctx context.Context) model.OperationResult {
 		result.AddFailure(err.Error())
 		return result
 	}
-	dev := MountSpec{Source: "/dev", Target: filepath.Join(c.Config.ChrootBase(), "dev"), Bind: true}
+	dev := MountSpec{Source: "tmpfs", Target: filepath.Join(c.Config.ChrootBase(), "dev"), FSType: "tmpfs"}
 	ok, matchErr := mountMatches(dev, records)
 	if matchErr != nil {
 		result.AddFailure(matchErr.Error())
 		return result
 	}
-	if ok {
-		result.AddSkipped()
+	if !ok {
+		result.AddFailure(fmt.Sprintf("MOUNT_TARGET_NOT_VISIBLE: target=%s source=tmpfs fstype=tmpfs: private guest /dev is not mounted", dev.Target))
 		return result
 	}
+	// /dev is a fresh tmpfs, so its essential device nodes and conventional
+	// links must be populated after the mount. Returning early here leaves the
+	// guest with only the child mountpoints and makes /dev/null, /dev/tty, etc.
+	// unavailable inside the chroot.
 	return c.EnsureDeviceNodes(ctx)
 }
 
@@ -427,6 +460,12 @@ func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResul
 			result.AddFailure(err.Error())
 			return result
 		}
+		for _, dir := range []string{"pts", "shm"} {
+			if err := os.MkdirAll(filepath.Join(dev, dir), 0o755); err != nil {
+				result.AddFailure(err.Error())
+				return result
+			}
+		}
 	}
 	for name, value := range nodes {
 		target := filepath.Join(dev, name)
@@ -438,6 +477,27 @@ func (c *Controller) EnsureDeviceNodes(ctx context.Context) model.OperationResul
 			result.AddFailure(err.Error())
 		} else {
 			result.AddSuccess()
+		}
+	}
+	if c.Runner == nil || !c.Runner.DryRun {
+		links := map[string]string{
+			"fd": "/proc/self/fd", "stdin": "/proc/self/fd/0",
+			"stdout": "/proc/self/fd/1", "stderr": "/proc/self/fd/2",
+			"ptmx": "pts/ptmx",
+		}
+		for name, target := range links {
+			path := filepath.Join(dev, name)
+			if _, err := os.Lstat(path); err == nil {
+				continue
+			} else if !os.IsNotExist(err) {
+				result.AddFailure(err.Error())
+				continue
+			}
+			if err := os.Symlink(target, path); err != nil {
+				result.AddFailure(err.Error())
+			} else {
+				result.AddSuccess()
+			}
 		}
 	}
 	return result
