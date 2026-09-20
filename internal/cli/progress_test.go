@@ -81,3 +81,43 @@ func TestLiveTTYProgressUpdatesOneLineInPlace(t *testing.T) {
 		t.Fatalf("finished progress line missing newline: %q", stderr.String())
 	}
 }
+
+func TestLiveTTYProgressClearsLineAndFitsTerminalWidth(t *testing.T) {
+	var stderr bytes.Buffer
+	tty := true
+	width := 64
+	a := &App{Inv: Invocation{Globals: Globals{JSON: false}}, Stderr: &stderr, progressTTYOverride: &tty, progressWidthOverride: &width}
+	detail := map[string]any{
+		"phase": "extract", "percent": 74, "message": "Extracting root filesystem", "live": true,
+		"bytes_done": int64(212 * 1024 * 1024 * 1024 / 10), "bytes_total": int64(215 * 1024 * 1024 * 1024 / 10),
+		"entries": int64(395571), "current_path": "usr/share/code/resources/app/node_modules/@vscode/vsce-sign/bin/vsce-sign",
+	}
+	if err := a.progress(detail); err != nil {
+		t.Fatal(err)
+	}
+	got := stderr.String()
+	if !strings.HasPrefix(got, "\r\x1b[2K") {
+		t.Fatalf("TTY update does not clear the full current line first: %q", got)
+	}
+	visible := strings.TrimPrefix(got, "\r\x1b[2K")
+	if len([]rune(visible)) > width {
+		t.Fatalf("visible live line width=%d > %d: %q", len([]rune(visible)), width, visible)
+	}
+	if !strings.Contains(visible, "Extracting") || !strings.Contains(visible, "395,571 entries") {
+		t.Fatalf("compact progress lost core detail: %q", visible)
+	}
+}
+
+func TestFinishTTYProgressTerminatesLineBeforeFollowingError(t *testing.T) {
+	var stderr bytes.Buffer
+	tty := true
+	width := 80
+	a := &App{Inv: Invocation{Globals: Globals{JSON: false}}, Stderr: &stderr, progressTTYOverride: &tty, progressWidthOverride: &width}
+	if err := a.progress(map[string]any{"phase": "extract", "percent": 50, "message": "Extracting root filesystem", "live": true, "bytes_done": int64(1), "bytes_total": int64(2)}); err != nil {
+		t.Fatal(err)
+	}
+	a.finishProgressLine()
+	if !strings.HasSuffix(stderr.String(), "\x1b[K\n") {
+		t.Fatalf("progress line was not cleanly terminated: %q", stderr.String())
+	}
+}

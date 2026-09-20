@@ -25,6 +25,8 @@ import (
 	"chrootctl/internal/zstd"
 )
 
+const exportManifestMember = ".chrootctl-export.json"
+
 var artifactTTL = map[string]time.Duration{
 	"staged-import":  24 * time.Hour,
 	"chroot-export":  7 * 24 * time.Hour,
@@ -510,7 +512,7 @@ func (s *TransferService) ExportWithControl(ctx context.Context, name, archive, 
 		return model.ChrootExportResult{}, e
 	}
 	defer os.RemoveAll(manifestDir)
-	manifestPath := filepath.Join(manifestDir, ".chrootctl-export.json")
+	manifestPath := filepath.Join(manifestDir, exportManifestMember)
 	if e = exclusiveJSON(manifestPath, manifest); e != nil {
 		return model.ChrootExportResult{}, e
 	}
@@ -638,59 +640,73 @@ func (s *TransferService) Inspect(ctx context.Context, archive, password string)
 }
 
 func (s *TransferService) InspectWithControl(ctx context.Context, archive, password string, control TransferControl) (model.ChrootArchiveInspection, error) {
-	archive, _ = filepath.Abs(archive)
-	st, e := os.Stat(archive)
-	if e != nil {
-		return model.ChrootArchiveInspection{}, e
-	}
-	if e = validateArchiveFileSize(archive, st.Size()); e != nil {
-		return model.ChrootArchiveInspection{}, e
-	}
-	sum, sumPathPtr, verified, e := requireArchiveChecksum(ctx, control, archive)
-	if e != nil {
-		return model.ChrootArchiveInspection{}, e
-	}
 	tmp, e := os.MkdirTemp("", "chrootctl-inspect-*")
 	if e != nil {
 		return model.ChrootArchiveInspection{}, e
 	}
 	defer os.RemoveAll(tmp)
+	inspection, _, e := s.prepareImportArchive(ctx, archive, password, tmp, control)
+	return inspection, e
+}
+
+// prepareImportArchive performs the expensive archive materialization exactly once
+// for one import/inspection operation. The returned tarPath remains valid until tmp
+// is removed, so callers can preflight the archive and then extract that same tar
+// without decompressing the source a second time.
+func (s *TransferService) prepareImportArchive(ctx context.Context, archive, password, tmp string, control TransferControl) (model.ChrootArchiveInspection, string, error) {
+	archive, _ = filepath.Abs(archive)
+	st, e := os.Stat(archive)
+	if e != nil {
+		return model.ChrootArchiveInspection{}, "", e
+	}
+	if e = validateArchiveFileSize(archive, st.Size()); e != nil {
+		return model.ChrootArchiveInspection{}, "", e
+	}
+	sum, sumPathPtr, verified, e := requireArchiveChecksum(ctx, control, archive)
+	if e != nil {
+		return model.ChrootArchiveInspection{}, "", e
+	}
 	source := archive
 	rt, _ := s.C.RuntimeFor("", "")
 	runner := transferRunner(rt.Runner, control.Cancelled)
 	if strings.HasSuffix(archive, ".enc") {
 		if password == "" {
-			return model.ChrootArchiveInspection{}, fmt.Errorf("password required for encrypted archive")
+			return model.ChrootArchiveInspection{}, "", fmt.Errorf("password required for encrypted archive")
 		}
-		source = filepath.Join(tmp, strings.TrimSuffix(filepath.Base(archive), ".enc"))
-		res, e := runner.Run(ctx, []string{"openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", archive, "-out", source, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
-		if e != nil || res.ReturnCode != 0 {
-			return model.ChrootArchiveInspection{}, fmt.Errorf("encrypted archive could not be opened")
+		source = filepath.Join(tmp, "decrypted.tar.zst")
+		res, runErr := runner.Run(ctx, []string{"openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", archive, "-out", source, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
+		if runErr != nil || res.ReturnCode != 0 {
+			return model.ChrootArchiveInspection{}, "", fmt.Errorf("encrypted archive could not be opened")
+		}
+		if sourceStat, statErr := os.Stat(source); statErr != nil {
+			return model.ChrootArchiveInspection{}, "", statErr
+		} else if e = validateArchiveFileSize(source, sourceStat.Size()); e != nil {
+			return model.ChrootArchiveInspection{}, "", e
 		}
 	}
 	tarPath := filepath.Join(tmp, "archive.tar")
 	if e = decompressZstdFile(ctx, control, source, tarPath, 12, 20); e != nil {
-		return model.ChrootArchiveInspection{}, e
+		return model.ChrootArchiveInspection{}, "", e
 	}
-	if e = control.emit(ctx, "manifest", 22, "Validating archive manifest"); e != nil {
-		return model.ChrootArchiveInspection{}, e
+	if e = control.emit(ctx, "manifest", 22, "Validating archive manifest and structure"); e != nil {
+		return model.ChrootArchiveInspection{}, "", e
 	}
 	manifest, size, e := inspectTar(ctx, control, tarPath)
 	if e != nil {
-		return model.ChrootArchiveInspection{}, e
+		return model.ChrootArchiveInspection{}, "", e
 	}
 	metadataFidelity, e := validateImportManifest(manifest, control.AllowLegacyMetadata)
 	if e != nil {
-		return model.ChrootArchiveInspection{}, e
+		return model.ChrootArchiveInspection{}, "", e
 	}
 	if metadataFidelity == "legacy_unverified" {
 		if e = control.emit(ctx, "legacy-metadata", 24, "Legacy archive metadata contract missing; continuing with explicit compatibility opt-in"); e != nil {
-			return model.ChrootArchiveInspection{}, e
+			return model.ChrootArchiveInspection{}, "", e
 		}
 	}
 	pathName := fmt.Sprint(manifest["path_name"])
 	sourceName := fmt.Sprint(manifest["name"])
-	if sourceName == "" {
+	if sourceName == "" || sourceName == "<nil>" {
 		sourceName = pathName
 	}
 	target, _ := s.C.Registry.Get(ctx, sourceName)
@@ -703,7 +719,8 @@ func (s *TransferService) InspectWithControl(ctx context.Context, archive, passw
 	if metadataFidelity == "legacy_unverified" {
 		metadata["legacy_archive_compatibility"] = "explicit_opt_in"
 	}
-	return model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: metadata, SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, IntegritySource: checksumIntegritySource(verified), Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}, nil
+	inspection := model.ChrootArchiveInspection{Archive: archive, SourceName: sourceName, SuggestedName: sourceName, PathName: pathName, Distro: fmt.Sprint(manifest["distro"]), Arch: fmt.Sprint(manifest["arch"]), ReleaseName: fmt.Sprint(manifest["release_name"]), Version: fmt.Sprint(manifest["version"]), Phase: fmt.Sprint(manifest["phase"]), Installed: manifest["installed"] == true, Metadata: metadata, SizeBytes: int(st.Size()), ExtractedSizeBytes: int(size), CreatedAt: created, Checksum: sum, ChecksumPath: sumPathPtr, ChecksumVerified: verified, IntegritySource: checksumIntegritySource(verified), Encrypted: strings.HasSuffix(archive, ".enc"), TargetExists: target != nil, ConflictStrategyOptions: []string{"rename", "overwrite"}}
+	return inspection, tarPath, nil
 }
 func validateArchiveFileSize(path string, size int64) error {
 	if size <= 0 {
@@ -851,6 +868,36 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 	var manifest map[string]any
 	var total int64
 	members := 0
+	manifestMembers := 0
+	observedRoot := ""
+	// Track the topology the real extractor will observe so structural failures
+	// (hardlink ordering, symlink/non-directory parents, unsafe collisions) are
+	// rejected during the cheap tar-header preflight rather than after a large
+	// rootfs has already been materialized.
+	pathKinds := map[string]string{}
+	ensureParents := func(rel string) error {
+		parts := strings.Split(rel, "/")
+		if len(parts) <= 1 {
+			return nil
+		}
+		cur := ""
+		for _, part := range parts[:len(parts)-1] {
+			if cur == "" {
+				cur = part
+			} else {
+				cur += "/" + part
+			}
+			if kind, ok := pathKinds[cur]; ok {
+				if kind != "dir" {
+					return fmt.Errorf("archive member %s has non-directory parent %s", rel, cur)
+				}
+				continue
+			}
+			// Extraction creates absent parent directories on demand.
+			pathKinds[cur] = "dir"
+		}
+		return nil
+	}
 	for {
 		if err := control.check(ctx); err != nil {
 			return nil, 0, err
@@ -862,8 +909,8 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 		if e != nil {
 			return nil, 0, e
 		}
-		name := filepath.Clean(h.Name)
-		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
+		name := filepath.ToSlash(filepath.Clean(h.Name))
+		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") {
 			return nil, 0, fmt.Errorf("unsafe archive member: %s", h.Name)
 		}
 		members++
@@ -874,7 +921,17 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 		if total > maxArchiveExpandedBytes {
 			return nil, 0, fmt.Errorf("archive expanded payload exceeds %d bytes", maxArchiveExpandedBytes)
 		}
-		if name == ".chrootctl-export.json" {
+		if name == exportManifestMember {
+			manifestMembers++
+			if manifestMembers > 1 {
+				return nil, 0, fmt.Errorf("archive contains duplicate %s", exportManifestMember)
+			}
+			if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA {
+				return nil, 0, fmt.Errorf("archive control member %s must be a regular file", exportManifestMember)
+			}
+			if h.Size > 1024*1024 {
+				return nil, 0, fmt.Errorf("archive control member %s is too large", exportManifestMember)
+			}
 			b, e := io.ReadAll(io.LimitReader(tr, 1024*1024))
 			if e != nil {
 				return nil, 0, e
@@ -882,13 +939,107 @@ func inspectTar(ctx context.Context, control TransferControl, path string) (map[
 			if e = json.Unmarshal(b, &manifest); e != nil {
 				return nil, 0, e
 			}
+			continue
+		}
+
+		root := name
+		if i := strings.IndexByte(root, '/'); i >= 0 {
+			root = root[:i]
+		}
+		if root == "" || root == "." {
+			return nil, 0, fmt.Errorf("unsafe archive member: %s", h.Name)
+		}
+		if observedRoot == "" {
+			observedRoot = root
+		} else if root != observedRoot {
+			return nil, 0, fmt.Errorf("unexpected archive member outside root %s: %s", observedRoot, h.Name)
+		}
+		rel := "."
+		if name != observedRoot {
+			prefix := observedRoot + "/"
+			if !strings.HasPrefix(name, prefix) {
+				return nil, 0, fmt.Errorf("unexpected archive member outside root %s: %s", observedRoot, h.Name)
+			}
+			rel = strings.TrimPrefix(name, prefix)
+		}
+		if rel == "" || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, "../") {
+			return nil, 0, fmt.Errorf("unsafe archive member: %s", h.Name)
+		}
+		if rel == "." {
+			if h.Typeflag != tar.TypeDir {
+				return nil, 0, fmt.Errorf("archive root %s must be a directory", observedRoot)
+			}
+			if kind, ok := pathKinds[rel]; ok && kind != "dir" {
+				return nil, 0, fmt.Errorf("archive root %s collides with %s entry", observedRoot, kind)
+			}
+			pathKinds[rel] = "dir"
+			continue
+		}
+		if err := ensureParents(rel); err != nil {
+			return nil, 0, err
+		}
+		existing, exists := pathKinds[rel]
+		switch h.Typeflag {
+		case tar.TypeDir:
+			if exists && existing != "dir" {
+				return nil, 0, fmt.Errorf("archive directory %s collides with %s entry", rel, existing)
+			}
+			pathKinds[rel] = "dir"
+		case tar.TypeReg, tar.TypeRegA:
+			// The extractor deliberately permits a later regular file to replace
+			// an earlier regular file, but never a directory/symlink/device.
+			if exists && existing != "regular" {
+				return nil, 0, fmt.Errorf("archive file %s collides with %s entry", rel, existing)
+			}
+			pathKinds[rel] = "regular"
+		case tar.TypeSymlink:
+			if exists {
+				return nil, 0, fmt.Errorf("duplicate archive member: %s", rel)
+			}
+			pathKinds[rel] = "symlink"
+		case tar.TypeLink:
+			if exists {
+				return nil, 0, fmt.Errorf("duplicate archive member: %s", rel)
+			}
+			linkName := filepath.ToSlash(filepath.Clean(h.Linkname))
+			prefix := observedRoot + "/"
+			if filepath.IsAbs(linkName) || linkName == ".." || strings.HasPrefix(linkName, "../") || !strings.HasPrefix(linkName, prefix) {
+				return nil, 0, fmt.Errorf("unsafe hardlink target: %s", h.Linkname)
+			}
+			linkRel := strings.TrimPrefix(linkName, prefix)
+			if linkRel == "" || pathKinds[linkRel] != "regular" {
+				return nil, 0, fmt.Errorf("hardlink target is not a previously declared regular file: %s", h.Linkname)
+			}
+			pathKinds[rel] = "regular"
+		case tar.TypeFifo, tar.TypeChar, tar.TypeBlock:
+			if exists {
+				return nil, 0, fmt.Errorf("duplicate archive member: %s", rel)
+			}
+			pathKinds[rel] = "special"
+		case tar.TypeXGlobalHeader, tar.TypeXHeader:
+			// archive/tar normally consumes PAX extension headers internally, but
+			// retain parity with the extractor if one is surfaced.
+			continue
+		default:
+			return nil, 0, fmt.Errorf("unsupported rootfs archive entry type %d for %s", h.Typeflag, h.Name)
 		}
 	}
 	if manifest == nil {
-		return nil, 0, fmt.Errorf("archive missing .chrootctl-export.json")
+		return nil, 0, fmt.Errorf("archive missing %s", exportManifestMember)
+	}
+	pathName := strings.TrimSpace(fmt.Sprint(manifest["path_name"]))
+	if pathName == "" || pathName == "<nil>" {
+		return nil, 0, fmt.Errorf("archive manifest path_name is missing")
+	}
+	if observedRoot == "" {
+		return nil, 0, fmt.Errorf("archive missing declared root %s", pathName)
+	}
+	if observedRoot != pathName {
+		return nil, 0, fmt.Errorf("archive root %s does not match manifest path_name %s", observedRoot, pathName)
 	}
 	return manifest, total, nil
 }
+
 func max64(a, b int64) int64 {
 	if a > b {
 		return a
@@ -977,35 +1128,6 @@ func decompressZstdFile(ctx context.Context, control TransferControl, source, de
 	return control.emit(ctx, "decompress", endPercent, "Archive decompressed")
 }
 
-func (s *TransferService) materializeTar(ctx context.Context, archive, password, tmp string) (string, error) {
-	return s.materializeTarWithControl(ctx, archive, password, tmp, TransferControl{})
-}
-
-func (s *TransferService) materializeTarWithControl(ctx context.Context, archive, password, tmp string, control TransferControl) (string, error) {
-	source := archive
-	rt, _ := s.C.RuntimeFor("", "")
-	runner := transferRunner(rt.Runner, control.Cancelled)
-	if strings.HasSuffix(archive, ".enc") {
-		if password == "" {
-			return "", fmt.Errorf("password required for encrypted archive")
-		}
-		source = filepath.Join(tmp, "decrypted.tar.zst")
-		res, e := runner.Run(ctx, []string{"openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", archive, "-out", source, "-pass", "stdin"}, sys.RunOptions{Input: password + "\n", MaxCaptureBytes: 256 * 1024})
-		if e != nil || res.ReturnCode != 0 {
-			return "", fmt.Errorf("encrypted archive could not be opened")
-		}
-		if st, statErr := os.Stat(source); statErr != nil {
-			return "", statErr
-		} else if e = validateArchiveFileSize(source, st.Size()); e != nil {
-			return "", e
-		}
-	}
-	tarPath := filepath.Join(tmp, "archive.tar")
-	if e := decompressZstdFile(ctx, control, source, tarPath, 25, 30); e != nil {
-		return "", e
-	}
-	return tarPath, nil
-}
 func safeExtractParent(root, path string) error {
 	parent := filepath.Dir(path)
 	rel, e := filepath.Rel(root, parent)
@@ -1141,8 +1263,9 @@ func extractRootFromTar(ctx context.Context, control TransferControl, tarPath, d
 	}
 	reporter := newExtractionProgressReporter(ctx, control, st.Size(), 30, 75)
 	if err := fsmeta.ExtractTarRoot(ctx, f, destRoot, pathName, fsmeta.CopyControl{
-		Check:           func(checkCtx context.Context) error { return control.check(checkCtx) },
-		ExtractProgress: reporter.report,
+		Check:              func(checkCtx context.Context) error { return control.check(checkCtx) },
+		ExtractProgress:    reporter.report,
+		SkipArchiveMembers: map[string]bool{exportManifestMember: true},
 	}); err != nil {
 		return err
 	}
@@ -1194,7 +1317,12 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 	if e := control.emit(ctx, "inspect", 5, "Inspecting import archive"); e != nil {
 		return model.ChrootImportResult{}, e
 	}
-	inspection, e := s.InspectWithControl(ctx, archive, password, control)
+	tmp, e := os.MkdirTemp("", "chrootctl-import-*")
+	if e != nil {
+		return model.ChrootImportResult{}, e
+	}
+	defer os.RemoveAll(tmp)
+	inspection, tarPath, e := s.prepareImportArchive(ctx, archive, password, tmp, control)
 	if e != nil {
 		return model.ChrootImportResult{}, e
 	}
@@ -1266,16 +1394,7 @@ func (s *TransferService) ImportWithControl(ctx context.Context, archive, name, 
 			}
 		}
 	}
-	tmp, e := os.MkdirTemp("", "chrootctl-import-*")
-	if e != nil {
-		return model.ChrootImportResult{}, e
-	}
-	defer os.RemoveAll(tmp)
-	if e = control.emit(ctx, "materialize", 24, "Preparing import archive"); e != nil {
-		return model.ChrootImportResult{}, e
-	}
-	tarPath, e := s.materializeTarWithControl(ctx, archive, password, tmp, control)
-	if e != nil {
+	if e = control.emit(ctx, "materialize", 28, "Archive validated and ready for extraction"); e != nil {
 		return model.ChrootImportResult{}, e
 	}
 	stage, e := os.MkdirTemp(root, ".chrootctl-stage-"+safeArtifactName(name)+"-")

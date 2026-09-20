@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -153,5 +154,70 @@ func TestExtractTarRootReportsConsumedBytesEntriesAndCurrentPath(t *testing.T) {
 	}
 	if !foundPath {
 		t.Fatalf("current path never reported: %+v", samples)
+	}
+}
+
+func TestExtractTarRootSkipsExplicitArchiveControlMember(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	uid, gid := os.Geteuid(), os.Getegid()
+	payload := []byte("payload")
+	if err := tw.WriteHeader(&tar.Header{Name: "root", Typeflag: tar.TypeDir, Mode: 0o755, Uid: uid, Gid: gid}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: "root/etc/example", Typeflag: tar.TypeReg, Mode: 0o644, Uid: uid, Gid: gid, Size: int64(len(payload))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"path_name":"root"}`)
+	if err := tw.WriteHeader(&tar.Header{Name: ".chrootctl-export.json", Typeflag: tar.TypeReg, Mode: 0o600, Uid: uid, Gid: gid, Size: int64(len(manifest))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := t.TempDir()
+	if err := ExtractTarRoot(context.Background(), bytes.NewReader(buf.Bytes()), dest, "root", CopyControl{
+		SkipArchiveMembers: map[string]bool{".chrootctl-export.json": true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dest, "etc", "example")); err != nil || string(got) != string(payload) {
+		t.Fatalf("payload=%q err=%v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, ".chrootctl-export.json")); !os.IsNotExist(err) {
+		t.Fatalf("control member was extracted into rootfs: %v", err)
+	}
+}
+
+func TestExtractTarRootStillRejectsUnknownMemberOutsideRoot(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	uid, gid := os.Geteuid(), os.Getegid()
+	if err := tw.WriteHeader(&tar.Header{Name: "root", Typeflag: tar.TypeDir, Mode: 0o755, Uid: uid, Gid: gid}); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("nope")
+	if err := tw.WriteHeader(&tar.Header{Name: "unexpected.txt", Typeflag: tar.TypeReg, Mode: 0o600, Uid: uid, Gid: gid, Size: int64(len(payload))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ExtractTarRoot(context.Background(), bytes.NewReader(buf.Bytes()), t.TempDir(), "root", CopyControl{
+		SkipArchiveMembers: map[string]bool{".chrootctl-export.json": true},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unexpected archive member outside root root: unexpected.txt") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

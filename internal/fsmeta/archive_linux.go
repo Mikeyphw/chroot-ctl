@@ -28,9 +28,10 @@ type ExtractProgress struct {
 }
 
 type CopyControl struct {
-	Check           func(context.Context) error
-	Progress        func(int64) error
-	ExtractProgress func(ExtractProgress) error
+	Check              func(context.Context) error
+	Progress           func(int64) error
+	ExtractProgress    func(ExtractProgress) error
+	SkipArchiveMembers map[string]bool
 }
 
 func (c CopyControl) check(ctx context.Context) error {
@@ -272,8 +273,14 @@ func extractTarTracked(ctx context.Context, tr *tar.Reader, dest, stripRoot stri
 		if err != nil {
 			return err
 		}
-		entries++
 		raw := filepath.ToSlash(filepath.Clean(h.Name))
+		if filepath.IsAbs(raw) || raw == ".." || strings.HasPrefix(raw, "../") {
+			return fmt.Errorf("unsafe archive member: %s", h.Name)
+		}
+		if control.SkipArchiveMembers != nil && control.SkipArchiveMembers[raw] {
+			continue
+		}
+		entries++
 		if raw == "." && stripRoot == "" {
 			currentPath = "."
 			if err := report(); err != nil {

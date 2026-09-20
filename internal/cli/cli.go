@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -252,14 +253,15 @@ func bestCommand(args []string) string {
 }
 
 type App struct {
-	Services            *services.Container
-	Inv                 Invocation
-	Stdin               io.Reader
-	Stdout              io.Writer
-	Stderr              io.Writer
-	ExitCode            int
-	progressLineOpen    bool
-	progressTTYOverride *bool
+	Services              *services.Container
+	Inv                   Invocation
+	Stdin                 io.Reader
+	Stdout                io.Writer
+	Stderr                io.Writer
+	ExitCode              int
+	progressLineOpen      bool
+	progressTTYOverride   *bool
+	progressWidthOverride *int
 }
 
 func (a *App) emit(title string, value any) error {
@@ -295,7 +297,8 @@ func (a *App) progress(value any) error {
 			if percent, ok := cliProgressPercent(detail["percent"]); ok {
 				line := fmt.Sprintf("[%3d%%] %s", percent, message)
 				if isLiveProgress(detail) && a.progressIsTerminal() {
-					_, err := fmt.Fprintf(a.Stderr, "\r%s\x1b[K", line)
+					line = a.formatTerminalLiveProgressLine(percent, message, detail)
+					_, err := fmt.Fprintf(a.Stderr, "\r\x1b[2K%s", line)
 					if err == nil {
 						a.progressLineOpen = true
 					}
@@ -338,9 +341,102 @@ func (a *App) finishProgressLine() {
 	if !a.progressLineOpen {
 		return
 	}
-	_, _ = fmt.Fprintln(a.Stderr)
+	_, _ = fmt.Fprint(a.Stderr, "\x1b[K\n")
 	a.progressLineOpen = false
 }
+
+func (a *App) progressTerminalWidth() int {
+	if a.progressWidthOverride != nil && *a.progressWidthOverride > 0 {
+		return *a.progressWidthOverride
+	}
+	if raw := strings.TrimSpace(os.Getenv("COLUMNS")); raw != "" {
+		if width, err := strconv.Atoi(raw); err == nil && width >= 40 && width <= 1000 {
+			return width
+		}
+	}
+	// Keep live progress below a conventional 80-column terminal even when a
+	// root shell or su wrapper does not preserve COLUMNS. Preventing wrapping is
+	// important because carriage-return updates cannot reliably erase wrapped
+	// physical rows.
+	return 80
+}
+
+func (a *App) formatTerminalLiveProgressLine(percent int, verbose string, detail map[string]any) string {
+	width := a.progressTerminalWidth()
+	prefix := fmt.Sprintf("[%3d%%] ", percent)
+	base := strings.TrimSpace(fmt.Sprint(detail["phase"]))
+	if base == "extract" {
+		if strings.HasPrefix(verbose, "Root filesystem extracted") {
+			base = "Extracted"
+		} else {
+			base = "Extracting"
+		}
+	} else if base == "" || base == "<nil>" {
+		base = verbose
+	}
+	parts := []string{prefix + base}
+	done, doneOK := int64ProgressValue(detail["bytes_done"])
+	total, totalOK := int64ProgressValue(detail["bytes_total"])
+	if doneOK && totalOK && total > 0 {
+		parts = append(parts, compactBinaryProgress(done, total))
+	}
+	if entries, ok := int64ProgressValue(detail["entries"]); ok && entries > 0 {
+		parts = append(parts, formatCount(entries)+" entries")
+	}
+	baseLine := strings.Join(parts, " · ")
+	path := strings.TrimSpace(fmt.Sprint(detail["current_path"]))
+	if path != "" && path != "<nil>" {
+		remaining := width - runeLen(baseLine) - runeLen(" · ")
+		if remaining >= 12 {
+			baseLine += " · " + truncateProgressPathRunes(path, remaining)
+		}
+	}
+	return truncateProgressLine(baseLine, width)
+}
+
+func compactBinaryProgress(done, total int64) string {
+	if done < 0 {
+		done = 0
+	}
+	if total <= 0 {
+		return formatBinaryBytes(done)
+	}
+	units := []struct {
+		name string
+		size float64
+	}{{"TiB", 1 << 40}, {"GiB", 1 << 30}, {"MiB", 1 << 20}, {"KiB", 1 << 10}}
+	for _, unit := range units {
+		if float64(total) >= unit.size {
+			return fmt.Sprintf("%.1f/%.1f %s", float64(done)/unit.size, float64(total)/unit.size, unit.name)
+		}
+	}
+	return fmt.Sprintf("%d/%d B", done, total)
+}
+
+func truncateProgressLine(text string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	if max == 1 {
+		return "…"
+	}
+	return string(runes[:max-1]) + "…"
+}
+
+func truncateProgressPathRunes(path string, max int) string {
+	path = filepath.ToSlash(path)
+	runes := []rune(path)
+	if max < 8 || len(runes) <= max {
+		return path
+	}
+	return "…" + string(runes[len(runes)-(max-1):])
+}
+
+func runeLen(text string) int { return len([]rune(text)) }
 
 func isLiveProgress(detail map[string]any) bool {
 	v, ok := detail["live"].(bool)
