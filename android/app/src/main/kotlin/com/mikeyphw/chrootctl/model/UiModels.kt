@@ -362,11 +362,28 @@ data class TransferArtifactSummary(
     val expiresAt: String,
 )
 
+data class RcloneRemoteEntrySummary(
+    val name: String,
+    val path: String,
+    val sizeBytes: Long,
+    val isDirectory: Boolean,
+    val modifiedAt: String,
+)
+
+data class RcloneStatusSummary(
+    val available: Boolean,
+    val configured: Boolean,
+    val version: String,
+    val remotes: List<String>,
+    val errorMessage: String? = null,
+)
+
 data class TransferPane(
     val importArchive: String = "",
     val importTargetName: String = "",
     val importPassword: String = "",
     val allowLegacyMetadata: Boolean = false,
+    val importStrategy: String = "auto",
     val exportTargetName: String = "",
     val exportArchive: String = "",
     val conflict: String = "rename",
@@ -374,6 +391,15 @@ data class TransferPane(
     val importInspection: PreviewSummary? = null,
     val exportPreview: PreviewSummary? = null,
     val artifactCleanupPreview: PreviewSummary? = null,
+    val rcloneAvailable: Boolean = false,
+    val rcloneConfigured: Boolean = false,
+    val rcloneVersion: String = "",
+    val rcloneRemotes: List<String> = emptyList(),
+    val rcloneLocation: String = "",
+    val rcloneEntries: List<RcloneRemoteEntrySummary> = emptyList(),
+    val rcloneStagedConfig: String = "",
+    val rcloneRefreshing: Boolean = false,
+    val rcloneErrorMessage: String? = null,
     val refreshing: Boolean = false,
     val importInspecting: Boolean = false,
     val errorMessage: String? = null,

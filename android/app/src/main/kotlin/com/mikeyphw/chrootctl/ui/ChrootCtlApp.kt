@@ -41,6 +41,7 @@ fun ChrootCtlApp(
     onStartRefreshOperation: () -> Unit,
     onStartBridgeOperation: (String, String) -> Unit,
     onPickImportArchive: () -> Unit,
+    onPickRcloneConfig: () -> Unit,
     onCreateExportDocument: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
     notificationsEnabled: Boolean,
@@ -50,6 +51,7 @@ fun ChrootCtlApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var destinationStack by rememberSaveable { mutableStateOf(listOf(AppDestination.Home.name)) }
     var lastHandledSnapshotOperationId by rememberSaveable { mutableStateOf("") }
+    var lastHandledRcloneConfigOperationId by rememberSaveable { mutableStateOf("") }
     var requestedChrootWorkspaceTabName by rememberSaveable { mutableStateOf("") }
     var requestedChrootWorkspaceTabNonce by rememberSaveable { mutableStateOf(0L) }
     var pendingOperationDeepLinkId by rememberSaveable { mutableStateOf("") }
@@ -85,6 +87,19 @@ fun ChrootCtlApp(
                 }
             }
             lastHandledSnapshotOperationId = operation.operationId
+        }
+    }
+
+    LaunchedEffect(uiState.operations) {
+        val completed = uiState.operations.firstOrNull { operation ->
+            operation.kind == "remote.rclone.config_import" &&
+                operation.state == "succeeded" &&
+                operation.operationId != lastHandledRcloneConfigOperationId
+        }
+        completed?.let { operation ->
+            viewModel.clearRcloneStagedConfig()
+            viewModel.refreshRcloneStatus()
+            lastHandledRcloneConfigOperationId = operation.operationId
         }
     }
 
@@ -219,11 +234,20 @@ fun ChrootCtlApp(
                 updateTransferImportTarget = viewModel::updateTransferImportTarget,
                 updateTransferImportPassword = viewModel::updateTransferImportPassword,
                 updateTransferImportAllowLegacyMetadata = viewModel::updateTransferImportAllowLegacyMetadata,
+                updateTransferImportStrategy = viewModel::updateTransferImportStrategy,
                 updateTransferExportTarget = viewModel::updateTransferExportTarget,
                 updateTransferExportArchive = viewModel::updateTransferExportArchive,
                 inspectTransferImport = viewModel::inspectTransferImport,
                 previewTransferExport = viewModel::previewTransferExport,
                 refreshTransferArtifacts = viewModel::refreshTransferArtifacts,
+                refreshRcloneStatus = viewModel::refreshRcloneStatus,
+                updateRcloneLocation = viewModel::updateRcloneLocation,
+                browseRclone = viewModel::browseRclone,
+                useRcloneEntryForImport = viewModel::useRcloneEntryForImport,
+                startRcloneConfigImport = {
+                    val payload = viewModel.rcloneConfigImportPayloadJson()
+                    onStartBridgeOperation("remote.rclone.config_import", payload)
+                },
                 startTransferImport = {
                     val payload = viewModel.transferImportPayloadJson()
                     viewModel.clearTransferImportSecretsAfterDispatch()
@@ -244,6 +268,7 @@ fun ChrootCtlApp(
                     }
                 },
                 pickImportArchive = onPickImportArchive,
+                pickRcloneConfig = onPickRcloneConfig,
                 createExportDocument = onCreateExportDocument,
                 refreshSystemSupport = viewModel::refreshSystemSupport,
                 previewSupportBundle = viewModel::previewSupportBundle,
@@ -330,15 +355,22 @@ private fun AppContent(
     updateTransferImportTarget: (String) -> Unit,
     updateTransferImportPassword: (String) -> Unit,
     updateTransferImportAllowLegacyMetadata: (Boolean) -> Unit,
+    updateTransferImportStrategy: (String) -> Unit,
     updateTransferExportTarget: (String) -> Unit,
     updateTransferExportArchive: (String) -> Unit,
     inspectTransferImport: () -> Unit,
     previewTransferExport: () -> Unit,
     refreshTransferArtifacts: () -> Unit,
+    refreshRcloneStatus: () -> Unit,
+    updateRcloneLocation: (String) -> Unit,
+    browseRclone: () -> Unit,
+    useRcloneEntryForImport: (String) -> Unit,
+    startRcloneConfigImport: () -> Unit,
     startTransferImport: () -> Unit,
     startTransferExport: () -> Unit,
     cleanupAllArtifacts: () -> Unit,
     pickImportArchive: () -> Unit,
+    pickRcloneConfig: () -> Unit,
     createExportDocument: () -> Unit,
     refreshSystemSupport: () -> Unit,
     previewSupportBundle: () -> Unit,
@@ -504,15 +536,22 @@ private fun AppContent(
                     onUpdateTransferImportTarget = updateTransferImportTarget,
                     onUpdateTransferImportPassword = updateTransferImportPassword,
                     onUpdateTransferImportAllowLegacyMetadata = updateTransferImportAllowLegacyMetadata,
+                    onUpdateTransferImportStrategy = updateTransferImportStrategy,
                     onUpdateTransferExportTarget = updateTransferExportTarget,
                     onUpdateTransferExportArchive = updateTransferExportArchive,
                     onInspectTransferImport = inspectTransferImport,
                     onPreviewTransferExport = previewTransferExport,
                     onRefreshTransferArtifacts = refreshTransferArtifacts,
+                    onRefreshRcloneStatus = refreshRcloneStatus,
+                    onUpdateRcloneLocation = updateRcloneLocation,
+                    onBrowseRclone = browseRclone,
+                    onUseRcloneEntryForImport = useRcloneEntryForImport,
+                    onStartRcloneConfigImport = startRcloneConfigImport,
                     onStartTransferImport = startTransferImport,
                     onStartTransferExport = startTransferExport,
                     onCleanupAllArtifacts = cleanupAllArtifacts,
                     onPickImportArchive = pickImportArchive,
+                    onPickRcloneConfig = pickRcloneConfig,
                     onCreateExportDocument = createExportDocument,
                     onRefreshSystemSupport = refreshSystemSupport,
                     onPreviewSupportBundle = previewSupportBundle,

@@ -32,6 +32,8 @@ import com.mikeyphw.chrootctl.model.CatalogEntrySummary
 import com.mikeyphw.chrootctl.model.PackageInventorySummary
 import com.mikeyphw.chrootctl.model.PackageCompareSummary
 import com.mikeyphw.chrootctl.model.TransferArtifactSummary
+import com.mikeyphw.chrootctl.model.RcloneRemoteEntrySummary
+import com.mikeyphw.chrootctl.model.RcloneStatusSummary
 import com.mikeyphw.chrootctl.model.SystemRowSummary
 import com.mikeyphw.chrootctl.model.DebugTimelineSummary
 import com.mikeyphw.chrootctl.model.DebugProbeSummary
@@ -418,11 +420,13 @@ class BridgeRepository(
         conflict: String = "rename",
         password: String = "",
         allowLegacyMetadata: Boolean = false,
+        importStrategy: String = "auto",
     ): Result<PreviewSummary> = runCatching {
         val payload = JSONObject()
             .put("archive", archive)
             .put("conflict", conflict)
             .put("allowLegacyMetadata", allowLegacyMetadata)
+            .put("importStrategy", importStrategy)
         if (name.isNotBlank()) payload.put("name", name)
         if (password.isNotBlank()) payload.put("password", password)
         val data = BridgeEnvelope.fromJson(
@@ -441,6 +445,17 @@ class BridgeRepository(
     suspend fun refreshTransferArtifacts(): Result<List<TransferArtifactSummary>> = runCatching {
         val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("artifacts.list").toJson())).requireData()
         data.optJSONArray("items").toJsonObjects().map { item -> item.toTransferArtifactSummary() }
+    }
+
+    suspend fun refreshRcloneStatus(): Result<RcloneStatusSummary> = runCatching {
+        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("remote.rclone.status").toJson())).requireData()
+        data.toRcloneStatusSummary()
+    }
+
+    suspend fun listRclone(location: String): Result<List<RcloneRemoteEntrySummary>> = runCatching {
+        val payload = JSONObject().put("location", location)
+        val data = BridgeEnvelope.fromJson(rootClient.query(BridgeRequest("remote.rclone.list", payload).toJson())).requireData()
+        data.optJSONArray("items").toJsonObjects().map { item -> item.toRcloneRemoteEntrySummary() }
     }
 
     suspend fun previewArtifactCleanup(deleteAll: Boolean = true, path: String? = null): Result<PreviewSummary> = runCatching {
@@ -760,7 +775,15 @@ internal fun JSONObject.operationProgressDisplay(fallback: String): String {
     if (entries > 0L) {
         pieces += "${formatProgressCount(entries)} entries"
     }
-    firstString("current_path").takeIf(String::isNotBlank)?.let { path ->
+    val rate = optLong("rate_bytes_per_second", -1L)
+    if (rate > 0L) {
+        pieces += "${formatProgressBytes(rate)}/s"
+    }
+    val eta = optLong("eta_seconds", -1L)
+    if (eta >= 0L) {
+        pieces += "ETA ${formatProgressDuration(eta)}"
+    }
+    firstString("current_path", "current_object", "remote").takeIf(String::isNotBlank)?.let { path ->
         pieces += truncateProgressPath(path, 56)
     }
     return pieces.joinToString(" · ")
@@ -781,6 +804,18 @@ private fun formatProgressBytes(bytes: Long): String {
 }
 
 private fun formatProgressCount(count: Long): String = String.format(Locale.US, "%,d", count)
+
+private fun formatProgressDuration(seconds: Long): String {
+    val safe = seconds.coerceAtLeast(0L)
+    val hours = safe / 3600
+    val minutes = (safe % 3600) / 60
+    val remainingSeconds = safe % 60
+    return when {
+        hours > 0 -> String.format(Locale.US, "%dh %02dm", hours, minutes)
+        minutes > 0 -> String.format(Locale.US, "%dm %02ds", minutes, remainingSeconds)
+        else -> "${remainingSeconds}s"
+    }
+}
 
 private fun truncateProgressPath(path: String, maxChars: Int): String {
     val normalized = path.replace('\\', '/')
@@ -1247,6 +1282,22 @@ private fun JSONObject.toTransferArtifactSummary(): TransferArtifactSummary = Tr
     sizeBytes = optLong("size_bytes", optLong("sizeBytes", 0L)),
     modifiedAt = firstString("modified_at", "modifiedAt"),
     expiresAt = firstString("expiresAt", "expires_at"),
+)
+
+private fun JSONObject.toRcloneStatusSummary(): RcloneStatusSummary = RcloneStatusSummary(
+    available = optBoolean("available", false),
+    configured = optBoolean("configured", false),
+    version = firstString("version"),
+    remotes = optJSONArray("remotes").toStringListLocal(),
+    errorMessage = firstString("error").takeIf(String::isNotBlank),
+)
+
+private fun JSONObject.toRcloneRemoteEntrySummary(): RcloneRemoteEntrySummary = RcloneRemoteEntrySummary(
+    name = firstString("name"),
+    path = firstString("path"),
+    sizeBytes = optLong("size_bytes", optLong("sizeBytes", 0L)),
+    isDirectory = optBoolean("is_dir", optBoolean("isDir", false)),
+    modifiedAt = firstString("modified_at", "modifiedAt"),
 )
 
 private fun JSONObject.toRuntimeRows(): List<SystemRowSummary> = rowsFromJson(

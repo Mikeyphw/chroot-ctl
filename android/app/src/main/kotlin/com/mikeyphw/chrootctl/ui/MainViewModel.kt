@@ -318,6 +318,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
             AppDestination.Tools -> {
                 refreshCatalog("tool")
                 refreshTransferArtifacts()
+                refreshRcloneStatus()
                 refreshSystemSupport()
                 refreshDebugWorkbench()
             }
@@ -1004,6 +1005,18 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         )
     }
 
+    fun updateTransferImportStrategy(strategy: String) {
+        val normalized = strategy.lowercase().takeIf { it in setOf("auto", "streaming", "staged") } ?: "auto"
+        transferImportPreviewRequestPayload = null
+        transferPane.value = transferPane.value.copy(
+            importStrategy = normalized,
+            importInspection = null,
+            refreshing = false,
+            importInspecting = false,
+            errorMessage = null,
+        )
+    }
+
     fun updateTransferExportTarget(name: String) {
         transferExportPreviewRequestPayload = null
         transferPane.value = transferPane.value.copy(exportTargetName = name, exportPreview = null, refreshing = false, errorMessage = null)
@@ -1033,6 +1046,7 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
                 request.conflict,
                 request.importPassword,
                 request.allowLegacyMetadata,
+                request.importStrategy,
             )
                 .onSuccess { preview ->
                     if (transferImportPreviewRequestPayload == requestPayload && transferImportPreviewIdentity(transferPane.value) == requestPayload) {
@@ -1096,12 +1110,73 @@ class MainViewModel(private val repository: BridgeRepository) : ViewModel() {
         }
     }
 
+    fun refreshRcloneStatus() {
+        viewModelScope.launch {
+            transferPane.value = transferPane.value.copy(rcloneRefreshing = true, rcloneErrorMessage = null)
+            repository.refreshRcloneStatus()
+                .onSuccess { status ->
+                    val defaultLocation = transferPane.value.rcloneLocation.ifBlank {
+                        status.remotes.firstOrNull()?.let { "rclone://$it/" }.orEmpty()
+                    }
+                    transferPane.value = transferPane.value.copy(
+                        rcloneAvailable = status.available,
+                        rcloneConfigured = status.configured,
+                        rcloneVersion = status.version,
+                        rcloneRemotes = status.remotes,
+                        rcloneLocation = defaultLocation,
+                        rcloneRefreshing = false,
+                        rcloneErrorMessage = status.errorMessage,
+                    )
+                }
+                .onFailure { error ->
+                    transferPane.value = transferPane.value.copy(
+                        rcloneAvailable = false,
+                        rcloneConfigured = false,
+                        rcloneRefreshing = false,
+                        rcloneErrorMessage = error.message ?: error.javaClass.simpleName,
+                    )
+                }
+        }
+    }
+
+    fun updateRcloneLocation(location: String) {
+        transferPane.value = transferPane.value.copy(rcloneLocation = location, rcloneEntries = emptyList(), rcloneErrorMessage = null)
+    }
+
+    fun browseRclone() {
+        val location = transferPane.value.rcloneLocation.trim()
+        if (location.isBlank()) return
+        viewModelScope.launch {
+            transferPane.value = transferPane.value.copy(rcloneRefreshing = true, rcloneErrorMessage = null)
+            repository.listRclone(location)
+                .onSuccess { entries -> transferPane.value = transferPane.value.copy(rcloneEntries = entries, rcloneRefreshing = false, rcloneErrorMessage = null) }
+                .onFailure { error -> transferPane.value = transferPane.value.copy(rcloneRefreshing = false, rcloneErrorMessage = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    fun useRcloneEntryForImport(path: String) {
+        updateTransferImportArchive(path)
+    }
+
+    fun updateRcloneStagedConfig(path: String) {
+        transferPane.value = transferPane.value.copy(rcloneStagedConfig = path, rcloneErrorMessage = null)
+    }
+
+    fun clearRcloneStagedConfig() {
+        transferPane.value = transferPane.value.copy(rcloneStagedConfig = "")
+    }
+
+    fun rcloneConfigImportPayloadJson(): String = JSONObject()
+        .put("path", transferPane.value.rcloneStagedConfig)
+        .toString()
+
     fun transferImportPayloadJson(): String {
         val current = transferPane.value
         val payload = JSONObject()
             .put("archive", current.importArchive)
             .put("conflict", current.conflict)
             .put("allowLegacyMetadata", current.allowLegacyMetadata)
+            .put("importStrategy", current.importStrategy)
         current.importTargetName.takeIf(String::isNotBlank)?.let { payload.put("name", it) }
         current.importPassword.takeIf(String::isNotBlank)?.let { payload.put("password", it) }
         return payload.withPreviewContract(current.importInspection, "transfer.import").toString()
@@ -1339,6 +1414,7 @@ private fun transferImportPreviewIdentity(pane: TransferPane): String = JSONObje
     .put("conflict", pane.conflict)
     .put("password", pane.importPassword)
     .put("allowLegacyMetadata", pane.allowLegacyMetadata)
+    .put("importStrategy", pane.importStrategy)
     .toString()
 
 private fun transferExportPreviewIdentity(pane: TransferPane): String = JSONObject()

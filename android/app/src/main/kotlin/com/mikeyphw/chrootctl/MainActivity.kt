@@ -40,6 +40,10 @@ class MainActivity : ComponentActivity() {
         uri?.let(::stageImportArchive)
     }
 
+    private val pickRcloneConfig = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(::stageRcloneConfig)
+    }
+
     private val createExportDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         uri?.let(::copyManagedArtifactToDocument)
     }
@@ -72,6 +76,9 @@ class MainActivity : ComponentActivity() {
                             "application/zstd",
                         ),
                     )
+                },
+                onPickRcloneConfig = {
+                    pickRcloneConfig.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
                 },
                 onCreateExportDocument = {
                     createExportDocument.launch(defaultExportFileName())
@@ -134,6 +141,23 @@ class MainActivity : ComponentActivity() {
                         viewModel.updateTransferImportArchive(path)
                         viewModel.inspectTransferImport()
                     }
+                    .onFailure { error -> Toast.makeText(this@MainActivity, error.message ?: getString(R.string.transfer_document_open_failed), Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    private fun stageRcloneConfig(uri: Uri) {
+        val filename = displayName(uri).ifBlank { "rclone.conf" }
+        lifecycleScope.launch {
+            val repository = (application as ChrootCtlApplication).container.bridgeRepository
+            val descriptor = contentResolver.openFileDescriptor(uri, "r")
+            if (descriptor == null) {
+                Toast.makeText(this@MainActivity, getString(R.string.transfer_document_open_failed), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            descriptor.use { owned ->
+                repository.stageImportArchive(filename, owned)
+                    .onSuccess(viewModel::updateRcloneStagedConfig)
                     .onFailure { error -> Toast.makeText(this@MainActivity, error.message ?: getString(R.string.transfer_document_open_failed), Toast.LENGTH_SHORT).show() }
             }
         }

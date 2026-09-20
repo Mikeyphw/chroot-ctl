@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -75,15 +76,22 @@ fun ToolsScreen(
     onUpdateTransferImportTarget: (String) -> Unit,
     onUpdateTransferImportPassword: (String) -> Unit,
     onUpdateTransferImportAllowLegacyMetadata: (Boolean) -> Unit,
+    onUpdateTransferImportStrategy: (String) -> Unit,
     onUpdateTransferExportTarget: (String) -> Unit,
     onUpdateTransferExportArchive: (String) -> Unit,
     onInspectTransferImport: () -> Unit,
     onPreviewTransferExport: () -> Unit,
     onRefreshTransferArtifacts: () -> Unit,
+    onRefreshRcloneStatus: () -> Unit,
+    onUpdateRcloneLocation: (String) -> Unit,
+    onBrowseRclone: () -> Unit,
+    onUseRcloneEntryForImport: (String) -> Unit,
+    onStartRcloneConfigImport: () -> Unit,
     onStartTransferImport: () -> Unit,
     onStartTransferExport: () -> Unit,
     onCleanupAllArtifacts: () -> Unit,
     onPickImportArchive: () -> Unit,
+    onPickRcloneConfig: () -> Unit,
     onCreateExportDocument: () -> Unit,
     onRefreshSystemSupport: () -> Unit,
     onPreviewSupportBundle: () -> Unit,
@@ -137,15 +145,22 @@ fun ToolsScreen(
                 onUpdateImportTarget = onUpdateTransferImportTarget,
                 onUpdateImportPassword = onUpdateTransferImportPassword,
                 onUpdateImportAllowLegacyMetadata = onUpdateTransferImportAllowLegacyMetadata,
+                onUpdateImportStrategy = onUpdateTransferImportStrategy,
                 onUpdateExportTarget = onUpdateTransferExportTarget,
                 onUpdateExportArchive = onUpdateTransferExportArchive,
                 onInspectImport = onInspectTransferImport,
                 onPreviewExport = onPreviewTransferExport,
                 onRefreshArtifacts = onRefreshTransferArtifacts,
+                onRefreshRcloneStatus = onRefreshRcloneStatus,
+                onUpdateRcloneLocation = onUpdateRcloneLocation,
+                onBrowseRclone = onBrowseRclone,
+                onUseRcloneEntryForImport = onUseRcloneEntryForImport,
+                onStartRcloneConfigImport = onStartRcloneConfigImport,
                 onStartImport = onStartTransferImport,
                 onStartExport = onStartTransferExport,
                 onCleanupAllArtifacts = onCleanupAllArtifacts,
                 onPickImportArchive = onPickImportArchive,
+                onPickRcloneConfig = onPickRcloneConfig,
                 onCreateExportDocument = onCreateExportDocument,
             )
             ToolsWorkspace.Runtime -> SystemSupportCard(
@@ -321,15 +336,22 @@ private fun TransferCard(
     onUpdateImportTarget: (String) -> Unit,
     onUpdateImportPassword: (String) -> Unit,
     onUpdateImportAllowLegacyMetadata: (Boolean) -> Unit,
+    onUpdateImportStrategy: (String) -> Unit,
     onUpdateExportTarget: (String) -> Unit,
     onUpdateExportArchive: (String) -> Unit,
     onInspectImport: () -> Unit,
     onPreviewExport: () -> Unit,
     onRefreshArtifacts: () -> Unit,
+    onRefreshRcloneStatus: () -> Unit,
+    onUpdateRcloneLocation: (String) -> Unit,
+    onBrowseRclone: () -> Unit,
+    onUseRcloneEntryForImport: (String) -> Unit,
+    onStartRcloneConfigImport: () -> Unit,
     onStartImport: () -> Unit,
     onStartExport: () -> Unit,
     onCleanupAllArtifacts: () -> Unit,
     onPickImportArchive: () -> Unit,
+    onPickRcloneConfig: () -> Unit,
     onCreateExportDocument: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
@@ -362,6 +384,21 @@ private fun TransferCard(
                     )
                 }
             }
+            Text(stringResource(R.string.transfer_import_strategy_title), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.transfer_import_strategy_help), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "auto" to R.string.transfer_import_strategy_auto,
+                    "streaming" to R.string.transfer_import_strategy_streaming,
+                    "staged" to R.string.transfer_import_strategy_staged,
+                ).forEach { (strategy, label) ->
+                    FilterChip(
+                        selected = pane.importStrategy == strategy,
+                        onClick = { onUpdateImportStrategy(strategy) },
+                        label = { Text(stringResource(label)) },
+                    )
+                }
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onPickImportArchive, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.importInspecting) { Text(stringResource(R.string.transfer_pick_archive_action)) }
                 Button(onClick = onInspectImport, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.importInspecting) { Text(stringResource(R.string.transfer_inspect_action)) }
@@ -372,6 +409,85 @@ private fun TransferCard(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             pane.importInspection?.let { PreviewBlock(it) }
+
+            Text(stringResource(R.string.transfer_rclone_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.transfer_rclone_help), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            val rcloneStatus = when {
+                pane.rcloneRefreshing -> stringResource(R.string.transfer_rclone_status_refreshing)
+                !pane.rcloneAvailable -> stringResource(R.string.transfer_rclone_status_unavailable)
+                !pane.rcloneConfigured -> stringResource(R.string.transfer_rclone_status_unconfigured, pane.rcloneVersion.ifBlank { "rclone" })
+                else -> stringResource(R.string.transfer_rclone_status_ready, pane.rcloneVersion.ifBlank { "rclone" }, pane.rcloneRemotes.size)
+            }
+            Text(rcloneStatus, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onRefreshRcloneStatus, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.rcloneRefreshing) { Text(stringResource(R.string.transfer_rclone_refresh_action)) }
+                OutlinedButton(onClick = onPickRcloneConfig, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget), enabled = !pane.rcloneRefreshing) { Text(stringResource(R.string.transfer_rclone_pick_config_action)) }
+                Button(
+                    onClick = onStartRcloneConfigImport,
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                    enabled = pane.rcloneStagedConfig.isNotBlank() && !pane.rcloneRefreshing,
+                ) { Text(stringResource(R.string.transfer_rclone_apply_config_action)) }
+            }
+            if (pane.rcloneStagedConfig.isNotBlank()) {
+                Text(stringResource(R.string.transfer_rclone_staged_config, pane.rcloneStagedConfig.substringAfterLast('/')), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            if (pane.rcloneRefreshing) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            if (pane.rcloneRemotes.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pane.rcloneRemotes.forEach { remoteName ->
+                        val root = "rclone://$remoteName/"
+                        FilterChip(
+                            selected = pane.rcloneLocation.startsWith(root),
+                            onClick = { onUpdateRcloneLocation(root) },
+                            label = { Text(remoteName) },
+                        )
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = pane.rcloneLocation,
+                onValueChange = onUpdateRcloneLocation,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.transfer_rclone_location_label)) },
+                supportingText = { Text(stringResource(R.string.transfer_rclone_location_help)) },
+                singleLine = true,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onBrowseRclone, enabled = pane.rcloneLocation.isNotBlank() && !pane.rcloneRefreshing, modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget)) { Text(stringResource(R.string.transfer_rclone_browse_action)) }
+                OutlinedButton(
+                    onClick = {
+                        val current = pane.rcloneLocation.trim().trimEnd('/')
+                        val destination = if (current.endsWith(".tar.zst") || current.endsWith(".tar.zst.enc") || current.endsWith(".enc")) {
+                            current
+                        } else {
+                            val baseName = pane.exportTargetName.trim().ifBlank { "chroot" }
+                            "$current/$baseName.tar.zst"
+                        }
+                        onUpdateExportArchive(destination)
+                    },
+                    enabled = pane.rcloneLocation.startsWith("rclone://"),
+                    modifier = Modifier.heightIn(min = ChrootLayout.MinimumTouchTarget),
+                ) { Text(stringResource(R.string.transfer_rclone_use_for_export_action)) }
+            }
+            pane.rcloneEntries.take(20).forEach { entry ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (entry.isDirectory) stringResource(R.string.transfer_rclone_directory_row, entry.name) else stringResource(R.string.transfer_rclone_file_row, entry.name, entry.sizeBytes),
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (entry.isDirectory) {
+                        OutlinedButton(onClick = {
+                            onUpdateRcloneLocation(entry.path + if (entry.path.endsWith('/')) "" else "/")
+                            onBrowseRclone()
+                        }) { Text(stringResource(R.string.transfer_rclone_open_action)) }
+                    } else {
+                        OutlinedButton(onClick = { onUseRcloneEntryForImport(entry.path) }) { Text(stringResource(R.string.transfer_rclone_use_import_action)) }
+                    }
+                }
+            }
+            pane.rcloneErrorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
             OutlinedTextField(value = pane.exportTargetName, onValueChange = onUpdateExportTarget, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_export_target_label)) })
             OutlinedTextField(value = pane.exportArchive, onValueChange = onUpdateExportArchive, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.transfer_export_archive_label)) })
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

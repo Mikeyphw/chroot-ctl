@@ -46,3 +46,24 @@ class OperationProgressPresentationTest {
         assertTrue(text.endsWith("libsomething.so"))
     }
 }
+
+// Rich rclone transfer events use the same durable operation-detail presenter.
+class RcloneOperationProgressPresentationTest {
+    @Test
+    fun `rclone progress includes rate eta and current object`() {
+        val payload = JSONObject()
+            .put("message", "Downloading remote archive")
+            .put("live", true)
+            .put("bytes_done", 7L * 1024 * 1024 * 1024)
+            .put("bytes_total", 9L * 1024 * 1024 * 1024)
+            .put("rate_bytes_per_second", 25L * 1024 * 1024)
+            .put("eta_seconds", 99L)
+            .put("current_object", "drive:chroots/androidos.tar.zst")
+
+        val text = payload.operationProgressDisplay("Working")
+        assertTrue(text.contains("7.0 GiB / 9.0 GiB"))
+        assertTrue(text.contains("25.0 MiB/s"))
+        assertTrue(text.contains("ETA 1m 39s"))
+        assertTrue(text.contains("androidos.tar.zst"))
+    }
+}
