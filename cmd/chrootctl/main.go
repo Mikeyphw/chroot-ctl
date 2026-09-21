@@ -2,9 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"chrootctl/internal/standalonewebui"
 
 	"chrootctl/internal/cli"
 )
@@ -12,6 +17,35 @@ import (
 func main() { os.Exit(runWithIO(os.Args[1:])) }
 
 func runWithIO(args []string) int {
+	if len(args) >= 2 && args[0] == "webui" && args[1] == "serve" {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		srv, err := standalonewebui.New(standalonewebui.Config{IdleTimeout: 10 * time.Minute, SessionTTL: 30 * time.Minute})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
+			return 1
+		}
+		info, err := srv.Start(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
+			return 1
+		}
+		if len(args) > 2 && args[2] == "--json" {
+			_ = json.NewEncoder(os.Stdout).Encode(info)
+		} else {
+			fmt.Fprintln(os.Stdout, info.BootstrapURL)
+		}
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+		defer signal.Stop(signals)
+		select {
+		case <-signals:
+			return 0
+		case <-ctx.Done():
+			return 0
+		}
+	}
+
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	signals := make(chan os.Signal, 1)
