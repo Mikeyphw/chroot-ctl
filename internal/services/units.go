@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"chrootctl/internal/logging"
 	sys "chrootctl/internal/system"
 	"chrootctl/internal/validation"
 )
@@ -621,22 +622,7 @@ func serviceEnvKeys(env map[string]string) string {
 const maxServiceLogBytes int64 = 4 * 1024 * 1024
 
 func rotateServiceLogIfNeeded(path string) error {
-	st, err := os.Lstat(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() {
-		return fmt.Errorf("unsafe service log file: %s", path)
-	}
-	if st.Size() <= maxServiceLogBytes {
-		return nil
-	}
-	rotated := path + ".1"
-	_ = os.Remove(rotated)
-	return os.Rename(path, rotated)
+	return logging.RotateFileIfNeeded(path, maxServiceLogBytes, logging.MaxLogBackups)
 }
 
 func appendServiceLifecycle(path string, lines ...string) error {

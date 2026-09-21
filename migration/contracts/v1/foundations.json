@@ -133,7 +133,7 @@
       "extra_packages": [],
       "install_profile": null,
       "locale": "en_US.UTF-8",
-      "log_file": "/sdcard/.logs/chrootctl.log",
+      "log_file": "/data/local/tmp/chrootctl/chrootctl.log",
       "media_mounts": [
         {
           "enabled": true,
@@ -165,7 +165,7 @@
       "service_dirs": [
         "/data/adb/chrootctl/services"
       ],
-      "service_log_dir": "/data/adb/chrootctl/logs/services",
+      "service_log_dir": "/data/local/tmp/chrootctl/services",
       "service_state_dir": "/data/adb/chrootctl/run/services",
       "shell_path": "/usr/bin/zsh",
       "snapshot_before_destructive": false,

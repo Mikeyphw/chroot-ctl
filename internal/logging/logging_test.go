@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"chrootctl/internal/config"
 )
 
 type loggingFixture struct {
@@ -129,5 +132,33 @@ func TestCHR16RotatesOversizedLog(t *testing.T) {
 	data, _ := os.ReadFile(path)
 	if !strings.Contains(string(data), "fresh") {
 		t.Fatalf("fresh log missing: %q", string(data))
+	}
+}
+
+func TestRotatingFileKeepsFiveBackupsAndRotatesDuringWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chrootctl.log")
+	for i := 0; i < 8; i++ {
+		l := Configure(path, false, WithConsole(io.Discard), WithFileOpener(func(p string) (io.WriteCloser, error) { return OpenRotatingFile(p, 64, 5) }))
+		l.Info(strings.Repeat("x", 80))
+		if err := l.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 1; i <= 5; i++ {
+		if _, err := os.Stat(fmt.Sprintf("%s.%d", path, i)); err != nil {
+			t.Fatalf("backup %d missing: %v", i, err)
+		}
+	}
+	if _, err := os.Stat(path + ".6"); !os.IsNotExist(err) {
+		t.Fatalf("unexpected sixth backup: %v", err)
+	}
+}
+func TestAndroidDefaultLoggingRoot(t *testing.T) {
+	cfg := config.Default(config.RuntimeContext{Android: true, AndroidStateDir: config.AndroidStateRoot})
+	if cfg.LogFile != "/data/local/tmp/chrootctl/chrootctl.log" {
+		t.Fatalf("android log file=%q", cfg.LogFile)
+	}
+	if cfg.ServiceLogDir != "/data/local/tmp/chrootctl/services" {
+		t.Fatalf("android service log dir=%q", cfg.ServiceLogDir)
 	}
 }

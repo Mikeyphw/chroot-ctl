@@ -15,12 +15,15 @@ import (
 )
 
 const (
-	AndroidStateRoot  = "/data/adb/chrootctl"
-	LegacyTermuxHome  = "/data/data/com.termux/files/home"
-	DefaultChrootRoot = "/data/local/tmp"
-	DefaultTermuxHome = "/data/data/com.termux/files/home"
-	DefaultTermuxPref = "/data/data/com.termux/files/usr"
-	DefaultLogFile    = "/sdcard/.logs/chrootctl.log"
+	AndroidStateRoot      = "/data/adb/chrootctl"
+	LegacyTermuxHome      = "/data/data/com.termux/files/home"
+	DefaultChrootRoot     = "/data/local/tmp"
+	DefaultTermuxHome     = "/data/data/com.termux/files/home"
+	DefaultTermuxPref     = "/data/data/com.termux/files/usr"
+	DefaultLogFile        = "/sdcard/.logs/chrootctl.log"
+	AndroidLogRoot        = "/data/local/tmp/chrootctl"
+	AndroidDefaultLogFile = AndroidLogRoot + "/chrootctl.log"
+	AndroidServiceLogDir  = AndroidLogRoot + "/services"
 )
 
 var DefaultDNSServers = []string{"8.8.8.8", "1.1.1.1"}
@@ -128,7 +131,7 @@ func Default(runtime RuntimeContext) ChrootConfig {
 		TargetArch:                "arm64",
 		TermuxHome:                DefaultTermuxHome,
 		TermuxPrefix:              DefaultTermuxPref,
-		LogFile:                   DefaultLogFile,
+		LogFile:                   defaultLogFile(runtime),
 		DatabasePath:              filepath.Join(stateRoot, "chroots.sqlite3"),
 		ShellPath:                 "/usr/bin/zsh",
 		MountDataWithDevSuid:      true,
@@ -148,11 +151,36 @@ func Default(runtime RuntimeContext) ChrootConfig {
 		AddonScriptDirs:           []string{},
 		ServiceDirs:               []string{filepath.Join(stateRoot, "services")},
 		ServiceStateDir:           filepath.Join(stateRoot, "run", "services"),
-		ServiceLogDir:             filepath.Join(stateRoot, "logs", "services"),
+		ServiceLogDir:             defaultServiceLogDir(runtime, stateRoot),
 		ChrootOverrides:           map[string]map[string]any{},
 	}
 }
 
+func defaultLogFile(runtime RuntimeContext) string {
+	if runtime.Android {
+		return AndroidDefaultLogFile
+	}
+	return DefaultLogFile
+}
+func defaultServiceLogDir(runtime RuntimeContext, stateRoot string) string {
+	if runtime.Android {
+		return AndroidServiceLogDir
+	}
+	return filepath.Join(stateRoot, "logs", "services")
+}
+func normalizeAndroidLoggingPaths(cfg ChrootConfig, runtime RuntimeContext) ChrootConfig {
+	if !runtime.Android {
+		return cfg
+	}
+	if filepath.Clean(cfg.LogFile) == filepath.Clean(DefaultLogFile) {
+		cfg.LogFile = AndroidDefaultLogFile
+	}
+	legacyServiceLogDir := filepath.Join(runtime.AndroidStateDir, "logs", "services")
+	if filepath.Clean(cfg.ServiceLogDir) == filepath.Clean(legacyServiceLogDir) {
+		cfg.ServiceLogDir = AndroidServiceLogDir
+	}
+	return cfg
+}
 func defaultStateRoot(runtime RuntimeContext) string {
 	if runtime.Android {
 		return runtime.AndroidStateDir
@@ -291,6 +319,7 @@ func load(path string, migrate bool, options ...LoadOption) (ChrootConfig, error
 		}
 		cfg.ChrootOverrides = overrides
 	}
+	cfg = normalizeAndroidLoggingPaths(cfg, settings.runtime)
 	return cfg, nil
 }
 

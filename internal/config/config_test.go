@@ -404,3 +404,28 @@ func TestRewriteChrootOverrideRejectsDestinationCollisionWithoutChangingFile(t *
 		t.Fatalf("config changed on rejected migration: %s", after)
 	}
 }
+
+func TestAndroidLegacyLoggingDefaultsNormalizeToCanonicalRoot(t *testing.T) {
+	root := t.TempDir()
+	runtime := RuntimeContext{
+		Android:         true,
+		Home:            filepath.Join(root, "home"),
+		AndroidStateDir: filepath.Join(root, "adb", "chrootctl"),
+		LegacyHome:      filepath.Join(root, "termux"),
+	}
+	path := filepath.Join(root, "config.json")
+	payload := `{"log_file":"/sdcard/.logs/chrootctl.log","service_log_dir":"` + filepath.Join(runtime.AndroidStateDir, "logs", "services") + `"}`
+	if err := os.WriteFile(path, []byte(payload), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadReadOnly(path, WithRuntime(runtime))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LogFile != AndroidDefaultLogFile {
+		t.Fatalf("log file=%q", cfg.LogFile)
+	}
+	if cfg.ServiceLogDir != AndroidServiceLogDir {
+		t.Fatalf("service log dir=%q", cfg.ServiceLogDir)
+	}
+}

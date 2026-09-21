@@ -20,6 +20,7 @@ const (
 	ConsoleLevel    = "INFO"
 	VerboseConsole  = "DEBUG"
 	MaxLogFileBytes = 4 * 1024 * 1024
+	MaxLogBackups   = 5
 )
 
 type Level int
@@ -92,10 +93,7 @@ func Configure(logFile string, verbose bool, options ...Option) *Logger {
 		console: os.Stderr,
 		now:     time.Now,
 		open: func(path string) (io.WriteCloser, error) {
-			if err := rotateIfNeeded(path, MaxLogFileBytes); err != nil {
-				return nil, err
-			}
-			return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			return OpenRotatingFile(path, MaxLogFileBytes, MaxLogBackups)
 		},
 	}
 	for _, option := range options {
@@ -112,6 +110,7 @@ func Configure(logFile string, verbose bool, options ...Option) *Logger {
 			logger.Warningf("File logging disabled for %s: %v", logFile, err)
 			return logger
 		}
+		_ = os.Chmod(parent, 0o700)
 	}
 	file, err := cfg.open(logFile)
 	if err != nil {
@@ -133,7 +132,76 @@ func (logger *Logger) Close() error {
 	return err
 }
 
-func rotateIfNeeded(path string, maxBytes int64) error {
+type rotatingFile struct {
+	path     string
+	maxBytes int64
+	backups  int
+	file     *os.File
+	size     int64
+}
+
+func OpenRotatingFile(path string, maxBytes int64, backups int) (io.WriteCloser, error) {
+	if path == "" {
+		return nil, fmt.Errorf("log path is empty")
+	}
+	if backups < 1 {
+		backups = 1
+	}
+	if err := RotateFileIfNeeded(path, maxBytes, backups); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	_ = os.Chmod(path, 0o600)
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	return &rotatingFile{path: path, maxBytes: maxBytes, backups: backups, file: f, size: st.Size()}, nil
+}
+func (r *rotatingFile) Write(p []byte) (int, error) {
+	if r.file == nil {
+		return 0, os.ErrClosed
+	}
+	if r.maxBytes > 0 && r.size > 0 && r.size+int64(len(p)) > r.maxBytes {
+		if err := r.rotate(); err != nil {
+			return 0, err
+		}
+	}
+	n, err := r.file.Write(p)
+	r.size += int64(n)
+	return n, err
+}
+func (r *rotatingFile) Close() error {
+	if r.file == nil {
+		return nil
+	}
+	err := r.file.Close()
+	r.file = nil
+	return err
+}
+func (r *rotatingFile) rotate() error {
+	if r.file != nil {
+		if err := r.file.Close(); err != nil {
+			return err
+		}
+		r.file = nil
+	}
+	if err := rotateNow(r.path, r.backups); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(r.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	r.file = f
+	r.size = 0
+	return nil
+}
+func RotateFileIfNeeded(path string, maxBytes int64, backups int) error {
 	if path == "" || maxBytes <= 0 {
 		return nil
 	}
@@ -150,9 +218,30 @@ func rotateIfNeeded(path string, maxBytes int64) error {
 	if st.Size() <= maxBytes {
 		return nil
 	}
-	rotated := path + ".1"
-	_ = os.Remove(rotated)
-	return os.Rename(path, rotated)
+	if backups < 1 {
+		backups = 1
+	}
+	return rotateNow(path, backups)
+}
+func rotateNow(path string, backups int) error {
+	for i := backups; i >= 1; i-- {
+		dst := fmt.Sprintf("%s.%d", path, i)
+		if i == backups {
+			_ = os.Remove(dst)
+		}
+		src := path
+		if i > 1 {
+			src = fmt.Sprintf("%s.%d", path, i-1)
+		}
+		if _, err := os.Lstat(src); err == nil {
+			if err := os.Rename(src, dst); err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (logger *Logger) Debugf(format string, args ...any)   { logger.logf(Debug, format, args...) }

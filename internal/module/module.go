@@ -23,8 +23,8 @@ import (
 const (
 	ModuleID              = "chrootctl-magisk"
 	ModuleName            = "chrootctl Magisk Module"
-	ModuleVersion         = "1.3.2"
-	ModuleVersionCode     = 17
+	ModuleVersion         = "1.3.3"
+	ModuleVersionCode     = 18
 	BackendVersion        = "0.11.0"
 	BridgeProtocolVersion = 1
 	RuntimeSchemaVersion  = 2
@@ -53,7 +53,7 @@ var webUIAssetPaths = []string{
 func requiredModuleFiles() []string {
 	required := []string{
 		"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh",
-		"bin/chrootctl-magisk-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper",
+		"bin/chrootctl-magisk-helper", "bin/chrootctl-log-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper",
 		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json",
 		"runtime/" + RuntimeABI + "/runtime-manifest.json",
 		"runtime/" + RuntimeABI + "/" + RuntimeEntrypoint,
@@ -603,6 +603,8 @@ PROPFILE=false
 POSTFSDATA=true
 LATESTARTSERVICE=true
 REPLACE=""
+LOG_HELPER="${MODPATH:-}/bin/chrootctl-log-helper"
+[ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "installer begin" || true
 
 ui_print "chrootctl ships a bundled Go native runtime." 2>/dev/null || echo "chrootctl ships a bundled Go native runtime."
 
@@ -624,6 +626,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     set_perm "$MODPATH/service.sh" 0 0 0755
     set_perm "$MODPATH/uninstall.sh" 0 0 0755
     set_perm "$MODPATH/bin/chrootctl-magisk-helper" 0 0 0755
+    set_perm "$MODPATH/bin/chrootctl-log-helper" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755
     set_perm "$MODPATH/runtime/arm64-v8a/chrootctl" 0 0 0755
@@ -634,6 +637,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     chmod 0755 "$MODPATH/service.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/uninstall.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/bin/chrootctl-magisk-helper" 2>/dev/null || true
+    chmod 0755 "$MODPATH/bin/chrootctl-log-helper" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl-magisk-helper" 2>/dev/null || true
     chmod 0755 "$MODPATH/runtime/arm64-v8a/chrootctl" 2>/dev/null || true
@@ -677,15 +681,18 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
         if [ ! -e "$ACTIVE_MODULE/disable" ] && [ ! -e "$ACTIVE_MODULE/remove" ]; then
           "$ACTIVE_MODULE/service.sh" >/dev/null 2>&1 || true
         fi
+        [ -x "$ACTIVE_MODULE/bin/chrootctl-log-helper" ] && "$ACTIVE_MODULE/bin/chrootctl-log-helper" module "installer live-update success" || true
         ui_print "chrootctl active module updated live; reboot is not required for the module runtime/WebUI." 2>/dev/null || echo "chrootctl active module updated live; reboot is not required for the module runtime/WebUI."
         ui_print "Root-manager magic-mount changes, if any, may still require a reboot." 2>/dev/null || true
       else
         rm -rf "$LIVE_NEXT" 2>/dev/null || true
         if [ ! -d "$ACTIVE_MODULE" ] && [ -d "$LIVE_OLD" ]; then mv "$LIVE_OLD" "$ACTIVE_MODULE" 2>/dev/null || true; fi
+        [ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "installer live-update failed staged-fallback=true" || true
         ui_print "chrootctl live activation failed; staged update is preserved for reboot activation." 2>/dev/null || echo "chrootctl live activation failed; staged update is preserved for reboot activation."
       fi
     else
       rm -rf "$LIVE_NEXT" "$LIVE_OLD" 2>/dev/null || true
+      [ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "installer live-update preflight-failed staged-fallback=true" || true
       ui_print "chrootctl live activation preflight failed; staged update is preserved for reboot activation." 2>/dev/null || true
     fi
   fi
@@ -705,6 +712,8 @@ BIN_DIR="$STATE_ROOT/bin"
 RCLONE_DIR="$STATE_ROOT/rclone"
 PUBLIC="$BIN_DIR/chrootctl"
 SOURCE="$MODDIR/system/bin/chrootctl"
+LOG_HELPER="$MODDIR/bin/chrootctl-log-helper"
+[ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "post-fs-data begin module=$MODDIR" || true
 
 # KernelSU legacy does not necessarily expose module system/bin through magic
 # mount. Maintain a root-owned stable launcher outside the module mount tree.
@@ -723,18 +732,50 @@ chown 0:0 "$PUBLIC.tmp" 2>/dev/null || true
 chmod 0755 "$PUBLIC.tmp" || { rm -f "$PUBLIC.tmp"; exit 0; }
 mv -f "$PUBLIC.tmp" "$PUBLIC"
 restorecon "$PUBLIC" 2>/dev/null || true
+[ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "post-fs-data stable-launcher-refreshed" || true
 exit 0
 `
 }
 func uninstall() string {
-	return "#!/system/bin/sh\nset -u\nSTATE_ROOT=/data/adb/chrootctl\n[ -n \"${CHROOTCTL_STATE_ROOT:-}\" ] && STATE_ROOT=\"$CHROOTCTL_STATE_ROOT\"\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/bin/chrootctl\" 2>/dev/null || true\n  rmdir \"$STATE_ROOT/bin\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
+	return "#!/system/bin/sh\nset -u\nLOGGER=/data/adb/modules/chrootctl-magisk/bin/chrootctl-log-helper\n[ -x \"$LOGGER\" ] && \"$LOGGER\" module \"uninstall begin\" || true\nSTATE_ROOT=/data/adb/chrootctl\n[ -n \"${CHROOTCTL_STATE_ROOT:-}\" ] && STATE_ROOT=\"$CHROOTCTL_STATE_ROOT\"\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/bin/chrootctl\" 2>/dev/null || true\n  rmdir \"$STATE_ROOT/bin\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
+}
+
+func logHelper() string {
+	return `#!/system/bin/sh
+set -u
+CHANNEL="${1:-module}"
+shift 2>/dev/null || true
+case "$CHANNEL" in module|transport) ;; *) CHANNEL=module ;; esac
+LOG_ROOT="${CHROOTCTL_LOG_ROOT:-/data/local/tmp/chrootctl}"
+LOG_FILE="$LOG_ROOT/$CHANNEL.log"
+MAX_BYTES="${CHROOTCTL_LOG_MAX_BYTES:-1048576}"
+KEEP="${CHROOTCTL_LOG_KEEP:-5}"
+mkdir -p "$LOG_ROOT" 2>/dev/null || exit 0
+chmod 0700 "$LOG_ROOT" 2>/dev/null || true
+if [ -f "$LOG_FILE" ]; then
+  size="$(wc -c < "$LOG_FILE" 2>/dev/null || echo 0)"
+  if [ "${size:-0}" -gt "$MAX_BYTES" ]; then
+    i="$KEEP"
+    while [ "$i" -gt 1 ]; do
+      prev=$((i - 1))
+      [ ! -f "$LOG_FILE.$prev" ] || mv -f "$LOG_FILE.$prev" "$LOG_FILE.$i" 2>/dev/null || true
+      i="$prev"
+    done
+    mv -f "$LOG_FILE" "$LOG_FILE.1" 2>/dev/null || true
+  fi
+fi
+ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date 2>/dev/null || echo unknown)"
+printf '%s pid=%s %s\n' "$ts" "$$" "$*" >> "$LOG_FILE" 2>/dev/null || true
+chmod 0600 "$LOG_FILE" 2>/dev/null || true
+exit 0
+`
 }
 
 func helper() string {
-	return "#!/system/bin/sh\nset -u\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-${0%/bin/*}}\"\nCHROOTCTL=\"$MODDIR/system/bin/chrootctl\"\n[ -x \"$CHROOTCTL\" ] || { echo \"bundled chrootctl runtime is unavailable\" >&2; exit 127; }\ncase \"$CMD\" in\n  __module-boot|__module-service)\n    rc=0\n    \"$CHROOTCTL\" clipboard daemon start >/dev/null 2>&1 || true\n    for target in \"$@\"; do\n      \"$CHROOTCTL\" --name \"$target\" mount || rc=1\n    done\n    \"$CHROOTCTL\" run --boot || rc=1\n    exit \"$rc\"\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
+	return "#!/system/bin/sh\nset -u\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-${0%/bin/*}}\"\nCHROOTCTL=\"$MODDIR/system/bin/chrootctl\"\nLOGGER=\"$MODDIR/bin/chrootctl-log-helper\"\n[ -x \"$CHROOTCTL\" ] || { [ -x \"$LOGGER\" ] && \"$LOGGER\" module \"helper runtime-unavailable\" || true; echo \"bundled chrootctl runtime is unavailable\" >&2; exit 127; }\ncase \"$CMD\" in\n  __module-boot|__module-service)\n    [ -x \"$LOGGER\" ] && \"$LOGGER\" module \"helper begin command=$CMD targets=$#\" || true\n    rc=0\n    \"$CHROOTCTL\" clipboard daemon start >/dev/null 2>&1 || true\n    for target in \"$@\"; do\n      \"$CHROOTCTL\" --name \"$target\" mount || rc=1\n    done\n    \"$CHROOTCTL\" run --boot || rc=1\n    [ -x \"$LOGGER\" ] && \"$LOGGER\" module \"helper end command=$CMD rc=$rc\" || true\n    exit \"$rc\"\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
 }
 func launcher() string {
-	return "#!/system/bin/sh\nset -eu\n\nMODULE_ID=\"chrootctl-magisk\"\nRUNTIME_ABI=\"arm64-v8a\"\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\"\n\nruntime_bin_ok() {\n  [ -f \"$1\" ] && [ -x \"$1\" ] && [ ! -L \"$1\" ]\n}\n\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-}\"\nif [ -z \"$MODDIR\" ]; then\n  case \"$0\" in\n    */system/bin/chrootctl) MODDIR=\"${0%/system/bin/chrootctl}\" ;;\n  esac\nfi\ncase \"$MODDIR\" in\n  \"\"|/system|/system_root/system) MODDIR=\"$ACTIVE_MODULE\" ;;\nesac\n\nRUNTIME_ROOT=\"$MODDIR/runtime/$RUNTIME_ABI\"\nRUNTIME_MANIFEST=\"$RUNTIME_ROOT/runtime-manifest.json\"\nRUNTIME_BIN=\"$RUNTIME_ROOT/chrootctl\"\n\n[ -d \"$RUNTIME_ROOT\" ] && [ ! -L \"$RUNTIME_ROOT\" ] || { echo \"bundled native runtime directory is missing or unsafe: $RUNTIME_ROOT\" >&2; echo \"hint: verify the active module live-update completed; a preserved modules_update tree can still activate on reboot.\" >&2; exit 127; }\n[ -f \"$RUNTIME_MANIFEST\" ] && [ ! -L \"$RUNTIME_MANIFEST\" ] || { echo \"bundled native runtime manifest is missing or unsafe: $RUNTIME_MANIFEST\" >&2; echo \"hint: rebuild/reinstall the module from a sealed Go-native runtime.\" >&2; exit 127; }\nruntime_bin_ok \"$RUNTIME_BIN\" || { echo \"bundled native chrootctl executable is missing or unsafe: $RUNTIME_BIN\" >&2; echo \"hint: verify the active module live-update completed and the runtime has executable mode; reboot remains a fallback for staged activation.\" >&2; exit 127; }\n\nmkdir -p /data/adb/chrootctl 2>/dev/null || true\nchmod 0700 /data/adb/chrootctl 2>/dev/null || true\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nexec \"$RUNTIME_BIN\" \"$@\"\n"
+	return "#!/system/bin/sh\nset -eu\n\nMODULE_ID=\"chrootctl-magisk\"\nRUNTIME_ABI=\"arm64-v8a\"\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\"\n\nruntime_bin_ok() {\n  [ -f \"$1\" ] && [ -x \"$1\" ] && [ ! -L \"$1\" ]\n}\n\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-}\"\nif [ -z \"$MODDIR\" ]; then\n  case \"$0\" in\n    */system/bin/chrootctl) MODDIR=\"${0%/system/bin/chrootctl}\" ;;\n  esac\nfi\ncase \"$MODDIR\" in\n  \"\"|/system|/system_root/system) MODDIR=\"$ACTIVE_MODULE\" ;;\nesac\n\nLOGGER=\"$MODDIR/bin/chrootctl-log-helper\"\nCOMMAND=\"${1:-none}\"\nSUBCOMMAND=\"\"\n[ \"$COMMAND\" != \"app\" ] || SUBCOMMAND=\"${2:-}\"\n[ -x \"$LOGGER\" ] && \"$LOGGER\" transport \"invoke command=$COMMAND subcommand=$SUBCOMMAND argc=$#\" || true\n\nRUNTIME_ROOT=\"$MODDIR/runtime/$RUNTIME_ABI\"\nRUNTIME_MANIFEST=\"$RUNTIME_ROOT/runtime-manifest.json\"\nRUNTIME_BIN=\"$RUNTIME_ROOT/chrootctl\"\n\n[ -d \"$RUNTIME_ROOT\" ] && [ ! -L \"$RUNTIME_ROOT\" ] || { echo \"bundled native runtime directory is missing or unsafe: $RUNTIME_ROOT\" >&2; echo \"hint: verify the active module live-update completed; a preserved modules_update tree can still activate on reboot.\" >&2; exit 127; }\n[ -f \"$RUNTIME_MANIFEST\" ] && [ ! -L \"$RUNTIME_MANIFEST\" ] || { echo \"bundled native runtime manifest is missing or unsafe: $RUNTIME_MANIFEST\" >&2; echo \"hint: rebuild/reinstall the module from a sealed Go-native runtime.\" >&2; exit 127; }\nruntime_bin_ok \"$RUNTIME_BIN\" || { echo \"bundled native chrootctl executable is missing or unsafe: $RUNTIME_BIN\" >&2; echo \"hint: verify the active module live-update completed and the runtime has executable mode; reboot remains a fallback for staged activation.\" >&2; exit 127; }\n\nmkdir -p /data/adb/chrootctl 2>/dev/null || true\nchmod 0700 /data/adb/chrootctl 2>/dev/null || true\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nexec \"$RUNTIME_BIN\" \"$@\"\n"
 }
 func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
@@ -749,7 +790,7 @@ func service(startupTargets []string) string {
 	if len(args) > 0 {
 		invocation += " " + strings.Join(args, " ")
 	}
-	return "#!/system/bin/sh\nMODDIR=\"${0%/*}\"\ncase \"$MODDIR\" in\n  */system/bin) MODDIR=\"${MODDIR%/system/bin}\" ;;\nesac\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\" # diagnostics only\n\nif [ -n \"${CHROOTCTL_MODULE_DIR:-}\" ]; then\n  MODDIR=\"$CHROOTCTL_MODULE_DIR\"\nelif [ -d \"$ACTIVE_MODULE\" ]; then\n  MODDIR=\"$ACTIVE_MODULE\"\nfi\n\nif [ \"$MODDIR\" != \"$ACTIVE_MODULE\" ]; then\n  echo \"refusing module service outside active module: $MODDIR\" >&2\n  exit 0\nfi\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nHELPER=\"$MODDIR/bin/chrootctl-magisk-helper\"\n[ -x \"$HELPER\" ] || exit 0\n" + invocation + " || true\n"
+	return "#!/system/bin/sh\nMODDIR=\"${0%/*}\"\ncase \"$MODDIR\" in\n  */system/bin) MODDIR=\"${MODDIR%/system/bin}\" ;;\nesac\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\" # diagnostics only\n\nif [ -n \"${CHROOTCTL_MODULE_DIR:-}\" ]; then\n  MODDIR=\"$CHROOTCTL_MODULE_DIR\"\nelif [ -d \"$ACTIVE_MODULE\" ]; then\n  MODDIR=\"$ACTIVE_MODULE\"\nfi\n\nif [ \"$MODDIR\" != \"$ACTIVE_MODULE\" ]; then\n  echo \"refusing module service outside active module: $MODDIR\" >&2\n  exit 0\nfi\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nHELPER=\"$MODDIR/bin/chrootctl-magisk-helper\"\nLOGGER=\"$MODDIR/bin/chrootctl-log-helper\"\n[ -x \"$HELPER\" ] || { [ -x \"$LOGGER\" ] && \"$LOGGER\" module \"service helper-missing\" || true; exit 0; }\n[ -x \"$LOGGER\" ] && \"$LOGGER\" module \"service begin\" || true\n" + invocation + " || true\n[ -x \"$LOGGER\" ] && \"$LOGGER\" module \"service end\" || true\n"
 }
 func proxy(target string) string {
 	return "#!/system/bin/sh\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}\"\nexec \"$MODDIR/" + target + "\" \"$@\"\n"
@@ -802,7 +843,7 @@ func Render(opts Options) error {
 	files := map[string]struct {
 		c string
 		m fs.FileMode
-	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
+	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
 	for rel, v := range files {
 		if e := writeFile(out, rel, v.c, v.m); e != nil {
 			return e

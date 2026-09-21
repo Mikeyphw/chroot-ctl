@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"chrootctl/internal/config"
+	"chrootctl/internal/logging"
 	sys "chrootctl/internal/system"
 )
 
@@ -55,11 +56,12 @@ func managedRoot(cfg config.ChrootConfig) string {
 
 func DefaultPaths(cfg config.ChrootConfig) Paths {
 	runtimeDir := managedRoot(cfg)
-	return Paths{
-		SocketPath: filepath.Join(runtimeDir, "clipboard.sock"),
-		PIDFile:    filepath.Join(runtimeDir, "clipboard-daemon.pid"),
-		LogFile:    filepath.Join(runtimeDir, "clipboard-daemon.log"),
+	logDir := runtimeDir
+	cleanLog := filepath.Clean(cfg.LogFile)
+	if cleanLog == filepath.Clean(config.AndroidDefaultLogFile) || strings.HasPrefix(cleanLog, filepath.Clean(config.AndroidLogRoot)+string(filepath.Separator)) {
+		logDir = filepath.Dir(cleanLog)
 	}
+	return Paths{SocketPath: filepath.Join(runtimeDir, "clipboard.sock"), PIDFile: filepath.Join(runtimeDir, "clipboard-daemon.pid"), LogFile: filepath.Join(logDir, "clipboard-daemon.log")}
 }
 func tokenPath(socket string) string { return filepath.Join(filepath.Dir(socket), "clipboard.token") }
 func identityPath(pid string) string { return pid + ".identity.json" }
@@ -295,12 +297,7 @@ func verifyNoCorruptLiveState(paths Paths) error {
 }
 
 func rotateLog(path string) {
-	info, err := os.Stat(path)
-	if err != nil || info.Size() <= MaxClipboardDaemonLogBytes {
-		return
-	}
-	_ = os.Remove(path + ".1")
-	_ = os.Rename(path, path+".1")
+	_ = logging.RotateFileIfNeeded(path, MaxClipboardDaemonLogBytes, logging.MaxLogBackups)
 }
 
 func appendDaemonLog(path, format string, args ...any) {
