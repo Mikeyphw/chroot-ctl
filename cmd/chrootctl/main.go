@@ -40,7 +40,15 @@ func runWithIO(args []string) int {
 			moduleDir = "/data/adb/modules/chrootctl-magisk"
 		}
 		staticDir := filepath.Join(moduleDir, "webroot")
-		srv, err := standalonewebui.New(standalonewebui.Config{IdleTimeout: 10 * time.Minute, SessionTTL: 30 * time.Minute, Dispatcher: dispatcher, StaticDir: staticDir})
+		srv, err := standalonewebui.New(standalonewebui.Config{
+			IdleTimeout: 10 * time.Minute,
+			SessionTTL:  30 * time.Minute,
+			Dispatcher:  dispatcher,
+			StaticDir:   staticDir,
+			Logf: func(format string, values ...any) {
+				fmt.Fprintf(os.Stderr, "chrootctl webui: "+format+"\n", values...)
+			},
+		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
 			return 1

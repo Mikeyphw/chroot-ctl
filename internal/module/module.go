@@ -796,16 +796,64 @@ func service(startupTargets []string) string {
 }
 func action() string {
 	return `#!/system/bin/sh
+set -u
+umask 077
 MODDIR="${0%/*}"
 export CHROOTCTL_MODULE_DIR="$MODDIR"
 BIN="$MODDIR/system/bin/chrootctl"
-LOG="/data/local/tmp/chrootctl/standalone-webui.log"
-mkdir -p "${LOG%/*}" 2>/dev/null || true
-chmod 0700 "${LOG%/*}" 2>/dev/null || true
+STATE_DIR="/data/local/tmp/chrootctl"
+LOG="$STATE_DIR/standalone-webui.log"
+PIDFILE="$STATE_DIR/standalone-webui.pid"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+chmod 0700 "$STATE_DIR" 2>/dev/null || true
 [ -x "$BIN" ] || { echo "chrootctl runtime unavailable" >&2; exit 1; }
-# Action must return immediately; the server owns its own idle shutdown.
-nohup "$BIN" webui serve --open >>"$LOG" 2>&1 </dev/null &
+
+# Stop an older Action-launched authority before replacing it. The PID file is
+# root-only and only contains the process started by this launcher.
+if [ -f "$PIDFILE" ]; then
+  OLD_PID="$(cat "$PIDFILE" 2>/dev/null || true)"
+  case "$OLD_PID" in
+    ''|*[!0-9]*) ;;
+    *)
+      if kill -0 "$OLD_PID" 2>/dev/null; then
+        OLD_CMD="$(tr '\000' ' ' <"/proc/$OLD_PID/cmdline" 2>/dev/null || true)"
+        case "$OLD_CMD" in
+          *chrootctl*webui*serve*)
+            kill "$OLD_PID" 2>/dev/null || true
+            sleep 1
+            ;;
+        esac
+      fi
+      ;;
+  esac
+  rm -f "$PIDFILE" 2>/dev/null || true
+fi
+
+# Some root-manager Action implementations clean up the Action process group
+# as soon as action.sh returns. nohup only ignores SIGHUP; it does not create a
+# new session. Prefer setsid so the standalone HTTP authority is not part of
+# the Action process group while the browser is using it.
+if command -v setsid >/dev/null 2>&1; then
+  nohup setsid "$BIN" webui serve --open >>"$LOG" 2>&1 </dev/null &
+elif command -v busybox >/dev/null 2>&1 && busybox --list 2>/dev/null | grep -qx setsid; then
+  nohup busybox setsid "$BIN" webui serve --open >>"$LOG" 2>&1 </dev/null &
+else
+  nohup "$BIN" webui serve --open >>"$LOG" 2>&1 </dev/null &
+fi
+PID=$!
+printf '%s\n' "$PID" >"$PIDFILE"
+chmod 0600 "$PIDFILE" "$LOG" 2>/dev/null || true
+
+# Catch immediate launch failures before the Action UI disappears.
+sleep 1
+if ! kill -0 "$PID" 2>/dev/null; then
+  echo "Standalone WebUI failed to stay running. See $LOG" >&2
+  tail -n 20 "$LOG" 2>/dev/null || true
+  exit 1
+fi
 echo "Opening chrootctl standalone WebUI in the default browser..."
+echo "Backend PID: $PID"
+echo "Diagnostics: $LOG"
 exit 0
 `
 }

@@ -21,6 +21,7 @@ type Config struct {
 	MaxBodyBytes            int64
 	Dispatcher              Dispatcher
 	StaticDir               string
+	Logf                    func(string, ...any)
 }
 type Server struct {
 	cfg      Config
@@ -69,6 +70,27 @@ func New(c Config) (*Server, error) {
 	}
 	return &Server{cfg: defaults(c), token: t, sessions: map[string]session{}, last: time.Now(), done: make(chan struct{})}, nil
 }
+func (s *Server) logf(format string, args ...any) {
+	if s.cfg.Logf != nil {
+		s.cfg.Logf(format, args...)
+	}
+}
+
+func (s *Server) observe(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		s.logf("request begin method=%s path=%s remote=%s", r.Method, r.URL.Path, r.RemoteAddr)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				s.logf("request panic method=%s path=%s panic=%v", r.Method, r.URL.Path, recovered)
+				http.Error(w, "standalone backend handler panic", http.StatusInternalServerError)
+			}
+			s.logf("request end method=%s path=%s duration=%s", r.Method, r.URL.Path, time.Since(started).Round(time.Millisecond))
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) Start(ctx context.Context) (Info, error) {
 	ln, e := net.Listen("tcp4", "127.0.0.1:0")
 	if e != nil {
@@ -92,7 +114,8 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	} else {
 		mux.HandleFunc("/api/v1/health", s.auth(s.health))
 	}
-	s.http = &http.Server{Handler: s.security(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+	s.http = &http.Server{Handler: s.observe(s.security(mux)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+	s.logf("listening addr=%s static=%t dispatcher=%t", ln.Addr().String(), s.cfg.StaticDir != "", s.cfg.Dispatcher != nil)
 	go func() {
 		<-ctx.Done()
 		c, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -103,7 +126,9 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	go func() {
 		err := s.http.Serve(ln)
 		if err != nil && err != http.ErrServerClosed {
-			// Startup already succeeded; callers observe termination through Done.
+			s.logf("serve stopped unexpectedly err=%v", err)
+		} else {
+			s.logf("serve stopped err=%v", err)
 		}
 		s.doneOnce.Do(func() { close(s.done) })
 	}()
@@ -122,6 +147,7 @@ func (s *Server) idleWatch(ctx context.Context) {
 			idle := time.Since(s.last) > s.cfg.IdleTimeout
 			s.mu.Unlock()
 			if idle {
+				s.logf("idle timeout reached after %s; shutting down", s.cfg.IdleTimeout)
 				_ = s.http.Shutdown(context.Background())
 				return
 			}
