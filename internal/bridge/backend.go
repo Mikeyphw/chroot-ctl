@@ -241,6 +241,40 @@ func installRequest(p map[string]any) model.InstallRequest {
 	return r
 }
 
+func sessionID(p map[string]any) string {
+	for _, k := range []string{"sessionId", "session_id", "id"} {
+		if v := optText(p, k); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+func expectedSessions(p map[string]any) (map[string]bool, error) {
+	v, ok := p["expectedSessionIds"]
+	if !ok {
+		v, ok = p["expected_session_ids"]
+	}
+	if !ok {
+		v, ok = p["expected"]
+	}
+	if !ok || v == nil {
+		return nil, nil
+	}
+	a, ok := v.([]any)
+	if !ok {
+		return nil, protocolError("INVALID_EXPECTED_SESSIONS", "expectedSessionIds must be an array of managed session IDs", nil)
+	}
+	out := map[string]bool{}
+	for _, x := range a {
+		id := strings.TrimSpace(asString(x))
+		if !strings.HasPrefix(id, tmuxruntime.ManagedSessionPrefix) {
+			return nil, protocolError("INVALID_SESSION_ID", "Invalid managed session id: "+id, nil)
+		}
+		out[id] = true
+	}
+	return out, nil
+}
+
 func (b *ServicesBackend) Invoke(ctx context.Context, mode, op string, p map[string]any, progress Progress, isCancelled func() bool) (any, error) {
 	switch mode {
 	case "query":
@@ -498,8 +532,83 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		return s.Transfer().ArtifactRoot(), nil
 	case "system.runtime":
 		return map[string]any{"lifecycle": s.Lifecycle().Status(), "host": s.Doctor().HostReadiness(ctx), "crossArch": s.Doctor().CrossArchReadiness(), "module": s.ModuleRuntime().Status()}, nil
+	case "sessions.list":
+		return s.Sessions().List(ctx)
+	case "sessions.get":
+		id := sessionID(p)
+		if id == "" {
+			return nil, protocolError("MISSING_SESSION_ID", "payload.sessionId is required", nil)
+		}
+		row, e := s.Sessions().Get(ctx, id)
+		if e != nil {
+			return nil, e
+		}
+		if row == nil {
+			return nil, protocolError("SESSION_NOT_FOUND", "Unknown session: "+id, nil)
+		}
+		return row, nil
+	case "sessions.capture":
+		id := sessionID(p)
+		if id == "" {
+			return nil, protocolError("MISSING_SESSION_ID", "payload.sessionId is required", nil)
+		}
+		lines, e := bounded(p, "lines", 1000, 1, 5000, "INVALID_CAPTURE_LINES")
+		if e != nil {
+			return nil, e
+		}
+		out, e := s.Sessions().Capture(ctx, id, lines)
+		if e != nil {
+			return nil, e
+		}
+		return map[string]any{"id": id, "lines": lines, "output": out}, nil
 	case "sessions.runtime":
 		return tmuxruntime.Inspect(ctx), nil
+	case "sessions.create":
+		n, e := reqName(p)
+		if e != nil {
+			return nil, e
+		}
+		u, e := reqUser(p)
+		if e != nil {
+			return nil, e
+		}
+		w, e := bounded(p, "width", 120, 20, 1000, "INVALID_SESSION_WIDTH")
+		if e != nil {
+			return nil, e
+		}
+		h, e := bounded(p, "height", 40, 5, 1000, "INVALID_SESSION_HEIGHT")
+		if e != nil {
+			return nil, e
+		}
+		row, e := s.Sessions().Create(ctx, n, u, w, h)
+		if e != nil {
+			return nil, e
+		}
+		return map[string]any{"session": row}, nil
+	case "sessions.detach":
+		id := sessionID(p)
+		if id == "" {
+			return nil, protocolError("MISSING_SESSION_ID", "payload.sessionId is required", nil)
+		}
+		if e := s.Sessions().Detach(ctx, id); e != nil {
+			return nil, e
+		}
+		return map[string]any{"id": id, "detached": true}, nil
+	case "sessions.kill":
+		id := sessionID(p)
+		if id == "" {
+			return nil, protocolError("MISSING_SESSION_ID", "payload.sessionId is required", nil)
+		}
+		if e := s.Sessions().Kill(ctx, id); e != nil {
+			return nil, e
+		}
+		return map[string]any{"id": id, "killed": true}, nil
+	case "sessions.reconcile":
+		expected, e := expectedSessions(p)
+		if e != nil {
+			return nil, e
+		}
+		return s.Sessions().Reconcile(ctx, expected)
 	case "system.module_status":
 		return s.ModuleRuntime().Status(), nil
 	case "debug.probes":

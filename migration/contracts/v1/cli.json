@@ -197,39 +197,40 @@
       "prog": "chrootctl app reconcile"
     }
   ],
-  "commandNodeCount": 83,
+  "commandNodeCount": 92,
   "commandNodes": [
     {
       "arguments": [],
       "command": "version",
+      "completionExposed": true,
       "description": "Show the chrootctl backend version and source commit.",
       "epilog": "examples:\n  chrootctl version\n  chrootctl --json version\n  chrootctl --json --version",
-      "path": [
-        "version"
-      ],
-      "prog": "chrootctl version",
-      "handler": "version",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "version",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "version"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl version",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "details",
@@ -240,161 +241,161 @@
             "--details"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "status",
+      "completionExposed": true,
       "description": "Show current mount state for the active chroot.",
       "epilog": "examples:\n  chrootctl status\n  chrootctl status --details",
-      "path": [
-        "status"
-      ],
-      "prog": "chrootctl status",
-      "handler": "status",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "status",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "status"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl status",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "mount",
+      "completionExposed": true,
       "description": "Mount all required bind and virtual filesystems for the active chroot.",
       "epilog": "examples:\n  chrootctl mount",
-      "path": [
-        "mount"
-      ],
-      "prog": "chrootctl mount",
-      "handler": "mount_action",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "mount_action",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "mount"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl mount",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "unmount",
+      "completionExposed": true,
       "description": "Unmount bind and virtual filesystems for the active chroot.",
       "epilog": "examples:\n  chrootctl unmount",
-      "path": [
-        "unmount"
-      ],
-      "prog": "chrootctl unmount",
-      "handler": "mount_action",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "mount_action",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "unmount"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl unmount",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "fix-tty",
+      "completionExposed": true,
       "description": "Repair tty and related device state required for interactive sessions.",
       "epilog": "examples:\n  chrootctl fix-tty",
-      "path": [
-        "fix-tty"
-      ],
-      "prog": "chrootctl fix-tty",
-      "handler": "mount_action",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "mount_action",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "fix-tty"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl fix-tty",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "doctor",
+      "completionExposed": true,
       "description": "Inspect host tools, chroot files, root access, mounts, and logging state.",
       "epilog": "examples:\n  chrootctl doctor",
-      "path": [
-        "doctor"
-      ],
-      "prog": "chrootctl doctor",
-      "handler": "doctor",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "doctor",
+      "healthExitPolicy": "fail-on-fail",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "doctor"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "fail-on-fail",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl doctor",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "tail",
           "help": "Number of recent log lines to show.",
+          "maximum": 100000,
           "metavar": null,
+          "minimum": 0,
           "nargs": null,
           "optionStrings": [
             "--tail"
           ],
           "required": false,
-          "type": "int",
-          "minimum": 0,
-          "maximum": 100000,
-          "completion": ""
+          "type": "int"
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "all",
@@ -405,12 +406,12 @@
             "--all"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "follow",
@@ -421,8 +422,7 @@
             "--follow"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -433,6 +433,7 @@
             "ERROR",
             "CRITICAL"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "level",
@@ -443,41 +444,41 @@
             "--level"
           ],
           "required": false,
-          "type": "upper",
-          "completion": ""
+          "type": "upper"
         }
       ],
       "command": "logs",
+      "completionExposed": true,
       "description": "Print the current log file, optionally tailing only the most recent lines.",
       "epilog": "examples:\n  chrootctl logs\n  chrootctl logs --tail 200\n  chrootctl logs --all --level ERROR\n  chrootctl logs --follow",
-      "path": [
-        "logs"
-      ],
-      "prog": "chrootctl logs",
-      "handler": "logs",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "logs",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [
+        "follow"
+      ],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [
-        "follow"
+      "path": [
+        "logs"
       ],
-      "privilegeRules": []
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl logs",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "login",
@@ -488,12 +489,12 @@
             "--login"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "root_login",
@@ -504,12 +505,12 @@
             "--root-login"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "x11",
@@ -520,43 +521,43 @@
             "--x11"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "start",
+      "completionExposed": true,
       "description": "Start an interactive chroot session as root or as the configured user.",
       "epilog": "examples:\n  chrootctl start\n  chrootctl --name work start --login",
-      "path": [
-        "start"
-      ],
-      "prog": "chrootctl start",
-      "handler": "session",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "raw"
-      ],
-      "streamMode": "raw",
-      "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
       "exclusiveGroups": [
         [
           "login",
           "root_login"
         ]
       ],
-      "requireOneOfGroups": [],
+      "group": false,
+      "handler": "session",
+      "healthExitPolicy": "informational",
+      "hidden": false,
       "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "mutability": "mutate",
+      "outputModes": [
+        "raw"
+      ],
+      "path": [
+        "start"
+      ],
+      "privilege": "mutate-root",
+      "privilegeRules": [],
+      "prog": "chrootctl start",
+      "requireOneOfGroups": [],
+      "streamMode": "raw"
     },
     {
       "arguments": [
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "login",
@@ -567,12 +568,12 @@
             "--login"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "root_login",
@@ -583,12 +584,12 @@
             "--root-login"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "x11",
@@ -599,43 +600,43 @@
             "--x11"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "restart",
+      "completionExposed": true,
       "description": "Unmount and then start the target chroot again.",
       "epilog": "examples:\n  chrootctl restart\n  chrootctl --name work restart --login",
-      "path": [
-        "restart"
-      ],
-      "prog": "chrootctl restart",
-      "handler": "session",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "raw"
-      ],
-      "streamMode": "raw",
-      "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
       "exclusiveGroups": [
         [
           "login",
           "root_login"
         ]
       ],
-      "requireOneOfGroups": [],
+      "group": false,
+      "handler": "session",
+      "healthExitPolicy": "informational",
+      "hidden": false,
       "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "mutability": "mutate",
+      "outputModes": [
+        "raw"
+      ],
+      "path": [
+        "restart"
+      ],
+      "privilege": "mutate-root",
+      "privilegeRules": [],
+      "prog": "chrootctl restart",
+      "requireOneOfGroups": [],
+      "streamMode": "raw"
     },
     {
       "arguments": [
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "root",
@@ -646,12 +647,12 @@
             "--root"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "exec_text",
@@ -662,12 +663,12 @@
             "--command"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "x11",
@@ -678,12 +679,12 @@
             "--x11"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "argv",
@@ -692,38 +693,38 @@
           "nargs": "...",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "exec",
+      "completionExposed": true,
       "description": "Execute a single non-interactive command inside the active chroot.",
       "epilog": "examples:\n  chrootctl exec -- command -v python3\n  chrootctl exec --root --command \"id -u\"",
-      "path": [
-        "exec"
-      ],
-      "prog": "chrootctl exec",
-      "handler": "exec",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "exec",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "raw"
       ],
-      "streamMode": "raw",
+      "path": [
+        "exec"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl exec",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "raw"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "run_targets",
@@ -732,12 +733,12 @@
           "nargs": "*",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "run_list",
@@ -748,12 +749,12 @@
             "--list"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "boot",
@@ -764,12 +765,12 @@
             "--boot"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "run_status",
@@ -780,12 +781,12 @@
             "--status"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "stop",
@@ -796,12 +797,12 @@
             "--stop"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "restart",
@@ -812,12 +813,12 @@
             "--restart"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "logs",
@@ -828,12 +829,12 @@
             "--logs"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "foreground",
@@ -844,30 +845,30 @@
             "--foreground"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "tail",
           "help": "When used with --logs, show only the last N lines.",
+          "maximum": 100000,
           "metavar": null,
+          "minimum": 0,
           "nargs": null,
           "optionStrings": [
             "--tail"
           ],
           "required": false,
-          "type": "int",
-          "minimum": 0,
-          "maximum": 100000,
-          "completion": ""
+          "type": "int"
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "follow",
@@ -878,12 +879,12 @@
             "--follow"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": "boot.target",
           "dest": "target",
@@ -894,12 +895,12 @@
             "--target"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "no_parallel",
@@ -910,29 +911,13 @@
             "--no-parallel"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "run",
+      "completionExposed": true,
       "description": "Start, stop, inspect, and boot systemd-inspired chroot service units from service_dirs.",
       "epilog": "examples:\n  chrootctl run code serve-web\n  chrootctl --name code run serve-web\n  chrootctl run --list\n  chrootctl run --boot\n  chrootctl run code serve-web --logs --tail 100\n  chrootctl journal code serve-web --follow\n  chrootctl enable code serve-web",
-      "path": [
-        "run"
-      ],
-      "prog": "chrootctl run",
-      "handler": "units",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
-      "privilege": "mutate-root",
-      "mutability": "mixed",
-      "healthExitPolicy": "informational",
       "exclusiveGroups": [
         [
           "run_list",
@@ -943,10 +928,22 @@
           "logs"
         ]
       ],
-      "requireOneOfGroups": [],
+      "group": false,
+      "handler": "units",
+      "healthExitPolicy": "informational",
+      "hidden": false,
       "jsonForbiddenWhen": [
         "foreground"
       ],
+      "mutability": "mixed",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "run"
+      ],
+      "privilege": "mutate-root",
       "privilegeRules": [
         {
           "anyTrue": [
@@ -956,13 +953,17 @@
           ],
           "level": "none"
         }
-      ]
+      ],
+      "prog": "chrootctl run",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "service_targets",
@@ -971,12 +972,12 @@
           "nargs": "+",
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": "boot.target",
           "dest": "target",
@@ -987,39 +988,39 @@
             "--target"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "enable",
+      "completionExposed": true,
       "description": "Enable a service for a target such as boot.target.",
       "epilog": "examples:\n  chrootctl enable serve-web\n  chrootctl enable code serve-web\n  chrootctl enable code serve-web --target boot.target",
-      "path": [
-        "enable"
-      ],
-      "prog": "chrootctl enable",
-      "handler": "units",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "units",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "enable"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl enable",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "service_targets",
@@ -1028,12 +1029,12 @@
           "nargs": "+",
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": "boot.target",
           "dest": "target",
@@ -1044,39 +1045,39 @@
             "--target"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "disable",
+      "completionExposed": true,
       "description": "Disable a service for a target such as boot.target.",
       "epilog": "examples:\n  chrootctl disable serve-web\n  chrootctl disable code serve-web\n  chrootctl disable code serve-web --target boot.target",
-      "path": [
-        "disable"
-      ],
-      "prog": "chrootctl disable",
-      "handler": "units",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "units",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "disable"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl disable",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "service_targets",
@@ -1085,30 +1086,30 @@
           "nargs": "+",
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": 100,
           "dest": "tail",
           "help": "Show the last N lines. Use --tail 0 for all lines.",
+          "maximum": 100000,
           "metavar": null,
+          "minimum": 0,
           "nargs": null,
           "optionStrings": [
             "--tail"
           ],
           "required": false,
-          "type": "int",
-          "minimum": 0,
-          "maximum": 100000,
-          "completion": ""
+          "type": "int"
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "follow",
@@ -1119,33 +1120,32 @@
             "--follow"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "journal",
+      "completionExposed": true,
       "description": "Read captured stdout/stderr and lifecycle entries for a bound chroot service.",
       "epilog": "examples:\n  chrootctl journal serve-web\n  chrootctl journal code serve-web --tail 100\n  chrootctl journal code serve-web --follow",
-      "path": [
-        "journal"
-      ],
-      "prog": "chrootctl journal",
-      "handler": "units",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "units",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "journal"
+      ],
       "privilege": "read-root",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl journal",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
@@ -1155,6 +1155,7 @@
             "ubuntu",
             "arch"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "distro",
@@ -1163,12 +1164,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "wizard",
@@ -1179,8 +1180,7 @@
             "--wizard"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -1190,6 +1190,7 @@
             "desktop",
             "finalize"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "phase",
@@ -1200,12 +1201,12 @@
             "--phase"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "force_phase",
@@ -1216,12 +1217,12 @@
             "--force-phase"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "overwrite_existing",
@@ -1232,12 +1233,12 @@
             "--overwrite-existing"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "resume",
@@ -1248,12 +1249,12 @@
             "--resume"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "repair",
@@ -1264,12 +1265,12 @@
             "--repair"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "list_versions",
@@ -1280,12 +1281,12 @@
             "--list-versions"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "version",
@@ -1296,12 +1297,12 @@
             "--version"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "release",
@@ -1312,12 +1313,12 @@
             "--release"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "mirror",
@@ -1328,12 +1329,12 @@
             "--mirror"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -1344,8 +1345,7 @@
             "--username"
           ],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -1353,6 +1353,7 @@
             "arm64",
             "amd64"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "arch",
@@ -1363,8 +1364,7 @@
             "--arch"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -1374,6 +1374,7 @@
             "development",
             "recovery-debug"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "preset",
@@ -1384,8 +1385,7 @@
             "--preset"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -1394,6 +1394,7 @@
             "plasma",
             "none"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "desktop",
@@ -1404,8 +1405,7 @@
             "--desktop"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -1416,6 +1416,7 @@
             "plasma",
             "custom"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "profile",
@@ -1426,12 +1427,12 @@
             "--profile"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_AppendAction",
           "choices": null,
+          "completion": "tools",
           "const": null,
           "default": [],
           "dest": "tools",
@@ -1442,12 +1443,12 @@
             "--tool"
           ],
           "required": false,
-          "type": null,
-          "completion": "tools"
+          "type": null
         },
         {
           "action": "_AppendAction",
           "choices": null,
+          "completion": "addons",
           "const": null,
           "default": [],
           "dest": "addons",
@@ -1458,12 +1459,12 @@
             "--addon"
           ],
           "required": false,
-          "type": null,
-          "completion": "addons"
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "select_tools",
@@ -1474,12 +1475,12 @@
             "--select-tools"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "select_addons",
@@ -1490,37 +1491,33 @@
             "--select-addons"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "install",
+      "completionExposed": true,
       "description": "Install a supported distro through extract, bootstrap, desktop, and finalize phases.",
       "epilog": "examples:\n  chrootctl install --wizard\n  chrootctl install ubuntu --username devuser\n  chrootctl install ubuntu --resume --username devuser\n  chrootctl install arch --phase bootstrap --force-phase --username devuser\n  chrootctl install ubuntu --username devuser --profile dev --tool sync-uid --select-addons\n  chrootctl install ubuntu --overwrite-existing --username devuser",
-      "path": [
-        "install"
-      ],
-      "prog": "chrootctl install",
-      "handler": "install",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
-      "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
       "exclusiveGroups": [
         [
           "wizard",
           "list_versions"
         ]
       ],
-      "requireOneOfGroups": [],
+      "group": false,
+      "handler": "install",
+      "healthExitPolicy": "informational",
+      "hidden": false,
       "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "install"
+      ],
+      "privilege": "mutate-root",
       "privilegeRules": [
         {
           "anyTrue": [
@@ -1528,13 +1525,17 @@
           ],
           "level": "none"
         }
-      ]
+      ],
+      "prog": "chrootctl install",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -1545,115 +1546,115 @@
             "--username"
           ],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         }
       ],
       "command": "upgrade",
+      "completionExposed": true,
       "description": "Run the distro-specific upgrade flow for the active installed chroot.",
       "epilog": "examples:\n  chrootctl upgrade\n  chrootctl upgrade --username mike",
-      "path": [
-        "upgrade"
-      ],
-      "prog": "chrootctl upgrade",
-      "handler": "upgrade",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "upgrade",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "upgrade"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl upgrade",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "completion",
+      "completionExposed": true,
       "description": "Generate completion scripts for supported shells.",
       "epilog": "examples:\n  chrootctl completion zsh",
-      "path": [
-        "completion"
-      ],
-      "prog": "chrootctl completion",
-      "handler": "completion",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "completion",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human"
       ],
-      "streamMode": "none",
+      "path": [
+        "completion"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl completion",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "completion zsh",
+      "completionExposed": true,
       "description": "Print the zsh completion script to stdout.",
       "epilog": "examples:\n  chrootctl completion zsh > _chrootctl",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "completion",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "raw"
+      ],
       "path": [
         "completion",
         "zsh"
       ],
-      "prog": "chrootctl completion zsh",
-      "handler": "completion",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "raw"
-      ],
-      "streamMode": "raw",
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl completion zsh",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "raw"
     },
     {
       "arguments": [],
       "command": "wrapper",
+      "completionExposed": true,
       "description": "Install and inspect local helper wrappers for chrootctl.",
       "epilog": "examples:\n  chrootctl wrapper install\n  chrootctl wrapper install --name chc --dir ~/.local/bin",
-      "path": [
-        "wrapper"
-      ],
-      "prog": "chrootctl wrapper",
-      "handler": "wrapper",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "wrapper",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human"
       ],
-      "streamMode": "none",
+      "path": [
+        "wrapper"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl wrapper",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "wrapper_dir",
@@ -1664,12 +1665,12 @@
             "--dir"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": "chc",
           "dest": "wrapper_name",
@@ -1680,12 +1681,12 @@
             "--name"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "completion_dir",
@@ -1696,12 +1697,12 @@
             "--completion-dir"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "no_completion",
@@ -1712,12 +1713,12 @@
             "--no-completion"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "force",
@@ -1728,119 +1729,119 @@
             "--force"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "wrapper install",
+      "completionExposed": true,
       "description": "Install a provenance-marked local wrapper that delegates privilege policy to the trusted Go runtime.",
       "epilog": "examples:\n  chrootctl wrapper install\n  chrootctl wrapper install --name chc --dir ~/.local/bin\n  chrootctl wrapper install --completion-dir ~/.local/share/zsh/site-functions\n  chrootctl wrapper install --force",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "wrapper",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human"
+      ],
       "path": [
         "wrapper",
         "install"
       ],
-      "prog": "chrootctl wrapper install",
-      "handler": "wrapper",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl wrapper install",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "chroots",
+      "completionExposed": true,
       "description": "List, inspect, remove, or rename installed chroots.",
       "epilog": "examples:\n  chrootctl chroots list\n  chrootctl --name work chroots show\n  chrootctl --name old chroots rename new\n  chrootctl --name work chroots remove --yes",
-      "path": [
-        "chroots"
-      ],
-      "prog": "chrootctl chroots",
-      "handler": "chroots",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "chroots"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "chroots list",
+      "completionExposed": true,
       "description": "Show all registry entries for known chroots.",
       "epilog": "examples:\n  chrootctl chroots list",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "chroots",
         "list"
       ],
-      "prog": "chrootctl chroots list",
-      "handler": "chroots",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots list",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "chroots show",
+      "completionExposed": true,
       "description": "Show registry and configuration details for the target chroot.",
       "epilog": "examples:\n  chrootctl --name work chroots show\n  chrootctl chroots show",
-      "path": [
-        "chroots",
-        "show"
-      ],
-      "prog": "chrootctl chroots show",
-      "handler": "chroots",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "chroots",
+        "show"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots show",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "yes",
@@ -1851,40 +1852,40 @@
             "--yes"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "chroots remove",
+      "completionExposed": true,
       "description": "Unmount and remove the target chroot directory plus its registry entry.",
       "epilog": "examples:\n  chrootctl --name work chroots remove\n  chrootctl chroots remove --yes",
-      "path": [
-        "chroots",
-        "remove"
-      ],
-      "prog": "chrootctl chroots remove",
-      "handler": "chroots",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "chroots",
+        "remove"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots remove",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "new_name",
@@ -1893,40 +1894,40 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "chroots rename",
+      "completionExposed": true,
       "description": "Rename the target chroot directory and update its registry entry.",
       "epilog": "examples:\n  chrootctl --name old chroots rename new\n  chrootctl chroots rename new",
-      "path": [
-        "chroots",
-        "rename"
-      ],
-      "prog": "chrootctl chroots rename",
-      "handler": "chroots",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "chroots",
+        "rename"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots rename",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "archive",
@@ -1935,12 +1936,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "password",
@@ -1951,40 +1952,40 @@
             "--password"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "chroots export",
+      "completionExposed": true,
       "description": "Create a tar.zst archive that can be imported on another host or phone.",
       "epilog": "examples:\n  chrootctl --name work chroots export\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work chroots export /tmp/chrootctl-transfer/work.tar.zst",
-      "path": [
-        "chroots",
-        "export"
-      ],
-      "prog": "chrootctl chroots export",
-      "handler": "chroots",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "chroots",
+        "export"
+      ],
       "privilege": "read-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots export",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "archive",
@@ -1993,12 +1994,12 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "import_name",
@@ -2009,8 +2010,7 @@
             "--name"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -2018,6 +2018,7 @@
             "rename",
             "overwrite"
           ],
+          "completion": "",
           "const": null,
           "default": "rename",
           "dest": "conflict",
@@ -2028,12 +2029,12 @@
             "--conflict"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "password",
@@ -2044,8 +2045,7 @@
             "--password"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -2056,6 +2056,7 @@
             "shell",
             "none"
           ],
+          "completion": "",
           "const": null,
           "default": "register",
           "dest": "post_import",
@@ -2066,12 +2067,12 @@
             "--post-import"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "allow_legacy_metadata",
@@ -2082,8 +2083,7 @@
             "--allow-legacy-metadata"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -2092,6 +2092,7 @@
             "staged",
             "streaming"
           ],
+          "completion": "",
           "const": null,
           "default": "auto",
           "dest": "import_strategy",
@@ -2102,40 +2103,40 @@
             "--import-strategy"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "chroots import",
+      "completionExposed": true,
       "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
       "epilog": "examples:\n  chrootctl chroots import /tmp/work.tar.zst\n  chrootctl chroots import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl chroots import /tmp/legacy.tar.zst --allow-legacy-metadata\nremote example:\n  chrootctl chroots import rclone://drive/chroots/work.tar.zst",
-      "path": [
-        "chroots",
-        "import"
-      ],
-      "prog": "chrootctl chroots import",
-      "handler": "chroots",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "chroots",
+        "import"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots import",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "left_name",
@@ -2144,12 +2145,12 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "right_name",
@@ -2158,40 +2159,40 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "chroots diff",
+      "completionExposed": true,
       "description": "Read package databases from two chroots and show what differs.",
       "epilog": "examples:\n  chrootctl chroots diff work dev",
-      "path": [
-        "chroots",
-        "diff"
-      ],
-      "prog": "chrootctl chroots diff",
-      "handler": "chroots",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "chroots",
+        "diff"
+      ],
       "privilege": "read-root",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots diff",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "validate_name",
@@ -2200,129 +2201,112 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "chroots validate-import",
+      "completionExposed": true,
       "description": "Check an imported chroot for required directories, config layout, and architecture markers.",
       "epilog": "examples:\n  chrootctl --name work chroots validate-import\n  chrootctl chroots validate-import work",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "chroots",
+      "healthExitPolicy": "fail-on-fail",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "chroots",
         "validate-import"
       ],
-      "prog": "chrootctl chroots validate-import",
-      "handler": "chroots",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "fail-on-fail",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl chroots validate-import",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
-      "epilog": "examples:\n  chrootctl --name work snapshots list\n  chrootctl --name work snapshots create before-change\n  chrootctl --name work snapshots restore before-change --yes",
-      "handler": "snapshots",
-      "group": true,
-      "hidden": false,
+      "arguments": [],
+      "command": "snapshots",
       "completionExposed": true,
+      "description": "List, create, restore, or export metadata-faithful managed rootfs snapshots.",
+      "epilog": "examples:\n  chrootctl --name work snapshots list\n  chrootctl --name work snapshots create before-change\n  chrootctl --name work snapshots restore before-change --yes",
+      "exclusiveGroups": [],
+      "group": true,
+      "handler": "snapshots",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": [],
-      "arguments": [],
-      "command": "snapshots",
-      "description": "List, create, restore, or export metadata-faithful managed rootfs snapshots.",
       "path": [
         "snapshots"
       ],
-      "prog": "chrootctl snapshots"
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl snapshots",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
-      "epilog": null,
-      "handler": "snapshots",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
-      "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": [],
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": 100,
           "dest": "limit",
           "help": "Maximum snapshots to show.",
+          "maximum": 1000,
           "metavar": null,
+          "minimum": 1,
           "nargs": null,
           "optionStrings": [
             "--limit"
           ],
           "required": false,
-          "type": "int",
-          "completion": "",
-          "minimum": 1,
-          "maximum": 1000
+          "type": "int"
         }
       ],
       "command": "snapshots list",
-      "description": "List managed snapshots for the target chroot.",
-      "path": [
-        "snapshots",
-        "list"
-      ],
-      "prog": "chrootctl snapshots list"
-    },
-    {
-      "epilog": null,
-      "handler": "snapshots",
-      "group": false,
-      "hidden": false,
       "completionExposed": true,
+      "description": "List managed snapshots for the target chroot.",
+      "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "snapshots",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
+      "path": [
+        "snapshots",
+        "list"
+      ],
+      "privilege": "none",
       "privilegeRules": [],
+      "prog": "chrootctl snapshots list",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "snapshot",
@@ -2331,12 +2315,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "note",
@@ -2347,40 +2331,40 @@
             "--note"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "snapshots create",
-      "description": "Create a metadata-faithful snapshot of a fully unmounted target.",
-      "path": [
-        "snapshots",
-        "create"
-      ],
-      "prog": "chrootctl snapshots create"
-    },
-    {
-      "epilog": null,
-      "handler": "snapshots",
-      "group": false,
-      "hidden": false,
       "completionExposed": true,
+      "description": "Create a metadata-faithful snapshot of a fully unmounted target.",
+      "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "snapshots",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "snapshots",
+        "create"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
       "privilegeRules": [],
+      "prog": "chrootctl snapshots create",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "snapshot",
@@ -2389,12 +2373,12 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "yes",
@@ -2405,40 +2389,40 @@
             "--yes"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "snapshots restore",
-      "description": "Restore a metadata-faithful managed snapshot to the target rootfs.",
-      "path": [
-        "snapshots",
-        "restore"
-      ],
-      "prog": "chrootctl snapshots restore"
-    },
-    {
-      "epilog": null,
-      "handler": "snapshots",
-      "group": false,
-      "hidden": false,
       "completionExposed": true,
+      "description": "Restore a metadata-faithful managed snapshot to the target rootfs.",
+      "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "snapshots",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "privilege": "read-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
+      "path": [
+        "snapshots",
+        "restore"
+      ],
+      "privilege": "mutate-root",
       "privilegeRules": [],
+      "prog": "chrootctl snapshots restore",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "snapshot",
@@ -2447,12 +2431,12 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "archive",
@@ -2461,49 +2445,66 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "snapshots export",
-      "description": "Export a managed snapshot bundle. Defaults to managed transfer storage.",
-      "path": [
-        "snapshots",
-        "export"
-      ],
-      "prog": "chrootctl snapshots export"
-    },
-    {
-      "arguments": [],
-      "command": "transfer",
-      "description": "Move chroots between hosts with portable tar.zst archives.",
-      "epilog": "examples:\n  chrootctl --name work transfer export\n  chrootctl transfer inspect /tmp/chrootctl-transfer/work.tar.zst\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work transfer export /tmp/chrootctl-transfer/work.tar.zst\n  chrootctl transfer import /tmp/chrootctl-transfer/work.tar.zst --name phone-work",
-      "path": [
-        "transfer"
-      ],
-      "prog": "chrootctl transfer",
-      "handler": "transfer",
-      "group": true,
-      "hidden": false,
       "completionExposed": true,
+      "description": "Export a managed snapshot bundle. Defaults to managed transfer storage.",
+      "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "snapshots",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "path": [
+        "snapshots",
+        "export"
+      ],
+      "privilege": "read-root",
+      "privilegeRules": [],
+      "prog": "chrootctl snapshots export",
       "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [],
+      "command": "transfer",
+      "completionExposed": true,
+      "description": "Move chroots between hosts with portable tar.zst archives.",
+      "epilog": "examples:\n  chrootctl --name work transfer export\n  chrootctl transfer inspect /tmp/chrootctl-transfer/work.tar.zst\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work transfer export /tmp/chrootctl-transfer/work.tar.zst\n  chrootctl transfer import /tmp/chrootctl-transfer/work.tar.zst --name phone-work",
+      "exclusiveGroups": [],
+      "group": true,
+      "handler": "transfer",
+      "healthExitPolicy": "informational",
+      "hidden": false,
       "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "transfer"
+      ],
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl transfer",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "archive",
@@ -2512,12 +2513,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "password",
@@ -2528,40 +2529,40 @@
             "--password"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "transfer export",
+      "completionExposed": true,
       "description": "Create a metadata-faithful tar.zst archive locally or publish it to an rclone:// remote.",
       "epilog": "examples:\n  chrootctl --name work transfer export\n  CHROOTCTL_TRANSFER_DIR=/tmp/chrootctl-transfer chrootctl --name work transfer export /tmp/chrootctl-transfer/work.tar.zst\nremote example:\n  chrootctl --name work transfer export rclone://drive/chroots/work.tar.zst",
-      "path": [
-        "transfer",
-        "export"
-      ],
-      "prog": "chrootctl transfer export",
-      "handler": "transfer",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "transfer",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "transfer",
+        "export"
+      ],
       "privilege": "read-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl transfer export",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "archive",
@@ -2570,12 +2571,12 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "password",
@@ -2586,12 +2587,12 @@
             "--password"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "allow_legacy_metadata",
@@ -2602,8 +2603,7 @@
             "--allow-legacy-metadata"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -2612,6 +2612,7 @@
             "staged",
             "streaming"
           ],
+          "completion": "",
           "const": null,
           "default": "auto",
           "dest": "import_strategy",
@@ -2622,40 +2623,40 @@
             "--import-strategy"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "transfer inspect",
+      "completionExposed": true,
       "description": "Verify archive checksum sidecar and embedded manifest before import.",
       "epilog": "examples:\n  chrootctl transfer inspect /tmp/work.tar.zst\nlegacy archive:\n  chrootctl transfer inspect /tmp/legacy.tar.zst --allow-legacy-metadata\nremote example:\n  chrootctl transfer inspect rclone://drive/chroots/work.tar.zst",
-      "path": [
-        "transfer",
-        "inspect"
-      ],
-      "prog": "chrootctl transfer inspect",
-      "handler": "transfer",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "transfer",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "transfer",
+        "inspect"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl transfer inspect",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "archive",
@@ -2664,12 +2665,12 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "import_name",
@@ -2680,8 +2681,7 @@
             "--name"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -2689,6 +2689,7 @@
             "rename",
             "overwrite"
           ],
+          "completion": "",
           "const": null,
           "default": "rename",
           "dest": "conflict",
@@ -2699,12 +2700,12 @@
             "--conflict"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "password",
@@ -2715,8 +2716,7 @@
             "--password"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -2727,6 +2727,7 @@
             "shell",
             "none"
           ],
+          "completion": "",
           "const": null,
           "default": "register",
           "dest": "post_import",
@@ -2737,12 +2738,12 @@
             "--post-import"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "allow_legacy_metadata",
@@ -2753,8 +2754,7 @@
             "--allow-legacy-metadata"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
@@ -2763,6 +2763,7 @@
             "staged",
             "streaming"
           ],
+          "completion": "",
           "const": null,
           "default": "auto",
           "dest": "import_strategy",
@@ -2773,132 +2774,120 @@
             "--import-strategy"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "transfer import",
+      "completionExposed": true,
       "description": "Extract a previously exported tar.zst archive into the chroot root and register it.",
       "epilog": "examples:\n  chrootctl transfer import /tmp/work.tar.zst\n  chrootctl transfer import /tmp/work.tar.zst --name phone-work\nlegacy archive:\n  chrootctl transfer import /tmp/legacy.tar.zst --allow-legacy-metadata\nremote example:\n  chrootctl transfer import rclone://drive/chroots/work.tar.zst",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "transfer",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "transfer",
         "import"
       ],
-      "prog": "chrootctl transfer import",
-      "handler": "transfer",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl transfer import",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
-      "hidden": false,
+      "arguments": [],
+      "command": "remotes",
       "completionExposed": true,
+      "description": "Inspect and configure credential-isolated rclone remotes used by chroot import/export.",
+      "epilog": "examples:\n  chrootctl remotes status\n  chrootctl remotes list\n  chrootctl remotes ls rclone://drive/chroots",
+      "exclusiveGroups": [],
+      "group": true,
+      "handler": "remotes",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": [],
-      "arguments": [],
-      "command": "remotes",
-      "description": "Inspect and configure credential-isolated rclone remotes used by chroot import/export.",
-      "epilog": "examples:\n  chrootctl remotes status\n  chrootctl remotes list\n  chrootctl remotes ls rclone://drive/chroots",
       "path": [
         "remotes"
       ],
-      "prog": "chrootctl remotes",
-      "handler": "remotes",
-      "group": true,
       "privilege": "none",
-      "mutability": "read"
+      "privilegeRules": [],
+      "prog": "chrootctl remotes",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
-      "hidden": false,
+      "arguments": [],
+      "command": "remotes status",
       "completionExposed": true,
+      "description": "Probe the selected rclone runtime and report configured remote names without exposing secrets.",
+      "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "remotes",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": [],
-      "arguments": [],
-      "command": "remotes status",
-      "description": "Probe the selected rclone runtime and report configured remote names without exposing secrets.",
-      "epilog": null,
       "path": [
         "remotes",
         "status"
       ],
-      "prog": "chrootctl remotes status",
-      "handler": "remotes",
-      "group": false,
       "privilege": "read-root",
-      "mutability": "read"
+      "privilegeRules": [],
+      "prog": "chrootctl remotes status",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
-      "hidden": false,
+      "arguments": [],
+      "command": "remotes list",
       "completionExposed": true,
+      "description": "List configured rclone remote names without exposing option values or credentials.",
+      "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "remotes",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": [],
-      "arguments": [],
-      "command": "remotes list",
-      "description": "List configured rclone remote names without exposing option values or credentials.",
-      "epilog": null,
       "path": [
         "remotes",
         "list"
       ],
-      "prog": "chrootctl remotes list",
-      "handler": "remotes",
-      "group": false,
       "privilege": "read-root",
-      "mutability": "read"
+      "privilegeRules": [],
+      "prog": "chrootctl remotes list",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": [],
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "location",
@@ -2907,40 +2896,40 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "remotes ls",
+      "completionExposed": true,
       "description": "List one rclone remote directory.",
       "epilog": "example:\n  chrootctl remotes ls rclone://drive/chroots",
-      "path": [
-        "remotes",
-        "ls"
-      ],
-      "prog": "chrootctl remotes ls",
-      "handler": "remotes",
+      "exclusiveGroups": [],
       "group": false,
-      "privilege": "read-root",
-      "mutability": "read"
-    },
-    {
+      "handler": "remotes",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
-      "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
+      "path": [
+        "remotes",
+        "ls"
+      ],
+      "privilege": "read-root",
       "privilegeRules": [],
+      "prog": "chrootctl remotes ls",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "config_path",
@@ -2949,109 +2938,121 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "remotes config import",
+      "completionExposed": true,
       "description": "Import a staged rclone.conf into chrootctl private root state.",
       "epilog": "example:\n  chrootctl remotes config import /data/local/tmp/chrootctl-transfer/<staged>-rclone.conf",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "remotes",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "remotes",
         "config",
         "import"
       ],
-      "prog": "chrootctl remotes config import",
-      "handler": "remotes",
-      "group": false,
       "privilege": "mutate-root",
-      "mutability": "mutate"
+      "privilegeRules": [],
+      "prog": "chrootctl remotes config import",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "artifacts",
+      "completionExposed": true,
       "description": "List, inspect, and clean the managed transfer artifact root.",
       "epilog": "examples:\n  chrootctl artifacts list\n  chrootctl artifacts root\n  chrootctl artifacts cleanup --all --yes",
-      "path": [
-        "artifacts"
-      ],
-      "prog": "chrootctl artifacts",
-      "handler": "artifacts",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "artifacts",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "artifacts"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl artifacts",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "artifacts list",
+      "completionExposed": true,
       "description": "Show registered and discovered managed transfer artifacts.",
       "epilog": "examples:\n  chrootctl artifacts list --json",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "artifacts",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "artifacts",
         "list"
       ],
-      "prog": "chrootctl artifacts list",
-      "handler": "artifacts",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl artifacts list",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "artifacts root",
+      "completionExposed": true,
       "description": "Show the managed transfer artifact root and retention policy.",
       "epilog": "examples:\n  chrootctl artifacts root",
-      "path": [
-        "artifacts",
-        "root"
-      ],
-      "prog": "chrootctl artifacts root",
-      "handler": "artifacts",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "artifacts",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "artifacts",
+        "root"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl artifacts root",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "artifact_id",
@@ -3062,12 +3063,12 @@
             "--artifact-id"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "path",
@@ -3078,12 +3079,12 @@
             "--path"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "all",
@@ -3095,12 +3096,12 @@
             "--delete-all"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "yes",
@@ -3111,112 +3112,112 @@
             "--yes"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "artifacts cleanup",
+      "completionExposed": true,
       "description": "Remove one or all managed transfer artifacts and their checksum sidecars.",
       "epilog": "examples:\n  chrootctl artifacts cleanup --artifact-id art_123 --yes\n  chrootctl artifacts cleanup --all --yes",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "artifacts",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "artifacts",
         "cleanup"
       ],
-      "prog": "chrootctl artifacts cleanup",
-      "handler": "artifacts",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl artifacts cleanup",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "events",
+      "completionExposed": true,
       "description": "Show recent install, transfer, build, and support-bundle events.",
       "epilog": "examples:\n  chrootctl events list",
-      "path": [
-        "events"
-      ],
-      "prog": "chrootctl events",
-      "handler": "events",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "events",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "events"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl events",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": 20,
           "dest": "limit",
           "help": "Maximum number of events to show.",
+          "maximum": 1000,
           "metavar": null,
+          "minimum": 1,
           "nargs": null,
           "optionStrings": [
             "--limit"
           ],
           "required": false,
-          "type": "int",
-          "minimum": 1,
-          "maximum": 1000,
-          "completion": ""
+          "type": "int"
         }
       ],
       "command": "events list",
+      "completionExposed": true,
       "description": "Show recent audit events.",
       "epilog": null,
-      "path": [
-        "events",
-        "list"
-      ],
-      "prog": "chrootctl events list",
-      "handler": "events",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "events",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "events",
+        "list"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl events list",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "archive",
@@ -3225,92 +3226,92 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "support-bundle",
+      "completionExposed": true,
       "description": "Bundle logs, doctor output, config, and recent jobs for debugging.",
       "epilog": null,
-      "path": [
-        "support-bundle"
-      ],
-      "prog": "chrootctl support-bundle",
-      "handler": "support",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "support",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "support-bundle"
+      ],
       "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl support-bundle",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "clipboard",
+      "completionExposed": true,
       "description": "Manage the host clipboard daemon and send clipboard get/set requests over the shared Unix socket.",
       "epilog": "examples:\n  chrootctl clipboard daemon start\n  chrootctl clipboard get\n  chrootctl clipboard set \"hello from host\"",
-      "path": [
-        "clipboard"
-      ],
-      "prog": "chrootctl clipboard",
-      "handler": "clipboard",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "clipboard"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "clipboard daemon",
+      "completionExposed": true,
       "description": "Start, stop, inspect, or run the clipboard bridge daemon that serves the shared Unix socket.",
       "epilog": null,
-      "path": [
-        "clipboard",
-        "daemon"
-      ],
-      "prog": "chrootctl clipboard daemon",
-      "handler": "clipboard",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "clipboard",
+        "daemon"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard daemon",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "socket",
@@ -3321,12 +3322,12 @@
             "--socket"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "pid_file",
@@ -3337,12 +3338,12 @@
             "--pid-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "log_file",
@@ -3353,41 +3354,41 @@
             "--log-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "clipboard daemon start",
+      "completionExposed": true,
       "description": "Start the clipboard daemon.",
       "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "clipboard",
         "daemon",
         "start"
       ],
-      "prog": "chrootctl clipboard daemon start",
-      "handler": "clipboard",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard daemon start",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "socket",
@@ -3398,12 +3399,12 @@
             "--socket"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "pid_file",
@@ -3414,12 +3415,12 @@
             "--pid-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "log_file",
@@ -3430,41 +3431,41 @@
             "--log-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "clipboard daemon stop",
+      "completionExposed": true,
       "description": "Stop the clipboard daemon.",
       "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "clipboard",
         "daemon",
         "stop"
       ],
-      "prog": "chrootctl clipboard daemon stop",
-      "handler": "clipboard",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard daemon stop",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "socket",
@@ -3475,12 +3476,12 @@
             "--socket"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "pid_file",
@@ -3491,12 +3492,12 @@
             "--pid-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "log_file",
@@ -3507,41 +3508,41 @@
             "--log-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "clipboard daemon status",
+      "completionExposed": true,
       "description": "Status the clipboard daemon.",
       "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "clipboard",
         "daemon",
         "status"
       ],
-      "prog": "chrootctl clipboard daemon status",
-      "handler": "clipboard",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard daemon status",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "socket",
@@ -3552,12 +3553,12 @@
             "--socket"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "pid_file",
@@ -3568,12 +3569,12 @@
             "--pid-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "log_file",
@@ -3584,40 +3585,40 @@
             "--log-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "clipboard daemon run",
+      "completionExposed": true,
       "description": "Run the clipboard daemon.",
       "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "raw"
+      ],
       "path": [
         "clipboard",
         "daemon",
         "run"
       ],
-      "prog": "chrootctl clipboard daemon run",
-      "handler": "clipboard",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "raw"
-      ],
-      "streamMode": "raw",
       "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard daemon run",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "raw"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "socket",
@@ -3628,12 +3629,12 @@
             "--socket"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "text",
@@ -3642,39 +3643,39 @@
           "nargs": "*",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "clipboard set",
+      "completionExposed": true,
       "description": "Write clipboard text through the shared Unix socket. Reads stdin when no text arguments are provided.",
       "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "raw"
+      ],
       "path": [
         "clipboard",
         "set"
       ],
-      "prog": "chrootctl clipboard set",
-      "handler": "clipboard",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "raw"
-      ],
-      "streamMode": "raw",
       "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard set",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "raw"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "socket",
@@ -3685,39 +3686,39 @@
             "--socket"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "clipboard get",
+      "completionExposed": true,
       "description": "Fetch clipboard text from the shared Unix socket and print it to stdout.",
       "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "raw"
+      ],
       "path": [
         "clipboard",
         "get"
       ],
-      "prog": "chrootctl clipboard get",
-      "handler": "clipboard",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "raw"
-      ],
-      "streamMode": "raw",
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard get",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "raw"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "socket",
@@ -3728,12 +3729,12 @@
             "--socket"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "pid_file",
@@ -3744,93 +3745,93 @@
             "--pid-file"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         }
       ],
       "command": "clipboard doctor",
+      "completionExposed": true,
       "description": "Report Termux clipboard commands plus daemon, socket, and currently installed wrapper state.",
       "epilog": null,
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "clipboard",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "clipboard",
         "doctor"
       ],
-      "prog": "chrootctl clipboard doctor",
-      "handler": "clipboard",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl clipboard doctor",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "users",
+      "completionExposed": true,
       "description": "List, inspect, and update chroot users and user IDs.",
       "epilog": "examples:\n  chrootctl --name work users list\n  chrootctl --name work users add mike --sudo\n  chrootctl --name work users remove mike --delete-home --yes\n  chrootctl --name work users sync-id mike",
-      "path": [
-        "users"
-      ],
-      "prog": "chrootctl users",
-      "handler": "users",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "users",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "users"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "users list",
+      "completionExposed": true,
       "description": "Show users from the chroot passwd database.",
       "epilog": "examples:\n  chrootctl --name work users list\n  chrootctl users list",
-      "path": [
-        "users",
-        "list"
-      ],
-      "prog": "chrootctl users list",
-      "handler": "users",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "users",
+        "list"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users list",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -3839,40 +3840,40 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         }
       ],
       "command": "users show",
+      "completionExposed": true,
       "description": "Show shell, home, uid/gid, and sudo state for one chroot user.",
       "epilog": "examples:\n  chrootctl users show mike\n  chrootctl users show",
-      "path": [
-        "users",
-        "show"
-      ],
-      "prog": "chrootctl users show",
-      "handler": "users",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "users",
+        "show"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users show",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -3881,12 +3882,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": "/bin/bash",
           "dest": "shell",
@@ -3897,12 +3898,12 @@
             "--shell"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "sudo",
@@ -3913,40 +3914,40 @@
             "--sudo"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "users add",
+      "completionExposed": true,
       "description": "Create a new user inside the active chroot.",
       "epilog": "examples:\n  chrootctl users add mike\n  chrootctl users add mike --shell /bin/zsh --sudo",
-      "path": [
-        "users",
-        "add"
-      ],
-      "prog": "chrootctl users add",
-      "handler": "users",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "users",
+        "add"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users add",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -3955,12 +3956,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "delete_home",
@@ -3971,12 +3972,12 @@
             "--delete-home"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "yes",
@@ -3987,40 +3988,40 @@
             "--yes"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "users remove",
+      "completionExposed": true,
       "description": "Delete a user from the active chroot and optionally delete the home directory.",
       "epilog": "examples:\n  chrootctl users remove mike\n  chrootctl users remove mike --delete-home --yes\n  chrootctl users remove --yes",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "users",
         "remove"
       ],
-      "prog": "chrootctl users remove",
-      "handler": "users",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users remove",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -4029,40 +4030,40 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         }
       ],
       "command": "users password",
+      "completionExposed": true,
       "description": "Open an interactive password update flow for one chroot user.",
       "epilog": "examples:\n  chrootctl users password mike\n  chrootctl users password",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "users",
         "password"
       ],
-      "prog": "chrootctl users password",
-      "handler": "users",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users password",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -4071,12 +4072,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "shell",
@@ -4087,40 +4088,40 @@
             "--shell"
           ],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "users shell",
+      "completionExposed": true,
       "description": "Update the configured login shell for one chroot user.",
       "epilog": "examples:\n  chrootctl users shell mike --shell /usr/bin/zsh",
-      "path": [
-        "users",
-        "shell"
-      ],
-      "prog": "chrootctl users shell",
-      "handler": "users",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "users",
+        "shell"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users shell",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -4129,12 +4130,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "enable",
@@ -4145,12 +4146,12 @@
             "--enable"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "disable",
@@ -4161,50 +4162,50 @@
             "--disable"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "users sudo",
+      "completionExposed": true,
       "description": "Update the dedicated sudoers fragment for one chroot user.",
       "epilog": "examples:\n  chrootctl users sudo mike --enable\n  chrootctl users sudo mike --disable",
-      "path": [
-        "users",
-        "sudo"
-      ],
-      "prog": "chrootctl users sudo",
-      "handler": "users",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
-      "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
       "exclusiveGroups": [
         [
           "enable",
           "disable"
         ]
       ],
+      "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "users",
+        "sudo"
+      ],
+      "privilege": "mutate-root",
+      "privilegeRules": [],
+      "prog": "chrootctl users sudo",
       "requireOneOfGroups": [
         [
           "enable",
           "disable"
         ]
       ],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -4213,40 +4214,40 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         }
       ],
       "command": "users show-id",
+      "completionExposed": true,
       "description": "Show current Termux host UID/GID and the selected chroot user's UID/GID.",
       "epilog": "examples:\n  chrootctl users show-id\n  chrootctl users show-id mike",
-      "path": [
-        "users",
-        "show-id"
-      ],
-      "prog": "chrootctl users show-id",
-      "handler": "users",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "users",
+        "show-id"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users show-id",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "users",
           "const": null,
           "default": null,
           "dest": "username",
@@ -4255,12 +4256,12 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "users"
+          "type": null
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "no_fix_ownership",
@@ -4271,60 +4272,59 @@
             "--no-fix-ownership"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "users sync-id",
+      "completionExposed": true,
       "description": "Update chroot UID/GID values to match the Termux host account.",
       "epilog": "examples:\n  chrootctl users sync-id\n  chrootctl users sync-id mike --no-fix-ownership",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "users",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "users",
         "sync-id"
       ],
-      "prog": "chrootctl users sync-id",
-      "handler": "users",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl users sync-id",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "tools",
+      "completionExposed": true,
       "description": "List, inspect, and apply packaged tools for installed chroots.",
       "epilog": "examples:\n  chrootctl tools list\n  chrootctl tools show\n  chrootctl tools apply sample-name\n  chrootctl tools apply --category system",
-      "path": [
-        "tools"
-      ],
-      "prog": "chrootctl tools",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "tools"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl tools",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
@@ -4334,6 +4334,7 @@
             "ubuntu",
             "arch"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "distro",
@@ -4344,34 +4345,33 @@
             "--distro"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "tools categories",
+      "completionExposed": true,
       "description": "Show normalized categories available for tools.",
       "epilog": "examples:\n  chrootctl tools categories\n  chrootctl tools categories --distro ubuntu",
-      "path": [
-        "tools",
-        "categories"
-      ],
-      "prog": "chrootctl tools categories",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "tools",
+        "categories"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl tools categories",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
@@ -4381,6 +4381,7 @@
             "ubuntu",
             "arch"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "distro",
@@ -4391,12 +4392,12 @@
             "--distro"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "category",
           "const": null,
           "default": null,
           "dest": "category",
@@ -4407,40 +4408,40 @@
             "--category"
           ],
           "required": false,
-          "type": null,
-          "completion": "category"
+          "type": null
         }
       ],
       "command": "tools list",
+      "completionExposed": true,
       "description": "Show available tools with distro, category, and script metadata.",
       "epilog": "examples:\n  chrootctl tools list\n  chrootctl tools list --distro ubuntu --category system",
-      "path": [
-        "tools",
-        "list"
-      ],
-      "prog": "chrootctl tools list",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "tools",
+        "list"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl tools list",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "tools",
           "const": null,
           "default": null,
           "dest": "tool_name",
@@ -4449,40 +4450,40 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "tools"
+          "type": null
         }
       ],
       "command": "tools show",
+      "completionExposed": true,
       "description": "Show metadata for one tool.",
       "epilog": "examples:\n  chrootctl tools show sample-name\n  chrootctl tools show",
-      "path": [
-        "tools",
-        "show"
-      ],
-      "prog": "chrootctl tools show",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "tools",
+        "show"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl tools show",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "tools",
           "const": null,
           "default": null,
           "dest": "tool_names",
@@ -4491,12 +4492,12 @@
           "nargs": "*",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "tools"
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "category",
           "const": null,
           "default": null,
           "dest": "category",
@@ -4507,60 +4508,59 @@
             "--category"
           ],
           "required": false,
-          "type": null,
-          "completion": "category"
+          "type": null
         }
       ],
       "command": "tools apply",
+      "completionExposed": true,
       "description": "Apply one or more tools to the active installed chroot.",
       "epilog": "examples:\n  chrootctl --name work tools apply sample-name\n  chrootctl --name work tools apply sample-a sample-b\n  chrootctl tools apply\n  chrootctl tools apply --category system",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
       "path": [
         "tools",
         "apply"
       ],
-      "prog": "chrootctl tools apply",
-      "handler": "catalog",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl tools apply",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [],
       "command": "addons",
+      "completionExposed": true,
       "description": "List, inspect, and apply packaged addons for installed chroots.",
       "epilog": "examples:\n  chrootctl addons list\n  chrootctl addons show\n  chrootctl addons apply sample-name\n  chrootctl addons apply --category system",
-      "path": [
-        "addons"
-      ],
-      "prog": "chrootctl addons",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": true,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "addons"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl addons",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
@@ -4570,6 +4570,7 @@
             "ubuntu",
             "arch"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "distro",
@@ -4580,34 +4581,33 @@
             "--distro"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "addons categories",
+      "completionExposed": true,
       "description": "Show normalized categories available for addons.",
       "epilog": "examples:\n  chrootctl addons categories\n  chrootctl addons categories --distro ubuntu",
-      "path": [
-        "addons",
-        "categories"
-      ],
-      "prog": "chrootctl addons categories",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "addons",
+        "categories"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl addons categories",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
@@ -4617,6 +4617,7 @@
             "ubuntu",
             "arch"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "distro",
@@ -4627,12 +4628,12 @@
             "--distro"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "category",
           "const": null,
           "default": null,
           "dest": "category",
@@ -4643,40 +4644,40 @@
             "--category"
           ],
           "required": false,
-          "type": null,
-          "completion": "category"
+          "type": null
         }
       ],
       "command": "addons list",
+      "completionExposed": true,
       "description": "Show available addons with distro, category, and script metadata.",
       "epilog": "examples:\n  chrootctl addons list\n  chrootctl addons list --distro ubuntu --category system",
-      "path": [
-        "addons",
-        "list"
-      ],
-      "prog": "chrootctl addons list",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "addons",
+        "list"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl addons list",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "addons",
           "const": null,
           "default": null,
           "dest": "addon_name",
@@ -4685,40 +4686,40 @@
           "nargs": "?",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "addons"
+          "type": null
         }
       ],
       "command": "addons show",
+      "completionExposed": true,
       "description": "Show metadata for one addon.",
       "epilog": "examples:\n  chrootctl addons show sample-name\n  chrootctl addons show",
-      "path": [
-        "addons",
-        "show"
-      ],
-      "prog": "chrootctl addons show",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "addons",
+        "show"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl addons show",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "addons",
           "const": null,
           "default": null,
           "dest": "addon_names",
@@ -4727,12 +4728,12 @@
           "nargs": "*",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": "addons"
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "category",
           "const": null,
           "default": null,
           "dest": "category",
@@ -4743,34 +4744,33 @@
             "--category"
           ],
           "required": false,
-          "type": null,
-          "completion": "category"
+          "type": null
         }
       ],
       "command": "addons apply",
+      "completionExposed": true,
       "description": "Apply one or more addons to the active installed chroot.",
       "epilog": "examples:\n  chrootctl --name work addons apply sample-name\n  chrootctl --name work addons apply sample-a sample-b\n  chrootctl addons apply\n  chrootctl addons apply --category system",
-      "path": [
-        "addons",
-        "apply"
-      ],
-      "prog": "chrootctl addons apply",
-      "handler": "catalog",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "catalog",
+      "healthExitPolicy": "informational",
       "hidden": false,
-      "completionExposed": true,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "addons",
+        "apply"
+      ],
       "privilege": "mutate-root",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl addons apply",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "none"
     },
     {
       "arguments": [
@@ -4791,6 +4791,7 @@
             "tool-preview",
             "addon-preview"
           ],
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "topic",
@@ -4799,12 +4800,12 @@
           "nargs": null,
           "optionStrings": [],
           "required": true,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "values",
@@ -4813,64 +4814,429 @@
           "nargs": "*",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "__complete",
+      "completionExposed": false,
       "description": "Internal dynamic completion command.",
       "epilog": null,
-      "path": [
-        "__complete"
-      ],
-      "prog": "chrootctl __complete",
-      "handler": "complete",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "complete",
+      "healthExitPolicy": "informational",
       "hidden": true,
-      "completionExposed": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "raw"
       ],
-      "streamMode": "raw",
+      "path": [
+        "__complete"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl __complete",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "raw"
     },
     {
       "arguments": [],
-      "command": "magisk",
-      "description": "Generate a Magisk module that owns boot-time mounts/startup and a small privileged helper without embedding the Web UI stack.",
-      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl-magisk\n  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed\n  chrootctl magisk render --output /tmp/chrootctl-magisk --name work --name dev",
-      "path": [
-        "magisk"
-      ],
-      "prog": "chrootctl magisk",
-      "handler": "magisk",
-      "group": true,
-      "hidden": false,
+      "command": "sessions",
       "completionExposed": true,
+      "description": "Manage backend-owned persistent tmux sessions.",
+      "epilog": "examples:\n  chrootctl sessions",
+      "exclusiveGroups": [],
+      "group": true,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "human",
         "json"
       ],
-      "streamMode": "none",
+      "path": [
+        "sessions"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl sessions",
       "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [],
+      "command": "sessions list",
+      "completionExposed": true,
+      "description": "List backend-owned persistent tmux sessions.",
+      "epilog": "examples:\n  chrootctl sessions list",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
       "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "list"
+      ],
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions list",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
+          "const": null,
+          "default": null,
+          "dest": "session_id",
+          "help": "Managed session ID.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "sessions get",
+      "completionExposed": true,
+      "description": "Show one backend-owned persistent tmux session.",
+      "epilog": "examples:\n  chrootctl sessions get",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "get"
+      ],
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions get",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "users",
+          "const": null,
+          "default": null,
+          "dest": "username",
+          "help": "Chroot username.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "",
+          "const": null,
+          "default": 120,
+          "dest": "width",
+          "help": "Initial terminal width.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--width"
+          ],
+          "required": false,
+          "type": "int"
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "",
+          "const": null,
+          "default": 40,
+          "dest": "height",
+          "help": "Initial terminal height.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--height"
+          ],
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "command": "sessions create",
+      "completionExposed": true,
+      "description": "Create a persistent tmux session for a chroot user.",
+      "epilog": "examples:\n  chrootctl sessions create",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "create"
+      ],
+      "privilege": "mutate-root",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions create",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "",
+          "const": null,
+          "default": null,
+          "dest": "session_id",
+          "help": "Managed session ID.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        },
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "",
+          "const": null,
+          "default": 1000,
+          "dest": "lines",
+          "help": "Maximum history lines to capture.",
+          "metavar": null,
+          "nargs": null,
+          "optionStrings": [
+            "--lines"
+          ],
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "command": "sessions capture",
+      "completionExposed": true,
+      "description": "Capture bounded output from one backend-owned tmux session.",
+      "epilog": "examples:\n  chrootctl sessions capture",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "capture"
+      ],
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions capture",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "",
+          "const": null,
+          "default": null,
+          "dest": "session_id",
+          "help": "Managed session ID.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "sessions detach",
+      "completionExposed": true,
+      "description": "Detach clients from one backend-owned tmux session.",
+      "epilog": "examples:\n  chrootctl sessions detach",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "detach"
+      ],
+      "privilege": "mutate-root",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions detach",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "",
+          "const": null,
+          "default": null,
+          "dest": "session_id",
+          "help": "Managed session ID.",
+          "metavar": null,
+          "nargs": "?",
+          "optionStrings": [],
+          "required": false,
+          "type": null
+        }
+      ],
+      "command": "sessions kill",
+      "completionExposed": true,
+      "description": "Kill one backend-owned tmux session.",
+      "epilog": "examples:\n  chrootctl sessions kill",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "kill"
+      ],
+      "privilege": "mutate-root",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions kill",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [],
+      "command": "sessions reconcile",
+      "completionExposed": true,
+      "description": "Reconcile backend-owned tmux sessions.",
+      "epilog": "examples:\n  chrootctl sessions reconcile",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "reconcile"
+      ],
+      "privilege": "mutate-root",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions reconcile",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [],
+      "command": "sessions runtime",
+      "completionExposed": true,
+      "description": "Show bundled tmux runtime readiness and state authority.",
+      "epilog": "examples:\n  chrootctl sessions runtime",
+      "exclusiveGroups": [],
+      "group": false,
+      "handler": "sessions",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "sessions",
+        "runtime"
+      ],
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl sessions runtime",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [],
+      "command": "magisk",
+      "completionExposed": true,
+      "description": "Generate a Magisk module that owns boot-time mounts/startup and a small privileged helper without embedding the Web UI stack.",
+      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl-magisk\n  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed\n  chrootctl magisk render --output /tmp/chrootctl-magisk --name work --name dev",
+      "exclusiveGroups": [],
+      "group": true,
+      "handler": "magisk",
+      "healthExitPolicy": "informational",
+      "hidden": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "magisk"
+      ],
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl magisk",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
+    },
+    {
+      "arguments": [
+        {
+          "action": "_StoreAction",
+          "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "output",
@@ -4881,12 +5247,12 @@
             "--output"
           ],
           "required": true,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "zip_path",
@@ -4897,12 +5263,12 @@
             "--zip"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "path",
           "const": null,
           "default": null,
           "dest": "native_runtime_dir",
@@ -4913,12 +5279,12 @@
             "--native-runtime-dir"
           ],
           "required": false,
-          "type": "Path",
-          "completion": "path"
+          "type": "Path"
         },
         {
           "action": "_StoreTrueAction",
           "choices": null,
+          "completion": "",
           "const": true,
           "default": false,
           "dest": "all_installed",
@@ -4929,12 +5295,12 @@
             "--all-installed"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         },
         {
           "action": "_AppendAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "magisk_names",
@@ -4945,45 +5311,45 @@
             "--name"
           ],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "magisk render",
+      "completionExposed": true,
       "description": "Write a Magisk module directory with service.sh, post-fs-data.sh, and a privileged helper shim.",
       "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl-magisk\n  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed",
-      "path": [
-        "magisk",
-        "render"
-      ],
-      "prog": "chrootctl magisk render",
-      "handler": "magisk",
-      "group": false,
-      "hidden": false,
-      "completionExposed": true,
-      "outputModes": [
-        "human",
-        "json"
-      ],
-      "streamMode": "none",
-      "privilege": "none",
-      "mutability": "mutate",
-      "healthExitPolicy": "informational",
       "exclusiveGroups": [
         [
           "all_installed",
           "magisk_names"
         ]
       ],
-      "requireOneOfGroups": [],
+      "group": false,
+      "handler": "magisk",
+      "healthExitPolicy": "informational",
+      "hidden": false,
       "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "mutability": "mutate",
+      "outputModes": [
+        "human",
+        "json"
+      ],
+      "path": [
+        "magisk",
+        "render"
+      ],
+      "privilege": "none",
+      "privilegeRules": [],
+      "prog": "chrootctl magisk render",
+      "requireOneOfGroups": [],
+      "streamMode": "none"
     },
     {
       "arguments": [
         {
           "action": "_StoreAction",
           "choices": null,
+          "completion": "",
           "const": null,
           "default": null,
           "dest": "bridge_args",
@@ -4992,32 +5358,31 @@
           "nargs": "...",
           "optionStrings": [],
           "required": false,
-          "type": null,
-          "completion": ""
+          "type": null
         }
       ],
       "command": "app",
+      "completionExposed": false,
       "description": "Machine-only JSON/NDJSON bridge. Run `chrootctl app --help` for bridge commands.",
       "epilog": null,
-      "path": [
-        "app"
-      ],
-      "prog": "chrootctl app",
-      "handler": "app",
+      "exclusiveGroups": [],
       "group": false,
+      "handler": "app",
+      "healthExitPolicy": "informational",
       "hidden": true,
-      "completionExposed": false,
+      "jsonForbiddenWhen": [],
+      "mutability": "read",
       "outputModes": [
         "bridge"
       ],
-      "streamMode": "ndjson",
+      "path": [
+        "app"
+      ],
       "privilege": "none",
-      "mutability": "read",
-      "healthExitPolicy": "informational",
-      "exclusiveGroups": [],
+      "privilegeRules": [],
+      "prog": "chrootctl app",
       "requireOneOfGroups": [],
-      "jsonForbiddenWhen": [],
-      "privilegeRules": []
+      "streamMode": "ndjson"
     }
   ],
   "contractSchemaVersion": 1,
@@ -5026,146 +5391,146 @@
     {
       "action": "_StoreAction",
       "choices": null,
+      "completion": "path",
       "const": null,
       "default": null,
       "dest": "config",
       "help": "Path to a config file. Defaults to the built-in config search path.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": null,
       "optionStrings": [
         "--config"
       ],
       "required": false,
-      "type": "Path",
-      "completion": "path",
-      "minimum": null,
-      "maximum": null
+      "type": "Path"
     },
     {
       "action": "_StoreTrueAction",
       "choices": null,
+      "completion": "",
       "const": true,
       "default": false,
       "dest": "dry_run",
       "help": "Print the actions that would run without changing the host or chroot.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": 0,
       "optionStrings": [
         "--dry-run"
       ],
       "required": false,
-      "type": null,
-      "completion": "",
-      "minimum": null,
-      "maximum": null
+      "type": null
     },
     {
       "action": "_StoreTrueAction",
       "choices": null,
+      "completion": "",
       "const": true,
       "default": false,
       "dest": "verbose",
       "help": "Enable DEBUG-level diagnostic logging on stderr. It does not change the result schema.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": 0,
       "optionStrings": [
         "--verbose"
       ],
       "required": false,
-      "type": null,
-      "completion": "",
-      "minimum": null,
-      "maximum": null
+      "type": null
     },
     {
       "action": "_StoreTrueAction",
       "choices": null,
+      "completion": "",
       "const": true,
       "default": false,
       "dest": "json",
       "help": "Emit the versioned machine-readable JSON envelope for commands that declare JSON output support.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": 0,
       "optionStrings": [
         "--json"
       ],
       "required": false,
-      "type": null,
-      "completion": "",
-      "minimum": null,
-      "maximum": null
+      "type": null
     },
     {
       "action": "_StoreTrueAction",
       "choices": null,
+      "completion": "",
       "const": true,
       "default": false,
       "dest": "no_sudo",
       "help": "Do not auto-escalate through sudo or Android su for commands whose resolved action requires root.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": 0,
       "optionStrings": [
         "--no-sudo"
       ],
       "required": false,
-      "type": null,
-      "completion": "",
-      "minimum": null,
-      "maximum": null
+      "type": null
     },
     {
       "action": "_StoreAction",
       "choices": null,
+      "completion": "chroots",
       "const": null,
       "default": null,
       "dest": "name",
       "help": "Target chroot name. Auto-selects when exactly one installed chroot exists.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": null,
       "optionStrings": [
         "--name"
       ],
       "required": false,
-      "type": null,
-      "completion": "chroots",
-      "minimum": null,
-      "maximum": null
+      "type": null
     },
     {
       "action": "_StoreTrueAction",
       "choices": null,
+      "completion": "",
       "const": true,
       "default": false,
       "dest": "non_interactive",
       "help": "Fail instead of opening prompts or confirmations.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": 0,
       "optionStrings": [
         "--non-interactive"
       ],
       "required": false,
-      "type": null,
-      "completion": "",
-      "minimum": null,
-      "maximum": null
+      "type": null
     },
     {
       "action": "_VersionAction",
       "choices": null,
+      "completion": "",
       "const": true,
       "default": false,
       "dest": "version",
       "help": "Print version information and exit. Equivalent to the version command.",
+      "maximum": null,
       "metavar": null,
+      "minimum": null,
       "nargs": 0,
       "optionStrings": [
         "--version"
       ],
       "required": false,
-      "type": null,
-      "completion": "",
-      "minimum": null,
-      "maximum": null
+      "type": null
     }
   ],
   "program": "chrootctl",

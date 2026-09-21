@@ -1,7 +1,7 @@
 {
   "arbitraryShell": false,
   "contractSchemaVersion": 1,
-  "operationCount": 91,
+  "operationCount": 98,
   "operations": [
     {
       "description": "Return native dashboard state",
@@ -490,12 +490,94 @@
       "payloadFields": []
     },
     {
+      "description": "List backend-owned persistent tmux sessions",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "sessions.list",
+      "payloadFields": []
+    },
+    {
+      "description": "Return one backend-owned persistent tmux session",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "sessions.get",
+      "payloadFields": [
+        "id",
+        "sessionId",
+        "session_id"
+      ]
+    },
+    {
+      "description": "Capture bounded output from one backend-owned tmux session",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "sessions.capture",
+      "payloadFields": [
+        "id",
+        "lines",
+        "sessionId",
+        "session_id"
+      ]
+    },
+    {
       "description": "Return bundled tmux runtime readiness and backend-owned state authority",
       "destructive": false,
       "lockScope": "none",
       "mode": "query",
       "name": "sessions.runtime",
       "payloadFields": []
+    },
+    {
+      "description": "Create a persistent tmux session for a chroot user",
+      "destructive": false,
+      "lockScope": "target",
+      "mode": "operation",
+      "name": "sessions.create",
+      "payloadFields": [
+        "height",
+        "name",
+        "username",
+        "width"
+      ]
+    },
+    {
+      "description": "Detach clients from one backend-owned tmux session",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "operation",
+      "name": "sessions.detach",
+      "payloadFields": [
+        "id",
+        "sessionId",
+        "session_id"
+      ]
+    },
+    {
+      "description": "Kill one backend-owned tmux session",
+      "destructive": true,
+      "lockScope": "none",
+      "mode": "operation",
+      "name": "sessions.kill",
+      "payloadFields": [
+        "id",
+        "sessionId",
+        "session_id"
+      ]
+    },
+    {
+      "description": "Reconcile live backend-owned tmux sessions against expected session IDs",
+      "destructive": true,
+      "lockScope": "global",
+      "mode": "operation",
+      "name": "sessions.reconcile",
+      "payloadFields": [
+        "expected",
+        "expectedSessionIds",
+        "expected_session_ids"
+      ]
     },
     {
       "description": "Return Magisk/KernelSU module status",

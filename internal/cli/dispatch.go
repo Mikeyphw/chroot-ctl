@@ -19,6 +19,7 @@ import (
 	"chrootctl/internal/redaction"
 	"chrootctl/internal/services"
 	sys "chrootctl/internal/system"
+	"chrootctl/internal/tmuxruntime"
 )
 
 func strptr(s string) *string {
@@ -68,6 +69,8 @@ func (a *App) Dispatch(ctx context.Context) error {
 		return a.clipboard(ctx)
 	case "users":
 		return a.users(ctx)
+	case "sessions":
+		return a.sessions(ctx)
 	case "catalog":
 		return a.catalog(ctx)
 	case "complete":
@@ -1252,4 +1255,82 @@ func (a *App) magisk(ctx context.Context) error {
 	}
 	result := map[string]any{"output_dir": opts.OutputDir, "archive_path": opts.ZipPath, "startup_targets": targets}
 	return a.emit("Magisk module", result)
+}
+
+func (a *App) sessions(ctx context.Context) error {
+	cmd := a.Inv.Spec.Command
+	svc := a.Services.Sessions()
+	switch cmd {
+	case "sessions list":
+		v, e := svc.List(ctx)
+		if e != nil {
+			return e
+		}
+		return a.emit("Sessions", v)
+	case "sessions get":
+		id := strings.TrimSpace(a.Inv.String("session_id"))
+		if id == "" {
+			return errors.New("managed session id is required")
+		}
+		v, e := svc.Get(ctx, id)
+		if e != nil {
+			return e
+		}
+		if v == nil {
+			return fmt.Errorf("unknown session: %s", id)
+		}
+		return a.emit("Session", v)
+	case "sessions create":
+		n, e := a.resolveTarget(ctx, true)
+		if e != nil {
+			return e
+		}
+		u, e := a.resolveUser(ctx, n, a.Inv.String("username"), false)
+		if e != nil {
+			return e
+		}
+		v, e := svc.Create(ctx, n, u, a.Inv.Int("width", 120), a.Inv.Int("height", 40))
+		if e != nil {
+			return e
+		}
+		return a.emit("Session created", v)
+	case "sessions capture":
+		id := strings.TrimSpace(a.Inv.String("session_id"))
+		if id == "" {
+			return errors.New("managed session id is required")
+		}
+		v, e := svc.Capture(ctx, id, a.Inv.Int("lines", 1000))
+		if e != nil {
+			return e
+		}
+		return a.emit("Session capture", map[string]any{"id": id, "output": v})
+	case "sessions detach":
+		id := strings.TrimSpace(a.Inv.String("session_id"))
+		if id == "" {
+			return errors.New("managed session id is required")
+		}
+		if e := svc.Detach(ctx, id); e != nil {
+			return e
+		}
+		return a.emit("Session detached", map[string]any{"id": id, "detached": true})
+	case "sessions kill":
+		id := strings.TrimSpace(a.Inv.String("session_id"))
+		if id == "" {
+			return errors.New("managed session id is required")
+		}
+		if e := svc.Kill(ctx, id); e != nil {
+			return e
+		}
+		return a.emit("Session killed", map[string]any{"id": id, "killed": true})
+	case "sessions reconcile":
+		v, e := svc.Reconcile(ctx, nil)
+		if e != nil {
+			return e
+		}
+		return a.emit("Sessions reconciled", v)
+	case "sessions runtime":
+		return a.emit("Session runtime", tmuxruntime.Inspect(ctx))
+	default:
+		return fmt.Errorf("unsupported sessions command: %s", cmd)
+	}
 }
