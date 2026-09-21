@@ -181,7 +181,13 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sid, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
 	http.SetCookie(w, &http.Cookie{Name: "chrootctl_csrf", Value: csrf, Path: "/", HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
 	if s.cfg.StaticDir != "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		// Do not redirect in the same external-navigation chain that established
+		// the Strict cookies. Chromium can withhold SameSite=Strict cookies on
+		// that redirect. A tiny same-origin landing document starts a fresh
+		// navigation after the cookies have been committed.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>chrootctl</title></head><body>Authentication complete. <a href="/">Continue</a>.</body></html>`))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

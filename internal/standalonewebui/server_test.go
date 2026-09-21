@@ -73,7 +73,7 @@ func TestHostRejected(t *testing.T) {
 	}
 }
 
-func TestBootstrapRedirectsToAuthenticatedStaticUI(t *testing.T) {
+func TestBootstrapLandingCommitsStrictCookiesBeforeStaticUI(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("standalone-ok"), 0600); err != nil {
 		t.Fatal(err)
@@ -89,19 +89,33 @@ func TestBootstrapRedirectsToAuthenticatedStaticUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	jar, _ := cookiejar.New(nil)
-	cl := &http.Client{Jar: jar}
+	cl := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 	resp, err := cl.Get(info.BootstrapURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "standalone-ok") {
-		t.Fatalf("status=%d body=%q", resp.StatusCode, body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `http-equiv="refresh"`) || !strings.Contains(string(body), `href="/"`) {
+		t.Fatalf("bootstrap status=%d body=%q", resp.StatusCode, body)
 	}
-	resp2, _ := http.Get(info.URL + "/")
+	if resp.Header.Get("Location") != "" {
+		t.Fatalf("bootstrap must not redirect in external navigation chain: %q", resp.Header.Get("Location"))
+	}
+	resp2, err := cl.Get(info.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauth static=%d", resp2.StatusCode)
+	body2, _ := io.ReadAll(resp2.Body)
+	if resp2.StatusCode != http.StatusOK || !strings.Contains(string(body2), "standalone-ok") {
+		t.Fatalf("authenticated static status=%d body=%q", resp2.StatusCode, body2)
+	}
+	resp3, _ := http.Get(info.URL + "/")
+	defer resp3.Body.Close()
+	if resp3.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauth static=%d", resp3.StatusCode)
 	}
 }
