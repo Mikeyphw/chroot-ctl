@@ -33,6 +33,12 @@ External catalog files are read only after parent-directory, symlink, permission
 ### CHR14 clipboard privileged integration
 
 CHR14 makes clipboard integration target-aware and lifecycle-safe: daemon state lives under the Termux-private runtime root, custom control paths must already be private, starts are locked, stale/corrupt PID/socket/token state is cleaned or rejected safely, host `set/get` use the daemon host socket by default, stdin is bounded while preserving trailing newlines, and generated wrappers carry the installing target identity so the daemon can reject requests from targets where clipboard was not enabled.
+## Supported Android delivery surface
+
+The standalone Kotlin Android companion application is retired as of the WR12 root-module convergence seal. The supported Android product is the `chrootctl` Magisk/KernelSU root module with its embedded WebUI and Go-native backend. Historical Android-app roadmap notes below are retained only as migration history; they are not current release instructions.
+
+Use the Devtool target `chrootctl_root_module` for module/WebUI validation and packaging. APK/Gradle validation is no longer part of the supported release path.
+
 ### CHR15 module/runtime/release trust seal
 
 CHR15 makes module packaging, runtime readiness, Android selection, and release wrappers share one sealed Go-native contract. Rendered modules now carry a full package manifest at `config/chrootctl/module-package-manifest.json`; module ZIPs are validated against that inventory before artifact registration; runtime status and Android runtime resolution fail closed on corrupt package/runtime seals; module-build preview uses the real backend preflight; startup targets resolve through the installed-target path authority; replacement promotion is rollback-capable; uninstall removes transient module state; and the documented production wrappers are executable.

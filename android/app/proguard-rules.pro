@@ -1,2 +1,0 @@
--keep class com.mikeyphw.chrootctl.root.** { *; }
--keep class com.topjohnwu.superuser.** { *; }

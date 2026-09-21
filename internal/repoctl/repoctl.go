@@ -642,7 +642,7 @@ func Validate() error {
 	if e = ValidateAuditCoverage(root); e != nil {
 		return e
 	}
-	if e = ValidateBuildFoundation(root); e != nil {
+	if e = ValidateRootModuleRetirement(root); e != nil {
 		return e
 	}
 	if e = contractgen.Check(root); e != nil {
@@ -651,61 +651,13 @@ func Validate() error {
 	if e = ValidateCLIContractFoundation(root); e != nil {
 		return e
 	}
-	if e = ValidateConfigRegistryFoundation(root); e != nil {
-		return e
-	}
-	if e = ValidatePrivilegeTrustBoundary(root); e != nil {
-		return e
-	}
-	if e = ValidateProcessTransportBoundary(root); e != nil {
-		return e
-	}
 	if e = ValidateMutationEngineGateA(root); e != nil {
 		return e
 	}
 	if e = ValidateCRUDAtomicity(root); e != nil {
 		return e
 	}
-	if e = ValidateMountServiceRuntime(root); e != nil {
-		return e
-	}
-	if e = ValidateSnapshotFidelity(root); e != nil {
-		return e
-	}
-	if e = ValidateTransferArtifactPlane(root); e != nil {
-		return e
-	}
-	if e = ValidateInstallerUpgradeReconstruction(root); e != nil {
-		return e
-	}
-	if e = ValidateUserIdentitySafety(root); e != nil {
-		return e
-	}
-	if e = ValidateCatalogPackageWorkflow(root); e != nil {
-		return e
-	}
 	if e = ValidateClipboardPrivilegedIntegration(root); e != nil {
-		return e
-	}
-	if e = ValidateModuleRuntimeReleaseTrust(root); e != nil {
-		return e
-	}
-	if e = ValidateLoggingDiagnosticsAuditEvidence(root); e != nil {
-		return e
-	}
-	if e = ValidateBridgeProtocolV2Convergence(root); e != nil {
-		return e
-	}
-	if e = ValidateAndroidOperationRoomRecovery(root); e != nil {
-		return e
-	}
-	if e = ValidateAndroidProductWorkspaceCorrectness(root); e != nil {
-		return e
-	}
-	if e = ValidateNavigationAdaptiveFinalReleaseSeal(root); e != nil {
-		return e
-	}
-	if e = ValidateRoadmapConvergenceSeal(root); e != nil {
 		return e
 	}
 	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))

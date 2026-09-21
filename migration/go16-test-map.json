@@ -385,12 +385,12 @@
     },
     {
       "source": "tests/test_go14_android_go_only_runtime.py",
-      "disposition": "kotlin",
+      "disposition": "retired-contract",
       "targets": [
-        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/root/BridgeOutputValidatorTest.kt",
-        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/protocol/BridgeRequestTest.kt"
+        "internal/module/webui_wr12_android_retirement_test.go",
+        "internal/bridge/bridge_test.go"
       ],
-      "rationale": "Android Go-only bridge/runtime behavior is owned by Kotlin resolver/protocol tests."
+      "rationale": "Standalone Android companion runtime/resolver tests were explicitly retired in WR12; protocol-v1 and root-module WebUI compatibility are covered by Go bridge/module retirement seals."
     },
     {
       "source": "tests/test_go15_go_native_tooling.py",
@@ -669,12 +669,11 @@
     },
     {
       "source": "tests/test_runtime_resolution.py",
-      "disposition": "kotlin",
+      "disposition": "retired-contract",
       "targets": [
-        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/root/BridgeOutputValidatorTest.kt",
-        "android/app/src/test/kotlin/com/mikeyphw/chrootctl/root/RootServiceRecoveryTest.kt"
+        "internal/module/webui_wr12_android_retirement_test.go"
       ],
-      "rationale": "Android runtime resolution/recovery is owned by Kotlin root runtime tests."
+      "rationale": "Standalone Android companion coverage was explicitly retired by WR12 after root-module WebUI parity; the WR12 retirement contract prevents the obsolete product path from returning."
     },
     {
       "source": "tests/test_runtime_session.py",

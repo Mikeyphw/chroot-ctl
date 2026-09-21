@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<lint>
-    <!-- Keep only the explicit API-level suppression required by the Android release contract. -->
-    <issue id="OldTargetApi" severity="ignore" />
-</lint>

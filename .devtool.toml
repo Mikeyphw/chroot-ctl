@@ -62,89 +62,10 @@ run_target = "./cmd/chrootctl"
 # Android companion app
 # ---------------------------------------------------------------------------
 
-[targets.chrootctl_android]
-runner = "android"
-platform = "android"
-root = "android"
-execution_environment = "chroot"
-chroot_name = "androidos"
-# Inputs outside the Android root are explicit scheduler read scopes.  Android
-# sources themselves are owned by root="android" for affected-target selection.
-inputs = [
-  ".",
-  "../.devtool.toml",
-  "../migration/contracts/v1/**",
-  "../docs/release/**",
-]
-outputs = [
-  ".gradle/**",
-  ".kotlin/**",
-  "build/**",
-  "app/build/**",
-]
-
-[targets.chrootctl_android.android]
-variant = "debug"
-aapt2_provider = "auto"
-instrumentation = "never"
-prefer_native_termux = false
-
-[targets.chrootctl_android.gradle]
-version = "9.7.1"
-provider = "auto"
-no_daemon = false
-daemon_idle_timeout_ms = 900000
-build_cache = true
-structured_events = false
-fail_fast = true
-offline = false
-
-[targets.chrootctl_android.tasks]
-build = [":app:assembleDebug"]
-test = [":app:testDebugUnitTest"]
-lint = [":chrootctlAndroidLintConfigurationSeal"]
-clean = [":app:clean"]
-
-[targets.chrootctl_android.artifacts]
-required = true
-external_verification = "auto"
-
-# Resource policy lives in one place.  Command-line Devtool resource flags may
-# override it without Gradle's JVM being artificially capped to two processors.
-[targets.chrootctl_android.validation]
-android_safe = false
-split_gradle = false
-max_workers = 4
-cpu_limit = 4
-parallel = true
-no_daemon = false
-stop_daemon_after_phase = false
-low_priority = false
-memory_guard_mb = 0
-gradle_heap_mb = 2048
-gradle_metaspace_mb = 768
-affected_module_lint = false
-
-# Compile/resources are transitively covered by test/package. The Android app
-# seal aggregate is part of the gate so a chrootctl_android validation cannot
-# accidentally report only Go/backend coverage.  The lint phase uses a deterministic
-# configuration seal because native Termux may be unable to fetch the external
-# androidLintTool classpath during artifact application; run :app:lintDebug after
-# prewarming that dependency cache for full source lint.
-[targets.chrootctl_android.validation.phases]
-preflight = [":chrootctlAndroidAppSeal"]
-dependencies = []
-compile = []
-resources = []
-unit-test = [":app:testDebugUnitTest"]
-package = [":app:assembleDebug"]
-lint = [":chrootctlAndroidLintConfigurationSeal"]
-
 # ---------------------------------------------------------------------------
-# Root module product. This target owns the complete Magisk/KernelSU module
-# surface: Go runtime/module integration, embedded WebUI, bridge contracts,
-# module packaging/install structure, and module-focused release checks.
-# Android remains a separate target while the companion app is being retired.
+# Root module product. This is the supported Android delivery surface:
+# Magisk/KernelSU module + embedded WebUI + Go runtime/bridge.
+# The standalone Android companion app was retired by WR12.
 # ---------------------------------------------------------------------------
 
 [targets.chrootctl_root_module]
