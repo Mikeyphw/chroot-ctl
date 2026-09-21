@@ -141,32 +141,43 @@ package = [":app:assembleDebug"]
 lint = [":chrootctlAndroidLintConfigurationSeal"]
 
 # ---------------------------------------------------------------------------
-# KernelSU WebUI. Keep this separate from the release/module target so WebUI
-# work can run its focused JS + Go contract gate without claiming Android.
+# Root module product. This target owns the complete Magisk/KernelSU module
+# surface: Go runtime/module integration, embedded WebUI, bridge contracts,
+# module packaging/install structure, and module-focused release checks.
+# Android remains a separate target while the companion app is being retired.
 # ---------------------------------------------------------------------------
 
-[targets.chrootctl_webui]
+[targets.chrootctl_root_module]
 runner = "command"
-platform = "web"
+platform = "android"
 execution_environment = "host"
 inputs = [
   ".devtool.toml",
   "go.mod",
   "go.sum",
-  "internal/module/webroot/**",
-  "internal/module/webui_*_test.go",
-  "internal/module/module_test.go",
+  "cmd/chrootctl/**",
+  "cmd/repoctl/**",
+  "internal/module/**",
   "internal/bridge/**",
   "internal/operations/**",
   "internal/users/**",
   "internal/services/**",
+  "internal/rcloneops/**",
+  "internal/catalog/**",
+  "internal/repoctl/**",
+  "internal/system/**",
+  "internal/testseal/**",
+  "migration/contracts/**",
   "docs/release/WEBUI_*.md",
 ]
-outputs = []
+outputs = [
+  "out/module/**",
+  "out/chrootctl-magisk.zip",
+]
 run_command = "go run ./cmd/repoctl host"
-test_command = "node --check internal/module/webroot/chrootctl.js && node --check internal/module/webroot/index.js && go test ./internal/module ./internal/bridge ./internal/operations ./internal/users ./internal/services"
+test_command = "node --check internal/module/webroot/chrootctl.js && node --check internal/module/webroot/index.js && go test ./internal/module ./internal/bridge ./internal/operations ./internal/users ./internal/services ./internal/rcloneops ./internal/catalog ./internal/repoctl && go run ./cmd/repoctl build-module --output-dir out/module --zip out/chrootctl-magisk.zip --jobs 2 --checksum"
 
-[targets.chrootctl_webui.workflows]
+[targets.chrootctl_root_module.workflows]
 validate = ["runner:command#test"]
 
 # ---------------------------------------------------------------------------
