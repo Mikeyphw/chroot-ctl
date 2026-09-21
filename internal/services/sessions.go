@@ -52,7 +52,17 @@ func (s *SessionService) Create(ctx context.Context, name, username string, widt
 	if e != nil {
 		return tmuxruntime.Session{}, e
 	}
-	return s.manager().Create(ctx, tmuxruntime.CreateRequest{Target: n, Username: u, Width: width, Height: height, Command: argv, Environment: env})
+	sess, e := s.manager().Create(ctx, tmuxruntime.CreateRequest{Target: n, Username: u, Width: width, Height: height, Command: argv, Environment: env})
+	if e != nil {
+		return tmuxruntime.Session{}, e
+	}
+	store := tmuxruntime.NewJobStore()
+	store.Paths = s.manager().Paths
+	if e = store.LinkSession(sess); e != nil {
+		_ = s.manager().Kill(ctx, sess.ID)
+		return tmuxruntime.Session{}, e
+	}
+	return sess, nil
 }
 func (s *SessionService) Capture(ctx context.Context, id string, lines int) (string, error) {
 	return s.manager().Capture(ctx, id, lines)
