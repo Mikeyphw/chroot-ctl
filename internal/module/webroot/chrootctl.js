@@ -37,7 +37,7 @@ function safeInstallPayload(payload={}) {
   for(const key of ['release','version']) { const v=boundedText(payload[key],key,128); if(v)p[key]=v; }
   if(payload.resume===true)p.resume=true;
   if(payload.repair===true)p.repair=true;
-  if(payload.overwriteExisting===true)p.overwriteExisting=true;
+  if(payload.overwriteExisting===true||payload.overwrite_existing===true)p.overwrite_existing=true;
   for(const key of ['previewId','payloadHash','resourceRevision']) if(payload[key]) p[key]=boundedText(payload[key],key,256);
   return p;
 }
