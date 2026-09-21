@@ -16,7 +16,7 @@ func newCHR11InstallService(t *testing.T) *InstallService {
 	cfg := config.Default(config.RuntimeContext{Home: t.TempDir()})
 	cfg.ChrootRoot = t.TempDir()
 	cfg.DatabasePath = t.TempDir() + "/chroots.sqlite3"
-	reg, err := registry.OpenEphemeral()
+	reg, err := registry.Open(cfg.DatabasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestCHR11InstallPreviewBlocksExistingUnownedTarget(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := svc.C.Preview().Install(context.Background(), model.InstallRequest{Distro: "ubuntu", Name: "demo", Username: "mike", Arch: "arm64"})
+	plan, err := svc.C.Preview().Install(context.Background(), model.InstallRequest{Distro: "ubuntu", Name: "demo", Username: "mike", Arch: "arm64", Phase: testStringPtr("extract")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,10 +148,16 @@ func TestCHR11InstallPreviewBlocksExistingUnownedTarget(t *testing.T) {
 func TestCHR11InstallPreviewBlocksAlreadyRegisteredName(t *testing.T) {
 	svc := newCHR11InstallService(t)
 	ctx := context.Background()
-	if err := svc.C.Registry.Upsert(ctx, model.ChrootRecord{Name: "demo", Distro: "ubuntu", Arch: "arm64", Path: svc.C.BaseConfig.ChrootRoot + "/demo", Phase: "finalize", Installed: true}); err != nil {
+	if err := svc.C.Registry.SetQueryOnly(ctx, false); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := svc.C.Preview().Install(ctx, model.InstallRequest{Distro: "ubuntu", Name: "demo", Username: "mike", Arch: "arm64"})
+	if err := svc.C.Registry.Upsert(ctx, registry.ChrootInput{Name: "demo", Distro: "ubuntu", Arch: testStringPtr("arm64"), Path: svc.C.BaseConfig.ChrootRoot + "/demo", Phase: "finalize", Installed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.C.Registry.SetQueryOnly(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := svc.C.Preview().Install(ctx, model.InstallRequest{Distro: "ubuntu", Name: "demo", Username: "mike", Arch: "arm64", Phase: testStringPtr("extract")})
 	if err != nil {
 		t.Fatal(err)
 	}

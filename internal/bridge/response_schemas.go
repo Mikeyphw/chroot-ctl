@@ -16,7 +16,7 @@ var responseSchemas = map[string]ResponseSchema{
 	"chroots.list":            {Kind: "array", Fields: []string{"name", "distro", "releaseName", "phase", "installed", "path"}, CapabilityTags: []string{"list"}},
 	"chroots.get":             {Kind: "object", Fields: []string{"name", "distro", "releaseName", "phase", "installed", "path"}},
 	"system.runtime":          {Kind: "object", Fields: []string{"lifecycle", "host", "crossArch", "module"}, CapabilityTags: []string{"readiness"}},
-	"system.module_status":    {Kind: "object", Fields: []string{"status", "runtimeKind", "modulePath", "warnings"}, CapabilityTags: []string{"module"}},
+	"system.module_status":    {Kind: "object", Fields: []string{"moduleId", "installed", "active", "installedState", "pendingUpdate", "pending", "ready", "manager", "startupTargets", "warnings"}, CapabilityTags: []string{"module"}},
 	"logs.list":               {Kind: "object", Fields: []string{"name", "logFile", "level", "tail", "count", "truncated", "readError", "refreshedAt", "entries"}, CapabilityTags: []string{"logs", "workspace"}},
 	"operations.find_request": {Kind: "object", Fields: []string{"requestId", "operationId", "found", "state", "kind"}, CapabilityTags: []string{"operations", "recovery"}},
 	"support.preview":         {Kind: "preview", Fields: []string{"ok", "kind", "archive", "warnings", "blocking", "confirm"}, CapabilityTags: []string{"support", "evidence"}},

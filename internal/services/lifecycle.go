@@ -89,6 +89,30 @@ func compatibilityReady(root string) bool {
 		manifestInt(runtime["schemaVersion"]) == chmodule.RuntimeSchemaVersion && stringValue(runtime["kind"]) == chmodule.RuntimeKind && stringValue(runtime["platform"]) == "android" && stringValue(runtime["abi"]) == chmodule.RuntimeABI && stringValue(runtime["entrypoint"]) == chmodule.RuntimeEntrypoint
 }
 
+func moduleStartupTargets(root string) []string {
+	b, err := os.ReadFile(filepath.Join(root, "config/chrootctl/boot_targets.json"))
+	if err != nil {
+		return []string{}
+	}
+	var payload struct {
+		StartupTargets []string `json:"startup_targets"`
+	}
+	if json.Unmarshal(b, &payload) != nil {
+		return []string{}
+	}
+	out := make([]string, 0, len(payload.StartupTargets))
+	seen := map[string]bool{}
+	for _, raw := range payload.StartupTargets {
+		v := strings.TrimSpace(raw)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
 func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]any {
 	prop := readKV(filepath.Join(root, "module.prop"))
 	disabled := exists(filepath.Join(root, "disable"))
@@ -134,7 +158,7 @@ func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]a
 		readiness["reason"] = "native_runtime_entrypoint_missing_or_unsafe"
 	}
 	vc, _ := strconv.Atoi(prop["versionCode"])
-	return map[string]any{"path": root, "exists": exists(root), "pending": pending, "active": active, "disabled": disabled, "pendingRemoval": removal, "hasModuleProp": exists(filepath.Join(root, "module.prop")), "layoutReady": layout, "packageSealReady": layout && layoutProblem == "", "sealProblem": nilIfEmpty(layoutProblem), "compatibility": map[string]any{"valid": compatOK, "legacy": false}, "id": prop["id"], "name": prop["name"], "version": prop["version"], "versionCode": vc, "runtimeReadiness": readiness, "dependencyReadiness": readiness}
+	return map[string]any{"path": root, "exists": exists(root), "pending": pending, "active": active, "disabled": disabled, "pendingRemoval": removal, "hasModuleProp": exists(filepath.Join(root, "module.prop")), "layoutReady": layout, "packageSealReady": layout && layoutProblem == "", "sealProblem": nilIfEmpty(layoutProblem), "compatibility": map[string]any{"valid": compatOK, "legacy": false}, "id": prop["id"], "name": prop["name"], "version": prop["version"], "versionCode": vc, "startupTargets": moduleStartupTargets(root), "runtimeReadiness": readiness, "dependencyReadiness": readiness}
 }
 func (s *ModuleRuntimeService) Status() map[string]any {
 	active := s.candidate("/data/adb/modules/"+moduleID, false)
@@ -165,7 +189,8 @@ func (s *ModuleRuntimeService) Status() map[string]any {
 	if usable {
 		activeValue = active
 	}
-	return map[string]any{"moduleId": moduleID, "installed": active["exists"], "active": activeValue, "installedState": active, "pendingUpdate": len(pending) > 0, "pending": pending, "ready": usable && ready, "manager": moduleManager(), "warnings": warnings}
+	startupTargets, _ := active["startupTargets"].([]string)
+	return map[string]any{"moduleId": moduleID, "installed": active["exists"], "active": activeValue, "installedState": active, "pendingUpdate": len(pending) > 0, "pending": pending, "ready": usable && ready, "manager": moduleManager(), "startupTargets": startupTargets, "warnings": warnings}
 }
 func (s *ModuleRuntimeService) ActiveExecutable() string {
 	st := s.Status()

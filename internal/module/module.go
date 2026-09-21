@@ -300,7 +300,12 @@ func writeFile(root, rel, content string, mode fs.FileMode) error {
 	if e := os.MkdirAll(filepath.Dir(p), 0755); e != nil {
 		return e
 	}
-	return os.WriteFile(p, []byte(content), mode)
+	if err := os.WriteFile(p, []byte(content), mode); err != nil {
+		return err
+	}
+	// os.WriteFile applies the process umask when creating a file. Module output
+	// has an explicit mode contract, so normalize it after creation as well.
+	return os.Chmod(p, mode)
 }
 
 func writeWebUI(root string) error {
