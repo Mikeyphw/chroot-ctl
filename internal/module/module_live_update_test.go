@@ -11,7 +11,7 @@ func TestCustomizeLiveUpdatesExistingActiveModuleTransactionally(t *testing.T) {
 		`ACTIVE_MODULE="/data/adb/modules/chrootctl-magisk"`,
 		`.chrootctl-magisk.live-new.$$`, `.chrootctl-magisk.live-old.$$`,
 		`cp -a "$ACTIVE_MODULE/." "$LIVE_NEXT/"`,
-		`for rel in module.prop customize.sh post-fs-data.sh service.sh uninstall.sh bin system config runtime webroot`,
+		`for rel in module.prop customize.sh post-fs-data.sh service.sh action.sh uninstall.sh bin system config runtime webroot`,
 		`mv "$ACTIVE_MODULE" "$LIVE_OLD" && mv "$LIVE_NEXT" "$ACTIVE_MODULE"`,
 		`mv "$LIVE_OLD" "$ACTIVE_MODULE"`,
 		`"$ACTIVE_MODULE/post-fs-data.sh"`, `"$ACTIVE_MODULE/service.sh"`,

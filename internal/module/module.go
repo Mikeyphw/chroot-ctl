@@ -52,7 +52,7 @@ var webUIAssetPaths = []string{
 
 func requiredModuleFiles() []string {
 	required := []string{
-		"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh",
+		"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "action.sh", "uninstall.sh",
 		"bin/chrootctl-magisk-helper", "bin/chrootctl-log-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper",
 		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json",
 		"runtime/" + RuntimeABI + "/runtime-manifest.json",
@@ -624,6 +624,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     set_perm "$MODPATH/customize.sh" 0 0 0755
     set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
     set_perm "$MODPATH/service.sh" 0 0 0755
+    set_perm "$MODPATH/action.sh" 0 0 0755
     set_perm "$MODPATH/uninstall.sh" 0 0 0755
     set_perm "$MODPATH/bin/chrootctl-magisk-helper" 0 0 0755
     set_perm "$MODPATH/bin/chrootctl-log-helper" 0 0 0755
@@ -635,6 +636,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     chmod 0755 "$MODPATH/customize.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/post-fs-data.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/service.sh" 2>/dev/null || true
+    chmod 0755 "$MODPATH/action.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/uninstall.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/bin/chrootctl-magisk-helper" 2>/dev/null || true
     chmod 0755 "$MODPATH/bin/chrootctl-log-helper" 2>/dev/null || true
@@ -659,7 +661,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     [ "$LIVE_OK" -eq 0 ] || cp -a "$ACTIVE_MODULE/." "$LIVE_NEXT/" || LIVE_OK=0
 
     if [ "$LIVE_OK" -eq 1 ]; then
-      for rel in module.prop customize.sh post-fs-data.sh service.sh uninstall.sh bin system config runtime webroot; do
+      for rel in module.prop customize.sh post-fs-data.sh service.sh action.sh uninstall.sh bin system config runtime webroot; do
         rm -rf "$LIVE_NEXT/$rel" || { LIVE_OK=0; break; }
         [ ! -e "$MODPATH/$rel" ] || cp -a "$MODPATH/$rel" "$LIVE_NEXT/$rel" || { LIVE_OK=0; break; }
       done
@@ -792,6 +794,21 @@ func service(startupTargets []string) string {
 	}
 	return "#!/system/bin/sh\nMODDIR=\"${0%/*}\"\ncase \"$MODDIR\" in\n  */system/bin) MODDIR=\"${MODDIR%/system/bin}\" ;;\nesac\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\" # diagnostics only\n\nif [ -n \"${CHROOTCTL_MODULE_DIR:-}\" ]; then\n  MODDIR=\"$CHROOTCTL_MODULE_DIR\"\nelif [ -d \"$ACTIVE_MODULE\" ]; then\n  MODDIR=\"$ACTIVE_MODULE\"\nfi\n\nif [ \"$MODDIR\" != \"$ACTIVE_MODULE\" ]; then\n  echo \"refusing module service outside active module: $MODDIR\" >&2\n  exit 0\nfi\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nHELPER=\"$MODDIR/bin/chrootctl-magisk-helper\"\nLOGGER=\"$MODDIR/bin/chrootctl-log-helper\"\n[ -x \"$HELPER\" ] || { [ -x \"$LOGGER\" ] && \"$LOGGER\" module \"service helper-missing\" || true; exit 0; }\n[ -x \"$LOGGER\" ] && \"$LOGGER\" module \"service begin\" || true\n" + invocation + " || true\n[ -x \"$LOGGER\" ] && \"$LOGGER\" module \"service end\" || true\n"
 }
+func action() string {
+	return `#!/system/bin/sh
+MODDIR="${0%/*}"
+export CHROOTCTL_MODULE_DIR="$MODDIR"
+BIN="$MODDIR/system/bin/chrootctl"
+LOG="/data/local/tmp/chrootctl/standalone-webui.log"
+mkdir -p "${LOG%/*}" 2>/dev/null || true
+chmod 0700 "${LOG%/*}" 2>/dev/null || true
+[ -x "$BIN" ] || { echo "chrootctl runtime unavailable" >&2; exit 1; }
+# Action must return immediately; the server owns its own idle shutdown.
+nohup "$BIN" webui serve --open >>"$LOG" 2>&1 </dev/null &
+echo "Opening chrootctl standalone WebUI in the default browser..."
+exit 0
+`
+}
 func proxy(target string) string {
 	return "#!/system/bin/sh\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}\"\nexec \"$MODDIR/" + target + "\" \"$@\"\n"
 }
@@ -843,7 +860,7 @@ func Render(opts Options) error {
 	files := map[string]struct {
 		c string
 		m fs.FileMode
-	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
+	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "action.sh": {action(), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
 	for rel, v := range files {
 		if e := writeFile(out, rel, v.c, v.m); e != nil {
 			return e

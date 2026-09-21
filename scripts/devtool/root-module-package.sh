@@ -22,6 +22,7 @@ for required in \
   module.prop \
   post-fs-data.sh \
   service.sh \
+  action.sh \
   system/bin/chrootctl \
   webroot/index.html \
   webroot/index.js \

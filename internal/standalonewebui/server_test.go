@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -68,5 +70,38 @@ func TestHostRejected(t *testing.T) {
 	defer r.Body.Close()
 	if r.StatusCode != 403 {
 		t.Fatalf("status=%d", r.StatusCode)
+	}
+}
+
+func TestBootstrapRedirectsToAuthenticatedStaticUI(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("standalone-ok"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := New(Config{IdleTimeout: time.Minute, StaticDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	info, err := s.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar, _ := cookiejar.New(nil)
+	cl := &http.Client{Jar: jar}
+	resp, err := cl.Get(info.BootstrapURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "standalone-ok") {
+		t.Fatalf("status=%d body=%q", resp.StatusCode, body)
+	}
+	resp2, _ := http.Get(info.URL + "/")
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauth static=%d", resp2.StatusCode)
 	}
 }

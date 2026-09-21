@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -19,7 +21,7 @@ import (
 func main() { os.Exit(runWithIO(os.Args[1:])) }
 
 func runWithIO(args []string) int {
-	if len(args) >= 2 && args[0] == "webui" && args[1] == "serve" {
+	if len(args) >= 2 && args[0] == "webui" && (args[1] == "serve" || args[1] == "start") {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		svc, err := services.New("", false, false)
@@ -33,7 +35,12 @@ func runWithIO(args []string) int {
 			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
 			return 1
 		}
-		srv, err := standalonewebui.New(standalonewebui.Config{IdleTimeout: 10 * time.Minute, SessionTTL: 30 * time.Minute, Dispatcher: dispatcher})
+		moduleDir := os.Getenv("CHROOTCTL_MODULE_DIR")
+		if moduleDir == "" {
+			moduleDir = "/data/adb/modules/chrootctl-magisk"
+		}
+		staticDir := filepath.Join(moduleDir, "webroot")
+		srv, err := standalonewebui.New(standalonewebui.Config{IdleTimeout: 10 * time.Minute, SessionTTL: 30 * time.Minute, Dispatcher: dispatcher, StaticDir: staticDir})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
 			return 1
@@ -43,10 +50,26 @@ func runWithIO(args []string) int {
 			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
 			return 1
 		}
-		if len(args) > 2 && args[2] == "--json" {
+		openBrowser := false
+		jsonOut := false
+		for _, arg := range args[2:] {
+			if arg == "--open" {
+				openBrowser = true
+			}
+			if arg == "--json" {
+				jsonOut = true
+			}
+		}
+		if jsonOut {
 			_ = json.NewEncoder(os.Stdout).Encode(info)
 		} else {
 			fmt.Fprintln(os.Stdout, info.BootstrapURL)
+		}
+		if openBrowser || args[1] == "start" {
+			cmd := exec.Command("/system/bin/am", "start", "-a", "android.intent.action.VIEW", "-d", info.BootstrapURL)
+			if out, e := cmd.CombinedOutput(); e != nil {
+				fmt.Fprintf(os.Stderr, "chrootctl webui: open browser: %v: %s\n", e, out)
+			}
 		}
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)

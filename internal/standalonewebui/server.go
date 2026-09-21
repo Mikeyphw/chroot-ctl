@@ -20,6 +20,7 @@ type Config struct {
 	IdleTimeout, SessionTTL time.Duration
 	MaxBodyBytes            int64
 	Dispatcher              Dispatcher
+	StaticDir               string
 }
 type Server struct {
 	cfg      Config
@@ -74,6 +75,16 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	s.ln = ln
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bootstrap", s.bootstrap)
+	if s.cfg.StaticDir != "" {
+		static := http.FileServer(http.Dir(s.cfg.StaticDir))
+		mux.Handle("/", s.auth(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				http.Error(w, "method", http.StatusMethodNotAllowed)
+				return
+			}
+			static.ServeHTTP(w, r)
+		}))
+	}
 	if s.cfg.Dispatcher != nil {
 		mux.Handle("/api/v1/", s.apiHandler(s.cfg.Dispatcher))
 	} else {
@@ -161,6 +172,10 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sid, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
 	http.SetCookie(w, &http.Cookie{Name: "chrootctl_csrf", Value: csrf, Path: "/", HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
+	if s.cfg.StaticDir != "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "api": "/api/v1"})
 }
