@@ -30,6 +30,8 @@ type Server struct {
 	last     time.Time
 	http     *http.Server
 	ln       net.Listener
+	done     chan struct{}
+	doneOnce sync.Once
 }
 type session struct {
 	expires time.Time
@@ -65,7 +67,7 @@ func New(c Config) (*Server, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &Server{cfg: defaults(c), token: t, sessions: map[string]session{}, last: time.Now()}, nil
+	return &Server{cfg: defaults(c), token: t, sessions: map[string]session{}, last: time.Now(), done: make(chan struct{})}, nil
 }
 func (s *Server) Start(ctx context.Context) (Info, error) {
 	ln, e := net.Listen("tcp4", "127.0.0.1:0")
@@ -98,7 +100,13 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 		_ = s.http.Shutdown(c)
 	}()
 	go s.idleWatch(ctx)
-	go func() { _ = s.http.Serve(ln) }()
+	go func() {
+		err := s.http.Serve(ln)
+		if err != nil && err != http.ErrServerClosed {
+			// Startup already succeeded; callers observe termination through Done.
+		}
+		s.doneOnce.Do(func() { close(s.done) })
+	}()
 	base := "http://" + ln.Addr().String()
 	return Info{URL: base, BootstrapURL: base + "/bootstrap?token=" + s.token}, nil
 }
@@ -205,7 +213,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			}
 			origin := r.Header.Get("Origin")
 			expected := "http://" + r.Host
-			if origin != "" && origin != expected {
+			if origin != expected {
 				http.Error(w, "invalid origin", 403)
 				return
 			}
@@ -227,4 +235,5 @@ func (s *Server) Addr() string {
 	}
 	return s.ln.Addr().String()
 }
-func (s *Server) String() string { return fmt.Sprintf("standalone webui %s", s.Addr()) }
+func (s *Server) Done() <-chan struct{} { return s.done }
+func (s *Server) String() string        { return fmt.Sprintf("standalone webui %s", s.Addr()) }

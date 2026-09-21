@@ -64,3 +64,16 @@ tmux_sidecar_sha="$(awk 'NR==1 {print $1}' "$TREE/runtime/arm64-v8a/tmux.sha256"
 command -v unzip >/dev/null 2>&1 || { echo "unzip is required for package seal" >&2; exit 127; }
 tmux_zip_sha="$(unzip -p "$ZIP" runtime/arm64-v8a/tmux | sha256sum | awk '{print $1}')"
 [ "$tmux_zip_sha" = "$tmux_tree_sha" ] || { echo "module ZIP tmux bytes differ from sealed runtime" >&2; exit 1; }
+
+
+# SWUI-04 standalone WebUI release seal.
+grep -Fq '127.0.0.1:0' internal/standalonewebui/server.go || { echo "standalone WebUI is not loopback-only" >&2; exit 1; }
+# Inspect actual literal HTTP route registrations, not comments/tests/denylist strings.
+# Generic privileged endpoints must never be registered by the standalone server.
+if grep -REn 'mux\.Handle(Func)?\("/api/v1/(shell|exec|argv|root-rpc|rpc|command)(/|"|\?)' \
+    internal/standalonewebui/*.go >/dev/null 2>&1; then
+  echo "unsafe generic privileged HTTP route registered" >&2
+  exit 1
+fi
+grep -Fq 'action.sh' internal/module/module.go || { echo "standalone Action launcher missing" >&2; exit 1; }
+grep -Fq 'case <-srv.Done()' cmd/chrootctl/main.go || { echo "standalone server process does not exit after idle shutdown" >&2; exit 1; }

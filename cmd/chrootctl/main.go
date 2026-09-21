@@ -79,6 +79,8 @@ func runWithIO(args []string) int {
 			return 0
 		case <-ctx.Done():
 			return 0
+		case <-srv.Done():
+			return 0
 		}
 	}
 
