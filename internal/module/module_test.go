@@ -130,7 +130,7 @@ func TestLauncherMissingRuntimeErrorNamesResolvedPath(t *testing.T) {
 		t.Fatalf("launcher unexpectedly succeeded: %s", out)
 	}
 	text := string(out)
-	for _, want := range []string{moduleRoot + "/runtime/arm64-v8a", "reboot so modules_update is promoted to modules"} {
+	for _, want := range []string{moduleRoot + "/runtime/arm64-v8a", "preserved modules_update tree can still activate on reboot"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("launcher diagnostic missing %q: %s", want, text)
 		}

@@ -23,8 +23,8 @@ import (
 const (
 	ModuleID              = "chrootctl-magisk"
 	ModuleName            = "chrootctl Magisk Module"
-	ModuleVersion         = "1.3.0"
-	ModuleVersionCode     = 15
+	ModuleVersion         = "1.3.1"
+	ModuleVersionCode     = 16
 	BackendVersion        = "0.11.0"
 	BridgeProtocolVersion = 1
 	RuntimeSchemaVersion  = 2
@@ -639,6 +639,56 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     chmod 0755 "$MODPATH/runtime/arm64-v8a/chrootctl" 2>/dev/null || true
     [ ! -f "$MODPATH/runtime/arm64-v8a/rclone" ] || chmod 0755 "$MODPATH/runtime/arm64-v8a/rclone" 2>/dev/null || true
   fi
+
+  # Existing installs are live-updated as well as left staged for the root
+  # manager.  Build a complete sibling from the active tree first, overlay
+  # only module-owned payload paths, then swap directories with rename(2).
+  # This preserves manager marker files and gives us a rollback point.
+  ACTIVE_MODULE="/data/adb/modules/chrootctl-magisk"
+  if [ -d "$ACTIVE_MODULE" ] && [ "$MODPATH" != "$ACTIVE_MODULE" ]; then
+    LIVE_PARENT="${ACTIVE_MODULE%/*}"
+    LIVE_NEXT="$LIVE_PARENT/.chrootctl-magisk.live-new.$$"
+    LIVE_OLD="$LIVE_PARENT/.chrootctl-magisk.live-old.$$"
+    LIVE_OK=1
+    rm -rf "$LIVE_NEXT" "$LIVE_OLD" 2>/dev/null || true
+    mkdir -p "$LIVE_NEXT" || LIVE_OK=0
+    [ "$LIVE_OK" -eq 0 ] || cp -a "$ACTIVE_MODULE/." "$LIVE_NEXT/" || LIVE_OK=0
+
+    if [ "$LIVE_OK" -eq 1 ]; then
+      for rel in module.prop customize.sh post-fs-data.sh service.sh uninstall.sh bin system config runtime webroot; do
+        rm -rf "$LIVE_NEXT/$rel" || { LIVE_OK=0; break; }
+        [ ! -e "$MODPATH/$rel" ] || cp -a "$MODPATH/$rel" "$LIVE_NEXT/$rel" || { LIVE_OK=0; break; }
+      done
+    fi
+
+    for required in module.prop post-fs-data.sh service.sh system/bin/chrootctl runtime/arm64-v8a/runtime-manifest.json runtime/arm64-v8a/chrootctl config/chrootctl/module-package-manifest.json; do
+      [ "$LIVE_OK" -eq 0 ] || [ -f "$LIVE_NEXT/$required" ] || LIVE_OK=0
+    done
+    [ "$LIVE_OK" -eq 0 ] || [ -x "$LIVE_NEXT/system/bin/chrootctl" ] || LIVE_OK=0
+    [ "$LIVE_OK" -eq 0 ] || [ -x "$LIVE_NEXT/runtime/arm64-v8a/chrootctl" ] || LIVE_OK=0
+
+    if [ "$LIVE_OK" -eq 1 ]; then
+      chown -R 0:0 "$LIVE_NEXT" 2>/dev/null || true
+      restorecon -RF "$LIVE_NEXT" 2>/dev/null || true
+      if mv "$ACTIVE_MODULE" "$LIVE_OLD" && mv "$LIVE_NEXT" "$ACTIVE_MODULE"; then
+        rm -rf "$LIVE_OLD" 2>/dev/null || true
+        export CHROOTCTL_MODULE_DIR="$ACTIVE_MODULE"
+        "$ACTIVE_MODULE/post-fs-data.sh" >/dev/null 2>&1 || true
+        if [ ! -e "$ACTIVE_MODULE/disable" ] && [ ! -e "$ACTIVE_MODULE/remove" ]; then
+          "$ACTIVE_MODULE/service.sh" >/dev/null 2>&1 || true
+        fi
+        ui_print "chrootctl active module updated live; reboot is not required for the module runtime/WebUI." 2>/dev/null || echo "chrootctl active module updated live; reboot is not required for the module runtime/WebUI."
+        ui_print "Root-manager magic-mount changes, if any, may still require a reboot." 2>/dev/null || true
+      else
+        rm -rf "$LIVE_NEXT" 2>/dev/null || true
+        if [ ! -d "$ACTIVE_MODULE" ] && [ -d "$LIVE_OLD" ]; then mv "$LIVE_OLD" "$ACTIVE_MODULE" 2>/dev/null || true; fi
+        ui_print "chrootctl live activation failed; staged update is preserved for reboot activation." 2>/dev/null || echo "chrootctl live activation failed; staged update is preserved for reboot activation."
+      fi
+    else
+      rm -rf "$LIVE_NEXT" "$LIVE_OLD" 2>/dev/null || true
+      ui_print "chrootctl live activation preflight failed; staged update is preserved for reboot activation." 2>/dev/null || true
+    fi
+  fi
 fi
 
 return 0 2>/dev/null || exit 0
@@ -684,7 +734,7 @@ func helper() string {
 	return "#!/system/bin/sh\nset -u\nCMD=\"${1:-}\"\nshift 2>/dev/null || true\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-${0%/bin/*}}\"\nCHROOTCTL=\"$MODDIR/system/bin/chrootctl\"\n[ -x \"$CHROOTCTL\" ] || { echo \"bundled chrootctl runtime is unavailable\" >&2; exit 127; }\ncase \"$CMD\" in\n  __module-boot|__module-service)\n    rc=0\n    \"$CHROOTCTL\" clipboard daemon start >/dev/null 2>&1 || true\n    for target in \"$@\"; do\n      \"$CHROOTCTL\" --name \"$target\" mount || rc=1\n    done\n    \"$CHROOTCTL\" run --boot || rc=1\n    exit \"$rc\"\n    ;;\n  *)\n    echo \"unsupported chrootctl module helper command: $CMD\" >&2\n    exit 2\n    ;;\nesac\n"
 }
 func launcher() string {
-	return "#!/system/bin/sh\nset -eu\n\nMODULE_ID=\"chrootctl-magisk\"\nRUNTIME_ABI=\"arm64-v8a\"\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\"\n\nruntime_bin_ok() {\n  [ -f \"$1\" ] && [ -x \"$1\" ] && [ ! -L \"$1\" ]\n}\n\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-}\"\nif [ -z \"$MODDIR\" ]; then\n  case \"$0\" in\n    */system/bin/chrootctl) MODDIR=\"${0%/system/bin/chrootctl}\" ;;\n  esac\nfi\ncase \"$MODDIR\" in\n  \"\"|/system|/system_root/system) MODDIR=\"$ACTIVE_MODULE\" ;;\nesac\n\nRUNTIME_ROOT=\"$MODDIR/runtime/$RUNTIME_ABI\"\nRUNTIME_MANIFEST=\"$RUNTIME_ROOT/runtime-manifest.json\"\nRUNTIME_BIN=\"$RUNTIME_ROOT/chrootctl\"\n\n[ -d \"$RUNTIME_ROOT\" ] && [ ! -L \"$RUNTIME_ROOT\" ] || { echo \"bundled native runtime directory is missing or unsafe: $RUNTIME_ROOT\" >&2; echo \"hint: after installing/updating the module, reboot so modules_update is promoted to modules; for direct staging tests set CHROOTCTL_MODULE_DIR.\" >&2; exit 127; }\n[ -f \"$RUNTIME_MANIFEST\" ] && [ ! -L \"$RUNTIME_MANIFEST\" ] || { echo \"bundled native runtime manifest is missing or unsafe: $RUNTIME_MANIFEST\" >&2; echo \"hint: rebuild/reinstall the module from a sealed Go-native runtime.\" >&2; exit 127; }\nruntime_bin_ok \"$RUNTIME_BIN\" || { echo \"bundled native chrootctl executable is missing or unsafe: $RUNTIME_BIN\" >&2; echo \"hint: verify it exists, is not a symlink, and has executable mode; reboot after module install/update.\" >&2; exit 127; }\n\nmkdir -p /data/adb/chrootctl 2>/dev/null || true\nchmod 0700 /data/adb/chrootctl 2>/dev/null || true\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nexec \"$RUNTIME_BIN\" \"$@\"\n"
+	return "#!/system/bin/sh\nset -eu\n\nMODULE_ID=\"chrootctl-magisk\"\nRUNTIME_ABI=\"arm64-v8a\"\nACTIVE_MODULE=\"/data/adb/modules/chrootctl-magisk\"\nUPDATE_MODULE=\"/data/adb/modules_update/chrootctl-magisk\"\n\nruntime_bin_ok() {\n  [ -f \"$1\" ] && [ -x \"$1\" ] && [ ! -L \"$1\" ]\n}\n\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-}\"\nif [ -z \"$MODDIR\" ]; then\n  case \"$0\" in\n    */system/bin/chrootctl) MODDIR=\"${0%/system/bin/chrootctl}\" ;;\n  esac\nfi\ncase \"$MODDIR\" in\n  \"\"|/system|/system_root/system) MODDIR=\"$ACTIVE_MODULE\" ;;\nesac\n\nRUNTIME_ROOT=\"$MODDIR/runtime/$RUNTIME_ABI\"\nRUNTIME_MANIFEST=\"$RUNTIME_ROOT/runtime-manifest.json\"\nRUNTIME_BIN=\"$RUNTIME_ROOT/chrootctl\"\n\n[ -d \"$RUNTIME_ROOT\" ] && [ ! -L \"$RUNTIME_ROOT\" ] || { echo \"bundled native runtime directory is missing or unsafe: $RUNTIME_ROOT\" >&2; echo \"hint: verify the active module live-update completed; a preserved modules_update tree can still activate on reboot.\" >&2; exit 127; }\n[ -f \"$RUNTIME_MANIFEST\" ] && [ ! -L \"$RUNTIME_MANIFEST\" ] || { echo \"bundled native runtime manifest is missing or unsafe: $RUNTIME_MANIFEST\" >&2; echo \"hint: rebuild/reinstall the module from a sealed Go-native runtime.\" >&2; exit 127; }\nruntime_bin_ok \"$RUNTIME_BIN\" || { echo \"bundled native chrootctl executable is missing or unsafe: $RUNTIME_BIN\" >&2; echo \"hint: verify the active module live-update completed and the runtime has executable mode; reboot remains a fallback for staged activation.\" >&2; exit 127; }\n\nmkdir -p /data/adb/chrootctl 2>/dev/null || true\nchmod 0700 /data/adb/chrootctl 2>/dev/null || true\n\nexport CHROOTCTL_MODULE_DIR=\"$MODDIR\"\nexec \"$RUNTIME_BIN\" \"$@\"\n"
 }
 func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
