@@ -17,3 +17,7 @@ The existing CHR16 backend remains the authority for log redaction, private file
 ## Deferred gate
 
 This is overlay 7 of 8 and is intended to be applied with `--no-validate`. The embedded validator remains available to the final campaign validation.
+
+## Final promise-audit repair
+
+Logs now includes a backend/module/Rclone readiness card in addition to doctor, service journals, operation events, filtering, follow mode and copy actions. Known doctor checks whose detail/next fields contain host filesystem locations are rendered with path-free guidance, and diagnostic read failures no longer echo backend error strings that may contain private log/database/config paths.

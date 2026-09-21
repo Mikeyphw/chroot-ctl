@@ -34,9 +34,19 @@ func TestWebUIFinalConvergenceSeal(t *testing.T) {
 			t.Fatalf("missing typed settings/startup bridge token %s", token)
 		}
 	}
-	for _, token := range []string{"loadSettings", "reviewStartupModule", "buildStartupModule", "loadSettingsMounts", "SETTINGS_PREF_KEY", "refreshOperationEvents", "syncLogsFollow", "copyDiagnosticText"} {
+	for _, token := range []string{"loadSettings", "reviewStartupModule", "buildStartupModule", "loadSettingsMounts", "SETTINGS_PREF_KEY", "refreshOperationEvents", "syncLogsFollow", "copyDiagnosticText", "transferPathAllowed", "importRemoteHandoff", "exportRemoteHandoff", "PRIVATE_DOCTOR_CHECKS", "diagnosticFailure", "refreshRuntimeDiagnostics", "preferredChrootName", "event?.payload", "files_done", "rate_bytes_per_second"} {
 		if !strings.Contains(js, token) {
 			t.Fatalf("missing settings UI contract %s", token)
+		}
+	}
+	for _, token := range []string{"logs-runtime-state", "logs-runtime-facts"} {
+		if !strings.Contains(html, `id="`+token+`"`) {
+			t.Fatalf("missing Logs runtime diagnostic surface %s", token)
+		}
+	}
+	for _, token := range []string{"if(d.ok===true)transferState.importPayload=p;else{scrubTransferPayload(p);clearTransferPassword('import');transferState.importPayload=null}", "if(d.ok===true)transferState.exportPayload=p;else{scrubTransferPayload(p);clearTransferPassword('export');transferState.exportPayload=null}"} {
+		if !strings.Contains(js, token) {
+			t.Fatalf("blocked transfer preview must scrub retained password payload: %s", token)
 		}
 	}
 	for _, token := range []string{"pref-large-text", "pref-reduce-motion", "pref-compact-nav", "focus-visible"} {

@@ -9,3 +9,7 @@ The Rclone section exposes the existing typed rclone backend without introducing
 - Passwords and rclone credentials are never read from or rendered by the Rclone UI.
 
 Remote directories are selected with one tap/click and opened with double-click; Up and Refresh provide explicit navigation.
+
+## Final promise-audit repair
+
+The Rclone-to-Transfer handoff now carries explicit in-memory provenance for a browser-selected `rclone://` location. Transfer accepts remote locations only when they came from that validated Rclone selection, invalidates any prior preview/payload during handoff, and clears the provenance when the path itself is manually edited. This keeps one shared Transfer engine while preventing arbitrary typed URI handoff.
