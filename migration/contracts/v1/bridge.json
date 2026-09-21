@@ -516,10 +516,12 @@
       "mode": "query",
       "name": "sessions.capture",
       "payloadFields": [
+        "height",
         "id",
         "lines",
         "sessionId",
-        "session_id"
+        "session_id",
+        "width"
       ]
     },
     {

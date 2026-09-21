@@ -556,6 +556,22 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		if e != nil {
 			return nil, e
 		}
+		width, e := bounded(p, "width", 0, 0, 1000, "INVALID_SESSION_WIDTH")
+		if e != nil {
+			return nil, e
+		}
+		height, e := bounded(p, "height", 0, 0, 1000, "INVALID_SESSION_HEIGHT")
+		if e != nil {
+			return nil, e
+		}
+		if width > 0 || height > 0 {
+			if width < 20 || width > 1000 || height < 5 || height > 1000 {
+				return nil, protocolError("INVALID_SESSION_SIZE", "width and height must be within terminal bounds", nil)
+			}
+			if e := s.Sessions().Resize(ctx, id, width, height); e != nil {
+				return nil, e
+			}
+		}
 		out, e := s.Sessions().Capture(ctx, id, lines)
 		if e != nil {
 			return nil, e
