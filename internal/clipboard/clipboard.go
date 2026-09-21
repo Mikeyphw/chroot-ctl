@@ -61,7 +61,11 @@ func DefaultPaths(cfg config.ChrootConfig) Paths {
 	if cleanLog == filepath.Clean(config.AndroidDefaultLogFile) || strings.HasPrefix(cleanLog, filepath.Clean(config.AndroidLogRoot)+string(filepath.Separator)) {
 		logDir = filepath.Dir(cleanLog)
 	}
-	return Paths{SocketPath: filepath.Join(runtimeDir, "clipboard.sock"), PIDFile: filepath.Join(runtimeDir, "clipboard-daemon.pid"), LogFile: filepath.Join(logDir, "clipboard-daemon.log")}
+	return Paths{
+		SocketPath: filepath.Join(runtimeDir, "clipboard.sock"),
+		PIDFile:    filepath.Join(runtimeDir, "clipboard-daemon.pid"),
+		LogFile:    filepath.Join(logDir, "clipboard-daemon.log"),
+	}
 }
 func tokenPath(socket string) string { return filepath.Join(filepath.Dir(socket), "clipboard.token") }
 func identityPath(pid string) string { return pid + ".identity.json" }

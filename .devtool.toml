@@ -93,16 +93,52 @@ inputs = [
   "internal/testseal/**",
   "migration/contracts/**",
   "docs/release/WEBUI_*.md",
+  "scripts/devtool/root-module-*.sh",
 ]
 outputs = [
   "out/module/**",
   "out/chrootctl-magisk.zip",
+  "out/chrootctl-magisk.zip.sha256",
 ]
-run_command = "go run ./cmd/repoctl host"
-test_command = "node --check internal/module/webroot/kernelsu.js && node --check internal/module/webroot/chrootctl.js && node --check internal/module/webroot/index.js && node internal/module/webui_transport_test.mjs && go test ./internal/module ./internal/bridge ./internal/operations ./internal/users ./internal/services ./internal/rcloneops ./internal/catalog ./internal/repoctl ./internal/config ./internal/logging ./internal/clipboard && go run ./cmd/repoctl build-module --output-dir out/module --zip out/chrootctl-magisk.zip --jobs 2 --checksum"
+restore_command = "scripts/devtool/root-module-restore.sh"
+build_command = "scripts/devtool/root-module-build.sh"
+test_command = "scripts/devtool/root-module-test.sh"
+package_command = "scripts/devtool/root-module-package.sh"
+run_command = "scripts/devtool/root-module-install.sh"
+
+[jobs.chrootctl-root-module-lint]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-lint.sh"]
+inputs = [
+  "go.mod",
+  "go.sum",
+  "cmd/**",
+  "internal/**",
+  "scripts/devtool/root-module-lint.sh",
+]
+
+[jobs.chrootctl-root-module-install]
+runner = "command"
+execution_environment = "native-termux"
+command = ["scripts/devtool/root-module-install.sh"]
+inputs = [
+  "out/chrootctl-magisk.zip",
+  "scripts/devtool/root-module-install.sh",
+]
 
 [targets.chrootctl_root_module.workflows]
-validate = ["runner:command#test"]
+build = ["runner:command#restore", "runner:command#build"]
+test = ["runner:command#test"]
+package = ["runner:command#restore", "runner:command#build", "runner:command#package"]
+validate = [
+  "runner:command#restore",
+  "runner:command#build",
+  "runner:command#test",
+  "job:chrootctl-root-module-lint",
+  "runner:command#package",
+]
+run = ["job:chrootctl-root-module-install"]
 
 # ---------------------------------------------------------------------------
 # repoctl release/module pipeline.  This target deliberately does not duplicate
