@@ -1,4 +1,4 @@
-import { isAvailable as isKernelSUAvailable, spawn } from './kernelsu.js';
+import { isAvailable as isKernelSUAvailable, exec as ksuExec, selfTest as ksuSelfTest, spawn } from './kernelsu.js';
 
 const OUTPUT_LIMIT = 1024 * 1024;
 const LINE_LIMIT = 128 * 1024;
@@ -55,7 +55,20 @@ function spec(operation,payload={}) {
   }
 }
 function appendBounded(current,chunk){const next=current+String(chunk??'');if(next.length>OUTPUT_LIMIT)throw new ChrootCtlError('Backend output exceeded the WebUI safety limit',{code:'WEBUI_OUTPUT_LIMIT'});return next;}
-function runProcess(executable,args){return new Promise((resolve,reject)=>{let stdout='',stderr='',settled=false,child,timer;const finish=(fn,v)=>{if(settled)return;settled=true;if(timer)clearTimeout(timer);fn(v)};timer=setTimeout(()=>finish(reject,new ChrootCtlError('KernelSU WebUI bridge timed out waiting for the backend',{code:'WEBUI_BRIDGE_TIMEOUT',command:executable})),PROCESS_TIMEOUT_MS);try{child=spawn(executable,args,{})}catch(e){finish(reject,e);return}child.stdout.on('data',c=>{try{stdout=appendBounded(stdout,c)}catch(e){finish(reject,e)}});child.stderr.on('data',c=>{try{stderr=appendBounded(stderr,c)}catch(e){finish(reject,e)}});child.on('error',e=>finish(reject,e));child.on('exit',code=>finish(resolve,{exitCode:Number.isFinite(Number(code))?Number(code):1,stdout,stderr,executable}))})}
+let bridgeSelfTestPromise=null;
+export async function bridgeSelfTest(){
+ if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});
+ if(!bridgeSelfTestPromise)bridgeSelfTestPromise=(async()=>{let last=null;for(const executable of EXECUTABLES){try{return await ksuSelfTest(executable,8000)}catch(error){last=error}}throw new ChrootCtlError(last?.message||'KernelSU bridge self-test failed',{code:last?.code||'WEBUI_BRIDGE_SELF_TEST_FAILED'});})().catch(error=>{bridgeSelfTestPromise=null;throw error});
+ return bridgeSelfTestPromise;
+}
+async function runProcess(executable,args){
+  let result;
+  try { result=await ksuExec(executable,args,{}); }
+  catch(error){ throw new ChrootCtlError(error?.message||'KernelSU exec bridge failed',{code:'WEBUI_BRIDGE_EXEC_FAILED',command:executable}); }
+  const stdout=String(result?.stdout??''),stderr=String(result?.stderr??'');
+  if(stdout.length>OUTPUT_LIMIT||stderr.length>OUTPUT_LIMIT)throw new ChrootCtlError('Backend output exceeded the WebUI safety limit',{code:'WEBUI_OUTPUT_LIMIT'});
+  return {exitCode:Number.isFinite(Number(result?.exitCode))?Number(result.exitCode):1,stdout,stderr,executable};
+}
 async function runAllowedOperation(s){let last=null;for(const executable of EXECUTABLES){try{const result=await runProcess(executable,[...s.args]);if(result.exitCode!==126&&result.exitCode!==127)return result;last=result}catch(error){if(error?.code==='WEBUI_BRIDGE_TIMEOUT')throw error;last={error,executable}}}throw new ChrootCtlError('Unable to start the bundled chrootctl backend',{code:'WEBUI_BACKEND_UNAVAILABLE',exitCode:last?.exitCode??null,stderr:last?.stderr||''})}
 function parseEnvelope(s,result){let envelope;try{envelope=JSON.parse(result.stdout)}catch(_){throw new ChrootCtlError('Backend returned invalid JSON',{code:'WEBUI_INVALID_JSON',exitCode:result.exitCode,stderr:result.stderr})}if(!envelope||typeof envelope!=='object'||Array.isArray(envelope))throw new ChrootCtlError('Backend returned an invalid response envelope',{code:'WEBUI_INVALID_ENVELOPE'});const command=String(envelope.command||'');if(envelope.schema_version!==1||!s.commands.includes(command)||typeof envelope.ok!=='boolean')throw new ChrootCtlError('Backend response contract is incompatible with this WebUI',{code:'WEBUI_CONTRACT_MISMATCH',exitCode:result.exitCode,command,stderr:result.stderr,envelope});if(!envelope.ok||result.exitCode!==0)throw new ChrootCtlError(envelope.error?.message||envelope.error?.code||'chrootctl command failed',{code:envelope.error?.code||'WEBUI_BACKEND_FAILURE',exitCode:result.exitCode,command,stderr:result.stderr,envelope});return envelope;}
 function requestId(prefix='webui'){return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`.replace(/[^A-Za-z0-9._:-]/g,'').slice(0,128)}
@@ -67,7 +80,7 @@ async function runAllowedStream(args,onLine){let last=null;for(const executable 
 
 let compatibilityCache=null;
 const REQUIRED_PROTOCOL_VERSION=1;
-export async function capabilities({refresh=false}={}){
+export async function capabilities({refresh=false}={}){await bridgeSelfTest();
  if(compatibilityCache&&!refresh)return compatibilityCache;
  const result=await runAllowedOperation({args:['app','capabilities']});
  let envelope;try{envelope=JSON.parse(result.stdout)}catch(_){throw new ChrootCtlError('Backend capabilities returned invalid JSON',{code:'WEBUI_INVALID_JSON'})}

@@ -94,10 +94,10 @@ export function spawn(command, args = [], options = {}) {
   try {
     const native = api();
     if (typeof native.spawn === 'function') {
-      // KernelSU's WebUI API expects the executable as a raw command string and
-      // the argv vector as a JSON array. Do not shell-quote either field here:
-      // quoting changes the executable/argv bytes before KernelSU dispatches it.
-      native.spawn(command, JSON.stringify(args), JSON.stringify(options), name);
+      // KernelSU WebViewInterface.spawn concatenates command + argv into a
+      // root-shell command. Keep the executable raw, but quote each argv token
+      // so JSON/user data survives that shell boundary unchanged.
+      native.spawn(command, JSON.stringify(args.map(shellQuote)), JSON.stringify(options), name);
       return child;
     }
 
@@ -126,6 +126,76 @@ export function spawn(command, args = [], options = {}) {
     deferError(error);
   }
   return child;
+}
+
+
+export function exec(command, args = [], options = {}, timeoutMs = 15000) {
+  if (typeof command !== 'string' || command.length === 0) {
+    return Promise.reject(new TypeError('exec command must be a non-empty string'));
+  }
+  if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) {
+    return Promise.reject(new TypeError('exec arguments must be an array of strings'));
+  }
+  let native;
+  try { native = api(); } catch (error) { return Promise.reject(error); }
+  if (typeof native.exec !== 'function') {
+    return Promise.reject(new Error('KernelSU exec bridge is unavailable'));
+  }
+  const name = callbackName('chrootctl_exec_rpc');
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      if (timer !== null) clearTimeout(timer);
+      try { delete globalThis[name]; } catch (_) { globalThis[name] = undefined; }
+    };
+    globalThis[name] = (errno, stdout, stderr) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({
+        exitCode: Number.isFinite(Number(errno)) ? Number(errno) : 1,
+        stdout: String(stdout ?? ''),
+        stderr: String(stderr ?? ''),
+      });
+    };
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const error = new Error(`KernelSU exec callback timed out after ${timeoutMs}ms`);
+      error.code = 'KSU_EXEC_TIMEOUT';
+      reject(error);
+    }, Math.max(1000, Number(timeoutMs) || 15000));
+    try {
+      native.exec(shellCommand(command, args), JSON.stringify(options), name);
+    } catch (error) {
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+  });
+}
+
+
+export async function selfTest(executable = '/data/adb/chrootctl/bin/chrootctl', timeoutMs = 8000) {
+  const bridge = api();
+  const methods = ['exec', 'spawn', 'moduleInfo', 'toast'].filter((name) => typeof bridge[name] === 'function');
+  let module = null;
+  try { module = typeof bridge.moduleInfo === 'function' ? bridge.moduleInfo() : null; } catch (_) {}
+  const identity = await exec('/system/bin/id', [], {}, timeoutMs);
+  if (identity.exitCode !== 0) {
+    const error = new Error(identity.stderr || 'KernelSU root-shell identity probe failed');
+    error.code = 'KSU_ID_PROBE_FAILED';
+    throw error;
+  }
+  const backend = await exec(executable, ['version'], {}, timeoutMs);
+  if (backend.exitCode !== 0) {
+    const error = new Error(backend.stderr || `chrootctl backend probe failed with code ${backend.exitCode}`);
+    error.code = 'KSU_BACKEND_PROBE_FAILED';
+    throw error;
+  }
+  return { ok: true, methods, module, identity: identity.stdout.trim(), backend: backend.stdout.trim(), executable };
 }
 
 export function toast(message) {
