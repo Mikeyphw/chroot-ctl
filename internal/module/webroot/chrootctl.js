@@ -7,8 +7,8 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const USER_RE = /^[a-z_][a-z0-9_-]{0,31}$/i;
 const CATALOG_RE = /^[A-Za-z0-9][A-Za-z0-9+_.:@-]{0,127}$/;
 const APP_QUERY_ALLOW = new Set(['install.form','catalog.tools','catalog.addons','remote.rclone.status','remote.rclone.list','operations.list','operations.get','logs.list','system.doctor','services.list','services.journal','system.runtime','system.module_status','users.list','users.get','catalog.search','packages.inventory','packages.compare']);
-const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','users.preview','services.preview','snapshots.preview','artifacts.cleanup_preview','catalog.preview','system.module_build_preview']);
-const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute','users.add','users.remove','users.sync_uid_gid','users.set_shell','users.set_sudo','users.set_password','services.start','services.stop','services.restart','services.enable','services.disable','snapshots.create','snapshots.restore','snapshots.export','artifacts.cleanup','catalog.apply']);
+const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','users.preview','services.preview','snapshots.preview','artifacts.cleanup_preview','catalog.preview','system.module_build_preview','support.preview','repair.preview','cleanup.temp_preview']);
+const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute','users.add','users.remove','users.sync_uid_gid','users.set_shell','users.set_sudo','users.set_password','services.start','services.stop','services.restart','services.enable','services.disable','snapshots.create','snapshots.restore','snapshots.export','artifacts.cleanup','catalog.apply','support.bundle','repair.apply','cleanup.temp']);
 const OPERATIONS = Object.freeze({
   version: { args:['--json','version'], commands:['version'], mutating:false },
   chrootsList: { args:['--json','chroots','list'], commands:['chroots.list','chroots list'], mutating:false },
@@ -158,6 +158,20 @@ export async function runCatalogApply(kind,name,names,preview,handlers={}){
  const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event?.protocolVersion!==1)throw new ChrootCtlError('Bridge event protocol mismatch',{code:'WEBUI_CONTRACT_MISMATCH'});if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});
  if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Catalog apply failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operationId});if(result.exitCode!==0||terminal?.type!=='operation_succeeded')throw new ChrootCtlError(terminal?.payload?.message||'Catalog apply failed',{code:terminal?.payload?.code||'CATALOG_APPLY_FAILED',operationId});return {operationId,result:terminal.payload?.result??null};
 }
+export async function systemRuntime(){return appRequest('query','system.runtime',{});}
+export async function moduleStatus(){return appRequest('query','system.module_status',{});}
+export async function previewSupportBundle(){return appRequest('preview','support.preview',{});}
+export async function previewRepair(decisions=[]){return appRequest('preview','repair.preview',decisions.length?{decisions}:{});}
+export async function previewTempCleanup(){return appRequest('preview','cleanup.temp_preview',{deleteAll:true});}
+async function runMaintenanceOperation(operation,payload,preview,handlers={}){
+ const clean={...payload};for(const k of ['previewId','payloadHash','resourceRevision']){if(!preview?.[k])throw new ChrootCtlError('A fresh maintenance preview is required',{code:'WEBUI_PREVIEW_REQUIRED'});clean[k]=boundedText(preview[k],k,256);}
+ const args=['app','run','--request-json',bridgeRequest(operation,clean),'--events','ndjson'];let operationId=null,terminal=null,bridgeFailure=null;
+ const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event?.protocolVersion!==1)throw new ChrootCtlError('Bridge event protocol mismatch',{code:'WEBUI_CONTRACT_MISMATCH'});if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});
+ if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Maintenance operation failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operationId});if(result.exitCode!==0||terminal?.type!=='operation_succeeded')throw new ChrootCtlError(terminal?.payload?.message||'Maintenance operation failed',{code:terminal?.payload?.code||'MAINTENANCE_FAILED',operationId});return {operationId,result:terminal.payload?.result??null,event:terminal};
+}
+export async function runSupportBundle(preview,handlers={}){return runMaintenanceOperation('support.bundle',{},preview,handlers);}
+export async function runRepair(decisions,preview,handlers={}){return runMaintenanceOperation('repair.apply',{decisions},preview,handlers);}
+export async function runTempCleanup(preview,handlers={}){return runMaintenanceOperation('cleanup.temp',{deleteAll:true},preview,handlers);}
 export async function previewInstall(payload){if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});return appRequest('preview','install.preview',safeInstallPayload(payload));}
 export async function cancelOperation(operationId){const id=boundedText(operationId,'operation id',128);if(!/^[A-Za-z0-9._:-]+$/.test(id))throw new ChrootCtlError('Invalid operation id',{code:'WEBUI_INVALID_ARGUMENT'});return parseBridgeResponse(await runAllowedOperation({args:['app','cancel',id]}));}
 export async function runInstall(payload,handlers={}){
