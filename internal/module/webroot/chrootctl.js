@@ -7,8 +7,8 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const USER_RE = /^[a-z_][a-z0-9_-]{0,31}$/i;
 const CATALOG_RE = /^[A-Za-z0-9][A-Za-z0-9+_.:@-]{0,127}$/;
 const APP_QUERY_ALLOW = new Set(['install.form','catalog.tools','catalog.addons','remote.rclone.status','remote.rclone.list','operations.list','operations.get','logs.list','system.doctor','services.list','services.journal','system.runtime','system.module_status','users.list','users.get','catalog.search','packages.inventory','packages.compare']);
-const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','users.preview','services.preview','snapshots.preview','artifacts.cleanup_preview','catalog.preview','system.module_build_preview','support.preview','repair.preview','cleanup.temp_preview']);
-const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute','users.add','users.remove','users.sync_uid_gid','users.set_shell','users.set_sudo','users.set_password','services.start','services.stop','services.restart','services.enable','services.disable','snapshots.create','snapshots.restore','snapshots.export','artifacts.cleanup','catalog.apply','support.bundle','repair.apply','cleanup.temp']);
+const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','users.preview','services.preview','snapshots.preview','artifacts.cleanup_preview','catalog.preview','system.module_build_preview','support.preview','repair.preview','cleanup.temp_preview','smoke.preview']);
+const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute','users.add','users.remove','users.sync_uid_gid','users.set_shell','users.set_sudo','users.set_password','services.start','services.stop','services.restart','services.enable','services.disable','snapshots.create','snapshots.restore','snapshots.export','artifacts.cleanup','catalog.apply','support.bundle','repair.apply','cleanup.temp','debug.export','smoke.run','smoke.result.persist','smoke.result.export','smoke.failure.bundle']);
 const OPERATIONS = Object.freeze({
   version: { args:['--json','version'], commands:['version'], mutating:false },
   chrootsList: { args:['--json','chroots','list'], commands:['chroots.list','chroots list'], mutating:false },
@@ -158,6 +158,36 @@ export async function runCatalogApply(kind,name,names,preview,handlers={}){
  const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event?.protocolVersion!==1)throw new ChrootCtlError('Bridge event protocol mismatch',{code:'WEBUI_CONTRACT_MISMATCH'});if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});
  if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Catalog apply failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operationId});if(result.exitCode!==0||terminal?.type!=='operation_succeeded')throw new ChrootCtlError(terminal?.payload?.message||'Catalog apply failed',{code:terminal?.payload?.code||'CATALOG_APPLY_FAILED',operationId});return {operationId,result:terminal.payload?.result??null};
 }
+export async function debugProbes(group='all'){return appRequest('query','debug.probes',{group:boundedText(group,'group',32)});}
+export async function debugTimeline(limit=50){return appRequest('query','debug.timeline',{limit:Number(limit)||50});}
+export async function releaseReadiness(){return appRequest('query','release.readiness',{});}
+export async function smokeReport(){return appRequest('query','smoke.report',{limit:25});}
+export async function smokeLastResult(){return appRequest('query','smoke.last_result',{});}
+export async function previewSmoke(payload={}){return appRequest('preview','smoke.preview',payload);}
+async function runProofOperation(operation,payload,preview,handlers={}){
+ const clean={...payload};for(const k of ['previewId','payloadHash','resourceRevision']){if(!preview?.[k])throw new ChrootCtlError('A fresh preview is required',{code:'WEBUI_PREVIEW_REQUIRED'});clean[k]=boundedText(preview[k],k,256)}
+ const args=['app','run','--request-json',bridgeRequest(operation,clean),'--events','ndjson'];let operationId=null,terminal=null,bridgeFailure=null;
+ const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event?.protocolVersion!==1)throw new ChrootCtlError('Bridge event protocol mismatch',{code:'WEBUI_CONTRACT_MISMATCH'});if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});
+ if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Operation failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operationId});if(result.exitCode!==0||terminal?.type!=='operation_succeeded')throw new ChrootCtlError(terminal?.payload?.message||'Operation failed',{code:terminal?.payload?.code||'OPERATION_FAILED',operationId});return {operationId,result:terminal.payload?.result??null,event:terminal};
+}
+export async function runSmoke(payload,preview,handlers={}){return runProofOperation('smoke.run',payload,preview,handlers);}
+export async function exportDebugEvidence(preview,handlers={}){return runProofOperation('debug.export',{},preview,handlers);}
+export async function persistSmokeResult(preview,handlers={}){return runProofOperation('smoke.result.persist',{},preview,handlers);}
+export async function exportSmokeResult(preview,handlers={}){return runProofOperation('smoke.result.export',{},preview,handlers);}
+export async function smokeFailureBundle(preview,handlers={}){return runProofOperation('smoke.failure.bundle',{},preview,handlers);}
+export async function debugProbes(group='all'){return appRequest('query','debug.probes',{group:boundedText(group,'group',64)});}
+export async function debugTimeline(limit=50){return appRequest('query','debug.timeline',{limit:Math.max(1,Math.min(200,Number(limit)||50))});}
+export async function releaseReadiness(){return appRequest('query','release.readiness',{});}
+export async function smokePlan(payload={}){return appRequest('query','smoke.plan',payload);}
+export async function previewSmoke(payload={}){return appRequest('preview','smoke.preview',payload);}
+export async function smokeReport(limit=25){return appRequest('query','smoke.report',{limit});}
+export async function smokeLastResult(){return appRequest('query','smoke.last_result',{});}
+export async function runSmoke(payload,preview,handlers={}){return runMaintenanceOperation('smoke.run',payload,preview,handlers);}
+export async function persistSmokeResult(handlers={}){return runSimpleOperation('smoke.result.persist',{},handlers);}
+export async function exportSmokeResult(handlers={}){return runSimpleOperation('smoke.result.export',{},handlers);}
+export async function smokeFailureBundle(handlers={}){return runSimpleOperation('smoke.failure.bundle',{},handlers);}
+export async function exportDebugEvidence(group='all',handlers={}){return runSimpleOperation('debug.export',{group},handlers);}
+async function runSimpleOperation(operation,payload,handlers={}){const args=['app','run','--request-json',bridgeRequest(operation,payload),'--events','ndjson'];let operationId=null,terminal=null,bridgeFailure=null;const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Operation failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operationId});if(result.exitCode!==0||terminal?.type!=='operation_succeeded')throw new ChrootCtlError(terminal?.payload?.message||'Operation failed',{code:terminal?.payload?.code||'OPERATION_FAILED',operationId});return {operationId,result:terminal.payload?.result??null,event:terminal};}
 export async function systemRuntime(){return appRequest('query','system.runtime',{});}
 export async function moduleStatus(){return appRequest('query','system.module_status',{});}
 export async function previewSupportBundle(){return appRequest('preview','support.preview',{});}
