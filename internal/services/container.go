@@ -242,3 +242,4 @@ func (c *Container) RecoverFilesystemMutations(ctx context.Context, target strin
 func (c *Container) catalog(kind string, cfg config.ChrootConfig) catalog.Catalog {
 	return catalog.Catalog{Kind: kind, Config: &cfg}
 }
+func (c *Container) Sessions() *SessionService { return &SessionService{C: c} }
