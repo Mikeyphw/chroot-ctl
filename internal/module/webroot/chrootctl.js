@@ -7,8 +7,8 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const USER_RE = /^[a-z_][a-z0-9_-]{0,31}$/i;
 const CATALOG_RE = /^[A-Za-z0-9][A-Za-z0-9+_.:@-]{0,127}$/;
 const APP_QUERY_ALLOW = new Set(['install.form','catalog.tools','catalog.addons','remote.rclone.status','remote.rclone.list','operations.list','operations.get','logs.list','system.doctor','services.list','services.journal','system.runtime','system.module_status','users.list','users.get']);
-const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','users.preview','services.preview','system.module_build_preview']);
-const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute','users.add','users.remove','users.sync_uid_gid','users.set_shell','users.set_sudo','users.set_password','services.start','services.stop','services.restart','services.enable','services.disable']);
+const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','users.preview','services.preview','snapshots.preview','system.module_build_preview']);
+const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute','users.add','users.remove','users.sync_uid_gid','users.set_shell','users.set_sudo','users.set_password','services.start','services.stop','services.restart','services.enable','services.disable','snapshots.create','snapshots.restore','snapshots.export']);
 const OPERATIONS = Object.freeze({
   version: { args:['--json','version'], commands:['version'], mutating:false },
   chrootsList: { args:['--json','chroots','list'], commands:['chroots.list','chroots list'], mutating:false },
@@ -66,6 +66,23 @@ async function runAllowedStream(args,onLine){let last=null;for(const executable 
 
 export function isAvailable(){return isKernelSUAvailable()}
 export async function invoke(operation,payload={}){const s=spec(operation,payload);if(!isKernelSUAvailable())throw new ChrootCtlError('Open this page from a KernelSU-compatible module WebUI host',{code:'WEBUI_BRIDGE_UNAVAILABLE'});return parseEnvelope(s,await runAllowedOperation(s));}
+const SNAPSHOT_ACTIONS={create:'snapshots.create',restore:'snapshots.restore',export:'snapshots.export'};
+function safeSnapshotAction(action){const a=String(action??'').trim().toLowerCase();if(!SNAPSHOT_ACTIONS[a])throw new ChrootCtlError('Unsupported snapshot action',{code:'WEBUI_INVALID_ARGUMENT'});return a;}
+function safeSnapshotName(value,field='snapshot'){const v=String(value??'').trim();if(!v||v==='.'||v==='..'||v.includes('/')||v.includes('\\')||v.length>128)throw new ChrootCtlError(`Invalid ${field}`,{code:'WEBUI_INVALID_ARGUMENT'});return v;}
+export async function listSnapshots(name,limit=100){return appRequest('query','snapshots.list',{name:safeName(name),limit:Math.max(1,Math.min(1000,Number(limit)||100))});}
+export async function previewSnapshot(name,action,snapshot,extra={}){const a=safeSnapshotAction(action),p={name:safeName(name),action:a,snapshot:safeSnapshotName(snapshot)};if(a==='export'&&extra.archive)p.archive=boundedText(extra.archive,'archive',4096);return appRequest('preview','snapshots.preview',p);}
+export async function runSnapshot(name,action,snapshot,preview,extra={},handlers={}){
+ if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});
+ const a=safeSnapshotAction(action),op=SNAPSHOT_ACTIONS[a],payload={name:safeName(name),snapshot:safeSnapshotName(snapshot)};
+ if(a==='restore'){const c=safeName(extra.confirmation,'confirmation');if(c!==payload.name)throw new ChrootCtlError('Confirmation must exactly match the chroot name',{code:'WEBUI_CONFIRMATION_REQUIRED'});payload.confirmation=c;}
+ if(a==='export'&&extra.archive)payload.archive=boundedText(extra.archive,'archive',4096);
+ for(const k of ['previewId','payloadHash','resourceRevision']){if(!preview?.[k])throw new ChrootCtlError('A fresh snapshot preview is required',{code:'WEBUI_PREVIEW_REQUIRED'});payload[k]=boundedText(preview[k],k,256);}
+ const args=['app','run','--request-json',bridgeRequest(op,payload),'--events','ndjson'];let operationId=null,terminal=null,bridgeFailure=null;
+ const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event?.protocolVersion!==1)throw new ChrootCtlError('Bridge event protocol mismatch',{code:'WEBUI_CONTRACT_MISMATCH'});if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});
+ if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Snapshot bridge request failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operationId,envelope:bridgeFailure});
+ if(result.exitCode!==0||!terminal||terminal.type!=='operation_succeeded'){const p=terminal?.payload||{};throw new ChrootCtlError(p.message||'Snapshot operation did not complete successfully',{code:p.code||'SNAPSHOT_FAILED',operationId,envelope:terminal,stderr:result.stderr});}
+ return {operationId,event:terminal,result:terminal.payload?.result??null};
+}
 const USER_ACTIONS={add:'users.add',remove:'users.remove',sync_uid_gid:'users.sync_uid_gid',set_shell:'users.set_shell',set_sudo:'users.set_sudo',set_password:'users.set_password'};
 function safeUserAction(action){const a=String(action??'').trim().toLowerCase().replaceAll('-','_');if(!USER_ACTIONS[a])throw new ChrootCtlError('Unsupported user action',{code:'WEBUI_INVALID_ARGUMENT'});return a;}
 function userMutationPayload(payload={},includeAction=true){
