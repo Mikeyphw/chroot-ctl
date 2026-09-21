@@ -26,7 +26,10 @@ for required in \
   webroot/index.html \
   webroot/index.js \
   webroot/chrootctl.js \
-  webroot/kernelsu.js
+  webroot/kernelsu.js \
+  runtime/arm64-v8a/tmux \
+  runtime/arm64-v8a/tmux-runtime-manifest.json \
+  runtime/arm64-v8a/tmux.sha256
 do
   [ -e "$TREE/$required" ] || {
     echo "module package missing required path: $required" >&2
@@ -50,3 +53,13 @@ fi
 }
 
 echo "Root-module package seal passed."
+
+./scripts/tmux/verify-static-android-arm64.sh "$TREE/runtime/arm64-v8a/tmux" "$TREE/runtime/arm64-v8a/tmux-runtime-manifest.json"
+
+# Verify checksum sidecar and the exact bytes stored in the module ZIP.
+tmux_tree_sha="$(sha256sum "$TREE/runtime/arm64-v8a/tmux" | awk '{print $1}')"
+tmux_sidecar_sha="$(awk 'NR==1 {print $1}' "$TREE/runtime/arm64-v8a/tmux.sha256")"
+[ "$tmux_tree_sha" = "$tmux_sidecar_sha" ] || { echo "packaged tmux checksum sidecar mismatch" >&2; exit 1; }
+command -v unzip >/dev/null 2>&1 || { echo "unzip is required for package seal" >&2; exit 127; }
+tmux_zip_sha="$(unzip -p "$ZIP" runtime/arm64-v8a/tmux | sha256sum | awk '{print $1}')"
+[ "$tmux_zip_sha" = "$tmux_tree_sha" ] || { echo "module ZIP tmux bytes differ from sealed runtime" >&2; exit 1; }

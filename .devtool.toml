@@ -94,6 +94,8 @@ inputs = [
   "migration/contracts/**",
   "docs/release/WEBUI_*.md",
   "scripts/devtool/root-module-*.sh",
+  "scripts/tmux/**",
+  "docs/runtime/TMUX_STATIC_RUNTIME.md",
 ]
 outputs = [
   "out/module/**",

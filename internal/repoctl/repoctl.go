@@ -357,6 +357,38 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 		return "", e
 	}
 	runtimeFiles := []runtimeFile{{Path: chmodule.RuntimeEntrypoint, Size: st.Size(), SHA256: sum, Executable: true}}
+	if tmuxSource := strings.TrimSpace(os.Getenv("CHROOTCTL_TMUX_PATH")); tmuxSource != "" {
+		tmuxSource, e = filepath.Abs(tmuxSource)
+		if e != nil {
+			return "", e
+		}
+		tmuxDir := filepath.Dir(tmuxSource)
+		for _, spec := range []struct {
+			name       string
+			mode       os.FileMode
+			executable bool
+		}{
+			{"tmux", 0o755, true}, {"tmux-runtime-manifest.json", 0o644, false}, {"tmux.sha256", 0o644, false},
+		} {
+			src := filepath.Join(tmuxDir, spec.name)
+			dst := filepath.Join(tmp, spec.name)
+			if e = copyRuntimeFile(src, dst, spec.mode); e != nil {
+				return "", fmt.Errorf("bundle tmux runtime %s: %w", spec.name, e)
+			}
+			info, statErr := os.Stat(dst)
+			if statErr != nil {
+				return "", statErr
+			}
+			digest, hashErr := shaFile(dst)
+			if hashErr != nil {
+				return "", hashErr
+			}
+			runtimeFiles = append(runtimeFiles, runtimeFile{Path: spec.name, Size: info.Size(), SHA256: digest, Executable: spec.executable})
+		}
+		fmt.Fprintf(os.Stderr, "repoctl: bundled static Android tmux runtime: %s\n", tmuxSource)
+	} else if strings.TrimSpace(os.Getenv("CHROOTCTL_REQUIRE_TMUX")) == "1" {
+		return "", errors.New("CHROOTCTL_REQUIRE_TMUX=1 but CHROOTCTL_TMUX_PATH is unset")
+	}
 	if rcloneSource, found, resolveErr := resolveRcloneRuntimeSource(root); resolveErr != nil {
 		return "", resolveErr
 	} else if found {
