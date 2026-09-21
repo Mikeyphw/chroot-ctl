@@ -41,9 +41,8 @@ function unquote(token) {
   const child=spawn('/data/adb/chrootctl/bin/chrootctl',['app','run','--request-json',payload,'--events','ndjson'],{});
   await new Promise((resolve,reject)=>{child.on('exit',resolve);child.on('error',reject)});
   assert.equal(seen.command,'/data/adb/chrootctl/bin/chrootctl');
-  assert.equal(seen.args[0],"'app'");
-  assert.equal(unquote(seen.args[0]),'app');
-  assert.equal(unquote(seen.args[3]),payload);
+  assert.equal(seen.args[0],'app');
+  assert.equal(seen.args[3],payload);
   assert.equal(globalThis[seen.callbackName],undefined);
 }
 console.log('KernelSU real WebViewInterface transport tests passed');

@@ -94,10 +94,10 @@ export function spawn(command, args = [], options = {}) {
   try {
     const native = api();
     if (typeof native.spawn === 'function') {
-      // KernelSU WebViewInterface.spawn concatenates command + argv into a
-      // root-shell command. Keep the executable raw, but quote each argv token
-      // so JSON/user data survives that shell boundary unchanged.
-      native.spawn(command, JSON.stringify(args.map(shellQuote)), JSON.stringify(options), name);
+      // Match the proven KSU WebUI ABI used by SAN/KsuWebUIStandalone: argv is
+      // JSON-encoded verbatim. The host owns argv-to-process conversion; pre-quoting
+      // here turns quotes into literal argument bytes on compatible hosts.
+      native.spawn(command, JSON.stringify(args), JSON.stringify(options), name);
       return child;
     }
 
