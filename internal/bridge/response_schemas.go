@@ -19,6 +19,7 @@ var responseSchemas = map[string]ResponseSchema{
 	"sessions.list":           {Kind: "array", Fields: []string{"id", "name", "target", "username", "width", "height", "createdAt", "attached"}, CapabilityTags: []string{"sessions", "list"}},
 	"sessions.get":            {Kind: "object", Fields: []string{"id", "name", "target", "username", "width", "height", "createdAt", "attached"}, CapabilityTags: []string{"sessions"}},
 	"sessions.capture":        {Kind: "object", Fields: []string{"id", "lines", "output"}, CapabilityTags: []string{"sessions", "capture"}},
+	"sessions.input":          {Kind: "operation", Fields: []string{"id", "accepted"}, CapabilityTags: []string{"sessions", "terminal"}},
 	"sessions.create":         {Kind: "operation", Fields: []string{"session"}, CapabilityTags: []string{"sessions"}},
 	"sessions.detach":         {Kind: "operation", Fields: []string{"id", "detached"}, CapabilityTags: []string{"sessions"}},
 	"sessions.kill":           {Kind: "operation", Fields: []string{"id", "killed"}, CapabilityTags: []string{"sessions"}},

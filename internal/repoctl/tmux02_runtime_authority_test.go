@@ -10,7 +10,7 @@ import (
 func TestTMUX02RuntimeAuthorityContract(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	checks := map[string][]string{
-		"internal/tmuxruntime/runtime.go":      {"DefaultStateRoot = \"/data/adb/chrootctl/tmux\"", "DefaultNamespace = \"chrootctl\"", "tmux-runtime-manifest.json", "tmux.sha256", "EM_AARCH64", "ExpectedVersion", "0700", "stale tmux sockets detected"},
+		"internal/tmuxruntime/runtime.go":      {"DefaultStateRoot = \"/data/adb/chrootctl/runtime/tmux\"", "DefaultNamespace = \"chrootctl\"", "tmux-runtime-manifest.json", "tmux.sha256", "EM_AARCH64", "ExpectedVersion", "0700", "stale tmux sockets detected"},
 		"internal/bridge/specs_generated.go":   {"sessions.runtime", "bundled tmux runtime readiness"},
 		"internal/bridge/backend.go":           {"case \"sessions.runtime\"", "tmuxruntime.Inspect(ctx)"},
 		"internal/bridge/response_schemas.go":  {"\"sessions.runtime\"", "staleSockets", "namespace"},

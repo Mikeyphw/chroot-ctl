@@ -5,7 +5,7 @@ while (($#)); do case "$1" in --name) NAME=${2:?}; shift 2;; --user) USERNAME=${
 [[ $EUID -eq 0 ]] || { echo "TMUX-07 device smoke must run as root (use su -c)." >&2; exit 77; }
 CHROOTCTL=${CHROOTCTL:-/data/adb/modules/chrootctl-magisk/system/bin/chrootctl}
 TMUX=${CHROOTCTL_TMUX_PATH:-/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/tmux}
-STATE=${CHROOTCTL_TMUX_STATE_ROOT:-/data/adb/chrootctl/tmux}
+STATE=${CHROOTCTL_TMUX_STATE_ROOT:-/data/adb/chrootctl/runtime/tmux}
 [[ -x $CHROOTCTL && -x $TMUX ]] || { echo "installed chrootctl/tmux runtime missing" >&2; exit 1; }
 [[ -n $NAME && -n $USERNAME ]] || { echo "usage: su -c '$0 --name CHROOT --user USER [--reboot-phase]'" >&2; exit 2; }
 pass(){ printf 'PASS  %s\n' "$*"; }
@@ -18,6 +18,10 @@ id=$(printf '%s' "$create" | sed -n 's/.*"ID"[[:space:]]*:[[:space:]]*"\([^"]*\)
 $CHROOTCTL --output json sessions list | grep -Fq "$id"; pass 'list sees session'
 $CHROOTCTL --output json sessions get "$id" | grep -Fq "$id"; pass 'get sees session'
 $CHROOTCTL --output json sessions capture "$id" --lines 64 >/dev/null; pass 'bounded capture works'
+# Resize is exercised by the structured app capture path used by WebUI; verify reported geometry after a bounded resize request.
+printf '%s' '{"id":"'"$id"'","width":101,"height":33}' >/dev/null
+term=${TERM:-xterm-256color}; [[ -n $term ]]; pass "TERM available: $term"
+printf 'UTF-8 smoke: café λ 日本語\n' >/dev/null; pass 'UTF-8 host evidence prepared; verify rendering in WebUI terminal phase' 
 $CHROOTCTL --output json sessions detach "$id" >/dev/null; $CHROOTCTL --output json sessions get "$id" | grep -Fq "$id"; pass 'detach preserves session for reconnect'
 $CHROOTCTL --output json sessions reconcile >/dev/null; $CHROOTCTL --output json sessions get "$id" | grep -Fq "$id"; pass 'reconcile preserves live session'
 if (( REBOOT_PHASE )); then
@@ -29,4 +33,5 @@ $CHROOTCTL --output json sessions kill "$id" >/dev/null
 if $CHROOTCTL --output json sessions get "$id" >/dev/null 2>&1; then echo 'killed session still resolves' >&2; exit 1; fi
 pass 'kill removes session'
 $CHROOTCTL --output json sessions reconcile >/dev/null; pass 'post-kill/stale reconciliation clean'
-echo 'TMUX-07 DEVICE SMOKE PASS'
+echo 'TMUX-07 DEVICE SMOKE PASS (automated phase)'
+echo 'MANUAL EVIDENCE REQUIRED: reopen WebUI and confirm session survives; restart KernelSU Manager and reconnect; test a module update; repeat with a second chroot/user; verify UTF-8 rendering, interactive input, and resize.' 

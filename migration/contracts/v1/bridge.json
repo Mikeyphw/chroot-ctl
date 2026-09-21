@@ -1,7 +1,7 @@
 {
   "arbitraryShell": false,
   "contractSchemaVersion": 1,
-  "operationCount": 98,
+  "operationCount": 99,
   "operations": [
     {
       "description": "Return native dashboard state",
@@ -522,6 +522,19 @@
         "sessionId",
         "session_id",
         "width"
+      ]
+    },
+    {
+      "description": "Send bounded literal input to one backend-owned tmux session",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "operation",
+      "name": "sessions.input",
+      "payloadFields": [
+        "id",
+        "sessionId",
+        "session_id",
+        "text"
       ]
     },
     {

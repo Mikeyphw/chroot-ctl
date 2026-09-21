@@ -20,7 +20,8 @@ const (
 	RuntimeABI       = "arm64-v8a"
 	ExpectedVersion  = "3.7c"
 	DefaultModuleDir = "/data/adb/modules/chrootctl-magisk"
-	DefaultStateRoot = "/data/adb/chrootctl/tmux"
+	DefaultStateRoot = "/data/adb/chrootctl/runtime/tmux"
+	LegacyStateRoot  = "/data/adb/chrootctl/tmux"
 	DefaultNamespace = "chrootctl"
 )
 
@@ -109,6 +110,22 @@ func trustedFile(path string, executable bool) error {
 func EnsureState(p Paths) error {
 	if e := p.ValidateAuthority(); e != nil {
 		return e
+	}
+	if filepath.Clean(p.StateRoot) == DefaultStateRoot {
+		if _, e := os.Lstat(DefaultStateRoot); errors.Is(e, os.ErrNotExist) {
+			if st, le := os.Lstat(LegacyStateRoot); le == nil && st.IsDir() {
+				sockets, _ := os.ReadDir(filepath.Join(LegacyStateRoot, "sockets"))
+				if len(sockets) != 0 {
+					return errors.New("legacy tmux state has live/stale sockets; reconcile or stop sessions before state-root migration")
+				}
+				if e := os.MkdirAll(filepath.Dir(DefaultStateRoot), 0700); e != nil {
+					return e
+				}
+				if e := os.Rename(LegacyStateRoot, DefaultStateRoot); e != nil {
+					return fmt.Errorf("migrate legacy tmux state: %w", e)
+				}
+			}
+		}
 	}
 	for _, d := range []string{p.StateRoot, p.SocketRoot} {
 		if e := os.MkdirAll(d, 0700); e != nil {

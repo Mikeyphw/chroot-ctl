@@ -577,6 +577,19 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 			return nil, e
 		}
 		return map[string]any{"id": id, "lines": lines, "output": out}, nil
+	case "sessions.input":
+		id := sessionID(p)
+		if id == "" {
+			return nil, protocolError("MISSING_SESSION_ID", "payload.sessionId is required", nil)
+		}
+		text := optText(p, "text")
+		if text == "" || len(text) > 8192 {
+			return nil, protocolError("INVALID_SESSION_INPUT", "payload.text must be 1..8192 bytes", nil)
+		}
+		if e := s.Sessions().Input(ctx, id, text); e != nil {
+			return nil, e
+		}
+		return map[string]any{"id": id, "accepted": len(text)}, nil
 	case "sessions.runtime":
 		return tmuxruntime.Inspect(ctx), nil
 	case "sessions.create":

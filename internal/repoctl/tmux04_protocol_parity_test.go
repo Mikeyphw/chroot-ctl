@@ -21,13 +21,13 @@ func TestTmux04SessionProtocolAndCLIParity(t *testing.T) {
 	if err := json.Unmarshal(raw, &bridge); err != nil {
 		t.Fatal(err)
 	}
-	if bridge.OperationCount != 98 || len(bridge.Operations) != 98 {
+	if bridge.OperationCount != 99 || len(bridge.Operations) != 99 {
 		t.Fatalf("bridge operation count=%d decoded=%d", bridge.OperationCount, len(bridge.Operations))
 	}
 	if bridge.ArbitraryShell {
 		t.Fatal("generic app bridge must remain arbitraryShell=false")
 	}
-	want := map[string]string{"sessions.list": "query", "sessions.get": "query", "sessions.create": "operation", "sessions.capture": "query", "sessions.detach": "operation", "sessions.kill": "operation", "sessions.reconcile": "operation", "sessions.runtime": "query"}
+	want := map[string]string{"sessions.list": "query", "sessions.get": "query", "sessions.create": "operation", "sessions.capture": "query", "sessions.input": "operation", "sessions.detach": "operation", "sessions.kill": "operation", "sessions.reconcile": "operation", "sessions.runtime": "query"}
 	for _, op := range bridge.Operations {
 		if mode, ok := want[op.Name]; ok {
 			if op.Mode != mode {

@@ -6,7 +6,7 @@ TMUX-07 seals the seven-overlay static tmux campaign. The production runtime rem
 
 After installing the built module, run `scripts/tmux/device-release-smoke.sh` as root with `--name <installed-chroot> --user <user>`. It verifies `tmux -V`, 0700 state/socket roots, runtime readiness, create/list/get/capture/detach/reconcile/kill and cleanup. Run it with `--reboot-phase` before a reboot when collecting reboot evidence.
 
-Closing/reopening the WebUI or restarting KernelSU Manager does not own the tmux server: the backend-managed session survives client disconnects. Reconnect is represented by list/get/capture against the same managed session ID. Module update compatibility depends on preserving `/data/adb/chrootctl/tmux`, which is outside the replaceable module tree.
+Closing/reopening the WebUI or restarting KernelSU Manager does not own the tmux server: the backend-managed session survives client disconnects. Reconnect is represented by list/get/capture against the same managed session ID. Module update compatibility depends on preserving `/data/adb/chrootctl/runtime/tmux`, which is outside the replaceable module tree.
 
 ## Reboot semantics
 

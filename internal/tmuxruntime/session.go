@@ -138,7 +138,7 @@ func (m *SessionManager) socketPath() string {
 }
 func (m *SessionManager) baseArgs() []string { return []string{"-S", m.socketPath()} }
 func (m *SessionManager) env(extra map[string]string) []string {
-	values := map[string]string{"HOME": m.Paths.StateRoot, "PATH": "/system/bin:/system/xbin:/vendor/bin:/product/bin", "TMPDIR": m.Paths.StateRoot, "CHROOTCTL_TMUX_NAMESPACE": m.Paths.Namespace}
+	values := map[string]string{"HOME": m.Paths.StateRoot, "PATH": "/system/bin:/system/xbin:/vendor/bin:/product/bin", "TMPDIR": m.Paths.StateRoot, "TMUX_TMPDIR": m.Paths.SocketRoot, "TERM": "xterm-256color", "LANG": "C.UTF-8", "CHROOTCTL_TMUX_NAMESPACE": m.Paths.Namespace}
 	for _, k := range []string{"TERM", "LANG", "LC_ALL"} {
 		if v := os.Getenv(k); v != "" {
 			values[k] = v
@@ -292,7 +292,17 @@ func (m *SessionManager) Detach(ctx context.Context, id string) error {
 	if !strings.HasPrefix(id, ManagedSessionPrefix) {
 		return errors.New("invalid managed session id")
 	}
-	_, e := m.run(ctx, "detach", nil, maxCaptureBytes, "detach-client", "-s", id)
+	s, e := m.Get(ctx, id)
+	if e != nil {
+		return e
+	}
+	if s == nil {
+		return errors.New("unknown managed session")
+	}
+	if !s.Attached {
+		return nil
+	}
+	_, e = m.run(ctx, "detach", nil, maxCaptureBytes, "detach-client", "-s", id)
 	return e
 }
 func (m *SessionManager) Kill(ctx context.Context, id string) error {
@@ -312,6 +322,29 @@ func (m *SessionManager) Capture(ctx context.Context, id string, lines int) (str
 	out, e := m.run(ctx, "capture", nil, maxCaptureBytes, "capture-pane", "-p", "-t", id, "-S", "-"+strconv.Itoa(lines))
 	return string(out), e
 }
+func (m *SessionManager) Input(ctx context.Context, id, text string) error {
+	if !strings.HasPrefix(id, ManagedSessionPrefix) {
+		return errors.New("invalid managed session id")
+	}
+	if len(text) == 0 || len(text) > 8192 || strings.ContainsRune(text, '\x00') {
+		return errors.New("session input must be 1..8192 bytes and contain no NUL")
+	}
+	parts := strings.Split(text, "\n")
+	for i, part := range parts {
+		if part != "" {
+			if _, e := m.run(ctx, "input", nil, maxCaptureBytes, "send-keys", "-t", id, "-l", "--", part); e != nil {
+				return e
+			}
+		}
+		if i < len(parts)-1 {
+			if _, e := m.run(ctx, "input-enter", nil, maxCaptureBytes, "send-keys", "-t", id, "Enter"); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
 func (m *SessionManager) Resize(ctx context.Context, id string, w, h int) error {
 	if !strings.HasPrefix(id, ManagedSessionPrefix) {
 		return errors.New("invalid managed session id")

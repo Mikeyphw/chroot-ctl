@@ -65,6 +65,7 @@ var orderedSpecs = []OperationSpec{
 	{Name: "sessions.list", Mode: "query", Description: "List backend-owned persistent tmux sessions", Destructive: false, LockScope: "none", PayloadFields: fieldSet()},
 	{Name: "sessions.get", Mode: "query", Description: "Return one backend-owned persistent tmux session", Destructive: false, LockScope: "none", PayloadFields: fieldSet("id", "sessionId", "session_id")},
 	{Name: "sessions.capture", Mode: "query", Description: "Capture bounded output from one backend-owned tmux session", Destructive: false, LockScope: "none", PayloadFields: fieldSet("height", "id", "lines", "sessionId", "session_id", "width")},
+	{Name: "sessions.input", Mode: "operation", Description: "Send bounded literal input to one backend-owned tmux session", Destructive: false, LockScope: "none", PayloadFields: fieldSet("id", "sessionId", "session_id", "text")},
 	{Name: "sessions.runtime", Mode: "query", Description: "Return bundled tmux runtime readiness and backend-owned state authority", Destructive: false, LockScope: "none", PayloadFields: fieldSet()},
 	{Name: "sessions.create", Mode: "operation", Description: "Create a persistent tmux session for a chroot user", Destructive: false, LockScope: "target", PayloadFields: fieldSet("height", "name", "username", "width")},
 	{Name: "sessions.detach", Mode: "operation", Description: "Detach clients from one backend-owned tmux session", Destructive: false, LockScope: "none", PayloadFields: fieldSet("id", "sessionId", "session_id")},
