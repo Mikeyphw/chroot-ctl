@@ -13,6 +13,7 @@ import (
 	"chrootctl/internal/model"
 	"chrootctl/internal/operations"
 	"chrootctl/internal/services"
+	"chrootctl/internal/tmuxruntime"
 	"chrootctl/internal/validation"
 )
 
@@ -497,6 +498,8 @@ func (b *ServicesBackend) query(ctx context.Context, op string, p map[string]any
 		return s.Transfer().ArtifactRoot(), nil
 	case "system.runtime":
 		return map[string]any{"lifecycle": s.Lifecycle().Status(), "host": s.Doctor().HostReadiness(ctx), "crossArch": s.Doctor().CrossArchReadiness(), "module": s.ModuleRuntime().Status()}, nil
+	case "sessions.runtime":
+		return tmuxruntime.Inspect(ctx), nil
 	case "system.module_status":
 		return s.ModuleRuntime().Status(), nil
 	case "debug.probes":

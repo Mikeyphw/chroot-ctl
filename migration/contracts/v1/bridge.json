@@ -1,7 +1,7 @@
 {
   "arbitraryShell": false,
   "contractSchemaVersion": 1,
-  "operationCount": 90,
+  "operationCount": 91,
   "operations": [
     {
       "description": "Return native dashboard state",
@@ -487,6 +487,14 @@
       "lockScope": "none",
       "mode": "query",
       "name": "system.runtime",
+      "payloadFields": []
+    },
+    {
+      "description": "Return bundled tmux runtime readiness and backend-owned state authority",
+      "destructive": false,
+      "lockScope": "none",
+      "mode": "query",
+      "name": "sessions.runtime",
       "payloadFields": []
     },
     {

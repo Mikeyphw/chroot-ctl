@@ -12,7 +12,7 @@ const (
 	ContractSchemaVersion              = 1
 	ExpectedCommandNodeCount           = 83
 	ExpectedAppBridgeCommandNodeCount  = 8
-	ExpectedBridgeOperationCount       = 90
+	ExpectedBridgeOperationCount       = 91
 	ExpectedBridgeProtocolVersion      = 1
 	ExpectedOperationSchemaVersion     = 2
 	ExpectedCompatibilitySchemaVersion = 3
@@ -240,7 +240,7 @@ func (b Bundle) Validate() error {
 			return fmt.Errorf("payload fields for %s: %w", operation.Name, err)
 		}
 	}
-	if modeCounts["query"] != 39 || modeCounts["preview"] != 16 || modeCounts["operation"] != 35 {
+	if modeCounts["query"] != 40 || modeCounts["preview"] != 16 || modeCounts["operation"] != 35 {
 		return fmt.Errorf("bridge mode distribution drift: %#v", modeCounts)
 	}
 	return nil

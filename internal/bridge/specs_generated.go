@@ -62,6 +62,7 @@ var orderedSpecs = []OperationSpec{
 	{Name: "transfer.import_preview", Mode: "preview", Description: "Preview importing a staged archive", Destructive: false, LockScope: "none", PayloadFields: fieldSet("allowLegacyMetadata", "allow_legacy_metadata", "archive", "conflict", "importStrategy", "import_strategy", "name", "password", "path")},
 	{Name: "transfer.preview_export", Mode: "preview", Description: "Preview exporting a chroot archive", Destructive: false, LockScope: "none", PayloadFields: fieldSet("archive", "name", "password")},
 	{Name: "system.runtime", Mode: "query", Description: "Return native system runtime and host readiness", Destructive: false, LockScope: "none", PayloadFields: fieldSet()},
+	{Name: "sessions.runtime", Mode: "query", Description: "Return bundled tmux runtime readiness and backend-owned state authority", Destructive: false, LockScope: "none", PayloadFields: fieldSet()},
 	{Name: "system.module_status", Mode: "query", Description: "Return Magisk/KernelSU module status", Destructive: false, LockScope: "none", PayloadFields: fieldSet()},
 	{Name: "support.preview", Mode: "preview", Description: "Preview sanitized support bundle export", Destructive: false, LockScope: "none", PayloadFields: fieldSet("archive")},
 	{Name: "system.module_build_preview", Mode: "preview", Description: "Preview Magisk/KernelSU module build", Destructive: false, LockScope: "none", PayloadFields: fieldSet("allInstalled", "all_installed", "archive", "startupTargets")},
