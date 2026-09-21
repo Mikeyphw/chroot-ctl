@@ -141,6 +141,35 @@ package = [":app:assembleDebug"]
 lint = [":chrootctlAndroidLintConfigurationSeal"]
 
 # ---------------------------------------------------------------------------
+# KernelSU WebUI. Keep this separate from the release/module target so WebUI
+# work can run its focused JS + Go contract gate without claiming Android.
+# ---------------------------------------------------------------------------
+
+[targets.chrootctl_webui]
+runner = "command"
+platform = "web"
+execution_environment = "host"
+inputs = [
+  ".devtool.toml",
+  "go.mod",
+  "go.sum",
+  "internal/module/webroot/**",
+  "internal/module/webui_*_test.go",
+  "internal/module/module_test.go",
+  "internal/bridge/**",
+  "internal/operations/**",
+  "internal/users/**",
+  "internal/services/**",
+  "docs/release/WEBUI_*.md",
+]
+outputs = []
+run_command = "go run ./cmd/repoctl host"
+test_command = "node --check internal/module/webroot/chrootctl.js && node --check internal/module/webroot/index.js && go test ./internal/module ./internal/bridge ./internal/operations ./internal/users ./internal/services"
+
+[targets.chrootctl_webui.workflows]
+validate = ["runner:command#test"]
+
+# ---------------------------------------------------------------------------
 # repoctl release/module pipeline.  This target deliberately does not duplicate
 # the normal CLI target.
 # ---------------------------------------------------------------------------
