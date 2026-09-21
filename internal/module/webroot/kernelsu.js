@@ -1,5 +1,7 @@
-// Minimal KernelSU WebUI bridge used by chrootctl.
-// Deliberately exposes process spawning, not a shell-string exec helper.
+// KernelSU WebUI bridge adapter used by chrootctl.
+// Supports native spawn when available and falls back to exec for managers that
+// expose only the older exec API. Arguments are shell-quoted because KernelSU's
+// WebView interface concatenates spawn arguments into a root-shell command.
 let callbackCounter = 0;
 
 function callbackName(prefix) {
@@ -9,10 +11,19 @@ function callbackName(prefix) {
 
 function api() {
   const bridge = globalThis.ksu;
-  if (!bridge || typeof bridge.spawn !== 'function') {
+  if (!bridge || (typeof bridge.spawn !== 'function' && typeof bridge.exec !== 'function')) {
     throw new Error('KernelSU WebUI bridge is unavailable');
   }
   return bridge;
+}
+
+function shellQuote(value) {
+  const text = String(value ?? '');
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+function shellCommand(command, args) {
+  return [shellQuote(command), ...args.map(shellQuote)].join(' ');
 }
 
 class EventEmitter {
@@ -50,7 +61,7 @@ class ChildProcess extends EventEmitter {
 }
 
 export function isAvailable() {
-  return Boolean(globalThis.ksu && typeof globalThis.ksu.spawn === 'function');
+  return Boolean(globalThis.ksu && (typeof globalThis.ksu.spawn === 'function' || typeof globalThis.ksu.exec === 'function'));
 }
 
 export function spawn(command, args = [], options = {}) {
@@ -62,6 +73,7 @@ export function spawn(command, args = [], options = {}) {
   }
 
   const child = new ChildProcess();
+  const bridge = globalThis.ksu;
   const name = callbackName('chrootctl_spawn');
   globalThis[name] = child;
 
@@ -75,10 +87,42 @@ export function spawn(command, args = [], options = {}) {
   child.on('exit', cleanup);
   child.on('error', cleanup);
 
+  const deferError = (error) => {
+    Promise.resolve().then(() => child.emit('error', error));
+  };
+
   try {
-    api().spawn(command, JSON.stringify(args), JSON.stringify(options), name);
+    const native = api();
+    if (typeof native.spawn === 'function') {
+      // WebViewInterface.spawn concatenates each argument into a root-shell
+      // command. Quote every token so JSON payloads and user-controlled values
+      // survive that shell boundary byte-for-byte.
+      native.spawn(shellQuote(command), JSON.stringify(args.map(shellQuote)), JSON.stringify(options), name);
+      return child;
+    }
+
+    // Older/alternate managers may expose exec but not spawn. Emulate the
+    // ChildProcess contract so callers do not hang indefinitely during startup.
+    const execName = callbackName('chrootctl_exec');
+    globalThis[execName] = (errno, stdout, stderr) => {
+      try {
+        if (stdout) child.stdout.emit('data', stdout);
+        if (stderr) child.stderr.emit('data', stderr);
+        child.emit('exit', Number(errno));
+        if (Number(errno) !== 0) {
+          const error = new Error(stderr || `KernelSU exec failed with code ${errno}`);
+          error.exitCode = Number(errno);
+          child.emit('error', error);
+        }
+      } finally {
+        try { delete globalThis[execName]; } catch (_) { globalThis[execName] = undefined; }
+      }
+    };
+    native.exec(shellCommand(command, args), JSON.stringify(options), execName);
   } catch (error) {
-    child.emit('error', error);
+    // Callers attach listeners after spawn() returns. Emitting synchronously here
+    // loses the error and leaves their Promise unresolved forever.
+    deferError(error);
   }
   return child;
 }

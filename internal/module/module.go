@@ -23,8 +23,8 @@ import (
 const (
 	ModuleID              = "chrootctl-magisk"
 	ModuleName            = "chrootctl Magisk Module"
-	ModuleVersion         = "1.3.1"
-	ModuleVersionCode     = 16
+	ModuleVersion         = "1.3.2"
+	ModuleVersionCode     = 17
 	BackendVersion        = "0.11.0"
 	BridgeProtocolVersion = 1
 	RuntimeSchemaVersion  = 2
