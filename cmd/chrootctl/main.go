@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"chrootctl/internal/bridge"
+	"chrootctl/internal/services"
 	"chrootctl/internal/standalonewebui"
 
 	"chrootctl/internal/cli"
@@ -20,7 +22,18 @@ func runWithIO(args []string) int {
 	if len(args) >= 2 && args[0] == "webui" && args[1] == "serve" {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		srv, err := standalonewebui.New(standalonewebui.Config{IdleTimeout: 10 * time.Minute, SessionTTL: 30 * time.Minute})
+		svc, err := services.New("", false, false)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
+			return 1
+		}
+		defer svc.Close()
+		dispatcher, err := bridge.NewServicesDispatcher(svc)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
+			return 1
+		}
+		srv, err := standalonewebui.New(standalonewebui.Config{IdleTimeout: 10 * time.Minute, SessionTTL: 30 * time.Minute, Dispatcher: dispatcher})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "chrootctl webui:", err)
 			return 1

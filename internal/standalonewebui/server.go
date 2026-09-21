@@ -19,6 +19,7 @@ const cookieName = "chrootctl_webui"
 type Config struct {
 	IdleTimeout, SessionTTL time.Duration
 	MaxBodyBytes            int64
+	Dispatcher              Dispatcher
 }
 type Server struct {
 	cfg      Config
@@ -73,7 +74,11 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	s.ln = ln
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bootstrap", s.bootstrap)
-	mux.HandleFunc("/api/v1/health", s.auth(s.health))
+	if s.cfg.Dispatcher != nil {
+		mux.Handle("/api/v1/", s.apiHandler(s.cfg.Dispatcher))
+	} else {
+		mux.HandleFunc("/api/v1/health", s.auth(s.health))
+	}
 	s.http = &http.Server{Handler: s.security(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() {
 		<-ctx.Done()
@@ -155,6 +160,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	s.sessions[sid] = session{expires: time.Now().Add(s.cfg.SessionTTL), csrf: csrf}
 	s.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sid, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: "chrootctl_csrf", Value: csrf, Path: "/", HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "api": "/api/v1"})
 }
