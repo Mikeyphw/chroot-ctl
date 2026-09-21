@@ -94,10 +94,10 @@ export function spawn(command, args = [], options = {}) {
   try {
     const native = api();
     if (typeof native.spawn === 'function') {
-      // WebViewInterface.spawn concatenates each argument into a root-shell
-      // command. Quote every token so JSON payloads and user-controlled values
-      // survive that shell boundary byte-for-byte.
-      native.spawn(shellQuote(command), JSON.stringify(args.map(shellQuote)), JSON.stringify(options), name);
+      // KernelSU's WebUI API expects the executable as a raw command string and
+      // the argv vector as a JSON array. Do not shell-quote either field here:
+      // quoting changes the executable/argv bytes before KernelSU dispatches it.
+      native.spawn(command, JSON.stringify(args), JSON.stringify(options), name);
       return child;
     }
 
@@ -108,11 +108,12 @@ export function spawn(command, args = [], options = {}) {
       try {
         if (stdout) child.stdout.emit('data', stdout);
         if (stderr) child.stderr.emit('data', stderr);
-        child.emit('exit', Number(errno));
         if (Number(errno) !== 0) {
           const error = new Error(stderr || `KernelSU exec failed with code ${errno}`);
           error.exitCode = Number(errno);
           child.emit('error', error);
+        } else {
+          child.emit('exit', 0);
         }
       } finally {
         try { delete globalThis[execName]; } catch (_) { globalThis[execName] = undefined; }

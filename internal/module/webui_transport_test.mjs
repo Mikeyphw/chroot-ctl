@@ -22,10 +22,10 @@ await new Promise((resolve, reject) => {
   spawned.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`exit ${code}`)));
 });
 assert.equal(stdout, 'spawn-ok');
-assert.equal(capturedSpawn.command, "'/data/adb/chrootctl/bin/chrootctl'");
-assert.deepEqual(capturedSpawn.args.slice(0, 3), ["'app'", "'query'", "'--request-json'"]);
-assert.ok(capturedSpawn.args[3].startsWith("'{\"protocolVersion\":1"));
-assert.ok(capturedSpawn.args[3].includes("O'\\''Brien"));
+assert.equal(capturedSpawn.command, "/data/adb/chrootctl/bin/chrootctl");
+assert.deepEqual(capturedSpawn.args.slice(0, 3), ["app", "query", "--request-json"]);
+assert.equal(capturedSpawn.args[3], request);
+assert.ok(capturedSpawn.args[3].includes("O'Brien"));
 
 // Synchronous native bridge exceptions must be delivered after callers attach
 // listeners; otherwise the WebUI remains stuck forever at "Checking backend".
@@ -58,3 +58,4 @@ assert.equal(fallbackOut, 'exec-ok');
 assert.equal(capturedExec, "'/data/adb/chrootctl/bin/chrootctl' 'app' 'capabilities'");
 
 console.log('KernelSU WebUI transport tests passed');
+
