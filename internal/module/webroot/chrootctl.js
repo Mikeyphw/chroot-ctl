@@ -7,8 +7,8 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const USER_RE = /^[a-z_][a-z0-9_-]{0,31}$/i;
 const CATALOG_RE = /^[A-Za-z0-9][A-Za-z0-9+_.:@-]{0,127}$/;
 const APP_QUERY_ALLOW = new Set(['install.form','catalog.tools','catalog.addons','remote.rclone.status','remote.rclone.list','operations.list','operations.get','logs.list','system.doctor','services.list','services.journal','system.runtime','system.module_status']);
-const APP_PREVIEW_ALLOW = new Set(['install.preview','system.module_build_preview']);
-const APP_RUN_ALLOW = new Set(['install.run']);
+const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','system.module_build_preview']);
+const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute']);
 const OPERATIONS = Object.freeze({
   version: { args:['--json','version'], commands:['version'], mutating:false },
   chrootsList: { args:['--json','chroots','list'], commands:['chroots.list','chroots list'], mutating:false },
@@ -47,11 +47,8 @@ function spec(operation,payload={}) {
   switch(operation) {
     case 'chrootShow': return {args:['--json','--name',name,'chroots','show'],commands:['chroots.show','chroots show'],mutating:false};
     case 'chrootStatus': return {args:['--json','--name',name,'status','--details'],commands:['status'],mutating:false};
-    case 'chrootStart': return {args:['--json','--name',name,'mount'],commands:['mount'],mutating:true};
     case 'chrootStop': return {args:['--json','--name',name,'unmount'],commands:['unmount','chroots.stop'],mutating:true};
-    case 'chrootRestart': return {composite:'remount',name,commands:['remount'],mutating:true};
     case 'chrootRename': { const next=safeName(payload.newName,'new name'); if(next===name) throw new ChrootCtlError('New name must be different',{code:'WEBUI_INVALID_ARGUMENT'}); return {args:['--json','--name',name,'chroots','rename',next],commands:['chroots.rename','chroots rename'],mutating:true}; }
-    case 'chrootRemove': { const confirm=safeName(payload.confirm,'confirmation'); if(confirm!==name) throw new ChrootCtlError('Confirmation must exactly match the chroot name',{code:'WEBUI_CONFIRMATION_REQUIRED'}); return {args:['--json','--name',name,'chroots','remove','--yes'],commands:['chroots.remove','chroots remove'],mutating:true}; }
     default: throw new ChrootCtlError(`Unsupported WebUI operation: ${operation}`,{code:'WEBUI_OPERATION_NOT_ALLOWED'});
   }
 }
@@ -67,7 +64,26 @@ function runStreaming(executable,args,onLine){return new Promise((resolve,reject
 async function runAllowedStream(args,onLine){let last=null;for(const executable of EXECUTABLES){try{const result=await runStreaming(executable,args,onLine);if(result.exitCode!==126&&result.exitCode!==127)return result;last=result}catch(error){last={error,executable};if(error?.code==='WEBUI_OUTPUT_LIMIT')throw error}}throw new ChrootCtlError('Unable to start the bundled chrootctl backend',{code:'WEBUI_BACKEND_UNAVAILABLE',exitCode:last?.exitCode??null,stderr:last?.stderr||''})}
 
 export function isAvailable(){return isKernelSUAvailable()}
-export async function invoke(operation,payload={}){const s=spec(operation,payload);if(!isKernelSUAvailable())throw new ChrootCtlError('Open this page from a KernelSU-compatible module WebUI host',{code:'WEBUI_BRIDGE_UNAVAILABLE'});if(s.composite==='remount'){const down={args:['--json','--name',s.name,'unmount'],commands:['unmount'],mutating:true};parseEnvelope(down,await runAllowedOperation(down));const up={args:['--json','--name',s.name,'mount'],commands:['mount'],mutating:true};return parseEnvelope(up,await runAllowedOperation(up));}return parseEnvelope(s,await runAllowedOperation(s));}
+export async function invoke(operation,payload={}){const s=spec(operation,payload);if(!isKernelSUAvailable())throw new ChrootCtlError('Open this page from a KernelSU-compatible module WebUI host',{code:'WEBUI_BRIDGE_UNAVAILABLE'});return parseEnvelope(s,await runAllowedOperation(s));}
+function safeLifecycleAction(action){const a=String(action??'').trim().toLowerCase();if(!['start','restart','upgrade','remove'].includes(a))throw new ChrootCtlError('Unsupported lifecycle action',{code:'WEBUI_INVALID_ARGUMENT'});return a;}
+function lifecycleOperation(action){return {start:'chroots.start',restart:'chroots.restart',upgrade:'chroots.upgrade',remove:'chroots.remove.execute'}[safeLifecycleAction(action)];}
+export async function previewLifecycle(name,action){
+  if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});
+  return appRequest('preview','chroots.lifecycle.preview',{name:safeName(name),action:safeLifecycleAction(action)});
+}
+export async function runLifecycle(name,action,preview,extra={},handlers={}){
+  if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});
+  const op=lifecycleOperation(action);if(!APP_RUN_ALLOW.has(op))throw new ChrootCtlError('Lifecycle operation is not allow-listed',{code:'WEBUI_OPERATION_NOT_ALLOWED'});
+  const payload={name:safeName(name)};
+  if(action==='upgrade'&&extra.username)payload.username=boundedText(extra.username,'username',64);
+  if(action==='remove'){const confirm=safeName(extra.confirmation||extra.confirmName,'confirmation');if(confirm!==payload.name)throw new ChrootCtlError('Confirmation must exactly match the chroot name',{code:'WEBUI_CONFIRMATION_REQUIRED'});payload.confirmation=confirm;}
+  for(const k of ['previewId','payloadHash','resourceRevision']){if(!preview?.[k])throw new ChrootCtlError('A fresh lifecycle preview is required',{code:'WEBUI_PREVIEW_REQUIRED'});payload[k]=boundedText(preview[k],k,256);}
+  const args=['app','run','--request-json',bridgeRequest(op,payload),'--events','ndjson'];let operationId=null,terminal=null,bridgeFailure=null;
+  const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event?.protocolVersion!==1)throw new ChrootCtlError('Bridge event protocol mismatch',{code:'WEBUI_CONTRACT_MISMATCH'});if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});
+  if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Lifecycle bridge request failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',exitCode:result.exitCode,operationId,envelope:bridgeFailure,stderr:result.stderr});
+  if(result.exitCode!==0||!terminal||terminal.type!=='operation_succeeded'){const p=terminal?.payload||{};throw new ChrootCtlError(p.message||'Lifecycle operation did not complete successfully',{code:p.code||'LIFECYCLE_FAILED',exitCode:result.exitCode,operationId,envelope:terminal,stderr:result.stderr});}
+  return {operationId,event:terminal,result:terminal.payload?.result??null};
+}
 export async function installForm(distro=''){if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});const payload={};if(distro)payload.distro=boundedText(distro,'distro',32);return appRequest('query','install.form',payload);}
 export async function catalog(kind,distro=''){if(kind!=='tools'&&kind!=='addons')throw new ChrootCtlError('Unsupported catalog kind',{code:'WEBUI_INVALID_ARGUMENT'});const payload={};if(distro)payload.distro=boundedText(distro,'distro',32);return appRequest('query',`catalog.${kind}`,payload);}
 export async function previewInstall(payload){if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});return appRequest('preview','install.preview',safeInstallPayload(payload));}
