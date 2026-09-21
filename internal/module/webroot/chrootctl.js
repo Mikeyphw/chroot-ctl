@@ -6,9 +6,9 @@ const EXECUTABLES = Object.freeze(['/system/bin/chrootctl','/data/adb/modules/ch
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const USER_RE = /^[a-z_][a-z0-9_-]{0,31}$/i;
 const CATALOG_RE = /^[A-Za-z0-9][A-Za-z0-9+_.:@-]{0,127}$/;
-const APP_QUERY_ALLOW = new Set(['install.form','catalog.tools','catalog.addons','remote.rclone.status','remote.rclone.list','operations.list','operations.get','logs.list','system.doctor','services.list','services.journal','system.runtime','system.module_status']);
-const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','system.module_build_preview']);
-const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute']);
+const APP_QUERY_ALLOW = new Set(['install.form','catalog.tools','catalog.addons','remote.rclone.status','remote.rclone.list','operations.list','operations.get','logs.list','system.doctor','services.list','services.journal','system.runtime','system.module_status','users.list','users.get']);
+const APP_PREVIEW_ALLOW = new Set(['install.preview','chroots.lifecycle.preview','users.preview','system.module_build_preview']);
+const APP_RUN_ALLOW = new Set(['install.run','chroots.start','chroots.restart','chroots.upgrade','chroots.remove.execute','users.add','users.remove','users.sync_uid_gid','users.set_shell','users.set_sudo','users.set_password']);
 const OPERATIONS = Object.freeze({
   version: { args:['--json','version'], commands:['version'], mutating:false },
   chrootsList: { args:['--json','chroots','list'], commands:['chroots.list','chroots list'], mutating:false },
@@ -18,6 +18,7 @@ export class ChrootCtlError extends Error {
   constructor(message, details={}) { super(message); this.name='ChrootCtlError'; this.code=details.code||'WEBUI_BACKEND_ERROR'; this.exitCode=details.exitCode??null; this.command=details.command||null; this.stderr=details.stderr||''; this.envelope=details.envelope||null; this.operationId=details.operationId||null; }
 }
 function safeName(value, field='name') { const v=String(value??'').trim(); if(!NAME_RE.test(v)) throw new ChrootCtlError(`Invalid ${field}`,{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
+function safeUsername(value, field='username') { const v=String(value??'').trim(); if(!USER_RE.test(v)) throw new ChrootCtlError(`Invalid ${field}`,{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
 function safeUser(value) { const v=String(value??'').trim(); if(!USER_RE.test(v)) throw new ChrootCtlError('Invalid username',{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
 function safeCatalogList(value, field) { const out=Array.isArray(value)?value:[]; if(out.length>128) throw new ChrootCtlError(`Too many ${field}`,{code:'WEBUI_INVALID_ARGUMENT'}); return [...new Set(out.map(v=>String(v??'').trim()).filter(Boolean).map(v=>{if(!CATALOG_RE.test(v))throw new ChrootCtlError(`Invalid ${field} entry`,{code:'WEBUI_INVALID_ARGUMENT'});return v;}))]; }
 function boundedText(value, field, max=128) { const v=String(value??'').trim(); if(v.length>max) throw new ChrootCtlError(`${field} is too long`,{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
@@ -65,6 +66,36 @@ async function runAllowedStream(args,onLine){let last=null;for(const executable 
 
 export function isAvailable(){return isKernelSUAvailable()}
 export async function invoke(operation,payload={}){const s=spec(operation,payload);if(!isKernelSUAvailable())throw new ChrootCtlError('Open this page from a KernelSU-compatible module WebUI host',{code:'WEBUI_BRIDGE_UNAVAILABLE'});return parseEnvelope(s,await runAllowedOperation(s));}
+const USER_ACTIONS={add:'users.add',remove:'users.remove',sync_uid_gid:'users.sync_uid_gid',set_shell:'users.set_shell',set_sudo:'users.set_sudo',set_password:'users.set_password'};
+function safeUserAction(action){const a=String(action??'').trim().toLowerCase().replaceAll('-','_');if(!USER_ACTIONS[a])throw new ChrootCtlError('Unsupported user action',{code:'WEBUI_INVALID_ARGUMENT'});return a;}
+function userMutationPayload(payload={},includeAction=true){
+  const out={name:safeName(payload.name),username:safeUsername(payload.username)};
+  const action=safeUserAction(payload.action);if(includeAction)out.action=action;
+  if(action==='add'){if(payload.shell)out.shell=boundedText(payload.shell,'shell',256);out.sudo=Boolean(payload.sudo);}
+  if(action==='remove'){out.deleteHome=Boolean(payload.deleteHome);const c=safeUsername(payload.confirmUsername??payload.confirmation);if(c!==out.username)throw new ChrootCtlError('Confirmation must exactly match the username',{code:'WEBUI_CONFIRMATION_REQUIRED'});out.confirmUsername=c;}
+  if(action==='sync_uid_gid')out.fixOwnership=Boolean(payload.fixOwnership);
+  if(action==='set_shell')out.shell=boundedText(payload.shell,'shell',256);
+  if(action==='set_sudo')out.enabled=Boolean(payload.enabled);
+  if(action==='set_password'){const password=String(payload.password??''),confirm=String(payload.confirmPassword??''),userConfirm=safeUsername(payload.confirmUsername??payload.confirmation,'confirmation');if(userConfirm!==out.username)throw new ChrootCtlError('Confirmation must exactly match the username',{code:'WEBUI_CONFIRMATION_REQUIRED'});if(!password||password!==confirm)throw new ChrootCtlError('Password confirmation does not match',{code:'WEBUI_CONFIRMATION_REQUIRED'});out.confirmUsername=userConfirm;out.password=password;out.confirmPassword=confirm;}
+  return out;
+}
+export async function listUsers(name){return appRequest('query','users.list',{name:safeName(name)});}
+export async function getUser(name,username){return appRequest('query','users.get',{name:safeName(name),username:safeUsername(username)});}
+export async function previewUserMutation(payload){return appRequest('preview','users.preview',userMutationPayload(payload,true));}
+export async function runUserMutation(payload,preview,handlers={}){
+  if(!isKernelSUAvailable())throw new ChrootCtlError('KernelSU WebUI bridge is unavailable',{code:'WEBUI_BRIDGE_UNAVAILABLE'});
+  const action=safeUserAction(payload.action),op=USER_ACTIONS[action],clean=userMutationPayload(payload,false);
+  for(const k of ['previewId','payloadHash','resourceRevision']){if(!preview?.[k])throw new ChrootCtlError('A fresh user preview is required',{code:'WEBUI_PREVIEW_REQUIRED'});clean[k]=boundedText(preview[k],k,256);}
+  const args=['app','run','--request-json',bridgeRequest(op,clean),'--events','ndjson'];let operationId=null,terminal=null,bridgeFailure=null;
+  try{
+    const result=await runAllowedStream(args,line=>{let event;try{event=JSON.parse(line)}catch(_){throw new ChrootCtlError('Bridge returned invalid NDJSON',{code:'WEBUI_INVALID_JSON'})}if(event?.protocolVersion!==1)throw new ChrootCtlError('Bridge event protocol mismatch',{code:'WEBUI_CONTRACT_MISMATCH'});if(event.operationId)operationId=String(event.operationId);if(event.type==='bridge_error'&&event.ok===false)bridgeFailure=event;if(['operation_succeeded','operation_failed','operation_cancelled','operation_blocked'].includes(event.type))terminal=event;handlers.onEvent?.(event)});
+    if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'User operation failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operationId,envelope:bridgeFailure});
+    if(result.exitCode!==0||!terminal||terminal.type!=='operation_succeeded'){const p=terminal?.payload||{};throw new ChrootCtlError(p.message||'User operation did not complete successfully',{code:p.code||'USER_OPERATION_FAILED',operationId,envelope:terminal,stderr:result.stderr});}
+    return {operationId,event:terminal,result:terminal.payload?.result??null};
+  }finally{
+    if(action==='set_password'){clean.password='';clean.confirmPassword='';payload.password='';payload.confirmPassword='';}
+  }
+}
 function safeLifecycleAction(action){const a=String(action??'').trim().toLowerCase();if(!['start','restart','upgrade','remove'].includes(a))throw new ChrootCtlError('Unsupported lifecycle action',{code:'WEBUI_INVALID_ARGUMENT'});return a;}
 function lifecycleOperation(action){return {start:'chroots.start',restart:'chroots.restart',upgrade:'chroots.upgrade',remove:'chroots.remove.execute'}[safeLifecycleAction(action)];}
 export async function previewLifecycle(name,action){
