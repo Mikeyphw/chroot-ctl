@@ -25,12 +25,12 @@ func TestCUX06TransferRcloneSystemUX(t *testing.T) {
 			t.Fatalf("CUX06 HTML missing %q", want)
 		}
 	}
-	for _, want := range []string{"sectionOwnsRefresh", "Rclone status could not be loaded.", "Technical code:"} {
+	for _, want := range []string{"sectionOwnsRefresh", "Rclone status could not be loaded.", "Technical details", "expected_path", "remediation"} {
 		if !strings.Contains(jsn, want) {
 			t.Fatalf("CUX06 JS missing %q", want)
 		}
 	}
-	for _, want := range []string{".skip-link", "min-height:44px", ":focus-visible", "#transfer-panel,#rclone-panel,#settings-panel"} {
+	for _, want := range []string{".skip-link", "min-height:44px", ":focus-visible", ".nav-secondary", ".primary-overflow", "#transfer-panel,#rclone-panel,#settings-panel"} {
 		if !strings.Contains(cs, want) {
 			t.Fatalf("CUX06 CSS missing %q", want)
 		}

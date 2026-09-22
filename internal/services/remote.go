@@ -17,20 +17,39 @@ func (s *Container) RcloneRuntime() (rcloneops.Runtime, error) {
 func (s *TransferService) RcloneStatus(ctx context.Context) (map[string]any, error) {
 	runtime, err := s.C.RcloneRuntime()
 	if err != nil {
-		return map[string]any{"available": false, "configured": false, "error": "bundled rclone runtime is unavailable"}, nil
+		return map[string]any{
+			"available": false, "configured": false,
+			"error":             "bundled rclone runtime is unavailable",
+			"reason":            "No trusted Android/arm64 rclone executable passed runtime discovery and seal validation.",
+			"expected_path":     "/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/rclone",
+			"check":             "Verify the active module runtime inventory, rclone executable ownership/mode, and runtime-manifest seal.",
+			"remediation":       "Rebuild or reinstall the sealed root module with rclone bundled, or explicitly provide a trusted CHROOTCTL_RCLONE_PATH for recovery.",
+			"technical_details": err.Error(),
+		}, nil
 	}
 	info, err := runtime.Probe(ctx)
 	if err != nil {
-		return map[string]any{"available": false, "configured": false, "error": "bundled rclone runtime probe failed"}, nil
+		return map[string]any{
+			"available": false, "configured": false,
+			"error":             "bundled rclone runtime probe failed",
+			"reason":            "A trusted rclone executable was discovered, but its version probe did not complete successfully.",
+			"expected_path":     runtime.Executable,
+			"check":             "Verify the packaged executable is Android/arm64, executable, and runnable under the root-module environment.",
+			"remediation":       "Rebuild the packaged rclone runtime and reinstall the sealed module before retrying remote operations.",
+			"technical_details": err.Error(),
+		}, nil
 	}
 	names := append([]string(nil), info.ConfiguredRemotes...)
 	sort.Strings(names)
 	return map[string]any{
-		"available":  true,
-		"configured": len(names) > 0,
-		"version":    info.Version,
-		"remotes":    names,
-		"checked_at": time.Now().UTC().Format(time.RFC3339),
+		"available":     true,
+		"configured":    len(names) > 0,
+		"version":       info.Version,
+		"remotes":       names,
+		"expected_path": info.Executable,
+		"check":         "Runtime discovery and version probe passed.",
+		"remediation":   "No runtime remediation is required.",
+		"checked_at":    time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 

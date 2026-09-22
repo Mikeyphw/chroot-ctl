@@ -28,6 +28,8 @@ for required in \
   webroot/index.js \
   webroot/chrootctl.js \
   webroot/kernelsu.js \
+  runtime/arm64-v8a/chrootctl \
+  runtime/arm64-v8a/runtime-manifest.json \
   runtime/arm64-v8a/tmux \
   runtime/arm64-v8a/tmux-runtime-manifest.json \
   runtime/arm64-v8a/tmux.sha256
@@ -64,6 +66,25 @@ tmux_sidecar_sha="$(awk 'NR==1 {print $1}' "$TREE/runtime/arm64-v8a/tmux.sha256"
 command -v unzip >/dev/null 2>&1 || { echo "unzip is required for package seal" >&2; exit 127; }
 tmux_zip_sha="$(unzip -p "$ZIP" runtime/arm64-v8a/tmux | sha256sum | awk '{print $1}')"
 [ "$tmux_zip_sha" = "$tmux_tree_sha" ] || { echo "module ZIP tmux bytes differ from sealed runtime" >&2; exit 1; }
+
+# CUX post-roadmap hotfix: rclone is optional, but when the runtime manifest
+# inventories it the package seal must prove the expanded tree and ZIP contain
+# the same executable bytes. This closes the gap where UI/runtime discovery
+# could claim a packaged optional executable without package-level byte proof.
+RUNTIME_MANIFEST="$TREE/runtime/arm64-v8a/runtime-manifest.json"
+if grep -Eq '"[Pp]ath"[[:space:]]*:[[:space:]]*"rclone"' "$RUNTIME_MANIFEST"; then
+  RCLONE="$TREE/runtime/arm64-v8a/rclone"
+  [ -f "$RCLONE" ] && [ -x "$RCLONE" ] && [ ! -L "$RCLONE" ] || {
+    echo "runtime manifest inventories rclone but packaged executable is missing/unsafe" >&2
+    exit 1
+  }
+  rclone_tree_sha="$(sha256sum "$RCLONE" | awk '{print $1}')"
+  rclone_zip_sha="$(unzip -p "$ZIP" runtime/arm64-v8a/rclone | sha256sum | awk '{print $1}')"
+  [ "$rclone_tree_sha" = "$rclone_zip_sha" ] || {
+    echo "module ZIP rclone bytes differ from sealed runtime" >&2
+    exit 1
+  }
+fi
 
 
 # SWUI-04 standalone WebUI release seal.

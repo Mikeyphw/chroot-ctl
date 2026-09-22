@@ -32,12 +32,12 @@ func TestCUX01ProductShell(t *testing.T) {
 			t.Fatalf("existing workspace lost from contextual tools: %s", legacy)
 		}
 	}
-	for _, want := range []string{"@media(min-width:980px)", ".product-nav", ".tools-sheet", "--radius-hero:28px"} {
+	for _, want := range []string{"@media(min-width:800px)", ".product-nav", ".nav-secondary", ".primary-overflow", ".tools-sheet", "--radius-hero:28px"} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("missing responsive/design-system invariant %q", want)
 		}
 	}
-	for _, want := range []string{"let currentSection='home'", "toolsSheet.showModal()", "showSection(b.dataset.route)"} {
+	for _, want := range []string{"let currentSection='home'", "toolsSheet.showModal()", "showSection(b.dataset.route)", "pref-compact-nav"} {
 		if !strings.Contains(js, want) {
 			t.Fatalf("missing shell behavior %q", want)
 		}

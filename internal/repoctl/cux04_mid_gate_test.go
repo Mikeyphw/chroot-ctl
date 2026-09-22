@@ -68,9 +68,20 @@ func TestCUX04FunctionalConvergenceMidGate(t *testing.T) {
 		}
 		seen[m[1]] = true
 	}
-	for _, op := range []string{"debug.probes", "debug.timeline", "release.readiness", "smoke.last_result"} {
+	for _, op := range []string{"chroots.list", "chroots.get", "system.status", "storage.status", "snapshots.list", "artifacts.list", "transfer.artifact_root", "debug.probes", "debug.timeline", "release.readiness", "smoke.plan", "smoke.last_result"} {
 		if !strings.Contains(bridge, "'"+op+"'") {
 			t.Fatalf("diagnostic query missing from WebUI contract: %s", op)
 		}
 	}
+	queryCall := regexp.MustCompile(`appRequest\('query','([^']+)'`).FindAllStringSubmatch(bridge, -1)
+	allowBlock := bridge[strings.Index(bridge, "const APP_QUERY_ALLOW"):strings.Index(bridge, "const APP_PREVIEW_ALLOW")]
+	for _, match := range queryCall {
+		if !strings.Contains(allowBlock, "'"+match[1]+"'") {
+			t.Fatalf("query %s is shipped but missing from APP_QUERY_ALLOW", match[1])
+		}
+	}
+	if !strings.Contains(bridge, "mode==='run'?'operation':mode") {
+		t.Fatal("transport run mode is not normalized to backend capability mode operation")
+	}
+
 }

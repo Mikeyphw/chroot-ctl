@@ -40,7 +40,7 @@ func TestCUX07FinalRoadmapGate(t *testing.T) {
 			t.Fatalf("panel %s is not explicitly routed", p)
 		}
 	}
-	for _, want := range []string{"const appState=", "bootstrapBackend()", "restoredRoute()", "createSession(", "captureSession(", "inputSession(", "detachSession(", "killSession(", "operationCard", "activeJob", "sectionOwnsRefresh", "rcloneStatus()"} {
+	for _, want := range []string{"const appState=", "bootstrapBackend()", "restoredRoute()", "bindContextualChrootSelect", "createSession(", "captureSession(", "inputSession(", "detachSession(", "killSession(", "operationCard", "activeJob", "sectionOwnsRefresh", "rcloneStatus()", "currentSection==='operations'||currentSection==='activity'"} {
 		if !strings.Contains(j, want) {
 			t.Fatalf("final JS contract missing %q", want)
 		}
@@ -64,4 +64,30 @@ func TestCUX07FinalRoadmapGate(t *testing.T) {
 	if !strings.Contains(j, "activity=name==='activity'") || !strings.Contains(j, "!operations&&!activity&&!logs") {
 		t.Fatal("Activity route can fall through to placeholder")
 	}
+	if strings.Contains(j, "applyDefaultChrootToSelect") {
+		t.Fatal("final tree reintroduced the retired global chroot-selection helper")
+	}
+	if strings.Contains(j, "await dashboard()") {
+		t.Fatal("diagnostics smoke target path calls undefined dashboard()")
+	}
+	bridgeb, err := os.ReadFile("../module/webroot/chrootctl.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := string(bridgeb)
+	for _, op := range []string{"chroots.list", "chroots.get", "system.status", "storage.status", "snapshots.list", "artifacts.list", "transfer.artifact_root", "smoke.plan"} {
+		if !strings.Contains(bridge, "'"+op+"'") {
+			t.Fatalf("final typed transport allow-list missing %s", op)
+		}
+	}
+	pkg, err := os.ReadFile("../../scripts/devtool/root-module-package.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"runtime/arm64-v8a/chrootctl", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/rclone", "rclone_tree_sha", "rclone_zip_sha"} {
+		if !strings.Contains(string(pkg), want) {
+			t.Fatalf("final package seal missing optional rclone proof %q", want)
+		}
+	}
+
 }
