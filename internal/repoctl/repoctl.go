@@ -341,10 +341,12 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 	}
 	binary := filepath.Join(tmp, chmodule.RuntimeEntrypoint)
 	fmt.Fprintf(os.Stderr, "repoctl: Android compiler: %s\n", cc)
+	fmt.Fprintln(os.Stderr, "repoctl: compiling Android/arm64 runtime (cold Go/CGO builds may take several minutes)...")
 	env := []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=1", "CC=" + cc, "GOMAXPROCS=" + strconv.Itoa(opts.Jobs)}
-	if e = run(root, env, "go", "build", "-trimpath", "-tags", "android", "-p", strconv.Itoa(opts.Jobs), "-o", binary, "./cmd/chrootctl"); e != nil {
+	if e = run(root, env, "go", "build", "-v", "-trimpath", "-tags", "android", "-p", strconv.Itoa(opts.Jobs), "-o", binary, "./cmd/chrootctl"); e != nil {
 		return "", e
 	}
+	fmt.Fprintln(os.Stderr, "repoctl: Android/arm64 runtime compile complete")
 	if e = os.Chmod(binary, 0755); e != nil {
 		return "", e
 	}

@@ -12,13 +12,47 @@ import (
 	sys "chrootctl/internal/system"
 )
 
+func chr14TempRoot(t *testing.T) string {
+	t.Helper()
+	// Unix-domain socket paths are limited to roughly 108 bytes on Linux/Android.
+	// Devtool artifact validation may place TMPDIR below a long transaction path,
+	// so walk toward a shorter writable ancestor (preferring $PREFIX/tmp on Termux)
+	// until the generated clipboard socket remains safely below that limit.
+	candidates := make([]string, 0, 8)
+	if prefix := strings.TrimSpace(os.Getenv("PREFIX")); prefix != "" {
+		candidates = append(candidates, filepath.Join(prefix, "tmp"))
+	}
+	for cur := filepath.Clean(os.TempDir()); ; cur = filepath.Dir(cur) {
+		candidates = append(candidates, cur)
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+	}
+	seen := map[string]bool{}
+	for _, base := range candidates {
+		base = filepath.Clean(base)
+		if seen[base] {
+			continue
+		}
+		seen[base] = true
+		projected := filepath.Join(base, "c14-xxxxxxxxxx", "usr", "tmp", "chrootctl", "clipboard.sock")
+		if len(projected) >= 104 {
+			continue
+		}
+		root, err := os.MkdirTemp(base, "c14-")
+		if err == nil {
+			t.Cleanup(func() { _ = os.RemoveAll(root) })
+			return root
+		}
+	}
+	t.Fatalf("no writable temporary root with a Unix-socket-safe path (TMPDIR=%q)", os.TempDir())
+	return ""
+}
+
 func chr14Config(t *testing.T) config.ChrootConfig {
 	t.Helper()
-	root, err := os.MkdirTemp("", "c14-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	root := chr14TempRoot(t)
 	cfg := config.Default(config.RuntimeContext{Home: root})
 	cfg.ChrootRoot = filepath.Join(root, "chroots")
 	cfg.DistroName = "work"
