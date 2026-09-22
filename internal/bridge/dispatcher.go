@@ -136,6 +136,30 @@ func (d *Dispatcher) Run(ctx context.Context, r Request, emit func(map[string]an
 		return d.runRetry(ctx, r, emit)
 	}
 	if e := d.verifyPreview(ctx, r.Operation, r.Payload); e != nil {
+		if d.Operations != nil {
+			spec := Specs[r.Operation]
+			targetText := strings.TrimSpace(asString(r.Payload["name"]))
+			var target *string
+			if targetText != "" {
+				target = &targetText
+			}
+			request := map[string]any{"protocolVersion": r.ProtocolVersion, "requestId": r.RequestID, "operation": r.Operation, "payload": r.Payload}
+			rec, createErr := d.Operations.Create(operations.CreateOptions{Kind: r.Operation, Title: defaultTitle(r.Payload, spec.Description), TargetName: target, Request: request, Retry: request, LockScope: spec.LockScope})
+			if createErr == nil {
+				eventSink := func(event map[string]any) error {
+					event = cloneAnyMap(event)
+					event["protocolVersion"] = r.ProtocolVersion
+					event["requestId"] = r.RequestID
+					if emit != nil {
+						return emit(event)
+					}
+					return nil
+				}
+				if _, blockErr := d.Operations.BlockPreflight(&rec, asBridgeError(e), eventSink); blockErr == nil {
+					return 2
+				}
+			}
+		}
 		emitBridgeError(emit, r.RequestID, e)
 		return 2
 	}

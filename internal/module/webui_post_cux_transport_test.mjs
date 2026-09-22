@@ -63,7 +63,7 @@ await Promise.all([
 assert.equal(maxActiveQueries, 1, 'KernelSU typed query RPCs must be serialized');
 assert.equal(queryCommands.length, 3);
 for (const command of queryCommands) {
-  assert.ok(command.startsWith("'/data/adb/chrootctl/bin/chrootctl' "), 'typed queries must reuse the self-tested executable');
+  assert.ok(command.startsWith("'/data/adb/modules/chrootctl-magisk/system/bin/chrootctl' "), 'typed queries must reuse the self-tested executable');
 }
 console.log('Post-CUX KernelSU serialized typed-query transport tests passed');
 

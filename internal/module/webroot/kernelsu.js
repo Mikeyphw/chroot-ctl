@@ -108,13 +108,11 @@ export function spawn(command, args = [], options = {}) {
       try {
         if (stdout) child.stdout.emit('data', stdout);
         if (stderr) child.stderr.emit('data', stderr);
-        if (Number(errno) !== 0) {
-          const error = new Error(stderr || `KernelSU exec failed with code ${errno}`);
-          error.exitCode = Number(errno);
-          child.emit('error', error);
-        } else {
-          child.emit('exit', 0);
-        }
+        // A non-zero process status is still a successfully delivered child
+        // result. Treat it as an exit so callers can parse structured stdout
+        // (notably bridge_error NDJSON) instead of misclassifying an
+        // application failure as a transport failure and replaying the command.
+        child.emit('exit', Number.isFinite(Number(errno)) ? Number(errno) : 1);
       } finally {
         try { delete globalThis[execName]; } catch (_) { globalThis[execName] = undefined; }
       }

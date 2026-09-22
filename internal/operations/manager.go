@@ -245,6 +245,25 @@ func nextSteps(v any) []string {
 	}
 	return stringSlice(m["next_steps"])
 }
+func (m *Manager) BlockPreflight(r *Record, cause error, emit EventEmitter) (Record, error) {
+	r.State = "blocked"
+	now := float64(m.Now().UnixNano()) / 1e9
+	r.FinishedAt = &now
+	r.ProgressText = "Blocked"
+	code := errorCode(cause)
+	msg := cause.Error()
+	if msg == "" {
+		msg = fmt.Sprintf("%T", cause)
+	}
+	r.ErrorCode = &code
+	r.Error = &msg
+	r.NextSteps = []string{"Review the failure reason, refresh the preview, and retry."}
+	if err := m.persistTerminal(r, "operation_blocked", map[string]any{"code": code, "message": msg}, emit); err != nil {
+		return *r, errors.Join(cause, err)
+	}
+	return *r, nil
+}
+
 func (m *Manager) finishBlocked(r *Record, e BlockedError, emit EventEmitter) (Record, error) {
 	r.State = "blocked"
 	now := float64(m.Now().UnixNano()) / 1e9
@@ -259,7 +278,7 @@ func (m *Manager) finishBlocked(r *Record, e BlockedError, emit EventEmitter) (R
 		r.NextSteps = append(r.NextSteps, "Review operation "+e.BlockingOperationID+".")
 	}
 	r.NextSteps = append(r.NextSteps, "Retry after the conflicting operation finishes.")
-	if err := m.persistTerminal(r, "operation_blocked", map[string]any{"message": msg}, emit); err != nil {
+	if err := m.persistTerminal(r, "operation_blocked", map[string]any{"code": code, "message": msg}, emit); err != nil {
 		return *r, err
 	}
 	return *r, nil
