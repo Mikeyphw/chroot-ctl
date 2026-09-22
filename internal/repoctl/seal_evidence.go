@@ -71,10 +71,12 @@ func validationEvidencePath(root, requested string) string {
 		}
 		return filepath.Join(root, requested)
 	}
-	if _, err := os.Stat("/system/bin/app_process"); err == nil {
-		return "/data/adb/chrootctl/validation-results.json"
-	}
-	return filepath.Join(root, "dist", "validation-results.json")
+	// Legacy repoctl final-seal evidence is intentionally repository-local.
+	// Runtime readiness is fed only by the schema-v4 root-module evidence
+	// embedded in the sealed module and published by post-fs-data.sh. Keeping
+	// the legacy schema-v3 writer out of /data/adb/chrootctl prevents a manual
+	// final-seal invocation from overwriting authoritative runtime evidence.
+	return filepath.Join(root, "dist", "legacy-final-seal-results.json")
 }
 
 func writeFinalSealEvidence(root, path string, checks map[string]validationCheck) (string, error) {

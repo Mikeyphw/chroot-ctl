@@ -36,8 +36,8 @@ func TestPostWR12CapabilityGateCoversEveryWebUIBridgeMode(t *testing.T) {
 		"appRequest(mode,operation,payload={})",
 		"await requireCapability(operation,mode)",
 		"transferRequest(mode,operation,payload){await requireCapability(operation,mode)",
-		"function requireAllowedRun(operation){if(!APP_RUN_ALLOW.has(operation))",
-		"return requireCapability(operation,'run')",
+		"async function requireAllowedRun(operation){try{if(!APP_RUN_ALLOW.has(operation))",
+		"return await requireCapability(operation,'run')",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing capability gate %q", want)

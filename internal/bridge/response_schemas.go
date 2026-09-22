@@ -41,7 +41,7 @@ var responseSchemas = map[string]ResponseSchema{
 	"smoke.result.persist":    {Kind: "operation", Fields: []string{"archive", "artifact", "result"}, CapabilityTags: []string{"smoke", "evidence"}},
 	"smoke.result.export":     {Kind: "operation", Fields: []string{"archive", "artifact", "result"}, CapabilityTags: []string{"smoke", "evidence"}},
 	"smoke.failure.bundle":    {Kind: "operation", Fields: []string{"archive", "artifact", "result"}, CapabilityTags: []string{"smoke", "evidence"}},
-	"release.readiness":       {Kind: "object", Fields: []string{"ready", "checks", "summary"}, CapabilityTags: []string{"release"}},
+	"release.readiness":       {Kind: "object", Fields: []string{"schemaVersion", "evidencePath", "evidencePresent", "evidenceProblem", "generatedAt", "validationRunId", "sourceCommit", "sourceTree", "checks", "passCount", "failCount", "pendingCount", "ready"}, CapabilityTags: []string{"release", "readiness", "evidence"}},
 	"final.release_seal":      {Kind: "object", Fields: []string{"ok", "preflight", "packaging", "noWebui"}, CapabilityTags: []string{"release", "seal"}},
 }
 

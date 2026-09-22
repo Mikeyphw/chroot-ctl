@@ -105,7 +105,10 @@ func ValidateMountServiceRuntime(root string) error {
 	if err := require("android/app/src/main/kotlin/com/mikeyphw/chrootctl/operations/ChrootOperationService.kt", "terminalConfirmed", "preserveForRecovery", "resumePersistedOperation"); err != nil {
 		return err
 	}
-	if err := require("internal/services/release_readiness.go", "android_localization_rtl", "pending"); err != nil {
+	if err := require("internal/services/release_readiness.go", "releaseEvidenceSchemaVersion = 4", "root_package", "installed_module", "native_runtime"); err != nil {
+		return err
+	}
+	if err := forbid("internal/services/release_readiness.go", "android_localization_rtl"); err != nil {
 		return err
 	}
 	return nil

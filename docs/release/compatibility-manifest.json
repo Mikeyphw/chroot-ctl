@@ -1,7 +1,7 @@
 {
   "androidApp": {
     "applicationId": "com.mikeyphw.chrootctl",
-    "minimumSupportedModuleVersionCode": 15,
+    "minimumSupportedModuleVersionCode": 18,
     "versionCode": 1,
     "versionName": "0.1.0-phase29"
   },
@@ -13,13 +13,16 @@
   "module": {
     "id": "chrootctl-magisk",
     "minimumSupportedBridgeProtocolVersion": 1,
-    "version": "1.3.0",
-    "versionCode": 15
+    "version": "1.3.3",
+    "versionCode": 18
   },
   "nativeRuntime": {
     "abi": "arm64-v8a",
     "entrypoint": "chrootctl",
     "kind": "go-native",
+    "optionalExecutables": [
+      "rclone"
+    ],
     "platform": "android",
     "schemaVersion": 2
   },

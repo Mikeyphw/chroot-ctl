@@ -4,4 +4,4 @@ Runtime updates stage and validate the sealed Go-native runtime before replacing
 
 Current Android resolution and release validation are Go-only and fail closed on missing, unsafe, unsealed, identity-mismatched, Python, or legacy Nuitka runtime artifacts.
 
-`repoctl final-seal` additionally requires live frozen-contract parity, the GO02 real-device SQLite acceptance gate, Go tests/vet, Android compile/unit/lint gates, deterministic source and module archives, module shell validation, and the retired-WebUI scan before it records schema-v3 release evidence.
+`repoctl final-seal` remains the broad source/release audit entrypoint. Runtime release readiness is now sealed separately by the `chrootctl_root_module` Devtool lifecycle as schema-v4 evidence for restore, build, test, lint, and package, then embedded into the module and published by the active installation.

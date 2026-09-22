@@ -48,4 +48,5 @@ go vet \
 # TMUX-01 shell/runtime contract lint.
 bash -n scripts/tmux/build-static-android-arm64.sh scripts/tmux/verify-static-android-arm64.sh scripts/tmux/check-reproducible.sh scripts/tmux/test-android-glob-compat.sh
 clang -Wall -Wextra -Werror -DCHROOTCTL_ANDROID_GLOB_COMPAT=1 -Iscripts/tmux -fsyntax-only scripts/tmux/android-glob-compat.c
-sh -n scripts/devtool/root-module-build.sh scripts/devtool/root-module-restore.sh scripts/devtool/root-module-package.sh
+sh -n scripts/devtool/root-module-build.sh scripts/devtool/root-module-restore.sh scripts/devtool/root-module-test.sh scripts/devtool/root-module-package.sh scripts/devtool/root-module-evidence.sh
+scripts/devtool/root-module-evidence.sh record root_lint 'scripts/devtool/root-module-lint.sh'

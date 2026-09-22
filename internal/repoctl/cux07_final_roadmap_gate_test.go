@@ -31,7 +31,7 @@ func TestCUX07FinalRoadmapGate(t *testing.T) {
 	if !strings.Contains(h, `data-route="logs" data-section="logs"`) {
 		t.Fatal("System Logs child route is missing its compatibility section marker")
 	}
-	panels := []string{"home", "chroots", "create", "users", "services", "snapshots", "storage", "catalog", "maintenance", "diagnostics", "readiness", "transfer", "rclone", "sessions", "operations", "activity", "logs", "settings", "placeholder"}
+	panels := []string{"home", "chroots", "create", "users", "services", "snapshots", "storage", "catalog", "maintenance", "diagnostics", "transfer", "rclone", "sessions", "operations", "activity", "logs", "settings", "placeholder"}
 	for _, p := range panels {
 		if !strings.Contains(h, `id="`+p+`-panel"`) {
 			t.Fatalf("panel %s missing", p)
@@ -39,6 +39,12 @@ func TestCUX07FinalRoadmapGate(t *testing.T) {
 		if !strings.Contains(j, `$('`+p+`-panel').classList.toggle('hidden',!`) {
 			t.Fatalf("panel %s is not explicitly routed", p)
 		}
+	}
+	if strings.Contains(h, `id="readiness-panel"`) || strings.Contains(j, `$('readiness-panel')`) {
+		t.Fatal("retired duplicate readiness panel remains after System diagnostics convergence")
+	}
+	if !strings.Contains(j, "if(name==='readiness')name='diagnostics'") {
+		t.Fatal("legacy readiness route does not redirect into System diagnostics")
 	}
 	for _, want := range []string{"const appState=", "bootstrapBackend()", "restoredRoute()", "bindContextualChrootSelect", "createSession(", "captureSession(", "inputSession(", "detachSession(", "killSession(", "operationCard", "activeJob", "sectionOwnsRefresh", "rcloneStatus()", "currentSection==='operations'||currentSection==='activity'"} {
 		if !strings.Contains(j, want) {

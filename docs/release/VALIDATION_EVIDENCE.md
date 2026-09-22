@@ -1,63 +1,50 @@
 # Final validation evidence contract
 
-GO17 release readiness is evidence-driven and Go-native. `repoctl final-seal` is the only supported producer of passing final-validation evidence; it executes the release gates itself and then writes `validation-results.json` atomically with mode `0600`.
+Runtime release readiness is driven by the **root-module product gate**. The authoritative producer is the `chrootctl_root_module` Devtool lifecycle: restore → build → test → lint → package. The package stage converts the successful stage markers into `schemaVersion: 4` evidence, embeds that evidence into the sealed module at `config/chrootctl/validation-results.json`, rebuilds/verifies the module ZIP, and `post-fs-data.sh` publishes the exact sealed bytes to `/data/adb/chrootctl/validation-results.json` with mode `0600`.
 
-Runtime readiness consumes `validation-results.json` from the chrootctl state directory, or the path named by `CHROOTCTL_VALIDATION_RESULTS`.
+Runtime readiness consumes `/data/adb/chrootctl/validation-results.json`, or the path named by `CHROOTCTL_VALIDATION_RESULTS`. The active installed module and bundled runtime are checked independently at runtime; a passing historical build is never enough when the installed module seal is broken.
 
-## Schema v3 and identity
+## Schema v4 and identity
 
-The file uses `schemaVersion: 3` and records:
+The evidence records:
 
 - `validationRunId` and `generatedAt`;
-- optional `sourceCommit` and `sourceTree` when sealing from a Git checkout;
-- `compatibilityManifestSha256`, the SHA-256 of `docs/release/compatibility-manifest.json`; and
-- the exact required `checks` object.
+- optional `sourceCommit` and `sourceTree` when a producer can bind evidence to an immutable Git identity;
+- `compatibilityManifestSha256`, the SHA-256 of the exact compatibility manifest embedded in the module; and
+- the exact root-module lifecycle `checks` object.
 
-When a Git checkout is available, `final-seal` refuses to record evidence from a dirty worktree and records the current `HEAD` and `HEAD^{tree}`. Runtime readiness rejects evidence when those recorded identities no longer match the current checkout. Installed runtimes without `.git` are anchored by the compatibility-manifest SHA-256.
+Installed runtimes are anchored by the compatibility-manifest SHA-256. When a Git checkout is available and evidence contains Git identities, runtime readiness additionally verifies those identities and requires a clean source worktree.
 
 ## Required checks
 
-The exact check IDs are:
+The exact schema-v4 build check IDs are:
 
-- `go_test`
-- `go_vet`
-- `go_contracts`
-- `repo_purity`
-- `source_package`
-- `android_compileDebugKotlin`
-- `android_testDebugUnitTest`
-- `android_lint_configuration_seal`
-- `module_render`
-- `module_zip`
-- `module_shell`
-- `source_no_webui`
+- `root_restore`
+- `root_build`
+- `root_test`
+- `root_lint`
+- `root_package`
 
-A passing check carries `status: pass`, `exitCode: 0`, a non-empty `command`, a positive `recordedAt`, and provenance of either `subprocess` or `internal-check`. Missing, extra, malformed, or failed checks make release readiness fail closed.
+A passing check carries `status: pass`, `exitCode: 0`, a non-empty `command`, a positive `recordedAt`, and provenance of `devtool-stage`, `subprocess`, or `internal-check`. Missing, extra, malformed, or failed build checks make the evidence fail closed.
 
-`go_contracts` validates the retained GO16 test map, the frozen GO00 fixtures, and the live 78-node CLI / 86-operation bridge metadata. `source_package` builds the source archive twice and requires identical SHA-256 values. `module_zip` likewise packages the module twice and requires byte-for-byte deterministic ZIP output. The three Android checks execute the exact Gradle tasks rather than accepting caller assertions. `source_no_webui` scans the current runtime source for retired WebUI dependencies/surfaces.
+Runtime readiness then appends two live checks that are **not caller-authored evidence**:
 
-Repository-internal validation also seals the CHR01–CHR03 roadmap foundations before final evidence can pass: build/Devtool configuration, generated CLI-contract freshness, the complete 609→272 audit ledger, and CHR03 configuration/registry/Room identity invariants.
+- `installed_module` — the activated persistent module payload matches the package seal; and
+- `native_runtime` — the bundled native runtime is active, executable, and passes its runtime manifest seal.
 
-## GO02 device prerequisite
-
-The GO02 SQLite compatibility gate is separate from the 12 schema-v3 checks because it proves a physical execution environment, not a source-tree test. A final seal must either:
-
-- run on Android/arm64, where the acceptance probe executes directly; or
-- receive `--go02-evidence <file>` produced by `repoctl go02-device-acceptance --evidence <file>` on a real Android/arm64 device.
-
-The device probe opens a frozen Python-created registry fixture with the Go SQLite layer, verifies the required PRAGMAs/schema/integrity/cascade behavior, mutates it, closes it, reopens it, and verifies the committed Go-written state. Evidence is rejected unless it is a regular non-symlink file with no group/other permissions and the expected frozen-fixture identity/invariants.
+The old Android-companion evidence IDs (`android_compileDebugKotlin`, `android_testDebugUnitTest`, `android_lint_configuration_seal`, and the synthetic `android_localization_rtl` pending row) are retired from runtime readiness. They cannot make the root-module product Ready or block it forever.
 
 ## Producer and persistence safety
 
-Use:
+Use the normal Devtool target validation:
 
 ```sh
-scripts/final-seal --go02-evidence /path/to/go02-evidence.json
+devtool -r "$HOME/Code/chroot-ctl" --target chrootctl_root_module validate
 ```
 
-On Android/arm64 the `--go02-evidence` argument is not required because the probe runs directly. `scripts/release` invokes the same final seal before creating release artifacts, so release packaging cannot bypass these gates.
+The package stage requires markers from restore, build, test, and lint before it can publish `root_package`. Evidence is written into the package with mode `0600`, included in the package manifest, and the ZIP checksum is regenerated after evidence sealing. The active module publishes the same sealed bytes atomically to the state directory during boot and live activation. An unvalidated module build carries no passing runtime evidence, and activation removes stale state evidence when the active package does not contain a sealed evidence file.
 
-Evidence is written through a same-directory temporary file, file `fsync`, atomic rename, and mode `0600`. This is an execution/provenance and source-identity seal, not a public-key signature scheme; an actor with arbitrary write access as the evidence owner/root can still replace local bytes outside chrootctl.
+`repoctl final-seal` remains a broader source/release audit entrypoint for historical roadmap and cross-surface checks, but it is not the authoritative producer consumed by root-module runtime readiness.
 
 ## CHR07 destructive CRUD seal
 
@@ -178,7 +165,10 @@ The post-CHR21 `devtool lint` run reached `:chrootctlAndroidLintConfigurationSea
 
 Overlay 23 of 23 restores a single composite release gate after the Android-only CHR21/CHR22 work. `.devtool-artifact/validate.sh` again runs `go run ./cmd/repoctl validate` before Android `:chrootctlAndroidAppSeal`, then replays `:chrootctlAndroidLintConfigurationSeal` to prove configuration-cache reuse.
 
-The convergence gate closes all 272 canonical roadmap findings, including the 16 CHR16-owned findings and their 42 source manifestations. It adds production mutation audit coverage, CLI error redaction, bounded/symlink-safe log tails, service-log rotation, Android password-state cleanup and non-overlapping live-log refreshes, exact CHR14–CHR20 audit-coverage enforcement, and one release evidence ID (`android_lint_configuration_seal`).
+The convergence gate closes all 272 canonical roadmap findings, including the 16 CHR16-owned findings and their 42 source manifestations. It adds production mutation audit coverage, CLI error redaction, bounded/symlink-safe log tails, service-log rotation, Android password-state cleanup and non-overlapping live-log refreshes, exact CHR14–CHR20 audit-coverage enforcement, and the schema-v4 root-module validation evidence contract consumed by the active module.
 
 Acceptance requires the Devtool overlay apply itself to complete with zero diagnostics; Android-only success is no longer sufficient to claim full roadmap closure.
+### Legacy final-seal isolation
+
+`repoctl final-seal` remains available for the broader historical repository audit, but its schema-v3 output is repository-local (`dist/legacy-final-seal-results.json`) unless an explicit path is supplied. It must never overwrite `/data/adb/chrootctl/validation-results.json`; runtime readiness accepts only the schema-v4 evidence embedded by the root-module Devtool gate and published by the installed module lifecycle.
 

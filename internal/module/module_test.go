@@ -614,3 +614,114 @@ func TestValidateZipArchiveRequiresWebUIEvenWithSelfConsistentManifest(t *testin
 		t.Fatalf("expected required WebUI file rejection, got %v", err)
 	}
 }
+
+func TestPostCUXValidateInstalledAllowsConsumedCustomizeScript(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	if err := Render(Options{OutputDir: out, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(out, "customize.sh")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateInstalled(out); err != nil {
+		t.Fatalf("activated module should not require consumed customize.sh: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "webroot", "index.js"), []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateInstalled(out); err == nil || !strings.Contains(err.Error(), "seal mismatch") {
+		t.Fatalf("installed persistent payload tamper must fail closed, got %v", err)
+	}
+}
+
+func TestPostCUXSealValidationEvidenceJoinsPackageSeal(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	z := filepath.Join(t.TempDir(), "module.zip")
+	if err := Render(Options{OutputDir: out, ZipPath: z, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	evidence := []byte(`{"schemaVersion":4,"checks":{"root_restore":{"status":"pass"}}}` + "\n")
+	if err := SealValidationEvidence(out, z, evidence); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(filepath.Join(out, filepath.FromSlash(ValidationEvidencePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("validation evidence mode=%04o want 0600", st.Mode().Perm())
+	}
+	if err := ValidateRendered(out); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateZipArchive(z); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(out, "customize.sh")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateInstalled(out); err != nil {
+		t.Fatalf("sealed activated module should validate without customize.sh: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(out, filepath.FromSlash(ValidationEvidencePath)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateInstalled(out); err == nil || !strings.Contains(err.Error(), "validation evidence mode") {
+		t.Fatalf("installed validation evidence must remain private, got %v", err)
+	}
+}
+
+func TestPostCUXPostFSDataPublishesSealedValidationEvidence(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	z := filepath.Join(t.TempDir(), "module.zip")
+	if err := Render(Options{OutputDir: out, ZipPath: z, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	evidence := []byte(`{"schemaVersion":4,"checks":{"root_restore":{"status":"pass"}}}` + "\n")
+	if err := SealValidationEvidence(out, z, evidence); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(t.TempDir(), "state")
+	cmd := exec.Command("sh", filepath.Join(out, "post-fs-data.sh"))
+	cmd.Env = append(os.Environ(), "CHROOTCTL_MODULE_DIR="+out, "CHROOTCTL_STATE_ROOT="+state)
+	if raw, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("post-fs-data failed: %v\n%s", err, raw)
+	}
+	published := filepath.Join(state, "validation-results.json")
+	raw, err := os.ReadFile(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != string(evidence) {
+		t.Fatalf("published validation evidence differs from sealed module copy")
+	}
+	st, err := os.Stat(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("published validation evidence mode=%04o want 0600", st.Mode().Perm())
+	}
+}
+
+func TestPostCUXCheckedInCompatibilityManifestMatchesModulePayload(t *testing.T) {
+	r := fakeRuntime(t)
+	out := filepath.Join(t.TempDir(), "module")
+	if err := Render(Options{OutputDir: out, NativeRuntimeDir: r}); err != nil {
+		t.Fatal(err)
+	}
+	generated, err := os.ReadFile(filepath.Join(out, "config", "chrootctl", "compatibility-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkedIn, err := os.ReadFile(filepath.Join("..", "..", "docs", "release", "compatibility-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(generated) != string(checkedIn) {
+		t.Fatal("checked-in compatibility manifest drifted from module compatibility payload")
+	}
+}

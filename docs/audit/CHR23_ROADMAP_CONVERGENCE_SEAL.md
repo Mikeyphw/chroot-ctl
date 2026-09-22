@@ -33,7 +33,7 @@ The convergence implementation adds or seals the missing behavior:
 
 ## Release evidence convergence
 
-The current lint evidence ID is `android_lint_configuration_seal` everywhere in the release evidence/readiness path. The retired `android_lintDebug` ID is rejected by the CHR23 gate.
+Runtime release readiness now follows the root-module product gate and schema-v4 evidence (`root_restore`, `root_build`, `root_test`, `root_lint`, `root_package`). Retired Android-companion evidence IDs are rejected from the runtime-readiness path.
 
 CI, Devtool, repoctl final-seal, Android release policy, and documentation all name `:chrootctlAndroidAppSeal` as the current Android release gate.
 

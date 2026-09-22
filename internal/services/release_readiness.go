@@ -17,12 +17,14 @@ import (
 type ReleaseReadinessService struct{ C *Container }
 type readinessRequirement struct{ ID, Label string }
 
-const releaseEvidenceSchemaVersion = 3
+const releaseEvidenceSchemaVersion = 4
 
 var readinessRequirements = []readinessRequirement{
-	{"go_test", "Go test suite"}, {"go_vet", "Go vet"}, {"go_contracts", "Go contract seal"}, {"repo_purity", "Go-only repository purity"}, {"audit_coverage", "Audit coverage ledger"},
-	{"source_package", "Source package validator"}, {"android_compileDebugKotlin", "Android compileDebugKotlin"}, {"android_testDebugUnitTest", "Android testDebugUnitTest"}, {"android_lint_configuration_seal", "Android lint configuration seal"},
-	{"module_render", "Module render/tree validator"}, {"module_zip", "Module ZIP validator"}, {"module_shell", "Module shell contract"}, {"source_no_webui", "Retired WebUI regression scan"},
+	{"root_restore", "Root-module restore"},
+	{"root_build", "Root-module build"},
+	{"root_test", "Root-module tests"},
+	{"root_lint", "Root-module lint"},
+	{"root_package", "Root-module package seal"},
 }
 var oidRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var shaRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -154,7 +156,7 @@ func readEvidence(path string) (map[string]any, string) {
 				return map[string]any{}, fmt.Sprintf("validation evidence passing check %s has incomplete execution provenance", id)
 			}
 			prov := stringValue(item["provenance"])
-			if prov != "subprocess" && prov != "internal-check" {
+			if prov != "subprocess" && prov != "internal-check" && prov != "devtool-stage" {
 				return map[string]any{}, fmt.Sprintf("validation evidence passing check %s has invalid provenance", id)
 			}
 		}
@@ -252,6 +254,19 @@ func (s *ReleaseReadinessService) Status() map[string]any {
 	raw, _ := payload["checks"].(map[string]any)
 	checks := []map[string]any{}
 	pass, fail, pending := 0, 0, 0
+	appendCheck := func(row map[string]any) {
+		status := strings.ToLower(stringValue(row["status"]))
+		switch status {
+		case "pass":
+			pass++
+		case "fail":
+			fail++
+		default:
+			pending++
+			row["status"] = "pending"
+		}
+		checks = append(checks, row)
+	}
 	for _, req := range readinessRequirements {
 		item := map[string]any{}
 		if v, ok := raw[req.ID].(map[string]any); ok {
@@ -262,24 +277,66 @@ func (s *ReleaseReadinessService) Status() map[string]any {
 			status = "pending"
 		}
 		detail := stringValue(item["detail"])
-		if status == "pass" {
-			pass++
-		} else if status == "fail" {
-			fail++
+		if status == "pending" && detail == "" {
+			detail = "No root-module Devtool validation evidence recorded."
+		}
+		appendCheck(map[string]any{"id": req.ID, "label": req.Label, "status": status, "detail": detail, "command": stringValue(item["command"]), "provenance": stringValue(item["provenance"]), "exitCode": item["exitCode"], "recordedAt": item["recordedAt"]})
+	}
+
+	module := s.C.ModuleRuntime().Status()
+	installed, _ := module["installed"].(bool)
+	installedState, _ := module["installedState"].(map[string]any)
+	layoutReady, _ := installedState["layoutReady"].(bool)
+	packageSealReady, _ := installedState["packageSealReady"].(bool)
+	moduleDetail := "Installed module has not been detected."
+	moduleStatus := "pending"
+	if installed {
+		if layoutReady && packageSealReady {
+			moduleStatus = "pass"
+			moduleDetail = "Activated module persistent payload matches its sealed package manifest."
 		} else {
-			pending++
-			status = "pending"
-			if detail == "" {
-				detail = "No Go-native final-seal evidence recorded."
+			moduleStatus = "fail"
+			moduleDetail = stringValue(installedState["sealProblem"])
+			if strings.TrimSpace(moduleDetail) == "" {
+				moduleDetail = "Installed module persistent payload is incomplete or does not match the package seal."
 			}
 		}
-		checks = append(checks, map[string]any{"id": req.ID, "label": req.Label, "status": status, "detail": detail, "command": stringValue(item["command"]), "provenance": stringValue(item["provenance"]), "exitCode": item["exitCode"], "recordedAt": item["recordedAt"]})
 	}
-	// CHR08 makes unverified adaptive/localization readiness visible instead of
-	// allowing Home to report a green release state. CHR20 owns the final proof.
-	checks = append(checks, map[string]any{"id": "android_localization_rtl", "label": "Android localization/RTL proof", "status": "pending", "detail": "Final localization/RTL release evidence is required by CHR20."})
-	pending++
-	return map[string]any{"schemaVersion": releaseEvidenceSchemaVersion, "evidencePath": path, "evidencePresent": problem == "" && exists(path), "evidenceProblem": nilIfEmpty(problem), "generatedAt": payload["generatedAt"], "validationRunId": stringValue(payload["validationRunId"]), "sourceCommit": stringValue(payload["sourceCommit"]), "sourceTree": stringValue(payload["sourceTree"]), "checks": checks, "passCount": pass, "failCount": fail, "pendingCount": pending, "ready": fail == 0 && pending == 0 && pass == len(readinessRequirements)}
+	appendCheck(map[string]any{"id": "installed_module", "label": "Installed module seal", "status": moduleStatus, "detail": moduleDetail})
+
+	runtimeReady, _ := module["ready"].(bool)
+	runtimeStatus := "pending"
+	runtimeDetail := "No active bundled runtime is available."
+	if installed {
+		if runtimeReady {
+			runtimeStatus = "pass"
+			runtimeDetail = "Bundled native runtime is active and sealed."
+		} else {
+			runtimeStatus = "fail"
+			if rr, ok := installedState["runtimeReadiness"].(map[string]any); ok {
+				if reason := strings.TrimSpace(stringValue(rr["reason"])); reason != "" {
+					runtimeDetail = reason
+				}
+			}
+		}
+	}
+	appendCheck(map[string]any{"id": "native_runtime", "label": "Native runtime", "status": runtimeStatus, "detail": runtimeDetail})
+
+	return map[string]any{
+		"schemaVersion":   releaseEvidenceSchemaVersion,
+		"evidencePath":    path,
+		"evidencePresent": problem == "" && exists(path),
+		"evidenceProblem": nilIfEmpty(problem),
+		"generatedAt":     payload["generatedAt"],
+		"validationRunId": stringValue(payload["validationRunId"]),
+		"sourceCommit":    stringValue(payload["sourceCommit"]),
+		"sourceTree":      stringValue(payload["sourceTree"]),
+		"checks":          checks,
+		"passCount":       pass,
+		"failCount":       fail,
+		"pendingCount":    pending,
+		"ready":           fail == 0 && pending == 0 && pass == len(readinessRequirements)+2,
+	}
 }
 func (s *ReleaseReadinessService) Check(status map[string]any, id string) map[string]any {
 	if rows, ok := status["checks"].([]map[string]any); ok {

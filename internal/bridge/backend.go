@@ -1607,11 +1607,26 @@ func (b *ServicesBackend) smokeRun(ctx context.Context, p map[string]any, progre
 		id := asString(step["id"])
 		var val any
 		var e error
+		stepOK := true
+		var stepError any
 		switch id {
 		case "runtime":
-			val = b.Services.Lifecycle().Status()
+			status := b.Services.Lifecycle().Status()
+			val = status
+			backend, _ := status["backend"].(map[string]any)
+			ready, _ := backend["ready"].(bool)
+			stepOK = ready
+			if !ready {
+				stepError = defaultText(asString(backend["reason"]), "bundled runtime is not ready")
+			}
 		case "module":
-			val = b.Services.ModuleRuntime().Status()
+			status := b.Services.ModuleRuntime().Status()
+			val = status
+			ready, _ := status["ready"].(bool)
+			stepOK = ready
+			if !ready {
+				stepError = "active module runtime/package seal is not ready"
+			}
 		case "registry":
 			val, e = b.Services.Chroots().List(ctx)
 		case "dashboard":
@@ -1619,7 +1634,11 @@ func (b *ServicesBackend) smokeRun(ctx context.Context, p map[string]any, progre
 		case "target":
 			val, e = b.Services.System().Status(ctx, target, true)
 		}
-		results = append(results, map[string]any{"id": id, "ok": e == nil, "result": val, "error": errText(e)})
+		if e != nil {
+			stepOK = false
+			stepError = errText(e)
+		}
+		results = append(results, map[string]any{"id": id, "ok": stepOK, "result": val, "error": stepError})
 	}
 	failed := 0
 	for _, r := range results {
@@ -1739,13 +1758,14 @@ func (b *ServicesBackend) finalPreflight() (any, error) {
 }
 func (b *ServicesBackend) finalPackaging() (any, error) {
 	m := b.Services.ModuleRuntime().Status()
-	return map[string]any{"ok": m["status"] == "ready", "module": m, "compatibilitySchemaVersion": 3, "bridgeProtocolVersion": 1}, nil
+	ready, _ := m["ready"].(bool)
+	return map[string]any{"ok": ready, "module": m, "compatibilitySchemaVersion": 3, "bridgeProtocolVersion": 1}, nil
 }
 func (b *ServicesBackend) finalNoWebUI() (any, error) {
 	status := b.Services.ReleaseReadiness().Status()
-	check := b.Services.ReleaseReadiness().Check(status, "source_no_webui")
+	check := b.Services.ReleaseReadiness().Check(status, "root_package")
 	ok := check["status"] == "pass"
-	return map[string]any{"ok": ok, "retired": ok, "evidence": check, "checks": []string{"No WebUI runtime is required by the Go backend.", "Android communicates only through protocol-v1 bridge operations."}}, nil
+	return map[string]any{"ok": ok, "retired": true, "evidence": check, "checks": []string{"The retired standalone Android companion is not part of the root-module release surface.", "The embedded WebUI communicates only through typed protocol-v1 bridge operations."}}, nil
 }
 func (b *ServicesBackend) finalSeal() (any, error) {
 	pre, _ := b.finalPreflight()

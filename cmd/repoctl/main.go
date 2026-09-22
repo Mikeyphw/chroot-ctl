@@ -10,7 +10,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|go02-device-acceptance|final-seal|release|doctor-cross-arch> [options]")
+	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|go02-device-acceptance|final-seal|seal-root-module-evidence|release|doctor-cross-arch> [options]")
 }
 func fail(err error) { fmt.Fprintln(os.Stderr, "repoctl:", err); os.Exit(1) }
 func main() {
@@ -88,6 +88,16 @@ func main() {
 		evidence := fs.String("evidence", "", "write schema-v3 final validation evidence; defaults to Android state or dist/")
 		fs.Parse(os.Args[2:])
 		if e := repoctl.FinalSeal(repoctl.FinalSealOptions{WorkDir: *work, Jobs: *jobs, GO02Evidence: *go02Evidence, EvidencePath: *evidence}); e != nil {
+			fail(e)
+		}
+	case "seal-root-module-evidence":
+		fs := flag.NewFlagSet("seal-root-module-evidence", flag.ExitOnError)
+		markers := fs.String("markers", "out/devtool-evidence", "Devtool root-module stage markers")
+		moduleDir := fs.String("module-dir", "out/module", "rendered module directory")
+		zipPath := fs.String("zip", "out/chrootctl-magisk.zip", "module ZIP path")
+		checksum := fs.Bool("checksum", true, "refresh ZIP checksum sidecar")
+		fs.Parse(os.Args[2:])
+		if e := repoctl.SealRootModuleEvidence(*markers, *moduleDir, *zipPath, *checksum); e != nil {
 			fail(e)
 		}
 	case "release":

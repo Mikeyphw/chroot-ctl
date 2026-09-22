@@ -93,6 +93,8 @@ inputs = [
   "internal/testseal/**",
   "migration/contracts/**",
   "docs/release/WEBUI_*.md",
+  "docs/release/compatibility-manifest.json",
+  "docs/release/VALIDATION_EVIDENCE.md",
   "scripts/devtool/root-module-*.sh",
   "scripts/tmux/**",
   "docs/runtime/TMUX_STATIC_RUNTIME.md",
@@ -132,7 +134,13 @@ inputs = [
 [targets.chrootctl_root_module.workflows]
 build = ["runner:command#restore", "runner:command#build"]
 test = ["runner:command#test"]
-package = ["runner:command#restore", "runner:command#build", "runner:command#package"]
+package = [
+  "runner:command#restore",
+  "runner:command#build",
+  "runner:command#test",
+  "job:chrootctl-root-module-lint",
+  "runner:command#package",
+]
 validate = [
   "runner:command#restore",
   "runner:command#build",

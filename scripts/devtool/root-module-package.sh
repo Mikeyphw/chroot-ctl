@@ -125,3 +125,21 @@ if grep -REn 'mux\.Handle(Func)?\("/api/v1/(shell|exec|argv|root-rpc|rpc|command
 fi
 grep -Fq 'action.sh' internal/module/module.go || { echo "standalone Action launcher missing" >&2; exit 1; }
 grep -Fq 'case <-srv.Done()' cmd/chrootctl/main.go || { echo "standalone server process does not exit after idle shutdown" >&2; exit 1; }
+
+# Publish schema-v4 release evidence only after restore/build/test/lint and all
+# package preflight checks succeeded. The evidence is embedded into the module
+# package seal and copied to /data/adb/chrootctl by post-fs-data after install.
+scripts/devtool/root-module-evidence.sh require root_restore root_build root_test root_lint
+out/repoctl-devtool seal-root-module-evidence \
+  --markers out/devtool-evidence \
+  --module-dir "$TREE" \
+  --zip "$ZIP" \
+  --checksum=true
+
+expected="$(awk 'NR==1 {print $1}' "$SUM")"
+actual="$(sha256sum "$ZIP" | awk '{print $1}')"
+[ -n "$expected" ] && [ "$expected" = "$actual" ] || { echo "post-evidence module checksum mismatch" >&2; exit 1; }
+[ -s "$TREE/config/chrootctl/validation-results.json" ] || { echo "root-module validation evidence was not embedded" >&2; exit 1; }
+mode="$(stat -c '%a' "$TREE/config/chrootctl/validation-results.json")"
+[ "$mode" = "600" ] || { echo "root-module validation evidence mode is $mode, want 600" >&2; exit 1; }
+echo "Root-module validation evidence sealed into package."

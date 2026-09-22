@@ -35,6 +35,7 @@ const (
 	ModulePackageSchemaVersion = 1
 	ModulePackageManifestPath  = "config/chrootctl/module-package-manifest.json"
 	RuntimeExecutablesListPath = "config/chrootctl/runtime-executables.list"
+	ValidationEvidencePath     = "config/chrootctl/validation-results.json"
 )
 
 // webUIFS is compiled into repoctl so module rendering is deterministic and
@@ -49,6 +50,20 @@ var webUIAssetPaths = []string{
 	"index.js",
 	"kernelsu.js",
 	"chrootctl.js",
+}
+
+func installedModuleFiles() []string {
+	required := []string{
+		"module.prop", "post-fs-data.sh", "service.sh", "action.sh",
+		"bin/chrootctl-magisk-helper", "bin/chrootctl-log-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper",
+		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", RuntimeExecutablesListPath,
+		"runtime/" + RuntimeABI + "/runtime-manifest.json",
+		"runtime/" + RuntimeABI + "/" + RuntimeEntrypoint,
+	}
+	for _, asset := range webUIAssetPaths {
+		required = append(required, "webroot/"+asset)
+	}
+	return required
 }
 
 func requiredModuleFiles() []string {
@@ -742,6 +757,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     set_perm "$MODPATH/bin/chrootctl-log-helper" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755
+    [ ! -f "$MODPATH/config/chrootctl/validation-results.json" ] || set_perm "$MODPATH/config/chrootctl/validation-results.json" 0 0 0600
   else
     chmod 0755 "$MODPATH/customize.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/post-fs-data.sh" 2>/dev/null || true
@@ -752,6 +768,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     chmod 0755 "$MODPATH/bin/chrootctl-log-helper" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl-magisk-helper" 2>/dev/null || true
+    [ ! -f "$MODPATH/config/chrootctl/validation-results.json" ] || chmod 0600 "$MODPATH/config/chrootctl/validation-results.json" 2>/dev/null || true
   fi
 
   if ! restore_runtime_exec_modes "$RUNTIME_ROOT" "$RUNTIME_EXEC_LIST"; then
@@ -848,11 +865,27 @@ chmod 0755 "$PUBLIC.tmp" || { rm -f "$PUBLIC.tmp"; exit 0; }
 mv -f "$PUBLIC.tmp" "$PUBLIC"
 restorecon "$PUBLIC" 2>/dev/null || true
 [ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "post-fs-data stable-launcher-refreshed" || true
+
+# Publish the exact validation evidence sealed into this module. The runtime
+# readiness service reads the state copy so it works independently of the
+# root-manager mount implementation. Never preserve evidence from an older
+# module when the active package does not contain a sealed evidence file.
+EVIDENCE_SOURCE="$MODDIR/config/chrootctl/validation-results.json"
+EVIDENCE_TARGET="$STATE_ROOT/validation-results.json"
+if [ -f "$EVIDENCE_SOURCE" ] && [ ! -L "$EVIDENCE_SOURCE" ]; then
+  cp "$EVIDENCE_SOURCE" "$EVIDENCE_TARGET.tmp" 2>/dev/null || { rm -f "$EVIDENCE_TARGET.tmp"; exit 0; }
+  chown 0:0 "$EVIDENCE_TARGET.tmp" 2>/dev/null || true
+  chmod 0600 "$EVIDENCE_TARGET.tmp" || { rm -f "$EVIDENCE_TARGET.tmp"; exit 0; }
+  mv -f "$EVIDENCE_TARGET.tmp" "$EVIDENCE_TARGET"
+else
+  rm -f "$EVIDENCE_TARGET" "$EVIDENCE_TARGET.tmp" 2>/dev/null || true
+fi
+[ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "post-fs-data validation-evidence-refreshed" || true
 exit 0
 `
 }
 func uninstall() string {
-	return "#!/system/bin/sh\nset -u\nLOGGER=/data/adb/modules/chrootctl-magisk/bin/chrootctl-log-helper\n[ -x \"$LOGGER\" ] && \"$LOGGER\" module \"uninstall begin\" || true\nSTATE_ROOT=/data/adb/chrootctl\n[ -n \"${CHROOTCTL_STATE_ROOT:-}\" ] && STATE_ROOT=\"$CHROOTCTL_STATE_ROOT\"\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/bin/chrootctl\" 2>/dev/null || true\n  rmdir \"$STATE_ROOT/bin\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
+	return "#!/system/bin/sh\nset -u\nLOGGER=/data/adb/modules/chrootctl-magisk/bin/chrootctl-log-helper\n[ -x \"$LOGGER\" ] && \"$LOGGER\" module \"uninstall begin\" || true\nSTATE_ROOT=/data/adb/chrootctl\n[ -n \"${CHROOTCTL_STATE_ROOT:-}\" ] && STATE_ROOT=\"$CHROOTCTL_STATE_ROOT\"\nif [ -d \"$STATE_ROOT\" ]; then\n  rm -f \"$STATE_ROOT/bin/chrootctl\" 2>/dev/null || true\n  rmdir \"$STATE_ROOT/bin\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/control.state\" \"$STATE_ROOT/android-app.enabled\" \"$STATE_ROOT/validation-results.json\" \"$STATE_ROOT/clipboard-daemon.pid\" \"$STATE_ROOT/clipboard-daemon.token\" \"$STATE_ROOT/clipboard-daemon.identity.json\" 2>/dev/null || true\n  rm -f \"$STATE_ROOT/clipboard.sock\" 2>/dev/null || true\nfi\nexit 0\n"
 }
 
 func logHelper() string {
@@ -1176,6 +1209,108 @@ func Zip(root, path string) error {
 	}
 	return nil
 }
+func validateInstalledPackageSubset(root string) error {
+	manifest, err := readPackageManifest(root)
+	if err != nil {
+		return fmt.Errorf("read installed module package manifest: %w", err)
+	}
+	if manifest.SchemaVersion != ModulePackageSchemaVersion || manifest.ModuleID != ModuleID || manifest.BackendVersion != BackendVersion || manifest.BridgeProtocolVersion != BridgeProtocolVersion || manifest.RuntimeSchemaVersion != RuntimeSchemaVersion || manifest.RuntimeKind != RuntimeKind || manifest.RuntimeABI != RuntimeABI || manifest.RuntimeEntrypoint != RuntimeEntrypoint {
+		return errors.New("installed module package manifest identity mismatch")
+	}
+	sealed := map[string]modulePackageFile{}
+	for _, item := range manifest.Files {
+		sealed[item.Path] = item
+	}
+	persistent := append([]string{}, installedModuleFiles()...)
+	// Validation evidence is added only after the root-module Devtool gate has
+	// completed. Pre-validation rendered trees legitimately do not contain it,
+	// but an installed package that seals it must keep it byte-identical.
+	if _, ok := sealed[ValidationEvidencePath]; ok {
+		persistent = append(persistent, ValidationEvidencePath)
+	}
+	for _, rel := range persistent {
+		want, ok := sealed[rel]
+		if !ok {
+			return fmt.Errorf("installed module package manifest missing persistent file: %s", rel)
+		}
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		st, err := safeRegular(path)
+		if err != nil {
+			return fmt.Errorf("installed module persistent file invalid: %s: %w", rel, err)
+		}
+		sum, err := shaFile(path)
+		if err != nil {
+			return err
+		}
+		if st.Size() != want.Size || sum != want.SHA256 {
+			return fmt.Errorf("installed module persistent file seal mismatch: %s", rel)
+		}
+		if want.Executable && st.Mode().Perm()&0111 == 0 {
+			return fmt.Errorf("installed module persistent executable lost execute mode: %s", rel)
+		}
+		if rel == ValidationEvidencePath && st.Mode().Perm() != 0o600 {
+			return fmt.Errorf("installed validation evidence mode is %04o, want 0600", st.Mode().Perm())
+		}
+	}
+	return nil
+}
+
+// ValidateInstalled checks the persistent live module surface. Root managers may
+// consume installer-only files such as customize.sh after activation, so the
+// strict rendered-tree validator must not be used to classify an installed
+// module as active or missing.
+func ValidateInstalled(root string) error {
+	for _, rel := range installedModuleFiles() {
+		if _, err := safeRegular(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			return err
+		}
+	}
+	if _, err := safeRegular(filepath.Join(root, filepath.FromSlash(ModulePackageManifestPath))); err != nil {
+		return err
+	}
+	if err := ValidateRuntime(filepath.Join(root, "runtime", RuntimeABI)); err != nil {
+		return err
+	}
+	if err := validateRuntimeExecutableList(root); err != nil {
+		return err
+	}
+	return validateInstalledPackageSubset(root)
+}
+
+// SealValidationEvidence embeds final root-module validation evidence into an
+// already-rendered module, refreshes the package manifest, and rebuilds the ZIP.
+// The evidence is intentionally part of the package seal rather than an
+// out-of-band file that can drift from the installed module.
+func SealValidationEvidence(root, zipPath string, raw []byte) error {
+	if len(raw) == 0 {
+		return errors.New("validation evidence is empty")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("decode validation evidence: %w", err)
+	}
+	if payload["schemaVersion"] == nil || payload["checks"] == nil {
+		return errors.New("validation evidence is missing schemaVersion/checks")
+	}
+	if err := writeFile(root, ValidationEvidencePath, string(raw), 0600); err != nil {
+		return err
+	}
+	targets, err := bootTargets(root)
+	if err != nil {
+		return err
+	}
+	if err = writePackageManifest(root, targets); err != nil {
+		return err
+	}
+	if err = ValidateRendered(root); err != nil {
+		return err
+	}
+	if err = Zip(root, zipPath); err != nil {
+		return err
+	}
+	return ValidateZipArchive(zipPath)
+}
+
 func ValidateRendered(root string) error {
 	required := append(requiredModuleFiles(), ModulePackageManifestPath)
 	for _, rel := range required {

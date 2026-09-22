@@ -130,7 +130,7 @@ func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]a
 		}
 	}
 	if layout {
-		if err := chmodule.ValidateRendered(root); err != nil {
+		if err := chmodule.ValidateInstalled(root); err != nil {
 			layout = false
 			layoutProblem = err.Error()
 		}
@@ -234,6 +234,6 @@ func (s *LifecycleService) BackendStatus() map[string]any {
 }
 func (s *LifecycleService) Status() map[string]any {
 	m := s.C.ModuleRuntime().Status()
-	_, enabledErr := os.Stat("/data/adb/chrootctl/android-app.enabled")
-	return map[string]any{"running": m["active"] != nil, "state": "android_app_primary", "control_file": "/data/adb/chrootctl/control.state", "enabled": enabledErr == nil, "mode": s.RuntimeMode(), "module": m, "backend": s.BackendStatus(), "logs": map[string]string{"module": "/data/adb/modules/" + moduleID + "/var/log/chrootctl.log", "install": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json", "dependencies": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json"}, "checked_at": time.Now().Unix()}
+	active := m["active"] != nil
+	return map[string]any{"running": active, "state": "root_module_primary", "control_file": "/data/adb/chrootctl/control.state", "enabled": active, "mode": s.RuntimeMode(), "module": m, "backend": s.BackendStatus(), "logs": map[string]string{"module": "/data/adb/modules/" + moduleID + "/var/log/chrootctl.log", "install": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json", "dependencies": "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/runtime-manifest.json"}, "checked_at": time.Now().Unix()}
 }

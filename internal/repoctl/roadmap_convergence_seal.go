@@ -50,19 +50,32 @@ func ValidateRoadmapConvergenceSeal(root string) error {
 	if err := mustContain(".github/workflows/ci.yml", "--continue :chrootctlAndroidAppSeal"); err != nil {
 		return err
 	}
-	if err := mustContain("internal/repoctl/final_seal.go",
-		`":chrootctlAndroidAppSeal"`,
-		`"android_lint_configuration_seal"`,
+	// Root-module/WebUI is now the Android product surface. Runtime release
+	// readiness must be driven by the same Devtool lifecycle that actually
+	// validates and packages that product, not by retired companion-app tasks.
+	if err := mustContain(".devtool.toml",
+		`[targets.chrootctl_root_module]`,
+		`restore_command = "scripts/devtool/root-module-restore.sh"`,
+		`build_command = "scripts/devtool/root-module-build.sh"`,
+		`test_command = "scripts/devtool/root-module-test.sh"`,
+		`package_command = "scripts/devtool/root-module-package.sh"`,
 	); err != nil {
 		return err
 	}
-	for _, rel := range []string{"internal/repoctl/seal_evidence.go", "internal/services/release_readiness.go"} {
-		if err := mustContain(rel, "android_lint_configuration_seal"); err != nil {
-			return err
-		}
-		text, _ := read(rel)
-		if strings.Contains(text, "android_lintDebug") {
-			return fmt.Errorf("CHR23 %s still uses retired android_lintDebug evidence id", rel)
+	if err := mustContain("internal/repoctl/root_module_evidence.go",
+		`root_restore`, `root_build`, `root_test`, `root_lint`, `root_package`, `devtool-stage`,
+	); err != nil {
+		return err
+	}
+	if err := mustContain("internal/services/release_readiness.go",
+		`releaseEvidenceSchemaVersion = 4`, `root_restore`, `root_build`, `root_test`, `root_lint`, `root_package`, `installed_module`, `native_runtime`,
+	); err != nil {
+		return err
+	}
+	readinessText, _ := read("internal/services/release_readiness.go")
+	for _, retired := range []string{"android_compileDebugKotlin", "android_testDebugUnitTest", "android_lint_configuration_seal", "android_localization_rtl"} {
+		if strings.Contains(readinessText, retired) {
+			return fmt.Errorf("CHR23 release readiness retains retired companion-app evidence id %q", retired)
 		}
 	}
 
