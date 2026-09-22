@@ -173,3 +173,249 @@ input:focus-visible,select:focus-visible,.remote-row:focus-visible{outline:2px s
 
 /* CUX-06: Transfer/Rclone/System convergence + accessibility */
 .skip-link{position:fixed;z-index:1000;left:12px;top:12px;transform:translateY(-180%);padding:10px 14px;border-radius:12px;background:var(--text);color:var(--bg);font-weight:750}.skip-link:focus{transform:none}.workspace-intro{margin-bottom:var(--section-gap);padding:18px 20px;border:1px solid var(--border);border-radius:var(--radius-card);background:linear-gradient(135deg,rgb(138 180 255/.08),transparent)}.workspace-intro h3{margin:.15rem 0 .45rem}.workspace-intro p:last-child{margin-bottom:0}.system-intro{margin-bottom:var(--section-gap)}button,.button,.nav-item,.tool-route,select,input,textarea{min-height:44px}.button:focus-visible,.nav-item:focus-visible,.shell-route:focus-visible,.context-route:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--accent,#8ab4ff);outline-offset:2px}.muted{line-height:1.5}@media(min-width:800px){#transfer-panel,#rclone-panel,#settings-panel{max-width:1120px;margin-inline:auto}.transfer-grid,.rclone-grid,.settings-grid{align-items:start}}@media(max-width:620px){.workspace-intro{padding:16px}.workspace-intro .actions>.button{flex:1 1 100%}.transfer-grid,.rclone-grid,.settings-grid{grid-template-columns:1fr}}
+
+/* Post-CUX flat-surface visual convergence: BKX-inspired, borderless hierarchy. */
+:root {
+  --bg: #080909;
+  --surface: #1d1b18;
+  --surface-2: #292620;
+  --surface-3: #343028;
+  --border: transparent;
+  --text: #f4efe8;
+  --muted: #c6bbb0;
+  --accent: #b9ca7b;
+  --success: #b9ca7b;
+  --danger: #ffaaa5;
+  --radius: 24px;
+  --radius-card: 24px;
+  --radius-hero: 30px;
+}
+
+html,
+body {
+  background: var(--bg);
+}
+
+.topbar,
+.bottom-nav,
+.product-nav {
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+}
+
+.topbar {
+  background: var(--bg);
+}
+
+.card,
+.workspace-intro,
+.context-bar,
+.dialog,
+.tools-sheet {
+  border: 0 !important;
+  background: var(--surface);
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.card {
+  border-radius: var(--radius-card);
+}
+
+.hero-card,
+.tools-sheet {
+  border-radius: var(--radius-hero);
+}
+
+.workspace-intro {
+  border-radius: var(--radius-card);
+}
+
+.status-chip,
+.badge,
+.button,
+.tool-route,
+input,
+select,
+textarea,
+fieldset,
+.toggle-row,
+.remote-row,
+.diagnostic-lines,
+.diagnostic-check,
+.settings-grid .check-row,
+.toast {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.status-chip,
+.badge {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.button,
+.tool-route {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.button.secondary {
+  background: var(--surface-2);
+}
+
+.button.primary {
+  border: 0 !important;
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface-2));
+  color: var(--text);
+}
+
+.button.danger {
+  border: 0 !important;
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface-2));
+  color: var(--danger);
+}
+
+.button:hover:not(:disabled),
+.tool-route:hover,
+.remote-row:hover {
+  background: var(--surface-3);
+}
+
+.button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 28%, var(--surface-2));
+}
+
+.button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 20%, var(--surface-2));
+}
+
+.button:disabled {
+  opacity: .42;
+}
+
+input,
+select,
+textarea {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+fieldset,
+.toggle-row,
+.check-row,
+.remote-row,
+.diagnostic-check,
+.detail-facts div,
+.facts > div,
+.meta div,
+.storage-facts div {
+  background: var(--surface-2);
+}
+
+.remote-row.selected,
+.nav-item.active,
+.activity-filters .active,
+.tool-route:focus-visible {
+  border: 0 !important;
+  outline: 0;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+}
+
+.notice {
+  background: var(--surface-2);
+}
+
+.danger-notice {
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
+}
+
+.diagnostic-lines,
+.terminal-output {
+  background: #11110f;
+}
+
+.product-nav {
+  background: #121210;
+}
+
+@media (min-width: 800px) {
+  .product-nav {
+    border: 0 !important;
+    background: #121210;
+  }
+}
+
+.nav-tools,
+.transfer-review,
+.session-row,
+.activity-row,
+.activity-row:last-child,
+.operation-row.needs-attention {
+  border: 0 !important;
+}
+
+.activity-row,
+.session-row {
+  padding-inline: 2px;
+}
+
+.operation-row.needs-attention {
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, #e8bf78 9%, var(--surface));
+}
+
+.transfer-review {
+  margin-top: 18px;
+  padding-top: 0;
+}
+
+.check-row,
+.toggle-row,
+.remote-row,
+.diagnostic-check {
+  border-radius: 16px;
+}
+
+.facts > div,
+.meta div,
+.storage-facts div,
+.detail-facts div {
+  border-radius: 16px;
+}
+
+.progress-track {
+  background: var(--surface-3);
+}
+
+.progress-bar {
+  color: var(--accent);
+}
+
+.eyebrow {
+  color: var(--accent);
+}
+
+.warning-text,
+.state.partial,
+.log-level.WARNING,
+.diagnostic-check .WARN {
+  color: #e7bf79;
+}
+
+/* Borders are intentionally not used for visual hierarchy. Focus remains an outline. */
+.button:focus-visible,
+.nav-item:focus-visible,
+.shell-route:focus-visible,
+.context-route:focus-visible,
+.tool-route:focus-visible,
+.remote-row:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
