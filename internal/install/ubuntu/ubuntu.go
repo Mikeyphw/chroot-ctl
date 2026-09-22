@@ -61,8 +61,15 @@ func ParseReleaseIndex(html string) []install.ReleaseRef {
 	}
 	return out
 }
+func tarballSuffixForArch(arch string) string {
+	return map[string]string{
+		"arm64": "-base-arm64.tar.gz",
+		"amd64": "-base-amd64.tar.gz",
+	}[arch]
+}
+
 func ResolveTarball(html, arch, baseURL string) (string, string, error) {
-	suffix := map[string]string{"arm64": "-base-arm64.tar.gz", "amd64": "-base-amd64.tar.gz"}[arch]
+	suffix := tarballSuffixForArch(arch)
 	if suffix == "" {
 		return "", "", fmt.Errorf("unsupported ubuntu target arch: %s", arch)
 	}

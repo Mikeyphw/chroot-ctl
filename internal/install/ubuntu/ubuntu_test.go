@@ -22,6 +22,21 @@ func TestUnsupportedArch(t *testing.T) {
 	}
 }
 
+func TestTarballSuffixForArchMatchesResolverContract(t *testing.T) {
+	tests := map[string]string{
+		"arm64": "-base-arm64.tar.gz",
+		"amd64": "-base-amd64.tar.gz",
+	}
+	for arch, want := range tests {
+		if got := tarballSuffixForArch(arch); got != want {
+			t.Fatalf("arch=%s suffix=%q want=%q", arch, got, want)
+		}
+	}
+	if got := tarballSuffixForArch("riscv64"); got != "" {
+		t.Fatalf("unsupported arch suffix=%q", got)
+	}
+}
+
 func TestResolveTarballPrefersNewestPointRelease(t *testing.T) {
 	html := `<a href="ubuntu-base-24.04.3-base-arm64.tar.gz">old</a>
 <a href="ubuntu-base-24.04.5-base-arm64.tar.gz">current</a>
