@@ -23,7 +23,7 @@ func TestWebUIKSUTransportMatchesProvenHostABI(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := string(i)
-	for _, want := range []string{"Checking KernelSU bridge", "Checking root shell", "Checking backend capabilities", "WebUI startup error", "unhandledrejection"} {
+	for _, want := range []string{"Checking backend", "Checking backend transport", "Checking backend capabilities", "WebUI startup error", "unhandledrejection"} {
 		if !strings.Contains(ui, want) {
 			t.Fatalf("missing startup diagnostic %q", want)
 		}

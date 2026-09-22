@@ -517,7 +517,7 @@ func TestWebUIFoundationIsRenderedSealedAndShellFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := string(indexRaw)
-	for _, required := range []string{"Content-Security-Policy", "data-section=\"chroots\"", "data-section=\"create\"", "data-section=\"transfer\"", "data-section=\"rclone\"", "data-section=\"operations\"", "data-section=\"logs\"", "data-section=\"settings\""} {
+	for _, required := range []string{"Content-Security-Policy", "data-section=\"home\"", "data-section=\"chroots\"", "data-section=\"sessions\"", "data-section=\"operations\"", "data-section=\"transfer\"", "data-section=\"rclone\"", "data-section=\"logs\"", "data-section=\"settings\"", "data-route=\"create\"", "data-route=\"catalog\""} {
 		if !strings.Contains(index, required) {
 			t.Fatalf("WebUI navigation/security shell missing %q", required)
 		}
