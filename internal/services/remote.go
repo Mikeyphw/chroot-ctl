@@ -21,7 +21,7 @@ func (s *TransferService) RcloneStatus(ctx context.Context) (map[string]any, err
 			"available": false, "configured": false,
 			"error":             "bundled rclone runtime is unavailable",
 			"reason":            "No trusted Android/arm64 rclone executable passed runtime discovery and seal validation.",
-			"expected_path":     "/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/rclone",
+			"expected_path":     "/data/adb/modules/chrootctl/runtime/arm64-v8a/rclone",
 			"check":             "Verify the active module runtime inventory, rclone executable ownership/mode, and runtime-manifest seal.",
 			"remediation":       "Rebuild or reinstall the sealed root module with rclone bundled, or explicitly provide a trusted CHROOTCTL_RCLONE_PATH for recovery.",
 			"technical_details": err.Error(),

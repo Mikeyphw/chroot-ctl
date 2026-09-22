@@ -1,6 +1,6 @@
 # Root-module live-update hotfix
 
-Existing `chrootctl-magisk` installations now activate a validated module update in the current `/data/adb/modules/chrootctl-magisk` tree during installation while retaining the root manager staged copy for reboot fallback.
+Existing `chrootctl` installations now activate a validated module update in the current `/data/adb/modules/chrootctl` tree during installation while retaining the root manager staged copy for reboot fallback.
 
 ## Transaction
 

@@ -12,7 +12,7 @@ export CHROOTCTL_REQUIRE_TMUX=1
 echo "repoctl: compiling build tool (cold Go/CGO caches may take several minutes)..."
 go build -v -o out/repoctl-devtool ./cmd/repoctl
 echo "repoctl: build tool ready; rendering Android runtime/module..."
-out/repoctl-devtool build-module --output-dir out/module --zip out/chrootctl-magisk.zip --jobs "${DEVTOOL_MAX_WORKERS:-2}" --checksum
-test -s out/chrootctl-magisk.zip
-test -s out/chrootctl-magisk.zip.sha256
+out/repoctl-devtool build-module --output-dir out/module --zip out/chrootctl.zip --jobs "${DEVTOOL_MAX_WORKERS:-2}" --checksum
+test -s out/chrootctl.zip
+test -s out/chrootctl.zip.sha256
 scripts/devtool/root-module-evidence.sh record root_build 'scripts/devtool/root-module-build.sh'

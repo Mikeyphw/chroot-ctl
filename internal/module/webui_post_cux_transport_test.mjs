@@ -50,7 +50,7 @@ globalThis.ksu = {
     }
     queueMicrotask(() => globalThis[callbackName](127, '', 'unexpected command'));
   },
-  moduleInfo() { return '{"id":"chrootctl-magisk"}'; },
+  moduleInfo() { return '{"id":"chrootctl"}'; },
 };
 
 const bridge = await import('./webroot/chrootctl.js?post-cux-transport');
@@ -63,7 +63,7 @@ await Promise.all([
 assert.equal(maxActiveQueries, 1, 'KernelSU typed query RPCs must be serialized');
 assert.equal(queryCommands.length, 3);
 for (const command of queryCommands) {
-  assert.ok(command.startsWith("'/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/chrootctl' "), 'typed queries must reuse the self-tested executable');
+  assert.ok(command.startsWith("'/data/adb/modules/chrootctl/runtime/arm64-v8a/chrootctl' "), 'typed queries must reuse the self-tested executable');
 }
 console.log('Post-CUX KernelSU serialized typed-query transport tests passed');
 
@@ -118,3 +118,40 @@ await assert.rejects(
   },
 );
 console.log('Post-CUX standalone typed-query error provenance tests passed');
+
+// When fetch is blocked/fails in a standalone browser, the same-origin XHR
+// fallback must still reach the typed health endpoint. This specifically seals
+// the browser-side failure mode where Go saw static assets but no /api request.
+delete globalThis.ksu;
+globalThis.window = {
+  location: {
+    protocol: 'http:',
+    hostname: '127.0.0.1',
+    origin: 'http://127.0.0.1:8766',
+  },
+};
+globalThis.document = {cookie: ''};
+let fetchAttempts = 0;
+globalThis.fetch = async () => {
+  fetchAttempts += 1;
+  throw new TypeError('simulated fetch network failure');
+};
+let xhrRequests = 0;
+globalThis.XMLHttpRequest = class {
+  constructor() { this.status = 0; this.readyState = 0; this.responseText = ''; this.timeout = 0; this.withCredentials = false; }
+  open(method, url) { this.method = method; this.url = url; this.readyState = 1; }
+  setRequestHeader() {}
+  send() {
+    xhrRequests += 1;
+    this.status = 200;
+    this.readyState = 4;
+    this.responseText = JSON.stringify({ok: true, transport: 'standalone-loopback'});
+    queueMicrotask(() => this.onload?.());
+  }
+};
+const xhrFallbackBridge = await import('./webroot/chrootctl.js?standalone-xhr-fallback');
+const health = await xhrFallbackBridge.bridgeSelfTest();
+assert.equal(health.ok, true);
+assert.equal(fetchAttempts, 2, 'GET health should retry fetch once before XHR fallback');
+assert.equal(xhrRequests, 1, 'XHR fallback should be attempted exactly once');
+console.log('Standalone same-origin XHR fallback tests passed');

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -258,10 +259,27 @@ func (m *Manager) BlockPreflight(r *Record, cause error, emit EventEmitter) (Rec
 	r.ErrorCode = &code
 	r.Error = &msg
 	r.NextSteps = []string{"Review the failure reason, refresh the preview, and retry."}
-	if err := m.persistTerminal(r, "operation_blocked", map[string]any{"code": code, "message": msg}, emit); err != nil {
+	if err := m.persistTerminal(r, "operation_blocked", terminalFailurePayload(r, code, msg), emit); err != nil {
 		return *r, errors.Join(cause, err)
 	}
 	return *r, nil
+}
+
+func terminalFailurePayload(r *Record, code, message string) map[string]any {
+	payload := map[string]any{
+		"code":         code,
+		"message":      message,
+		"operationId":  r.OperationID,
+		"state":        r.State,
+		"progressText": r.ProgressText,
+	}
+	if r.Phase != nil {
+		payload["phase"] = *r.Phase
+	}
+	if r.LogPath != nil && strings.TrimSpace(*r.LogPath) != "" {
+		payload["logPath"] = *r.LogPath
+	}
+	return payload
 }
 
 func (m *Manager) finishBlocked(r *Record, e BlockedError, emit EventEmitter) (Record, error) {
@@ -278,7 +296,7 @@ func (m *Manager) finishBlocked(r *Record, e BlockedError, emit EventEmitter) (R
 		r.NextSteps = append(r.NextSteps, "Review operation "+e.BlockingOperationID+".")
 	}
 	r.NextSteps = append(r.NextSteps, "Retry after the conflicting operation finishes.")
-	if err := m.persistTerminal(r, "operation_blocked", map[string]any{"code": code, "message": msg}, emit); err != nil {
+	if err := m.persistTerminal(r, "operation_blocked", terminalFailurePayload(r, code, msg), emit); err != nil {
 		return *r, err
 	}
 	return *r, nil
@@ -307,7 +325,7 @@ func (m *Manager) finishFailed(r *Record, e error, emit EventEmitter) (Record, e
 	}
 	r.ErrorCode = &code
 	r.Error = &msg
-	if err := m.persistTerminal(r, "operation_failed", map[string]any{"code": code, "message": msg}, emit); err != nil {
+	if err := m.persistTerminal(r, "operation_failed", terminalFailurePayload(r, code, msg), emit); err != nil {
 		return *r, errors.Join(e, err)
 	}
 	return *r, nil
@@ -320,7 +338,7 @@ func (m *Manager) finishCancelled(r *Record, msg string, emit EventEmitter) (Rec
 	code := "CANCELLED"
 	r.ErrorCode = &code
 	r.Error = &msg
-	if err := m.persistTerminal(r, "operation_cancelled", map[string]any{"message": msg}, emit); err != nil {
+	if err := m.persistTerminal(r, "operation_cancelled", terminalFailurePayload(r, code, msg), emit); err != nil {
 		return *r, err
 	}
 	return *r, nil

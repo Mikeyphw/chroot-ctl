@@ -47,7 +47,7 @@ func TestCHR15ModuleBuildPreflightReportsRuntimeAndTargetBlocking(t *testing.T) 
 
 func TestCHR15ModuleRuntimeCandidateRequiresPackageSeal(t *testing.T) {
 	root := t.TempDir()
-	for _, rel := range []string{"system/bin/chrootctl", "bin/chrootctl-magisk-helper", "config/chrootctl/compatibility-manifest.json", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl"} {
+	for _, rel := range []string{"system/bin/chrootctl", "bin/chrootctl-helper", "config/chrootctl/compatibility-manifest.json", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl"} {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -56,7 +56,7 @@ func TestCHR15ModuleRuntimeCandidateRequiresPackageSeal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "module.prop"), []byte("id=chrootctl-magisk\nversionCode=15\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "module.prop"), []byte("id=chrootctl\nversionCode=15\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := testContainer(t)

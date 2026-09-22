@@ -24,7 +24,7 @@ func TestCHR04WrapperIsThinTrustedLauncher(t *testing.T) {
 			t.Fatalf("wrapper contains forbidden trust-boundary token %q", forbidden)
 		}
 	}
-	for _, required := range []string{"/system/bin/chrootctl", "/data/adb/modules/chrootctl-magisk/system/bin/chrootctl", wrapperMarker} {
+	for _, required := range []string{"/system/bin/chrootctl", "/data/adb/modules/chrootctl/system/bin/chrootctl", wrapperMarker} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("wrapper missing %q", required)
 		}

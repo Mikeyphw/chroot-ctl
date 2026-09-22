@@ -107,7 +107,7 @@ service-account.json
 # ===================
 out/
 tmpout/
-chrootctl-magisk.zip
+chrootctl.zip
 tmpmod.zip
 
 # ===================

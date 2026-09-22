@@ -12,7 +12,7 @@ Those generated directories are build products, not source of truth. Keeping the
 
 - `out/` must not be committed.
 - `tmpout/` must not be committed.
-- `chrootctl-magisk.zip` must not be committed.
+- `chrootctl.zip` must not be committed.
 - `tmpmod.zip` must not be committed.
 - `.gitignore` must ignore those generated outputs.
 - WebUI retirement remains enforced after the purge.

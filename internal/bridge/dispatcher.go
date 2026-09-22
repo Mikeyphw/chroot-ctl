@@ -13,10 +13,11 @@ import (
 )
 
 type Dispatcher struct {
-	Backend    Backend
-	Operations *operations.Manager
-	Mutations  *mutation.Engine
-	Previews   *PreviewStore
+	Backend          Backend
+	Operations       *operations.Manager
+	Mutations        *mutation.Engine
+	Previews         *PreviewStore
+	OperationLogPath string
 }
 
 func NewDispatcher(backend Backend, manager *operations.Manager, previews *PreviewStore) *Dispatcher {
@@ -42,6 +43,7 @@ func NewServicesDispatcher(s *services.Container) (*Dispatcher, error) {
 	}
 	d := NewDispatcher(NewServicesBackend(s), m, p)
 	d.Mutations = s.Mutations
+	d.OperationLogPath = s.BaseConfig.LogFile
 	return d, nil
 }
 func (d *Dispatcher) Capabilities() map[string]any {
@@ -144,7 +146,7 @@ func (d *Dispatcher) Run(ctx context.Context, r Request, emit func(map[string]an
 				target = &targetText
 			}
 			request := map[string]any{"protocolVersion": r.ProtocolVersion, "requestId": r.RequestID, "operation": r.Operation, "payload": r.Payload}
-			rec, createErr := d.Operations.Create(operations.CreateOptions{Kind: r.Operation, Title: defaultTitle(r.Payload, spec.Description), TargetName: target, Request: request, Retry: request, LockScope: spec.LockScope})
+			rec, createErr := d.Operations.Create(operations.CreateOptions{Kind: r.Operation, Title: defaultTitle(r.Payload, spec.Description), TargetName: target, Request: request, Retry: request, LogPath: d.operationLogPath(), LockScope: spec.LockScope})
 			if createErr == nil {
 				eventSink := func(event map[string]any) error {
 					event = cloneAnyMap(event)
@@ -230,6 +232,14 @@ func (d *Dispatcher) runRetry(ctx context.Context, r Request, emit func(map[stri
 	return d.runSpec(ctx, child, op, payload, emit, &id, mode)
 }
 
+func (d *Dispatcher) operationLogPath() *string {
+	path := strings.TrimSpace(d.OperationLogPath)
+	if path == "" {
+		return nil
+	}
+	return &path
+}
+
 func (d *Dispatcher) runSpec(ctx context.Context, r Request, op string, p map[string]any, emit func(map[string]any) error, parent *string, retryMode string) int {
 	spec := Specs[op]
 	targetText := strings.TrimSpace(asString(p["name"]))
@@ -260,7 +270,7 @@ func (d *Dispatcher) runSpec(ctx context.Context, r Request, op string, p map[st
 		}
 		return 0
 	}
-	rec, e := d.Operations.Create(operations.CreateOptions{Kind: op, Title: defaultTitle(p, spec.Description), TargetName: target, Request: request, Retry: request, LockScope: spec.LockScope, ParentOperationID: parent})
+	rec, e := d.Operations.Create(operations.CreateOptions{Kind: op, Title: defaultTitle(p, spec.Description), TargetName: target, Request: request, Retry: request, LogPath: d.operationLogPath(), LockScope: spec.LockScope, ParentOperationID: parent})
 	if e != nil {
 		emitBridgeError(emit, r.RequestID, e)
 		return 2

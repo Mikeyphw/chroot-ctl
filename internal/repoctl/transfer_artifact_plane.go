@@ -72,7 +72,7 @@ func ValidateTransferArtifactPlane(root string) error {
 		return err
 	}
 	if err := mustContain("internal/services/module_build.go",
-		"ManagedArchive(\"chrootctl-magisk\", \"zip\")",
+		"ManagedArchive(\"chrootctl\", \"zip\")",
 		"contained(managedRoot, abs, \"module artifact\")",
 		"RegisterArtifact(ctx, abs, \"module-archive\"",
 	); err != nil {

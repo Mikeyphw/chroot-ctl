@@ -11,7 +11,7 @@ import { spawn } from './webroot/kernelsu.js';
       queueMicrotask(() => globalThis[callbackName](2, '{"type":"bridge_error","ok":false}\n', 'preview stale'));
     },
   };
-  const child = spawn('/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/chrootctl', ['app', 'run'], {});
+  const child = spawn('/data/adb/modules/chrootctl/runtime/arm64-v8a/chrootctl', ['app', 'run'], {});
   let stdout = '';
   let stderr = '';
   let errors = 0;
@@ -33,7 +33,7 @@ import { spawn } from './webroot/kernelsu.js';
 // reducing it to the old INSTALL_FAILED fallback.
 {
   let spawnCalls = 0;
-  const active = '/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/chrootctl';
+  const active = '/data/adb/modules/chrootctl/runtime/arm64-v8a/chrootctl';
   const capabilities = JSON.stringify({
     protocolVersion: 1,
     requestId: 'capabilities',
@@ -66,7 +66,7 @@ import { spawn } from './webroot/kernelsu.js';
       assert.equal(args[1], 'run');
       const child = globalThis[callbackName];
       queueMicrotask(() => {
-        child.stdout.emit('data', JSON.stringify({
+        child.stdout.write(JSON.stringify({
           protocolVersion: 1,
           requestId: 'webui-run',
           type: 'bridge_error',
@@ -77,7 +77,7 @@ import { spawn } from './webroot/kernelsu.js';
         child.emit('exit', 2);
       });
     },
-    moduleInfo() { return '{"id":"chrootctl-magisk"}'; },
+    moduleInfo() { return '{"id":"chrootctl"}'; },
   };
   const bridge = await import('./webroot/chrootctl.js?install-failure-provenance');
   await assert.rejects(
@@ -103,11 +103,14 @@ import { spawn } from './webroot/kernelsu.js';
 {
   const bridgeSource = await readFile(new URL('./webroot/chrootctl.js', import.meta.url), 'utf8');
   const uiSource = await readFile(new URL('./webroot/index.js', import.meta.url), 'utf8');
+  const htmlSource = await readFile(new URL('./webroot/index.html', import.meta.url), 'utf8');
   assert.match(bridgeSource, /'operations\.find_request'/);
   assert.match(bridgeSource, /ACTIVE_RUNTIME = `\$\{ACTIVE_MODULE\}\/runtime\/arm64-v8a\/chrootctl`/);
   assert.match(bridgeSource, /Object\.freeze\(\[ACTIVE_RUNTIME,/);
   assert.match(uiSource, /technicalError\('Install failed',e\)/);
   assert.match(uiSource, /technicalError\('Install retry failed',e\)/);
+  assert.match(htmlSource, /connect-src 'self'/, 'standalone WebUI must be allowed to call its same-origin typed API');
+  assert.doesNotMatch(htmlSource, /connect-src 'none'/, 'meta CSP must not silently block \/api\/v1 requests');
 }
 
 console.log('Install failure transport/provenance tests passed');

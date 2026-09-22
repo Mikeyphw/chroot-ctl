@@ -59,7 +59,10 @@ func TestWebUIFinalConvergenceSeal(t *testing.T) {
 			t.Fatalf("unsafe WebUI execution token present: %s", forbidden)
 		}
 	}
-	if !strings.Contains(html, "connect-src 'none'") {
-		t.Fatal("final WebUI CSP must keep direct network connections disabled")
+	if !strings.Contains(html, "connect-src 'self'") {
+		t.Fatal("final WebUI CSP must allow only same-origin standalone backend connections")
+	}
+	if strings.Contains(html, "connect-src 'none'") {
+		t.Fatal("standalone WebUI CSP must not block its own same-origin typed API")
 	}
 }

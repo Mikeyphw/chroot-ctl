@@ -72,7 +72,7 @@ func TestRenderGoNativeModule(t *testing.T) {
 	}
 
 	serviceRaw, _ := os.ReadFile(filepath.Join(out, "service.sh"))
-	helperRaw, _ := os.ReadFile(filepath.Join(out, "bin/chrootctl-magisk-helper"))
+	helperRaw, _ := os.ReadFile(filepath.Join(out, "bin/chrootctl-helper"))
 	if !strings.Contains(string(serviceRaw), "__module-service 'work'") {
 		t.Fatalf("module service does not pass startup target: %s", serviceRaw)
 	}
@@ -84,7 +84,7 @@ func TestRenderGoNativeModule(t *testing.T) {
 }
 
 func TestLauncherResolvesModuleDirFromExplicitModuleTreePath(t *testing.T) {
-	moduleRoot := filepath.Join(t.TempDir(), "chrootctl-magisk")
+	moduleRoot := filepath.Join(t.TempDir(), "chrootctl")
 	launcherPath := filepath.Join(moduleRoot, "system/bin/chrootctl")
 	runtimePath := filepath.Join(moduleRoot, "runtime/arm64-v8a/chrootctl")
 	if err := os.MkdirAll(filepath.Dir(launcherPath), 0755); err != nil {
@@ -115,7 +115,7 @@ func TestLauncherResolvesModuleDirFromExplicitModuleTreePath(t *testing.T) {
 }
 
 func TestLauncherMissingRuntimeErrorNamesResolvedPath(t *testing.T) {
-	moduleRoot := filepath.Join(t.TempDir(), "chrootctl-magisk")
+	moduleRoot := filepath.Join(t.TempDir(), "chrootctl")
 	launcherPath := filepath.Join(moduleRoot, "system/bin/chrootctl")
 	if err := os.MkdirAll(filepath.Dir(launcherPath), 0755); err != nil {
 		t.Fatal(err)
@@ -232,7 +232,7 @@ func TestCHR15ModulePackageManifestSealsRenderedTree(t *testing.T) {
 	if err := ValidateRendered(out); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(out, "module.prop"), []byte("id=chrootctl-magisk\nversionCode=0\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(out, "module.prop"), []byte("id=chrootctl\nversionCode=0\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := ValidateRendered(out); err == nil || !strings.Contains(err.Error(), "module package") {
@@ -274,7 +274,7 @@ func TestCHR15ValidateZipArchiveUsesPackageSeal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Write([]byte("id=chrootctl-magisk\n")); err != nil {
+	if _, err := w.Write([]byte("id=chrootctl\n")); err != nil {
 		t.Fatal(err)
 	}
 	if err := zw.Close(); err != nil {
@@ -358,7 +358,7 @@ func TestUninstallRemovesStableLauncher(t *testing.T) {
 
 func TestPostFSActuallyProvisionsStableLauncherWithoutMagicMount(t *testing.T) {
 	root := t.TempDir()
-	mod := filepath.Join(root, "modules", "chrootctl-magisk")
+	mod := filepath.Join(root, "modules", "chrootctl")
 	state := filepath.Join(root, "state")
 	source := filepath.Join(mod, "system", "bin", "chrootctl")
 	if err := os.MkdirAll(filepath.Dir(source), 0755); err != nil {
@@ -388,7 +388,7 @@ func TestPostFSActuallyProvisionsStableLauncherWithoutMagicMount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "/data/adb/modules/chrootctl-magisk") {
+	if !strings.Contains(string(body), "/data/adb/modules/chrootctl") {
 		t.Fatalf("stable launcher does not target canonical active module: %s", body)
 	}
 }

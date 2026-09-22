@@ -434,7 +434,7 @@ func BuildModule(opts ModuleOptions) (string, error) {
 		return "", e
 	}
 	out := absFromRoot(root, opts.OutputDir, "out/module")
-	zipPath := absFromRoot(root, opts.ZipPath, "chrootctl-magisk.zip")
+	zipPath := absFromRoot(root, opts.ZipPath, "chrootctl.zip")
 	runtimeDir := opts.RuntimeDir
 	if runtimeDir == "" {
 		runtimeDir, e = BuildRuntime(RuntimeOptions{Jobs: opts.Jobs})
@@ -743,7 +743,7 @@ func Release(opts ReleaseOptions) error {
 		return e
 	}
 	moduleDir := filepath.Join(dist, "magisk-"+opts.Version)
-	zipPath := filepath.Join(dist, "chrootctl-magisk-"+opts.Version+".zip")
+	zipPath := filepath.Join(dist, "chrootctl-"+opts.Version+".zip")
 	if _, e = BuildModule(ModuleOptions{OutputDir: moduleDir, ZipPath: zipPath, RuntimeDir: runtime, Jobs: opts.Jobs, Checksum: true}); e != nil {
 		return e
 	}

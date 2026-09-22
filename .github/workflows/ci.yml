@@ -21,6 +21,6 @@ jobs:
       - name: Build sealed Android Go runtime
         run: go run ./cmd/repoctl build-runtime --output-root /tmp/chrootctl-runtime --jobs 2
       - name: Build Go-native module
-        run: go run ./cmd/repoctl build-module --runtime-dir /tmp/chrootctl-runtime/arm64-v8a --output-dir /tmp/chrootctl-module --zip /tmp/chrootctl-magisk.zip --checksum
+        run: go run ./cmd/repoctl build-module --runtime-dir /tmp/chrootctl-runtime/arm64-v8a --output-dir /tmp/chrootctl-module --zip /tmp/chrootctl.zip --checksum
       - name: Build source artifact with repoctl
         run: go run ./cmd/repoctl build-source --version ci --output /tmp/chrootctl-source-ci.tar.gz --checksum

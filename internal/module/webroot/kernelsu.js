@@ -47,6 +47,10 @@ class EventEmitter {
 
 class Stream extends EventEmitter {
   write(data) {
+    // KernelSU's native spawn bridge writes process output by calling
+    // callback.stdout.write(...) / callback.stderr.write(...). Consumers use
+    // Node-style 'data' listeners, so bridge writes must feed that channel.
+    this.emit('data', data);
     this.emit('write', data);
   }
 }
@@ -176,7 +180,7 @@ export function exec(command, args = [], options = {}, timeoutMs = 15000) {
 }
 
 
-export async function selfTest(executable = '/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/chrootctl', timeoutMs = 8000) {
+export async function selfTest(executable = '/data/adb/modules/chrootctl/runtime/arm64-v8a/chrootctl', timeoutMs = 8000) {
   const bridge = api();
   const methods = ['exec', 'spawn', 'moduleInfo', 'toast'].filter((name) => typeof bridge[name] === 'function');
   let module = null;

@@ -37,7 +37,7 @@ func runWithIO(args []string) int {
 		}
 		moduleDir := os.Getenv("CHROOTCTL_MODULE_DIR")
 		if moduleDir == "" {
-			moduleDir = "/data/adb/modules/chrootctl-magisk"
+			moduleDir = "/data/adb/modules/chrootctl"
 		}
 		staticDir := filepath.Join(moduleDir, "webroot")
 		srv, err := standalonewebui.New(standalonewebui.Config{

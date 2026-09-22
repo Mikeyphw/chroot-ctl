@@ -122,7 +122,7 @@ func gitValueSimple(root string, args ...string) string {
 }
 
 func validateModuleShellContract(root string) error {
-	files := []string{"service.sh", "bin/chrootctl-magisk-helper", "system/bin/chrootctl"}
+	files := []string{"service.sh", "bin/chrootctl-helper", "system/bin/chrootctl"}
 	for _, rel := range files {
 		path := filepath.Join(root, filepath.FromSlash(rel))
 		data, err := os.ReadFile(path)
@@ -141,7 +141,7 @@ func validateModuleShellContract(root string) error {
 		}
 	}
 	service, _ := os.ReadFile(filepath.Join(root, "service.sh"))
-	helper, _ := os.ReadFile(filepath.Join(root, "bin/chrootctl-magisk-helper"))
+	helper, _ := os.ReadFile(filepath.Join(root, "bin/chrootctl-helper"))
 	launcher, _ := os.ReadFile(filepath.Join(root, "system/bin/chrootctl"))
 	if !strings.Contains(string(service), "__module-service") || !strings.Contains(string(helper), "run --boot") || !strings.Contains(string(helper), `--name "$target" mount`) || !strings.Contains(string(launcher), `exec "$RUNTIME_BIN" "$@"`) {
 		return fmt.Errorf("module boot/runtime shell contract is incomplete")

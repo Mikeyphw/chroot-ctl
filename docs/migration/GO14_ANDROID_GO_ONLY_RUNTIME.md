@@ -4,7 +4,7 @@ GO14 removes the final Python execution fallback from the Android companion.
 
 ## Runtime policy
 
-- An enabled `chrootctl-magisk` module is authoritative.
+- An enabled `chrootctl` module is authoritative.
 - Its runtime must use compatibility schema 3, backend `go`, runtime schema 2, and kind `go-native`.
 - Corrupt, disabled-in-place, or incompatible active modules fail closed.
 - Pending module updates are diagnostic-only until activation.

@@ -11,7 +11,7 @@ import (
 	chmodule "chrootctl/internal/module"
 )
 
-const moduleID = "chrootctl-magisk"
+const moduleID = "chrootctl"
 
 type LifecycleService struct{ C *Container }
 type ModuleRuntimeService struct{ C *Container }
@@ -117,7 +117,7 @@ func (s *ModuleRuntimeService) candidate(root string, pending bool) map[string]a
 	prop := readKV(filepath.Join(root, "module.prop"))
 	disabled := exists(filepath.Join(root, "disable"))
 	removal := exists(filepath.Join(root, "remove"))
-	required := []string{filepath.Join(root, "system/bin/chrootctl"), filepath.Join(root, "bin/chrootctl-magisk-helper"), filepath.Join(root, "config/chrootctl/compatibility-manifest.json"), filepath.Join(root, chmodule.ModulePackageManifestPath), filepath.Join(root, "runtime/arm64-v8a/runtime-manifest.json"), filepath.Join(root, "runtime/arm64-v8a/chrootctl")}
+	required := []string{filepath.Join(root, "system/bin/chrootctl"), filepath.Join(root, "bin/chrootctl-helper"), filepath.Join(root, "config/chrootctl/compatibility-manifest.json"), filepath.Join(root, chmodule.ModulePackageManifestPath), filepath.Join(root, "runtime/arm64-v8a/runtime-manifest.json"), filepath.Join(root, "runtime/arm64-v8a/chrootctl")}
 	layout := prop["id"] == moduleID
 	layoutProblem := ""
 	for _, p := range required {

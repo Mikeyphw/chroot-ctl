@@ -65,7 +65,7 @@ func TestWrapperInstallWritesExecutableAndCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(wrapper), wrapperMarker) || !strings.Contains(string(wrapper), "chrootctl-magisk") || strings.Contains(string(wrapper), "exec su -c") {
+	if !strings.Contains(string(wrapper), wrapperMarker) || !strings.Contains(string(wrapper), "chrootctl") || strings.Contains(string(wrapper), "exec su -c") {
 		t.Fatalf("unexpected wrapper content:\n%s", wrapper)
 	}
 	completionPath := filepath.Join(completionDir, "_chrootctl")

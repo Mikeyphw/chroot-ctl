@@ -1,7 +1,7 @@
 #!/system/bin/sh
 set -eu
-BIN="${CHROOTCTL_BIN:-/data/adb/modules/chrootctl-magisk/system/bin/chrootctl}"
-MOD="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}"
+BIN="${CHROOTCTL_BIN:-/data/adb/modules/chrootctl/system/bin/chrootctl}"
+MOD="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl}"
 TMP="/data/local/tmp/chrootctl-swui-smoke.$$"
 LOG="$TMP/server.log"
 COOKIE="$TMP/cookies"

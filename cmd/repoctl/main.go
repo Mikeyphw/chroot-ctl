@@ -33,7 +33,7 @@ func main() {
 	case "build-module":
 		fs := flag.NewFlagSet("build-module", flag.ExitOnError)
 		out := fs.String("output-dir", "out/module", "")
-		zip := fs.String("zip", "chrootctl-magisk.zip", "")
+		zip := fs.String("zip", "chrootctl.zip", "")
 		zipCompat := fs.String("zip-path", "", "")
 		runtime := fs.String("runtime-dir", "", "")
 		runtimeCompat := fs.String("native-runtime-dir", "", "")
@@ -94,7 +94,7 @@ func main() {
 		fs := flag.NewFlagSet("seal-root-module-evidence", flag.ExitOnError)
 		markers := fs.String("markers", "out/devtool-evidence", "Devtool root-module stage markers")
 		moduleDir := fs.String("module-dir", "out/module", "rendered module directory")
-		zipPath := fs.String("zip", "out/chrootctl-magisk.zip", "module ZIP path")
+		zipPath := fs.String("zip", "out/chrootctl.zip", "module ZIP path")
 		checksum := fs.Bool("checksum", true, "refresh ZIP checksum sidecar")
 		fs.Parse(os.Args[2:])
 		if e := repoctl.SealRootModuleEvidence(*markers, *moduleDir, *zipPath, *checksum); e != nil {

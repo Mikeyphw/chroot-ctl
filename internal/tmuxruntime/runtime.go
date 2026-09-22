@@ -19,7 +19,7 @@ import (
 const (
 	RuntimeABI       = "arm64-v8a"
 	ExpectedVersion  = "3.7c"
-	DefaultModuleDir = "/data/adb/modules/chrootctl-magisk"
+	DefaultModuleDir = "/data/adb/modules/chrootctl"
 	DefaultStateRoot = "/data/adb/chrootctl/runtime/tmux"
 	LegacyStateRoot  = "/data/adb/chrootctl/tmux"
 	DefaultNamespace = "chrootctl"

@@ -307,8 +307,8 @@ func wrapperScript() string {
 set -eu
 for candidate in \
   /system/bin/chrootctl \
-  /data/adb/modules/chrootctl-magisk/system/bin/chrootctl \
-  /data/adb/ksu/modules/chrootctl-magisk/system/bin/chrootctl
+  /data/adb/modules/chrootctl/system/bin/chrootctl \
+  /data/adb/ksu/modules/chrootctl/system/bin/chrootctl
 do
   if [ -x "$candidate" ]; then
     exec "$candidate" "$@"

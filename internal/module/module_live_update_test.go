@@ -8,8 +8,8 @@ import (
 func TestCustomizeLiveUpdatesExistingActiveModuleTransactionally(t *testing.T) {
 	s := customize()
 	required := []string{
-		`ACTIVE_MODULE="/data/adb/modules/chrootctl-magisk"`,
-		`.chrootctl-magisk.live-new.$$`, `.chrootctl-magisk.live-old.$$`,
+		`ACTIVE_MODULE="/data/adb/modules/chrootctl"`,
+		`.chrootctl.live-new.$$`, `.chrootctl.live-old.$$`,
 		`cp -a "$ACTIVE_MODULE/." "$LIVE_NEXT/"`,
 		`for rel in module.prop customize.sh post-fs-data.sh service.sh action.sh uninstall.sh bin system config runtime webroot`,
 		`mv "$ACTIVE_MODULE" "$LIVE_OLD" && mv "$LIVE_NEXT" "$ACTIVE_MODULE"`,

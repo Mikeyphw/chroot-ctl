@@ -1,6 +1,6 @@
 #!/system/bin/sh
 set -eu
-MOD="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl-magisk}"
+MOD="${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl}"
 ACTION="$MOD/action.sh"
 LOG="/data/local/tmp/chrootctl/standalone-webui.log"
 PIDFILE="/data/local/tmp/chrootctl/standalone-webui.pid"

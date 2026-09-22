@@ -1091,12 +1091,25 @@ func (b *ServicesBackend) operation(ctx context.Context, op string, p map[string
 		if e = cancelled(isCancelled, "Install was cancelled before execution"); e != nil {
 			return nil, e
 		}
-		return s.Install().Install(ctx, r, func(v any) error {
+		if s.Logger != nil {
+			s.Logger.Infof("install.run begin name=%s distro=%s arch=%s", r.Name, r.Distro, r.Arch)
+		}
+		result, installErr := s.Install().Install(ctx, r, func(v any) error {
 			if e := emit(progress, v); e != nil {
 				return e
 			}
 			return cancelled(isCancelled, "Install was cancelled")
 		})
+		if installErr != nil {
+			if s.Logger != nil {
+				s.Logger.Errorf("install.run failed name=%s distro=%s: %v", r.Name, r.Distro, installErr)
+			}
+			return result, installErr
+		}
+		if s.Logger != nil {
+			s.Logger.Infof("install.run completed name=%s distro=%s", r.Name, r.Distro)
+		}
+		return result, nil
 	case "chroots.start", "chroots.restart":
 		n, e := reqName(p)
 		if e != nil {

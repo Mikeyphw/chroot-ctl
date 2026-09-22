@@ -1529,9 +1529,9 @@ Generate a Magisk module that owns boot-time mounts/startup and a small privileg
 
 ```text
 examples:
-  chrootctl magisk render --output /tmp/chrootctl-magisk
-  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed
-  chrootctl magisk render --output /tmp/chrootctl-magisk --name work --name dev
+  chrootctl magisk render --output /tmp/chrootctl
+  chrootctl magisk render --output /tmp/chrootctl --all-installed
+  chrootctl magisk render --output /tmp/chrootctl --name work --name dev
 ```
 
 ### `magisk render`
@@ -1553,6 +1553,6 @@ Write a Magisk module directory with service.sh, post-fs-data.sh, and a privileg
 
 ```text
 examples:
-  chrootctl magisk render --output /tmp/chrootctl-magisk
-  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed
+  chrootctl magisk render --output /tmp/chrootctl
+  chrootctl magisk render --output /tmp/chrootctl --all-installed
 ```

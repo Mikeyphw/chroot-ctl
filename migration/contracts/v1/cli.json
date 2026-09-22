@@ -5210,7 +5210,7 @@
       "command": "magisk",
       "completionExposed": true,
       "description": "Generate a Magisk module that owns boot-time mounts/startup and a small privileged helper without embedding the Web UI stack.",
-      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl-magisk\n  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed\n  chrootctl magisk render --output /tmp/chrootctl-magisk --name work --name dev",
+      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl\n  chrootctl magisk render --output /tmp/chrootctl --all-installed\n  chrootctl magisk render --output /tmp/chrootctl --name work --name dev",
       "exclusiveGroups": [],
       "group": true,
       "handler": "magisk",
@@ -5317,7 +5317,7 @@
       "command": "magisk render",
       "completionExposed": true,
       "description": "Write a Magisk module directory with service.sh, post-fs-data.sh, and a privileged helper shim.",
-      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl-magisk\n  chrootctl magisk render --output /tmp/chrootctl-magisk --all-installed",
+      "epilog": "examples:\n  chrootctl magisk render --output /tmp/chrootctl\n  chrootctl magisk render --output /tmp/chrootctl --all-installed",
       "exclusiveGroups": [
         [
           "all_installed",

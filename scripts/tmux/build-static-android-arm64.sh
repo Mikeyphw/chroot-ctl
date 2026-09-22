@@ -247,7 +247,7 @@ pushd "$WORK/src/tmux-$TMUX_VERSION" >/dev/null
 # and does not enable its incompatible compat/forkpty declaration.
 ac_cv_search_forkpty="none required" \
 CPPFLAGS="$TMUX_CPPFLAGS" \
-./configure --host=aarch64-linux-android --prefix=/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a --enable-static CC="$CC" AR="$AR" RANLIB="$RANLIB" LIBS="$TMUX_LIBS"
+./configure --host=aarch64-linux-android --prefix=/data/adb/modules/chrootctl/runtime/arm64-v8a --enable-static CC="$CC" AR="$AR" RANLIB="$RANLIB" LIBS="$TMUX_LIBS"
 make -j"$JOBS"
 cp tmux "$OUT/tmux"; "$STRIP" --strip-all "$OUT/tmux"; chmod 0755 "$OUT/tmux"
 popd >/dev/null

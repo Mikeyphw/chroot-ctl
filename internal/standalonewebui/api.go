@@ -135,11 +135,10 @@ func (s *Server) apiHandler(d Dispatcher) http.Handler {
 			return
 		}
 		code := d.Run(r.Context(), req, func(v map[string]any) error { events = append(events, v); return nil })
-		status := 200
-		if code != 0 {
-			status = 400
-		}
-		writeJSON(w, status, map[string]any{"events": events, "exitCode": code})
+		// Reaching the typed operation endpoint is a successful HTTP transport.
+		// Application-level failure is represented by exitCode + terminal events;
+		// returning HTTP 4xx here makes the browser discard those diagnostics.
+		writeJSON(w, http.StatusOK, map[string]any{"events": events, "exitCode": code})
 	}))
 	mux.HandleFunc("/api/v1/operations/", s.auth(func(w http.ResponseWriter, r *http.Request) {
 		tail := strings.TrimPrefix(r.URL.Path, "/api/v1/operations/")

@@ -52,7 +52,7 @@ func (s *ModuleBuildService) ResolveStartupTargets(ctx context.Context, req Modu
 func (s *ModuleBuildService) Preflight(ctx context.Context, req ModuleBuildRequest) (map[string]any, error) {
 	archive := strings.TrimSpace(req.Archive)
 	if archive == "" {
-		archive = ManagedArchive("chrootctl-magisk", "zip")
+		archive = ManagedArchive("chrootctl", "zip")
 	}
 	blocking := []map[string]string{}
 	warn := func(code, msg string) { blocking = append(blocking, map[string]string{"code": code, "message": msg}) }
@@ -127,7 +127,7 @@ func (s *ModuleBuildService) targets(ctx context.Context, req ModuleBuildRequest
 func (s *ModuleBuildService) Build(ctx context.Context, req ModuleBuildRequest) (map[string]any, error) {
 	archive := strings.TrimSpace(req.Archive)
 	if archive == "" {
-		archive = ManagedArchive("chrootctl-magisk", "zip")
+		archive = ManagedArchive("chrootctl", "zip")
 	}
 	managedRoot, err := EnsureManagedTransferRoot()
 	if err != nil {

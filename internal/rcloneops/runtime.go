@@ -61,8 +61,8 @@ func RuntimeFromEnviron(environ []string) (Runtime, error) {
 		candidates = append(candidates, runtimeCandidate{path: filepath.Join(mod, "runtime", RuntimeABI, "rclone"), requireSeal: true})
 	}
 	candidates = append(candidates,
-		runtimeCandidate{path: "/data/adb/modules/chrootctl-magisk/runtime/" + RuntimeABI + "/rclone", requireSeal: true},
-		runtimeCandidate{path: "/data/adb/modules_update/chrootctl-magisk/runtime/" + RuntimeABI + "/rclone", requireSeal: true},
+		runtimeCandidate{path: "/data/adb/modules/chrootctl/runtime/" + RuntimeABI + "/rclone", requireSeal: true},
+		runtimeCandidate{path: "/data/adb/modules_update/chrootctl/runtime/" + RuntimeABI + "/rclone", requireSeal: true},
 	)
 	// A root process must not silently execute an arbitrary PATH-provided binary.
 	// Module/explicit paths form the privileged trust boundary; PATH fallback is

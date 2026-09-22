@@ -3,8 +3,8 @@ set -euo pipefail
 NAME=""; USERNAME=""; REBOOT_PHASE=0
 while (($#)); do case "$1" in --name) NAME=${2:?}; shift 2;; --user) USERNAME=${2:?}; shift 2;; --reboot-phase) REBOOT_PHASE=1; shift;; *) echo "unknown argument: $1" >&2; exit 2;; esac; done
 [[ $EUID -eq 0 ]] || { echo "TMUX-07 device smoke must run as root (use su -c)." >&2; exit 77; }
-CHROOTCTL=${CHROOTCTL:-/data/adb/modules/chrootctl-magisk/system/bin/chrootctl}
-TMUX=${CHROOTCTL_TMUX_PATH:-/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/tmux}
+CHROOTCTL=${CHROOTCTL:-/data/adb/modules/chrootctl/system/bin/chrootctl}
+TMUX=${CHROOTCTL_TMUX_PATH:-/data/adb/modules/chrootctl/runtime/arm64-v8a/tmux}
 STATE=${CHROOTCTL_TMUX_STATE_ROOT:-/data/adb/chrootctl/runtime/tmux}
 [[ -x $CHROOTCTL && -x $TMUX ]] || { echo "installed chrootctl/tmux runtime missing" >&2; exit 1; }
 [[ -n $NAME && -n $USERNAME ]] || { echo "usage: su -c '$0 --name CHROOT --user USER [--reboot-phase]'" >&2; exit 2; }

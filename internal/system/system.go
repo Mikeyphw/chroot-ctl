@@ -720,8 +720,8 @@ var trustedReexecExecutable = func() (string, error) {
 	}
 	trusted := firstExecutable(
 		"/system/bin/chrootctl",
-		"/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",
-		"/data/adb/ksu/modules/chrootctl-magisk/system/bin/chrootctl",
+		"/data/adb/modules/chrootctl/system/bin/chrootctl",
+		"/data/adb/ksu/modules/chrootctl/system/bin/chrootctl",
 	)
 	if trusted == "" {
 		return "", errors.New("trusted active chrootctl runtime is unavailable for root re-exec")

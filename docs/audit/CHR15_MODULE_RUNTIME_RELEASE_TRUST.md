@@ -10,7 +10,7 @@ CHR15 closes the module packaging and runtime trust findings assigned to the mod
 - `ValidateRendered()` verifies the complete package manifest, required files, startup target manifest, native runtime manifest, runtime ELF identity, and allowed Android dynamic-library dependencies.
 - `ValidateZipArchive()` verifies ZIP path safety, duplicate/symlink rejection, mode/checksum inventory fidelity, and the same package seal before module archives are registered.
 - Runtime status fails closed when an active module has corrupt layout, invalid package seal, stale compatibility identity, or an invalid native runtime.
-- Android runtime resolution requires both compatibility manifest readiness and module package seal readiness before selecting `/data/adb/modules/chrootctl-magisk/system/bin/chrootctl`.
+- Android runtime resolution requires both compatibility manifest readiness and module package seal readiness before selecting `/data/adb/modules/chrootctl/system/bin/chrootctl`.
 - Module build preview now uses the real builder preflight, reports startup-target and runtime blockers, and defaults Android module-build requests to all installed targets instead of an empty target set.
 - Startup target resolution is shared by CLI/service build paths and validates installed registry rows through the same path authority used by the backend resolver.
 - Repo/runtime directory replacement uses rollback-capable promotion rather than deleting the old artifact before the new one is safely promoted.

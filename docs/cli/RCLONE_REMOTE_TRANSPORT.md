@@ -6,7 +6,7 @@ chrootctl uses credential-free `rclone://REMOTE/path` locations. The URI contain
 
 The root module can bundle an Android/arm64 `rclone` executable at:
 
-`/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/rclone`
+`/data/adb/modules/chrootctl/runtime/arm64-v8a/rclone`
 
 `repoctl build-runtime` automatically adds a trusted rclone executable from `CHROOTCTL_RCLONE_PATH`, `out/rclone/arm64-v8a/rclone`, or a compatible local `rclone` executable. Set `CHROOTCTL_REQUIRE_RCLONE=1` to make a missing rclone runtime a build failure. `scripts/install-rclone-android-runtime.sh out/rclone` builds the pinned rclone release from verified source/vendor archives for Android arm64.
 

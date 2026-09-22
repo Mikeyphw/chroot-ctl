@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -eu
-ZIP="${1:-out/chrootctl-magisk.zip}"
+ZIP="${1:-out/chrootctl.zip}"
 [ -s "$ZIP" ] || { echo "module ZIP not found: $ZIP; run the build/package phase first" >&2; exit 2; }
 case "$ZIP" in /*) ABS="$ZIP";; *) ABS="$PWD/$ZIP";; esac
 

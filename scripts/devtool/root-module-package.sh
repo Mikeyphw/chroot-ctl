@@ -3,7 +3,7 @@ set -eu
 
 echo "== chrootctl root module: package/seal =="
 
-ZIP="out/chrootctl-magisk.zip"
+ZIP="out/chrootctl.zip"
 SUM="${ZIP}.sha256"
 TREE="out/module"
 

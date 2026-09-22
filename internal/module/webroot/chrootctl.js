@@ -3,7 +3,7 @@ import { isAvailable as isKernelSUAvailable, exec as ksuExec, selfTest as ksuSel
 const OUTPUT_LIMIT = 1024 * 1024;
 const LINE_LIMIT = 128 * 1024;
 const PROCESS_TIMEOUT_MS = 20 * 1000;
-const ACTIVE_MODULE = '/data/adb/modules/chrootctl-magisk';
+const ACTIVE_MODULE = '/data/adb/modules/chrootctl';
 const ACTIVE_RUNTIME = `${ACTIVE_MODULE}/runtime/arm64-v8a/chrootctl`;
 const EXECUTABLES = Object.freeze([ACTIVE_RUNTIME,`${ACTIVE_MODULE}/system/bin/chrootctl`,'/data/adb/chrootctl/bin/chrootctl','/system/bin/chrootctl']);
 let selectedExecutable=null;
@@ -25,7 +25,34 @@ const standaloneHTTP = loopbackHTTP && !isKernelSUAvailable();
 function transportAvailable(){ return standaloneHTTP || isKernelSUAvailable(); }
 export function transportKind(){ return standaloneHTTP ? 'standalone-http' : (isKernelSUAvailable() ? 'kernelsu' : 'unavailable'); }
 function csrfToken(){ const m=document.cookie.match(/(?:^|;\s*)chrootctl_csrf=([^;]+)/); return m?decodeURIComponent(m[1]):''; }
-async function httpJSON(path,{method='GET',body=null,timeoutMs=12000}={}){ const headers={'Accept':'application/json'}; if(body!==null){headers['Content-Type']='application/json';headers['X-CSRF-Token']=csrfToken();} const url=new URL(path,window.location.origin).href; const command='standalone-http'; const request=async()=>{const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),Math.max(1000,timeoutMs));try{return await fetch(url,{method,headers,credentials:'same-origin',cache:'no-store',body:body===null?undefined:JSON.stringify(body),signal:controller.signal});}finally{clearTimeout(timer);}}; let r; try{r=await request();}catch(firstError){if(firstError?.name==='AbortError')throw new ChrootCtlError(`Standalone backend request timed out after ${timeoutMs}ms (${url})`,{code:'WEBUI_BACKEND_TIMEOUT',command}); if(method==='GET'){await new Promise(resolve=>setTimeout(resolve,250));try{r=await request();}catch(error){if(error?.name==='AbortError')throw new ChrootCtlError(`Standalone backend request timed out after ${timeoutMs}ms (${url})`,{code:'WEBUI_BACKEND_TIMEOUT',command});throw new ChrootCtlError(`Standalone backend listener is unreachable at ${url}. ${error?.message||firstError?.message||'Network request failed'}. Check /data/local/tmp/chrootctl/standalone-webui.log.`,{code:'WEBUI_HTTP_ERROR',command});}}else{throw new ChrootCtlError(`Standalone backend request failed at ${url}. ${firstError?.message||'Network request failed'}`,{code:'WEBUI_HTTP_ERROR',command});}} const raw=String(await r.text()); let data=null; try{data=raw.trim()?JSON.parse(raw):null}catch(_){throw new ChrootCtlError(`Standalone backend returned invalid JSON (HTTP ${r.status})`,{code:'WEBUI_INVALID_JSON',command,exitCode:r.status,stdout:raw.slice(0,2048)});} if(!r.ok)throw new ChrootCtlError(data?.error?.message||`Standalone WebUI HTTP ${r.status} at ${url}`,{code:data?.error?.code||(r.status===401?'WEBUI_SESSION_EXPIRED':'WEBUI_HTTP_ERROR'),command,exitCode:r.status,stdout:raw.slice(0,2048),envelope:data}); return data; }
+function xhrJSONRequest(url,{method='GET',body=null,headers={},timeoutMs=12000}={}){
+ return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();
+  xhr.open(method,url,true);xhr.timeout=Math.max(1000,timeoutMs);xhr.withCredentials=true;
+  for(const [k,v] of Object.entries(headers))xhr.setRequestHeader(k,v);
+  xhr.onload=()=>resolve({ok:xhr.status>=200&&xhr.status<300,status:xhr.status,text:async()=>String(xhr.responseText??'')});
+  xhr.onerror=()=>reject(Object.assign(new Error(`XMLHttpRequest network error (readyState=${xhr.readyState}, status=${xhr.status})`),{name:'XHRNetworkError'}));
+  xhr.ontimeout=()=>reject(Object.assign(new Error(`XMLHttpRequest timed out after ${timeoutMs}ms`),{name:'AbortError'}));
+  try{xhr.send(body===null?null:JSON.stringify(body));}catch(error){reject(error)}
+ });
+}
+async function httpJSON(path,{method='GET',body=null,timeoutMs=12000}={}){
+ const headers={'Accept':'application/json'};
+ if(body!==null){headers['Content-Type']='application/json';headers['X-CSRF-Token']=csrfToken();}
+ const url=new URL(path,window.location.origin).href,command='standalone-http';
+ const fetchRequest=async()=>{const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),Math.max(1000,timeoutMs));try{return await fetch(url,{method,headers,credentials:'same-origin',cache:'no-store',body:body===null?undefined:JSON.stringify(body),signal:controller.signal});}finally{clearTimeout(timer);}};
+ let r,fetchError=null;
+ try{r=await fetchRequest();}
+ catch(error){
+  fetchError=error;
+  if(method==='GET'){await new Promise(resolve=>setTimeout(resolve,250));try{r=await fetchRequest();fetchError=null}catch(retryError){fetchError=retryError}}
+  if(!r){try{r=await xhrJSONRequest(url,{method,body,headers,timeoutMs});}catch(xhrError){const timeout=fetchError?.name==='AbortError'||xhrError?.name==='AbortError';const detail=[fetchError?.message||error?.message,xhrError?.message].filter(Boolean).join(' | ');throw new ChrootCtlError(timeout?`Standalone backend request timed out after ${timeoutMs}ms (${url}).`:`Standalone backend listener is unreachable at ${url}. fetch=${fetchError?.message||error?.message||'failed'}; xhr=${xhrError?.message||'failed'}. Page origin=${window.location.origin}. Check /data/local/tmp/chrootctl/standalone-webui.log.`,{code:timeout?'WEBUI_BACKEND_TIMEOUT':'WEBUI_HTTP_ERROR',command,stderr:detail});}}
+ }
+ const raw=String(await r.text());let data=null;
+ try{data=raw.trim()?JSON.parse(raw):null}catch(_){throw new ChrootCtlError(`Standalone backend returned invalid JSON (HTTP ${r.status})`,{code:'WEBUI_INVALID_JSON',command,exitCode:r.status,stdout:raw.slice(0,2048)});}
+ if(!r.ok)throw new ChrootCtlError(data?.error?.message||`Standalone WebUI HTTP ${r.status} at ${url}`,{code:data?.error?.code||(r.status===401?'WEBUI_SESSION_EXPIRED':'WEBUI_HTTP_ERROR'),command,exitCode:r.status,stdout:raw.slice(0,2048),stderr:fetchError?.message||'',envelope:data});
+ return data;
+}
 function parseAppArgs(args){ if(args[0]!=='app')return null; if(args[1]==='capabilities')return {kind:'capabilities'}; const mode=args[1],i=args.indexOf('--request-json'); if(!['query','preview','run'].includes(mode)||i<0)return null; const req=JSON.parse(args[i+1]); return {kind:mode,operation:req.operation,payload:req.payload||{}}; }
 async function httpApp(args){ const a=parseAppArgs(args); if(!a)throw new ChrootCtlError('Standalone transport only accepts typed app requests',{code:'WEBUI_OPERATION_NOT_ALLOWED'}); if(a.kind==='capabilities')return httpJSON('/api/v1/capabilities'); return httpJSON(`/api/v1/${a.kind}/${encodeURIComponent(a.operation)}`,{method:'POST',body:a.payload}); }
 
@@ -35,7 +62,7 @@ const OPERATIONS = Object.freeze({
 });
 
 export class ChrootCtlError extends Error {
-  constructor(message, details={}) { super(message); this.name='ChrootCtlError'; this.code=details.code||'WEBUI_BACKEND_ERROR'; this.exitCode=details.exitCode??null; this.command=details.command||null; this.stderr=details.stderr||''; this.stdout=details.stdout||''; this.envelope=details.envelope||null; this.operationId=details.operationId||null; this.operation=details.operation||null; }
+  constructor(message, details={}) { super(message); this.name='ChrootCtlError'; this.code=details.code||'WEBUI_BACKEND_ERROR'; this.exitCode=details.exitCode??null; this.command=details.command||null; this.stderr=details.stderr||''; this.stdout=details.stdout||''; this.envelope=details.envelope||null; this.operationId=details.operationId||null; this.operation=details.operation||null; this.logPath=details.logPath||details.envelope?.payload?.logPath||details.envelope?.logPath||null; }
 }
 function safeName(value, field='name') { const v=String(value??'').trim(); if(!NAME_RE.test(v)) throw new ChrootCtlError(`Invalid ${field}`,{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
 function safeUsername(value, field='username') { const v=String(value??'').trim(); if(!USER_RE.test(v)) throw new ChrootCtlError(`Invalid ${field}`,{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
@@ -250,12 +277,16 @@ export async function runRepair(decisions,preview,handlers={}){return runMainten
 export async function runTempCleanup(preview,handlers={}){return runMaintenanceOperation('cleanup.temp',{deleteAll:true},preview,handlers);}
 export async function previewInstall(payload){if(!transportAvailable())throw new ChrootCtlError('No supported WebUI transport is available',{code:'WEBUI_BRIDGE_UNAVAILABLE'});return appRequest('preview','install.preview',safeInstallPayload(payload));}
 export async function cancelOperation(operationId){const id=boundedText(operationId,'operation id',128);if(!/^[A-Za-z0-9._:-]+$/.test(id))throw new ChrootCtlError('Invalid operation id',{code:'WEBUI_INVALID_ARGUMENT'});return parseBridgeResponse(await runAllowedOperation({args:['app','cancel',id]}),'operations.cancel');}
-async function recoverRunRecord(requestIdValue){
+async function recoverRunRecord(requestIdValue,operationIdValue=''){
   try{
-    const foundEnvelope=await appRequest('query','operations.find_request',{requestId:boundedText(requestIdValue,'request id',128)});
-    const found=foundEnvelope?.data||{};
-    if(found?.found!==true||!found?.operationId)return null;
-    const recordEnvelope=await appRequest('query','operations.get',{operationId:boundedText(found.operationId,'operation id',128)});
+    let operationId=String(operationIdValue||'').trim();
+    if(!operationId){
+      const foundEnvelope=await appRequest('query','operations.find_request',{requestId:boundedText(requestIdValue,'request id',128)});
+      const found=foundEnvelope?.data||{};
+      if(found?.found!==true||!found?.operationId)return null;
+      operationId=String(found.operationId);
+    }
+    const recordEnvelope=await appRequest('query','operations.get',{operationId:boundedText(operationId,'operation id',128)});
     return recordEnvelope?.data||null;
   }catch(_){return null}
 }
@@ -276,10 +307,13 @@ export async function runInstall(payload,handlers={}){
   });
   if(bridgeFailure)throw new ChrootCtlError(bridgeFailure.error?.message||'Install bridge request failed',{code:bridgeFailure.error?.code||'WEBUI_BACKEND_FAILURE',operation:'install.run',command:result.executable,exitCode:result.exitCode,operationId,envelope:bridgeFailure,stdout:result.stdout?.slice(0,2048)||'',stderr:result.stderr});
   if(result.exitCode!==0||!terminal||terminal.type!=='operation_succeeded'){
-    const recovered=operationId?null:await recoverRunRecord(request.requestId);if(recovered?.operationId)operationId=String(recovered.operationId);
-    const payload=terminal?.payload||{};const code=payload.code||recovered?.errorCode||(terminal?.type==='operation_cancelled'?'OPERATION_CANCELLED':terminal?.type==='operation_blocked'?'OPERATION_BLOCKED':'INSTALL_FAILED');
-    const message=payload.message||recovered?.error||result.stderr?.trim()||'Install did not complete successfully';
-    throw new ChrootCtlError(message,{code,operation:'install.run',command:result.executable,exitCode:result.exitCode,operationId,envelope:terminal||recovered,stdout:result.stdout?.slice(0,2048)||'',stderr:result.stderr});
+    const recovered=await recoverRunRecord(request.requestId,operationId);if(recovered?.operationId)operationId=String(recovered.operationId);
+    const failure=terminal?.payload||{},terminalCode=terminal?.type==='operation_cancelled'?'OPERATION_CANCELLED':terminal?.type==='operation_blocked'?'OPERATION_BLOCKED':'';
+    const missingTerminal=!terminal;
+    const code=failure.code||recovered?.errorCode||terminalCode||(missingTerminal?'INSTALL_BACKEND_EXIT':'INSTALL_FAILED');
+    const message=failure.message||recovered?.error||result.stderr?.trim()||(missingTerminal?`Install backend exited with status ${result.exitCode} before emitting a terminal operation event.`:'Install failed without a diagnostic message.');
+    const logPath=failure.logPath||recovered?.logPath||'/data/local/tmp/chrootctl/chrootctl.log';
+    throw new ChrootCtlError(message,{code,operation:'install.run',command:result.executable,exitCode:result.exitCode,operationId,logPath,envelope:terminal||recovered,stdout:result.stdout?.slice(0,4096)||'',stderr:result.stderr});
   }
   return {operationId,event:terminal,result:terminal.payload?.result??null};
 }

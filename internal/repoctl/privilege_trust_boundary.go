@@ -23,7 +23,7 @@ func ValidatePrivilegeTrustBoundary(root string) error {
 	if err != nil {
 		return fmt.Errorf("CHR04 read wrapper: %w", err)
 	}
-	for _, forbidden := range []string{"command -v chrootctl", "exec su -c", "modules_update/chrootctl-magisk/system/bin/chrootctl", "_chc_path=${PATH", `sed "s/'/`} {
+	for _, forbidden := range []string{"command -v chrootctl", "exec su -c", "modules_update/chrootctl/system/bin/chrootctl", "_chc_path=${PATH", `sed "s/'/`} {
 		if strings.Contains(wrapper, forbidden) {
 			return fmt.Errorf("CHR04 wrapper retains unsafe token %q", forbidden)
 		}
