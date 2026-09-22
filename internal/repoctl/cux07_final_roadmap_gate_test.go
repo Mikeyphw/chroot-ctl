@@ -1,0 +1,67 @@
+package repoctl
+
+import (
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+func TestCUX07FinalRoadmapGate(t *testing.T) {
+	htmlb, err := os.ReadFile("../module/webroot/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsb, err := os.ReadFile("../module/webroot/index.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cssb, err := os.ReadFile("../module/webroot/index.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, j, c := string(htmlb), string(jsb), string(cssb)
+	routes := []string{"home", "chroots", "sessions", "operations", "transfer", "rclone", "activity", "settings"}
+	for _, r := range routes {
+		if !strings.Contains(h, `data-section="`+r+`"`) {
+			t.Fatalf("primary route %s missing", r)
+		}
+	}
+	// Logs is a System child route, but retains a data-section marker for the longstanding WebUI foundation contract.
+	if !strings.Contains(h, `data-route="logs" data-section="logs"`) {
+		t.Fatal("System Logs child route is missing its compatibility section marker")
+	}
+	panels := []string{"home", "chroots", "create", "users", "services", "snapshots", "storage", "catalog", "maintenance", "diagnostics", "readiness", "transfer", "rclone", "sessions", "operations", "activity", "logs", "settings", "placeholder"}
+	for _, p := range panels {
+		if !strings.Contains(h, `id="`+p+`-panel"`) {
+			t.Fatalf("panel %s missing", p)
+		}
+		if !strings.Contains(j, `$('`+p+`-panel').classList.toggle('hidden',!`) {
+			t.Fatalf("panel %s is not explicitly routed", p)
+		}
+	}
+	for _, want := range []string{"const appState=", "bootstrapBackend()", "restoredRoute()", "createSession(", "captureSession(", "inputSession(", "detachSession(", "killSession(", "operationCard", "activeJob", "sectionOwnsRefresh", "rcloneStatus()"} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("final JS contract missing %q", want)
+		}
+	}
+	for _, want := range []string{"Skip to main content", "Selected chroot", "Move chroots without guessing", "Browse first, transfer second", "Configuration, runtime and diagnostics"} {
+		if !strings.Contains(h, want) {
+			t.Fatalf("final product contract missing %q", want)
+		}
+	}
+	for _, want := range []string{".skip-link", ":focus-visible", "min-height:44px"} {
+		if !strings.Contains(c, want) {
+			t.Fatalf("accessibility contract missing %q", want)
+		}
+	}
+	if strings.Contains(h, "KERNELSU WEBUI") {
+		t.Fatal("transport branding leaked into product shell")
+	}
+	if regexp.MustCompile(`(?i)(execCommand|rawShell|tmux\\s+-L)`).MatchString(j) {
+		t.Fatal("frontend contains forbidden raw privileged execution path")
+	}
+	if !strings.Contains(j, "activity=name==='activity'") || !strings.Contains(j, "!operations&&!activity&&!logs") {
+		t.Fatal("Activity route can fall through to placeholder")
+	}
+}
