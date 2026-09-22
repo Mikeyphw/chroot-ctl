@@ -34,6 +34,8 @@ go vet \
   ./cmd/chrootctl \
   ./cmd/repoctl \
   ./internal/module \
+  ./internal/install/... \
+  ./internal/integrity \
   ./internal/bridge \
   ./internal/operations \
   ./internal/users \

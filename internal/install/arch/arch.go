@@ -84,13 +84,17 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 		defer os.RemoveAll(stage)
 		tar := filepath.Join(work, name)
 		sig := tar + ".sig"
+		keyring := filepath.Join(work, "archlinuxarm-signing-key.asc")
 		if e = i.Download(url, tar); e != nil {
 			return model.InstallExtractResult{}, e
 		}
 		if e = i.Download(url+".sig", sig); e != nil {
 			return model.InstallExtractResult{}, e
 		}
-		if e = integrity.VerifyDetachedSignature(ctx, i.Runner, tar, sig, integrity.ArchLinuxARMSigningFingerprint, ""); e != nil {
+		if e = i.Download(integrity.ArchLinuxARMSigningKeyURL, keyring); e != nil {
+			return model.InstallExtractResult{}, e
+		}
+		if e = integrity.VerifyDetachedSignatureWithKeyringFile(tar, sig, keyring, integrity.ArchLinuxARMSigningFingerprint); e != nil {
 			return model.InstallExtractResult{}, e
 		}
 		if _, e = i.Runner.Run(ctx, []string{"bsdtar", "-xpf", tar, "-C", stage}, sys.RunOptions{NoCapture: true}); e != nil {

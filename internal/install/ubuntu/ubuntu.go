@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -65,13 +66,90 @@ func ResolveTarball(html, arch, baseURL string) (string, string, error) {
 	if suffix == "" {
 		return "", "", fmt.Errorf("unsupported ubuntu target arch: %s", arch)
 	}
+	type candidate struct {
+		name    string
+		version []int
+	}
+	candidates := make([]candidate, 0)
+	seen := map[string]bool{}
 	for _, m := range href.FindAllStringSubmatch(html, -1) {
 		name := filepath.Base(strings.TrimSpace(m[1]))
-		if strings.HasPrefix(name, "ubuntu-base-") && strings.HasSuffix(name, suffix) {
-			return name, baseURL + name, nil
+		if seen[name] || !strings.HasPrefix(name, "ubuntu-base-") || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		versionText := strings.TrimSuffix(strings.TrimPrefix(name, "ubuntu-base-"), suffix)
+		version, ok := numericVersion(versionText)
+		if !ok {
+			continue
+		}
+		seen[name] = true
+		candidates = append(candidates, candidate{name: name, version: version})
+	}
+	if len(candidates) == 0 {
+		return "", "", fmt.Errorf("could not find ubuntu-base %s tarball under %s", arch, baseURL)
+	}
+	sort.SliceStable(candidates, func(a, b int) bool {
+		if c := compareNumericVersion(candidates[a].version, candidates[b].version); c != 0 {
+			return c > 0
+		}
+		return candidates[a].name > candidates[b].name
+	})
+	name := candidates[0].name
+	return name, baseURL + name, nil
+}
+
+func numericVersion(value string) ([]int, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) < 2 {
+		return nil, false
+	}
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			return nil, false
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return nil, false
+		}
+		out = append(out, n)
+	}
+	return out, true
+}
+
+func compareNumericVersion(a, b []int) int {
+	n := len(a)
+	if len(b) > n {
+		n = len(b)
+	}
+	for idx := 0; idx < n; idx++ {
+		av, bv := 0, 0
+		if idx < len(a) {
+			av = a[idx]
+		}
+		if idx < len(b) {
+			bv = b[idx]
+		}
+		if av < bv {
+			return -1
+		}
+		if av > bv {
+			return 1
 		}
 	}
-	return "", "", fmt.Errorf("could not find ubuntu-base %s tarball under %s", arch, baseURL)
+	return 0
+}
+
+func tarballVersion(name, arch string) (string, bool) {
+	suffix := tarballSuffixForArch(arch)
+	if suffix == "" || !strings.HasPrefix(name, "ubuntu-base-") || !strings.HasSuffix(name, suffix) {
+		return "", false
+	}
+	version := strings.TrimSuffix(strings.TrimPrefix(name, "ubuntu-base-"), suffix)
+	if _, ok := numericVersion(version); !ok {
+		return "", false
+	}
+	return version, true
 }
 func (i *Installer) ListVersions() (out []install.ReleaseRef, err error) {
 	if i.FetchText == nil {
@@ -115,7 +193,7 @@ func (i *Installer) resolveRelease(version, release string) (install.ReleaseRef,
 	for _, r := range refs {
 		m[r.Label] = r
 	}
-	for _, k := range []string{version, release, "24.04.4", "24.04", "noble"} {
+	for _, k := range []string{version, release, "24.04", "noble"} {
 		if r, ok := m[k]; ok && k != "" {
 			return r, nil
 		}
@@ -177,6 +255,7 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 		tar := filepath.Join(work, name)
 		sums := filepath.Join(work, "SHA256SUMS")
 		sig := filepath.Join(work, "SHA256SUMS.gpg")
+		keyring := filepath.Join(work, "ubuntu-archive-keyring.gpg")
 		if e = i.Download(url, tar); e != nil {
 			return model.InstallExtractResult{}, e
 		}
@@ -186,7 +265,10 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 		if e = i.Download(ref.URL+"SHA256SUMS.gpg", sig); e != nil {
 			return model.InstallExtractResult{}, e
 		}
-		if e = integrity.VerifyDetachedSignature(ctx, i.Runner, sums, sig, integrity.UbuntuSigningFingerprint, ""); e != nil {
+		if e = i.Download(integrity.UbuntuSigningKeyringURL, keyring); e != nil {
+			return model.InstallExtractResult{}, e
+		}
+		if e = integrity.VerifyDetachedSignatureWithKeyringFile(sums, sig, keyring, integrity.UbuntuSigningFingerprint); e != nil {
 			return model.InstallExtractResult{}, e
 		}
 		sum, e := integrity.ChecksumFromManifest(sums, name)
@@ -208,14 +290,24 @@ func (i *Installer) RunPhaseExtract(ctx context.Context, version, release string
 			_ = os.MkdirAll(filepath.Join(i.Config.ChrootBase(), rel), 0o755)
 		}
 	}
-	if version == "" {
-		version = ref.Label
+	requestedVersion, requestedRelease := version, release
+	resolvedVersion, ok := tarballVersion(name, i.Config.TargetArch)
+	if !ok {
+		resolvedVersion = version
+		if resolvedVersion == "" {
+			resolvedVersion = ref.Label
+		}
 	}
-	if release == "" {
-		release = ref.Label
+	resolvedRelease := release
+	if resolvedRelease == "" {
+		resolvedRelease = ref.Label
 	}
-	e = i.MarkPhase(ctx, install.Extract, false, version, release, map[string]any{"tarball": name, "url": url, "requested_url": url, "mirror": i.MirrorSelection, "integrity": "openpgp+sha256", "signing_fingerprint": integrity.UbuntuSigningFingerprint})
-	return model.InstallExtractResult{Version: version, Release: release, Tarball: name, Phase: "extract"}, e
+	e = i.MarkPhase(ctx, install.Extract, false, resolvedVersion, resolvedRelease, map[string]any{
+		"tarball": name, "url": url, "requested_url": url, "mirror": i.MirrorSelection,
+		"integrity": "openpgp+sha256", "signing_fingerprint": integrity.UbuntuSigningFingerprint,
+		"requested_version": requestedVersion, "requested_release": requestedRelease, "resolved_release": ref.Label,
+	})
+	return model.InstallExtractResult{Version: resolvedVersion, Release: resolvedRelease, Tarball: name, Phase: "extract"}, e
 }
 func (i *Installer) RunPhaseBootstrap(ctx context.Context, username, profile string, force bool) (model.InstallBootstrapResult, error) {
 	if e := i.Runner.RequireRoot(); e != nil {
