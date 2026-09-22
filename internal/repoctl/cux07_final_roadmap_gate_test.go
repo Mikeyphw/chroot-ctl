@@ -84,7 +84,7 @@ func TestCUX07FinalRoadmapGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"runtime/arm64-v8a/chrootctl", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/rclone", "rclone_tree_sha", "rclone_zip_sha"} {
+	for _, want := range []string{"runtime/arm64-v8a/chrootctl", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/rclone", "config/chrootctl/runtime-executables.list", "restore_runtime_exec_modes", "runtime_execs_ready", "rclone_tree_sha", "rclone_zip_sha"} {
 		if !strings.Contains(string(pkg), want) {
 			t.Fatalf("final package seal missing optional rclone proof %q", want)
 		}

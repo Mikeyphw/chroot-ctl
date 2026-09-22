@@ -23,6 +23,7 @@ for required in \
   post-fs-data.sh \
   service.sh \
   action.sh \
+  config/chrootctl/runtime-executables.list \
   system/bin/chrootctl \
   webroot/index.html \
   webroot/index.js \
@@ -52,6 +53,32 @@ fi
 # Ensure the packaged backend is an actual executable artifact.
 [ -x "$TREE/system/bin/chrootctl" ] || {
   echo "packaged chrootctl backend is not executable" >&2
+  exit 1
+}
+
+# Installer-mode contract: every runtime executable advertised by the sealed
+# installer inventory must already be canonical 0755 in the expanded tree.
+# customize.sh then restores this exact inventory after root-manager extraction.
+while IFS= read -r runtime_rel || [ -n "$runtime_rel" ]; do
+  [ -n "$runtime_rel" ] || continue
+  case "$runtime_rel" in
+    /*|..|../*|*/../*|*/..) echo "unsafe runtime executable inventory path: $runtime_rel" >&2; exit 1 ;;
+  esac
+  runtime_path="$TREE/runtime/arm64-v8a/$runtime_rel"
+  [ -f "$runtime_path" ] && [ ! -L "$runtime_path" ] && [ -x "$runtime_path" ] || {
+    echo "runtime executable inventory points at missing/non-executable file: $runtime_rel" >&2
+    exit 1
+  }
+  mode="$(stat -c '%a' "$runtime_path")"
+  [ "$mode" = "755" ] || { echo "runtime executable mode is $mode, want 755: $runtime_rel" >&2; exit 1; }
+done < "$TREE/config/chrootctl/runtime-executables.list"
+
+grep -Fq 'restore_runtime_exec_modes "$RUNTIME_ROOT" "$RUNTIME_EXEC_LIST"' "$TREE/customize.sh" || {
+  echo "installer does not restore sealed runtime executable inventory" >&2
+  exit 1
+}
+grep -Fq 'runtime_execs_ready "$LIVE_NEXT/runtime/arm64-v8a" "$LIVE_NEXT/config/chrootctl/runtime-executables.list"' "$TREE/customize.sh" || {
+  echo "live-update preflight does not verify every sealed runtime executable" >&2
   exit 1
 }
 

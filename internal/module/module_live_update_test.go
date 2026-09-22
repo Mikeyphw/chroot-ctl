@@ -29,7 +29,7 @@ func TestCustomizeLiveUpdatePreservesManagerMarkersAndRequiresSealedRuntime(t *t
 	if strings.Contains(s, `rm -rf "$ACTIVE_MODULE"`) {
 		t.Fatal("live update must not destroy the active module before rollback backup")
 	}
-	for _, want := range []string{`cp -a "$ACTIVE_MODULE/." "$LIVE_NEXT/"`, `config/chrootctl/module-package-manifest.json`, `runtime/arm64-v8a/runtime-manifest.json`, `runtime/arm64-v8a/chrootctl`, `[ ! -e "$ACTIVE_MODULE/disable" ]`, `[ ! -e "$ACTIVE_MODULE/remove" ]`} {
+	for _, want := range []string{`cp -a "$ACTIVE_MODULE/." "$LIVE_NEXT/"`, `config/chrootctl/module-package-manifest.json`, `config/chrootctl/runtime-executables.list`, `runtime/arm64-v8a/runtime-manifest.json`, `runtime_execs_ready "$LIVE_NEXT/runtime/arm64-v8a" "$LIVE_NEXT/config/chrootctl/runtime-executables.list"`, `[ ! -e "$ACTIVE_MODULE/disable" ]`, `[ ! -e "$ACTIVE_MODULE/remove" ]`} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("live update safety contract missing %q", want)
 		}

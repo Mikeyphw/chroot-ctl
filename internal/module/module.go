@@ -34,6 +34,7 @@ const (
 
 	ModulePackageSchemaVersion = 1
 	ModulePackageManifestPath  = "config/chrootctl/module-package-manifest.json"
+	RuntimeExecutablesListPath = "config/chrootctl/runtime-executables.list"
 )
 
 // webUIFS is compiled into repoctl so module rendering is deterministic and
@@ -54,7 +55,7 @@ func requiredModuleFiles() []string {
 	required := []string{
 		"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "action.sh", "uninstall.sh",
 		"bin/chrootctl-magisk-helper", "bin/chrootctl-log-helper", "system/bin/chrootctl", "system/bin/chrootctl-magisk-helper",
-		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json",
+		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", RuntimeExecutablesListPath,
 		"runtime/" + RuntimeABI + "/runtime-manifest.json",
 		"runtime/" + RuntimeABI + "/" + RuntimeEntrypoint,
 	}
@@ -86,6 +87,67 @@ type runtimeManifest struct {
 	BackendVersion        string        `json:"backendVersion"`
 	BridgeProtocolVersion int           `json:"bridgeProtocolVersion"`
 	Files                 []runtimeFile `json:"files"`
+}
+
+func runtimeExecutableListFromManifest(raw []byte) (string, error) {
+	var manifest runtimeManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return "", fmt.Errorf("decode runtime manifest for executable inventory: %w", err)
+	}
+	paths := make([]string, 0, len(manifest.Files))
+	seen := map[string]bool{}
+	for _, file := range manifest.Files {
+		if !file.Executable {
+			continue
+		}
+		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(file.Path)))
+		if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "../") || clean == ".." {
+			return "", fmt.Errorf("unsafe runtime executable inventory path: %s", file.Path)
+		}
+		if seen[clean] {
+			return "", fmt.Errorf("duplicate runtime executable inventory path: %s", clean)
+		}
+		seen[clean] = true
+		paths = append(paths, clean)
+	}
+	if len(paths) == 0 {
+		return "", errors.New("runtime executable inventory is empty")
+	}
+	sort.Strings(paths)
+	return strings.Join(paths, "\n") + "\n", nil
+}
+
+func runtimeExecutableList(runtimeRoot string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(runtimeRoot, "runtime-manifest.json"))
+	if err != nil {
+		return "", err
+	}
+	return runtimeExecutableListFromManifest(raw)
+}
+
+func validateRuntimeExecutableList(moduleRoot string) error {
+	runtimeRoot := filepath.Join(moduleRoot, "runtime", RuntimeABI)
+	want, err := runtimeExecutableList(runtimeRoot)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(filepath.Join(moduleRoot, filepath.FromSlash(RuntimeExecutablesListPath)))
+	if err != nil {
+		return err
+	}
+	if string(raw) != want {
+		return fmt.Errorf("runtime executable installer inventory mismatch: got %q want %q", string(raw), want)
+	}
+	for _, rel := range strings.Fields(want) {
+		st, err := safeRegular(filepath.Join(runtimeRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			return err
+		}
+		if st.Mode().Perm() != 0o755 {
+			return fmt.Errorf("runtime executable mode must be 0755: %s mode=%04o", rel, st.Mode().Perm())
+		}
+	}
+	return nil
 }
 
 type modulePackageFile struct {
@@ -591,6 +653,21 @@ func ValidateZipArchive(path string) error {
 			return fmt.Errorf("module ZIP missing required file: %s", required)
 		}
 	}
+	runtimeManifestEntry := entries["runtime/"+RuntimeABI+"/runtime-manifest.json"]
+	wantRuntimeExecs, err := runtimeExecutableListFromManifest(runtimeManifestEntry.raw)
+	if err != nil {
+		return err
+	}
+	listEntry := entries[RuntimeExecutablesListPath]
+	if string(listEntry.raw) != wantRuntimeExecs {
+		return fmt.Errorf("module ZIP runtime executable installer inventory mismatch: got %q want %q", string(listEntry.raw), wantRuntimeExecs)
+	}
+	for _, rel := range strings.Fields(wantRuntimeExecs) {
+		entry, ok := entries["runtime/"+RuntimeABI+"/"+rel]
+		if !ok || !entry.meta.Executable || entry.meta.Mode != "0755" {
+			return fmt.Errorf("module ZIP runtime executable mode must be 0755: %s", rel)
+		}
+	}
 	return nil
 }
 func moduleProp() string {
@@ -608,10 +685,45 @@ LOG_HELPER="${MODPATH:-}/bin/chrootctl-log-helper"
 
 ui_print "chrootctl ships a bundled Go native runtime." 2>/dev/null || echo "chrootctl ships a bundled Go native runtime."
 
+runtime_execs_ready() {
+  runtime_root="$1"
+  exec_list="$2"
+  [ -f "$exec_list" ] && [ ! -L "$exec_list" ] || return 1
+  while IFS= read -r rel || [ -n "$rel" ]; do
+    [ -n "$rel" ] || continue
+    case "$rel" in
+      /*|..|../*|*/../*|*/..) return 1 ;;
+    esac
+    [ -f "$runtime_root/$rel" ] && [ ! -L "$runtime_root/$rel" ] && [ -x "$runtime_root/$rel" ] || return 1
+  done < "$exec_list"
+}
+
+restore_runtime_exec_modes() {
+  runtime_root="$1"
+  exec_list="$2"
+  [ -f "$exec_list" ] && [ ! -L "$exec_list" ] || return 1
+  while IFS= read -r rel || [ -n "$rel" ]; do
+    [ -n "$rel" ] || continue
+    case "$rel" in
+      /*|..|../*|*/../*|*/..) return 1 ;;
+    esac
+    target="$runtime_root/$rel"
+    [ -f "$target" ] && [ ! -L "$target" ] || return 1
+    if command -v set_perm >/dev/null 2>&1; then
+      set_perm "$target" 0 0 0755 || return 1
+    else
+      chmod 0755 "$target" 2>/dev/null || return 1
+    fi
+  done < "$exec_list"
+  runtime_execs_ready "$runtime_root" "$exec_list"
+}
+
 # Magisk/KernelSU extraction may leave module payload files as 0644 even when
 # the ZIP records executable modes. Enforce executable bits during install so
 # /system/bin/chrootctl can exec the bundled Go runtime after promotion.
 if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
+  RUNTIME_ROOT="$MODPATH/runtime/arm64-v8a"
+  RUNTIME_EXEC_LIST="$MODPATH/config/chrootctl/runtime-executables.list"
   if command -v set_perm_recursive >/dev/null 2>&1; then
     set_perm_recursive "$MODPATH" 0 0 0755 0644
   else
@@ -630,8 +742,6 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     set_perm "$MODPATH/bin/chrootctl-log-helper" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl" 0 0 0755
     set_perm "$MODPATH/system/bin/chrootctl-magisk-helper" 0 0 0755
-    set_perm "$MODPATH/runtime/arm64-v8a/chrootctl" 0 0 0755
-    [ ! -f "$MODPATH/runtime/arm64-v8a/rclone" ] || set_perm "$MODPATH/runtime/arm64-v8a/rclone" 0 0 0755
   else
     chmod 0755 "$MODPATH/customize.sh" 2>/dev/null || true
     chmod 0755 "$MODPATH/post-fs-data.sh" 2>/dev/null || true
@@ -642,8 +752,11 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     chmod 0755 "$MODPATH/bin/chrootctl-log-helper" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl" 2>/dev/null || true
     chmod 0755 "$MODPATH/system/bin/chrootctl-magisk-helper" 2>/dev/null || true
-    chmod 0755 "$MODPATH/runtime/arm64-v8a/chrootctl" 2>/dev/null || true
-    [ ! -f "$MODPATH/runtime/arm64-v8a/rclone" ] || chmod 0755 "$MODPATH/runtime/arm64-v8a/rclone" 2>/dev/null || true
+  fi
+
+  if ! restore_runtime_exec_modes "$RUNTIME_ROOT" "$RUNTIME_EXEC_LIST"; then
+    ui_print "chrootctl installer refused runtime with missing/non-executable sealed binaries." 2>/dev/null || echo "chrootctl installer refused runtime with missing/non-executable sealed binaries." >&2
+    return 1 2>/dev/null || exit 1
   fi
 
   # Existing installs are live-updated as well as left staged for the root
@@ -667,11 +780,11 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
       done
     fi
 
-    for required in module.prop post-fs-data.sh service.sh system/bin/chrootctl runtime/arm64-v8a/runtime-manifest.json runtime/arm64-v8a/chrootctl config/chrootctl/module-package-manifest.json; do
+    for required in module.prop post-fs-data.sh service.sh system/bin/chrootctl runtime/arm64-v8a/runtime-manifest.json runtime/arm64-v8a/chrootctl config/chrootctl/module-package-manifest.json config/chrootctl/runtime-executables.list; do
       [ "$LIVE_OK" -eq 0 ] || [ -f "$LIVE_NEXT/$required" ] || LIVE_OK=0
     done
     [ "$LIVE_OK" -eq 0 ] || [ -x "$LIVE_NEXT/system/bin/chrootctl" ] || LIVE_OK=0
-    [ "$LIVE_OK" -eq 0 ] || [ -x "$LIVE_NEXT/runtime/arm64-v8a/chrootctl" ] || LIVE_OK=0
+    [ "$LIVE_OK" -eq 0 ] || runtime_execs_ready "$LIVE_NEXT/runtime/arm64-v8a" "$LIVE_NEXT/config/chrootctl/runtime-executables.list" || LIVE_OK=0
 
     if [ "$LIVE_OK" -eq 1 ]; then
       chown -R 0:0 "$LIVE_NEXT" 2>/dev/null || true
@@ -901,6 +1014,10 @@ func Render(opts Options) error {
 	} else if e = os.MkdirAll(out, 0755); e != nil {
 		return e
 	}
+	runtimeExecs, e := runtimeExecutableList(runtime)
+	if e != nil {
+		return e
+	}
 	compat, _ := json.MarshalIndent(CompatibilityPayload(), "", "  ")
 	compat = append(compat, '\n')
 	targets, _ := json.MarshalIndent(map[string]any{"startup_targets": opts.StartupTargets}, "", "  ")
@@ -908,7 +1025,7 @@ func Render(opts Options) error {
 	files := map[string]struct {
 		c string
 		m fs.FileMode
-	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "action.sh": {action(), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}}
+	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "action.sh": {action(), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-magisk-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-magisk-helper": {proxy("bin/chrootctl-magisk-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}, RuntimeExecutablesListPath: {runtimeExecs, 0644}}
 	for rel, v := range files {
 		if e := writeFile(out, rel, v.c, v.m); e != nil {
 			return e
@@ -942,7 +1059,11 @@ func Render(opts Options) error {
 		if st.Mode().Perm()&0111 != 0 {
 			mode = 0755
 		}
-		if e = os.WriteFile(filepath.Join(dst, ent.Name()), data, mode); e != nil {
+		dstPath := filepath.Join(dst, ent.Name())
+		if e = os.WriteFile(dstPath, data, mode); e != nil {
+			return e
+		}
+		if e = os.Chmod(dstPath, mode); e != nil {
 			return e
 		}
 	}
@@ -1063,6 +1184,9 @@ func ValidateRendered(root string) error {
 		}
 	}
 	if e := ValidateRuntime(filepath.Join(root, "runtime", RuntimeABI)); e != nil {
+		return e
+	}
+	if e := validateRuntimeExecutableList(root); e != nil {
 		return e
 	}
 	return ValidatePackageManifest(root)

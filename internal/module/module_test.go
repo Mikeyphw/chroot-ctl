@@ -426,8 +426,10 @@ func TestModuleCarriesOptionalRcloneRuntimeAndPrivateConfigState(t *testing.T) {
 	}
 	customizeRaw, _ := os.ReadFile(filepath.Join(out, "customize.sh"))
 	postRaw, _ := os.ReadFile(filepath.Join(out, "post-fs-data.sh"))
+	execListRaw, _ := os.ReadFile(filepath.Join(out, filepath.FromSlash(RuntimeExecutablesListPath)))
 	for _, pair := range []struct{ text, token string }{
-		{string(customizeRaw), `runtime/arm64-v8a/rclone`},
+		{string(customizeRaw), `runtime-executables.list`},
+		{string(execListRaw), "rclone\n"},
 		{string(postRaw), `RCLONE_DIR="$STATE_ROOT/rclone"`},
 		{string(postRaw), `chmod 0700 "$STATE_ROOT" "$BIN_DIR" "$RCLONE_DIR"`},
 		{string(postRaw), `chmod 0600 "$RCLONE_DIR/rclone.conf"`},
