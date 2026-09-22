@@ -192,6 +192,10 @@ func (s *ModuleRuntimeService) Status() map[string]any {
 	startupTargets, _ := active["startupTargets"].([]string)
 	return map[string]any{"moduleId": moduleID, "installed": active["exists"], "active": activeValue, "installedState": active, "pendingUpdate": len(pending) > 0, "pending": pending, "ready": usable && ready, "manager": moduleManager(), "startupTargets": startupTargets, "warnings": warnings}
 }
+func activeRuntimeExecutablePath() string {
+	return "/data/adb/modules/" + moduleID + "/runtime/arm64-v8a/chrootctl"
+}
+
 func (s *ModuleRuntimeService) ActiveExecutable() string {
 	st := s.Status()
 	a, ok := st["active"].(map[string]any)
@@ -202,7 +206,7 @@ func (s *ModuleRuntimeService) ActiveExecutable() string {
 	if ready, _ := rr["ready"].(bool); !ready {
 		return ""
 	}
-	p := "/data/adb/modules/" + moduleID + "/system/bin/chrootctl"
+	p := activeRuntimeExecutablePath()
 	if regularExecutable(p) {
 		return p
 	}

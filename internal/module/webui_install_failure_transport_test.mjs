@@ -11,7 +11,7 @@ import { spawn } from './webroot/kernelsu.js';
       queueMicrotask(() => globalThis[callbackName](2, '{"type":"bridge_error","ok":false}\n', 'preview stale'));
     },
   };
-  const child = spawn('/data/adb/modules/chrootctl-magisk/system/bin/chrootctl', ['app', 'run'], {});
+  const child = spawn('/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/chrootctl', ['app', 'run'], {});
   let stdout = '';
   let stderr = '';
   let errors = 0;
@@ -28,12 +28,12 @@ import { spawn } from './webroot/kernelsu.js';
   assert.match(stderr, /preview stale/);
 }
 
-// The WebUI must pin the authoritative active-module launcher and preserve a
-// structured pre-operation install failure instead of reducing it to the old
-// INSTALL_FAILED fallback.
+// The WebUI must pin the authoritative native runtime ELF, not the shell
+// launcher, and preserve a structured pre-operation install failure instead of
+// reducing it to the old INSTALL_FAILED fallback.
 {
   let spawnCalls = 0;
-  const active = '/data/adb/modules/chrootctl-magisk/system/bin/chrootctl';
+  const active = '/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/chrootctl';
   const capabilities = JSON.stringify({
     protocolVersion: 1,
     requestId: 'capabilities',
@@ -104,7 +104,8 @@ import { spawn } from './webroot/kernelsu.js';
   const bridgeSource = await readFile(new URL('./webroot/chrootctl.js', import.meta.url), 'utf8');
   const uiSource = await readFile(new URL('./webroot/index.js', import.meta.url), 'utf8');
   assert.match(bridgeSource, /'operations\.find_request'/);
-  assert.match(bridgeSource, /\/data\/adb\/modules\/chrootctl-magisk\/system\/bin\/chrootctl','\/data\/adb\/chrootctl\/bin\/chrootctl'/);
+  assert.match(bridgeSource, /ACTIVE_RUNTIME = `\$\{ACTIVE_MODULE\}\/runtime\/arm64-v8a\/chrootctl`/);
+  assert.match(bridgeSource, /Object\.freeze\(\[ACTIVE_RUNTIME,/);
   assert.match(uiSource, /technicalError\('Install failed',e\)/);
   assert.match(uiSource, /technicalError\('Install retry failed',e\)/);
 }

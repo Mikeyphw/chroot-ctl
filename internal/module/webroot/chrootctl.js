@@ -3,7 +3,9 @@ import { isAvailable as isKernelSUAvailable, exec as ksuExec, selfTest as ksuSel
 const OUTPUT_LIMIT = 1024 * 1024;
 const LINE_LIMIT = 128 * 1024;
 const PROCESS_TIMEOUT_MS = 20 * 1000;
-const EXECUTABLES = Object.freeze(['/data/adb/modules/chrootctl-magisk/system/bin/chrootctl','/data/adb/chrootctl/bin/chrootctl','/system/bin/chrootctl']);
+const ACTIVE_MODULE = '/data/adb/modules/chrootctl-magisk';
+const ACTIVE_RUNTIME = `${ACTIVE_MODULE}/runtime/arm64-v8a/chrootctl`;
+const EXECUTABLES = Object.freeze([ACTIVE_RUNTIME,`${ACTIVE_MODULE}/system/bin/chrootctl`,'/data/adb/chrootctl/bin/chrootctl','/system/bin/chrootctl']);
 let selectedExecutable=null;
 let kernelSUExecTail=Promise.resolve();
 function serializeKernelSU(task){const run=kernelSUExecTail.then(task,task);kernelSUExecTail=run.catch(()=>{});return run;}

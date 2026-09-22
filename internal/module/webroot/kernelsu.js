@@ -176,7 +176,7 @@ export function exec(command, args = [], options = {}, timeoutMs = 15000) {
 }
 
 
-export async function selfTest(executable = '/data/adb/chrootctl/bin/chrootctl', timeoutMs = 8000) {
+export async function selfTest(executable = '/data/adb/modules/chrootctl-magisk/runtime/arm64-v8a/chrootctl', timeoutMs = 8000) {
   const bridge = api();
   const methods = ['exec', 'spawn', 'moduleInfo', 'toast'].filter((name) => typeof bridge[name] === 'function');
   let module = null;
