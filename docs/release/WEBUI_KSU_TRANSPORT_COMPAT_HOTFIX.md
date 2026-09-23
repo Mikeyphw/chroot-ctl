@@ -1,3 +1,5 @@
+> **Superseded for current KernelSU Manager:** root module 1.3.6 / versionCode 21 uses a single shell-quoted command with empty native argv because the Android WebView bridge concatenates native `spawn` argv without shell escaping. This document is retained as historical context.
+
 # WebUI KSU transport compatibility hotfix
 
 Comparison with SAN v2.2.2 found a concrete ABI difference in the KernelSU `spawn` adapter. SAN passes argv as `JSON.stringify(args)`, while chrootctl pre-shell-quoted every argv element before JSON encoding. KernelSU/KsuWebUIStandalone owns argv conversion, so those quotes can become literal argument bytes and break structured backend requests.

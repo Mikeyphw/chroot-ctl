@@ -12,11 +12,16 @@ func TestWebUIKSUTransportMatchesProvenHostABI(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(k)
-	if !strings.Contains(s, "native.spawn(command, JSON.stringify(args), JSON.stringify(options), name)") {
-		t.Fatal("spawn must pass verbatim JSON argv to KSU host")
+	if !strings.Contains(s, "native.spawn(shellCommand(command, args), JSON.stringify([]), JSON.stringify(options), name)") {
+		t.Fatal("spawn must cross the KSU root-shell boundary as one quoted command with empty native argv")
 	}
-	if strings.Contains(s, "JSON.stringify(args.map(shellQuote))") {
-		t.Fatal("spawn must not pre-shell-quote argv")
+	if strings.Contains(s, "native.spawn(command, JSON.stringify(args), JSON.stringify(options), name)") {
+		t.Fatal("raw argv must not be handed to the KSU host because the Android bridge concatenates it without shell escaping")
+	}
+	for _, want := range []string{"pendingExitCode", "child.bridgeError", "setTimeout(() => finishExit(code), 500)"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing non-zero KSU diagnostic retention contract %q", want)
+		}
 	}
 	i, err := os.ReadFile("webroot/index.js")
 	if err != nil {

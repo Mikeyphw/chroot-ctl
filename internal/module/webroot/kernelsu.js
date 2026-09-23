@@ -26,6 +26,21 @@ function shellCommand(command, args) {
   return [shellQuote(command), ...args.map(shellQuote)].join(' ');
 }
 
+function redactBridgeDiagnostic(value) {
+  let text = String(value ?? '');
+  text = text.replace(/("(?:password|confirmPassword|token|secret|apiKey|authorization|accessToken|refreshToken|credential)"\s*:\s*")([^"]*)(")/gi, '$1<redacted>$3');
+  text = text.replace(/([?&](?:token|key|password|secret|auth|authorization|signature|sig|credential|access_token|refresh_token)=)[^&#\s"'<>]+/gi, '$1<redacted>');
+  text = text.replace(/\b(Bearer)\s+[A-Za-z0-9._~+\/=-]+/gi, '$1 <redacted>');
+  return text;
+}
+
+function sanitizedBridgeError(error) {
+  const safe = new Error(redactBridgeDiagnostic(error?.message ?? error));
+  if (error?.code) safe.code = error.code;
+  if (Number.isFinite(Number(error?.exitCode))) safe.exitCode = Number(error.exitCode);
+  return safe;
+}
+
 class EventEmitter {
   constructor() {
     this.listeners = new Map();
@@ -77,31 +92,92 @@ export function spawn(command, args = [], options = {}) {
   }
 
   const child = new ChildProcess();
-  const bridge = globalThis.ksu;
   const name = callbackName('chrootctl_spawn');
-  globalThis[name] = child;
+  let pendingExitCode = null;
+  let pendingExitTimer = null;
+  let completed = false;
+
+  child.bridgeTransport = 'kernelsu.spawn';
+  child.bridgeError = null;
 
   const cleanup = () => {
+    if (pendingExitTimer !== null) {
+      clearTimeout(pendingExitTimer);
+      pendingExitTimer = null;
+    }
     try {
       delete globalThis[name];
     } catch (_) {
       globalThis[name] = undefined;
     }
   };
-  child.on('exit', cleanup);
-  child.on('error', cleanup);
+
+  const finishExit = (code) => {
+    if (completed) return;
+    completed = true;
+    cleanup();
+    child.emit('exit', code);
+  };
+
+  const finishError = (error) => {
+    if (completed) return;
+    completed = true;
+    cleanup();
+    child.emit('error', error);
+  };
+
+  // KernelSU's manager posts a non-zero `exit` event and then a separate
+  // `error` event containing libsu's diagnostic. Keep the native callback alive
+  // briefly after a non-zero exit so that diagnostic is not discarded.
+  const nativeCallback = {
+    stdout: child.stdout,
+    stderr: child.stderr,
+    emit(event, value) {
+      if (event === 'exit') {
+        const code = Number.isFinite(Number(value)) ? Number(value) : 1;
+        pendingExitCode = code;
+        if (code === 0) {
+          finishExit(code);
+          return;
+        }
+        if (pendingExitTimer !== null) clearTimeout(pendingExitTimer);
+        pendingExitTimer = setTimeout(() => finishExit(code), 500);
+        return;
+      }
+      if (event === 'error') {
+        const raw = value && typeof value === 'object' ? value : { message: String(value ?? '') };
+        const exitCode = Number.isFinite(Number(raw.exitCode)) ? Number(raw.exitCode) : pendingExitCode;
+        child.bridgeError = {
+          message: redactBridgeDiagnostic(raw.message ?? ''),
+          exitCode: Number.isFinite(Number(exitCode)) ? Number(exitCode) : null,
+        };
+        if (pendingExitCode !== null) {
+          finishExit(pendingExitCode);
+          return;
+        }
+        const error = new Error(child.bridgeError.message || 'KernelSU spawn bridge failed');
+        error.code = 'KSU_SPAWN_ERROR';
+        error.exitCode = child.bridgeError.exitCode;
+        finishError(error);
+        return;
+      }
+      child.emit(event, value);
+    },
+  };
+  globalThis[name] = nativeCallback;
 
   const deferError = (error) => {
-    Promise.resolve().then(() => child.emit('error', error));
+    Promise.resolve().then(() => finishError(sanitizedBridgeError(error)));
   };
 
   try {
     const native = api();
     if (typeof native.spawn === 'function') {
-      // Match the proven KSU WebUI ABI used by SAN/KsuWebUIStandalone: argv is
-      // JSON-encoded verbatim. The host owns argv-to-process conversion; pre-quoting
-      // here turns quotes into literal argument bytes on compatible hosts.
-      native.spawn(command, JSON.stringify(args), JSON.stringify(options), name);
+      // KernelSU's Android host executes spawn through a root shell and currently
+      // concatenates argv strings without shell escaping. Pass one fully quoted
+      // shell command and an empty argv array so JSON/password/path arguments
+      // remain one shell token each while retaining streaming output.
+      native.spawn(shellCommand(command, args), JSON.stringify([]), JSON.stringify(options), name);
       return child;
     }
 
@@ -116,7 +192,7 @@ export function spawn(command, args = [], options = {}) {
         // result. Treat it as an exit so callers can parse structured stdout
         // (notably bridge_error NDJSON) instead of misclassifying an
         // application failure as a transport failure and replaying the command.
-        child.emit('exit', Number.isFinite(Number(errno)) ? Number(errno) : 1);
+        finishExit(Number.isFinite(Number(errno)) ? Number(errno) : 1);
       } finally {
         try { delete globalThis[execName]; } catch (_) { globalThis[execName] = undefined; }
       }

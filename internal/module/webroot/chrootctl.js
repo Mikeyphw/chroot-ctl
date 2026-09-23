@@ -62,7 +62,7 @@ const OPERATIONS = Object.freeze({
 });
 
 export class ChrootCtlError extends Error {
-  constructor(message, details={}) { super(message); this.name='ChrootCtlError'; this.code=details.code||'WEBUI_BACKEND_ERROR'; this.exitCode=details.exitCode??null; this.command=details.command||null; this.stderr=details.stderr||''; this.stdout=details.stdout||''; this.envelope=details.envelope||null; this.operationId=details.operationId||null; this.operation=details.operation||null; this.logPath=details.logPath||details.envelope?.payload?.logPath||details.envelope?.logPath||null; }
+  constructor(message, details={}) { super(message); this.name='ChrootCtlError'; this.code=details.code||'WEBUI_BACKEND_ERROR'; this.exitCode=details.exitCode??null; this.command=details.command||null; this.stderr=details.stderr||''; this.stdout=details.stdout||''; this.envelope=details.envelope||null; this.operationId=details.operationId||null; this.operation=details.operation||null; this.logPath=details.logPath||details.envelope?.payload?.logPath||details.envelope?.logPath||null; this.bridge=details.bridge||null; }
 }
 function safeName(value, field='name') { const v=String(value??'').trim(); if(!NAME_RE.test(v)) throw new ChrootCtlError(`Invalid ${field}`,{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
 function safeUsername(value, field='username') { const v=String(value??'').trim(); if(!USER_RE.test(v)) throw new ChrootCtlError(`Invalid ${field}`,{code:'WEBUI_INVALID_ARGUMENT'}); return v; }
@@ -126,8 +126,32 @@ function requestBackendLabel(){return standaloneHTTP?'standalone-http':(selected
 function annotateRequestError(error,operation){if(error instanceof ChrootCtlError){if(!error.operation)error.operation=operation;if(!error.command)error.command=requestBackendLabel();return error;}return new ChrootCtlError(error?.message||String(error),{code:error?.code||'WEBUI_BACKEND_ERROR',operation,command:requestBackendLabel()});}
 async function appRequest(mode,operation,payload={}){try{const allowed=mode==='query'?APP_QUERY_ALLOW:APP_PREVIEW_ALLOW;if(!allowed.has(operation))throw new ChrootCtlError('WebUI bridge operation is not allow-listed',{code:'WEBUI_OPERATION_NOT_ALLOWED',operation});await requireCapability(operation,mode);const args=['app',mode,'--request-json',bridgeRequest(operation,payload)];return parseBridgeResponse(await runAllowedOperation({args}),operation);}catch(error){throw annotateRequestError(error,operation);}}
 async function requireAllowedRun(operation){try{if(!APP_RUN_ALLOW.has(operation))throw new ChrootCtlError('WebUI run operation is not allow-listed',{code:'WEBUI_OPERATION_NOT_ALLOWED',operation});return await requireCapability(operation,'run');}catch(error){throw annotateRequestError(error,operation);}}
-function runStreaming(executable,args,onLine){return new Promise((resolve,reject)=>{let pending='',stdout='',stderr='',settled=false;const finish=(fn,v)=>{if(settled)return;settled=true;fn(v)};let child;try{child=spawn(executable,args,{})}catch(e){reject(new ChrootCtlError(e?.message||'KernelSU spawn failed',{code:e?.code||'WEBUI_BRIDGE_EXEC_FAILED',command:executable}));return}child.stdout.on('data',chunk=>{try{const text=String(chunk??'');stdout=appendBounded(stdout,text);pending+=text;if(pending.length>LINE_LIMIT)throw new ChrootCtlError('Bridge event line exceeded the safety limit',{code:'WEBUI_OUTPUT_LIMIT',command:executable,stdout:stdout.slice(0,2048),stderr});let i;while((i=pending.indexOf('\n'))>=0){const line=pending.slice(0,i).trim();pending=pending.slice(i+1);if(line)onLine(line)}}catch(e){if(e instanceof ChrootCtlError){if(!e.command)e.command=executable;if(!e.stdout)e.stdout=stdout.slice(0,2048);if(!e.stderr)e.stderr=stderr}finish(reject,e)}});child.stderr.on('data',chunk=>{try{stderr=appendBounded(stderr,chunk)}catch(e){finish(reject,e)}});child.on('error',e=>finish(reject,new ChrootCtlError(e?.message||'KernelSU streaming bridge failed',{code:e?.code||'WEBUI_BRIDGE_EXEC_FAILED',command:executable,exitCode:e?.exitCode??null,stdout:stdout.slice(0,2048),stderr})));child.on('exit',code=>{try{const line=pending.trim();if(line)onLine(line);finish(resolve,{exitCode:Number.isFinite(Number(code))?Number(code):1,stdout,stderr,executable})}catch(e){if(e instanceof ChrootCtlError){if(!e.command)e.command=executable;if(!e.stdout)e.stdout=stdout.slice(0,2048);if(!e.stderr)e.stderr=stderr}finish(reject,e)}})})}
-async function runAllowedStream(args,onLine){if(standaloneHTTP){const env=await httpApp(args);for(const event of (env?.events||[]))onLine(JSON.stringify(event));return {exitCode:Number(env?.exitCode||0),stdout:JSON.stringify(env),stderr:'',executable:'standalone-http'};}await bridgeSelfTest();const executable=selectedExecutable;if(!executable)throw new ChrootCtlError('No self-tested chrootctl backend is selected',{code:'WEBUI_BACKEND_UNAVAILABLE'});try{return await runStreaming(executable,args,onLine)}catch(error){if(error instanceof ChrootCtlError)throw error;throw new ChrootCtlError(error?.message||'Unable to run the bundled chrootctl backend',{code:error?.code||'WEBUI_BACKEND_UNAVAILABLE',command:executable,exitCode:error?.exitCode??null,stderr:error?.stderr||''})}}
+function runStreaming(executable,args,onLine){return new Promise((resolve,reject)=>{let pending='',stdout='',stderr='',settled=false;const finish=(fn,v)=>{if(settled)return;settled=true;fn(v)};let child;try{child=spawn(executable,args,{})}catch(e){reject(new ChrootCtlError(e?.message||'KernelSU spawn failed',{code:e?.code||'WEBUI_BRIDGE_EXEC_FAILED',command:executable}));return}child.stdout.on('data',chunk=>{try{const text=String(chunk??'');stdout=appendBounded(stdout,text);pending+=text;if(pending.length>LINE_LIMIT)throw new ChrootCtlError('Bridge event line exceeded the safety limit',{code:'WEBUI_OUTPUT_LIMIT',command:executable,stdout:stdout.slice(0,2048),stderr});let i;while((i=pending.indexOf('\n'))>=0){const line=pending.slice(0,i).trim();pending=pending.slice(i+1);if(line)onLine(line)}}catch(e){if(e instanceof ChrootCtlError){if(!e.command)e.command=executable;if(!e.stdout)e.stdout=stdout.slice(0,2048);if(!e.stderr)e.stderr=stderr}finish(reject,e)}});child.stderr.on('data',chunk=>{try{stderr=appendBounded(stderr,chunk)}catch(e){finish(reject,e)}});child.on('error',e=>finish(reject,new ChrootCtlError(e?.message||'KernelSU streaming bridge failed',{code:e?.code||'WEBUI_BRIDGE_EXEC_FAILED',command:executable,exitCode:e?.exitCode??null,stdout:stdout.slice(0,2048),stderr,bridge:{transport:child.bridgeTransport||'kernelsu.spawn',nativeError:child.bridgeError||null}})));child.on('exit',code=>{try{const line=pending.trim();if(line)onLine(line);finish(resolve,{exitCode:Number.isFinite(Number(code))?Number(code):1,stdout,stderr,executable,bridge:{transport:child.bridgeTransport||'kernelsu.spawn',nativeError:child.bridgeError||null}})}catch(e){if(e instanceof ChrootCtlError){if(!e.command)e.command=executable;if(!e.stdout)e.stdout=stdout.slice(0,2048);if(!e.stderr)e.stderr=stderr}finish(reject,e)}})})}
+let streamingBridgeSelfTestPromise=null;
+let streamingBridgeSelfTestExecutable=null;
+async function streamingBridgeSelfTest(){
+ if(standaloneHTTP)return {ok:true,transport:'standalone-http'};
+ const executable=selectedExecutable;
+ if(!executable)throw new ChrootCtlError('No self-tested chrootctl backend is selected for streaming preflight',{code:'WEBUI_BACKEND_UNAVAILABLE'});
+ if(!streamingBridgeSelfTestPromise||streamingBridgeSelfTestExecutable!==executable){
+  streamingBridgeSelfTestExecutable=executable;
+  streamingBridgeSelfTestPromise=(async()=>{
+   const request=JSON.stringify({protocolVersion:1,requestId:'webui-stream-probe',operation:'install.form',payload:{}});
+   const result=await runStreaming(executable,['app','query','--request-json',request],()=>{});
+   let envelope=null;try{envelope=JSON.parse(result.stdout.trim())}catch(_){}
+   if(result.exitCode!==0||envelope?.ok!==true||Number(envelope?.protocolVersion)!==1){
+    const nativeMessage=result.bridge?.nativeError?.message||'';
+    throw new ChrootCtlError(nativeMessage||`KernelSU streaming bridge probe failed with status ${result.exitCode}`,{code:'WEBUI_KSU_STREAM_PROBE_FAILED',command:executable,exitCode:result.exitCode,stdout:result.stdout.slice(0,2048),stderr:result.stderr,envelope,bridge:result.bridge});
+   }
+   return {ok:true,transport:'kernelsu.spawn'};
+  })().catch(error=>{
+   if(streamingBridgeSelfTestExecutable===executable){streamingBridgeSelfTestPromise=null;streamingBridgeSelfTestExecutable=null}
+   throw error;
+  });
+ }
+ return streamingBridgeSelfTestPromise;
+}
+async function runAllowedStream(args,onLine){if(standaloneHTTP){const env=await httpApp(args);for(const event of (env?.events||[]))onLine(JSON.stringify(event));return {exitCode:Number(env?.exitCode||0),stdout:JSON.stringify(env),stderr:'',executable:'standalone-http',bridge:{transport:'standalone-http',nativeError:null}};}const parsed=parseAppArgs(args),operation=parsed?.operation||null;try{await bridgeSelfTest();await streamingBridgeSelfTest();const executable=selectedExecutable;if(!executable)throw new ChrootCtlError('No self-tested chrootctl backend is selected',{code:'WEBUI_BACKEND_UNAVAILABLE'});return await runStreaming(executable,args,onLine)}catch(error){if(error instanceof ChrootCtlError){if(!error.operation)error.operation=operation;if(!error.command)error.command=selectedExecutable||requestBackendLabel();throw error}throw new ChrootCtlError(error?.message||'Unable to run the bundled chrootctl backend',{code:error?.code||'WEBUI_BACKEND_UNAVAILABLE',operation,command:selectedExecutable||requestBackendLabel(),exitCode:error?.exitCode??null,stderr:error?.stderr||'',bridge:error?.bridge||null})}}
 
 let compatibilityCache=null;
 const REQUIRED_PROTOCOL_VERSION=1;
@@ -310,10 +334,12 @@ export async function runInstall(payload,handlers={}){
     const recovered=await recoverRunRecord(request.requestId,operationId);if(recovered?.operationId)operationId=String(recovered.operationId);
     const failure=terminal?.payload||{},terminalCode=terminal?.type==='operation_cancelled'?'OPERATION_CANCELLED':terminal?.type==='operation_blocked'?'OPERATION_BLOCKED':'';
     const missingTerminal=!terminal;
-    const code=failure.code||recovered?.errorCode||terminalCode||(missingTerminal?'INSTALL_BACKEND_EXIT':'INSTALL_FAILED');
-    const message=failure.message||recovered?.error||result.stderr?.trim()||(missingTerminal?`Install backend exited with status ${result.exitCode} before emitting a terminal operation event.`:'Install failed without a diagnostic message.');
+    const syntheticBridgeExit=missingTerminal&&Number(result.exitCode)<0;
+    const nativeMessage=result.bridge?.nativeError?.message?.trim()||'';
+    const code=failure.code||recovered?.errorCode||terminalCode||(syntheticBridgeExit?'WEBUI_KSU_SPAWN_FAILED':missingTerminal?'INSTALL_BACKEND_EXIT':'INSTALL_FAILED');
+    const message=failure.message||recovered?.error||result.stderr?.trim()||nativeMessage||(syntheticBridgeExit?`KernelSU failed to start or observe the install backend (synthetic status ${result.exitCode}).`:(missingTerminal?`Install backend exited with status ${result.exitCode} before emitting a terminal operation event.`:'Install failed without a diagnostic message.'));
     const logPath=failure.logPath||recovered?.logPath||'/data/local/tmp/chrootctl/chrootctl.log';
-    throw new ChrootCtlError(message,{code,operation:'install.run',command:result.executable,exitCode:result.exitCode,operationId,logPath,envelope:terminal||recovered,stdout:result.stdout?.slice(0,4096)||'',stderr:result.stderr});
+    throw new ChrootCtlError(message,{code,operation:'install.run',command:result.executable,exitCode:result.exitCode,operationId,logPath,envelope:terminal||recovered,stdout:result.stdout?.slice(0,4096)||'',stderr:result.stderr,bridge:result.bridge});
   }
   return {operationId,event:terminal,result:terminal.payload?.result??null};
 }

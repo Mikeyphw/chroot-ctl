@@ -23,7 +23,7 @@ func TestRootModuleRotatingLoggingContract(t *testing.T) {
 			t.Fatalf("launcher missing safe transport log %q", want)
 		}
 	}
-	if ModuleVersion != "1.3.5" || ModuleVersionCode != 20 {
+	if ModuleVersion != "1.3.6" || ModuleVersionCode != 21 {
 		t.Fatalf("module version=%s/%d", ModuleVersion, ModuleVersionCode)
 	}
 }

@@ -1,7 +1,7 @@
 {
   "androidApp": {
     "applicationId": "com.mikeyphw.chrootctl",
-    "minimumSupportedModuleVersionCode": 20,
+    "minimumSupportedModuleVersionCode": 21,
     "versionCode": 1,
     "versionName": "0.1.0-phase29"
   },
@@ -13,8 +13,8 @@
   "module": {
     "id": "chrootctl",
     "minimumSupportedBridgeProtocolVersion": 1,
-    "version": "1.3.5",
-    "versionCode": 20
+    "version": "1.3.6",
+    "versionCode": 21
   },
   "nativeRuntime": {
     "abi": "arm64-v8a",
