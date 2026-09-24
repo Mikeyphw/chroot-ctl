@@ -110,6 +110,18 @@ run_command = "scripts/devtool/root-module-install.sh"
 # read_only=true; producers declare their exact repository output scopes.
 # ---------------------------------------------------------------------------
 
+[targets.chrootctl_root_module.artifacts]
+required = false
+verify = false
+paths = [
+    "out/chrootctl.zip",
+    "out/chrootctl.zip.sha256",
+    "out/module/config/chrootctl/validation-results.json",
+]
+directories = [
+    "out/devtool-evidence",
+]
+recursive = true
 [jobs.chrootctl-root-evidence-reset]
 runner = "command"
 execution_environment = "native-termux"
