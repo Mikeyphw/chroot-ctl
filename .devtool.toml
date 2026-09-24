@@ -71,7 +71,7 @@ run_target = "./cmd/chrootctl"
 [targets.chrootctl_root_module]
 runner = "command"
 platform = "android"
-execution_environment = "host"
+execution_environment = "native-termux"
 inputs = [
   ".devtool.toml",
   "go.mod",
@@ -112,147 +112,147 @@ run_command = "scripts/devtool/root-module-install.sh"
 
 [jobs.chrootctl-root-evidence-reset]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "restore-reset"]
 inputs = ["scripts/devtool/root-module-evidence.sh"]
 outputs = ["out/devtool-evidence/**"]
 
 [jobs.chrootctl-root-restore-go]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "restore-go"]
 inputs = ["go.mod", "go.sum"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-restore-tmux]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "restore-tmux"]
 inputs = ["scripts/tmux/**"]
 outputs = [".devtool/cache/tmux-sources/**"]
 
 [jobs.chrootctl-root-restore-seal]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "restore-seal"]
 inputs = ["out/devtool-evidence/**", "internal/module/webroot/**"]
 outputs = ["out/devtool-evidence/root_restore.ok"]
 
 [jobs.chrootctl-root-build-tmux]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "build-tmux"]
 inputs = ["scripts/tmux/**", ".devtool/cache/tmux-sources/**"]
 outputs = ["out/tmux/**", "out/tmux-build/**"]
 
 [jobs.chrootctl-root-verify-tmux]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "build-tmux-verify"]
 inputs = ["out/tmux/**", "scripts/tmux/verify-static-android-arm64.sh"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-build-repoctl-devtool]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "build-repoctl"]
 inputs = ["go.mod", "go.sum", "cmd/repoctl/**", "internal/**"]
 outputs = ["out/repoctl-devtool"]
 
 [jobs.chrootctl-root-build-runtime]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "build-runtime"]
 inputs = ["out/repoctl-devtool", "out/tmux/**", "cmd/chrootctl/**", "internal/**"]
 outputs = ["out/native-runtime/**"]
 
 [jobs.chrootctl-root-build-module]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "build-module"]
 inputs = ["out/repoctl-devtool", "out/native-runtime/**", "internal/module/**", "docs/release/compatibility-manifest.json"]
 outputs = ["out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
 
 [jobs.chrootctl-root-build-seal]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "build-seal"]
 inputs = ["out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
 outputs = ["out/devtool-evidence/root_build.ok"]
 
 [jobs.chrootctl-root-test-webui]
 runner = "node"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "test-webui"]
 inputs = ["internal/module/webroot/**", "internal/module/*.mjs"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-test-go]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "test-go"]
 inputs = ["go.mod", "go.sum", "cmd/**", "internal/**", "migration/**", ".devtool.toml"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-test-tmux]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "test-tmux"]
 inputs = ["go.mod", "go.sum", "internal/repoctl/**", "scripts/tmux/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-test-seal]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "test-seal"]
 inputs = ["scripts/devtool/root-module-evidence.sh"]
 outputs = ["out/devtool-evidence/root_test.ok"]
 
 [jobs.chrootctl-root-lint-go]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "lint-go"]
 inputs = ["go.mod", "go.sum", "cmd/**", "internal/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-lint-native]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "lint-native"]
 inputs = ["scripts/devtool/**", "scripts/tmux/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-lint-seal]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "lint-seal"]
 inputs = ["scripts/devtool/root-module-evidence.sh"]
 outputs = ["out/devtool-evidence/root_lint.ok"]
 
 [jobs.chrootctl-root-package-preflight]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "package-preflight"]
 inputs = [".devtool.toml", "out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-package-runtime]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "package-runtime"]
 inputs = ["out/module/**", "out/chrootctl.zip", "scripts/tmux/verify-static-android-arm64.sh"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-package-webui]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "package-webui"]
 inputs = ["cmd/chrootctl/main.go", "internal/module/module.go", "internal/standalonewebui/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-root-package-evidence]
 runner = "command"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-stage.sh", "package-evidence"]
 inputs = ["out/devtool-evidence/**", "out/repoctl-devtool", "out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
 outputs = ["out/module/config/chrootctl/validation-results.json", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
@@ -350,84 +350,84 @@ run = ["job:chrootctl-root-module-install"]
 
 [jobs.chrootctl-validate-test-seal]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "test-seal"]
 inputs = ["migration/**", "internal/**", "docs/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-repository-purity]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "repository-purity"]
 inputs = ["."]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-audit-coverage]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "audit-coverage"]
 inputs = ["docs/audit/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-root-retirement]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "root-module-retirement"]
 inputs = [".devtool.toml", ".github/workflows/**", "android/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-contract-generation]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "contract-generation"]
 inputs = ["migration/contracts/**", "internal/contracts/**", "internal/contractgen/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-cli-contract]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "cli-contract"]
 inputs = ["cmd/chrootctl/**", "internal/cli/**", "migration/contracts/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-mutation-engine]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "mutation-engine"]
 inputs = ["internal/**", "migration/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-crud-atomicity]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "crud-atomicity"]
 inputs = ["internal/**", "migration/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-clipboard]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "clipboard-integration"]
 inputs = ["internal/clipboard/**", "internal/services/**", "internal/cli/**", "migration/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-contracts]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["out/repoctl-devtool", "validate-step", "frozen-live-contracts"]
 inputs = ["migration/contracts/**", "internal/contracts/**", "internal/bridge/**", "internal/cli/**"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-go-test]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["go", "test", "-p", "2", "./..."]
 inputs = ["go.mod", "go.sum", "cmd/**", "internal/**", "migration/**", "scripts/**", ".devtool.toml"]
 metadata = { read_only = true }
 
 [jobs.chrootctl-validate-go-vet]
 runner = "go"
-execution_environment = "host"
+execution_environment = "native-termux"
 command = ["go", "vet", "./..."]
 inputs = ["go.mod", "go.sum", "cmd/**", "internal/**"]
 metadata = { read_only = true }
@@ -435,7 +435,7 @@ metadata = { read_only = true }
 [targets.chrootctl]
 runner = "command"
 platform = "release"
-execution_environment = "host"
+execution_environment = "native-termux"
 inputs = [
   ".devtool.toml",
   "go.mod",
