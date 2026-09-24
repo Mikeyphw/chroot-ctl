@@ -1,4 +1,4 @@
-> **Superseded for current KernelSU Manager:** root module 1.3.6 / versionCode 21 uses a single shell-quoted command with empty native argv because the Android WebView bridge concatenates native `spawn` argv without shell escaping. This document is retained as historical context.
+> **Superseded for current KernelSU Manager:** root module 1.3.7 / versionCode 22 uses a single shell-quoted command with empty native argv because the Android WebView bridge concatenates native `spawn` argv without shell escaping. This document is retained as historical context.
 
 # WebUI KSU transport compatibility hotfix
 

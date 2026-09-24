@@ -24,15 +24,17 @@ type Config struct {
 	Logf                    func(string, ...any)
 }
 type Server struct {
-	cfg      Config
-	token    string
-	mu       sync.Mutex
-	sessions map[string]session
-	last     time.Time
-	http     *http.Server
-	ln       net.Listener
-	done     chan struct{}
-	doneOnce sync.Once
+	cfg        Config
+	token      string
+	mu         sync.Mutex
+	sessions   map[string]session
+	last       time.Time
+	runCtx     context.Context
+	activeRuns int
+	http       *http.Server
+	ln         net.Listener
+	done       chan struct{}
+	doneOnce   sync.Once
 }
 type session struct {
 	expires time.Time
@@ -97,6 +99,9 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 		return Info{}, e
 	}
 	s.ln = ln
+	s.mu.Lock()
+	s.runCtx = ctx
+	s.mu.Unlock()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bootstrap", s.bootstrap)
 	if s.cfg.StaticDir != "" {
@@ -135,6 +140,29 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	base := "http://" + ln.Addr().String()
 	return Info{URL: base, BootstrapURL: base + "/bootstrap?token=" + s.token}, nil
 }
+
+func (s *Server) operationContext() context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.runCtx != nil {
+		return s.runCtx
+	}
+	return context.Background()
+}
+func (s *Server) beginOperation() {
+	s.mu.Lock()
+	s.activeRuns++
+	s.last = time.Now()
+	s.mu.Unlock()
+}
+func (s *Server) endOperation() {
+	s.mu.Lock()
+	if s.activeRuns > 0 {
+		s.activeRuns--
+	}
+	s.last = time.Now()
+	s.mu.Unlock()
+}
 func (s *Server) idleWatch(ctx context.Context) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
@@ -144,7 +172,7 @@ func (s *Server) idleWatch(ctx context.Context) {
 			return
 		case <-t.C:
 			s.mu.Lock()
-			idle := time.Since(s.last) > s.cfg.IdleTimeout
+			idle := time.Since(s.last) > s.cfg.IdleTimeout && s.activeRuns == 0
 			s.mu.Unlock()
 			if idle {
 				s.logf("idle timeout reached after %s; shutting down", s.cfg.IdleTimeout)
@@ -204,8 +232,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sessions[sid] = session{expires: time.Now().Add(s.cfg.SessionTTL), csrf: csrf}
 	s.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sid, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
-	http.SetCookie(w, &http.Cookie{Name: "chrootctl_csrf", Value: csrf, Path: "/", HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: int(s.cfg.SessionTTL.Seconds())})
+	s.setSessionCookies(w, sid, csrf)
 	if s.cfg.StaticDir != "" {
 		// Do not redirect in the same external-navigation chain that established
 		// the Strict cookies. Chromium can withhold SameSite=Strict cookies on
@@ -219,6 +246,14 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "api": "/api/v1"})
 }
+func (s *Server) setSessionCookies(w http.ResponseWriter, sid, csrf string) {
+	maxAge := int(s.cfg.SessionTTL.Seconds())
+	if maxAge < 1 {
+		maxAge = 1
+	}
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sid, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
+	http.SetCookie(w, &http.Cookie{Name: "chrootctl_csrf", Value: csrf, Path: "/", HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
+}
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, e := r.Cookie(cookieName)
@@ -226,11 +261,15 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "authentication required", 401)
 			return
 		}
+		now := time.Now()
+		refresh := false
 		s.mu.Lock()
 		sess, ok := s.sessions[c.Value]
-		if ok && time.Now().After(sess.expires) {
+		if ok && now.After(sess.expires) {
 			delete(s.sessions, c.Value)
 			ok = false
+		} else if ok && sess.expires.Sub(now) <= s.cfg.SessionTTL/2 {
+			refresh = true
 		}
 		s.mu.Unlock()
 		if !ok {
@@ -248,6 +287,21 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			if origin != expected {
 				http.Error(w, "invalid origin", 403)
 				return
+			}
+		}
+		if refresh {
+			s.mu.Lock()
+			current, exists := s.sessions[c.Value]
+			if exists && current.csrf == sess.csrf {
+				current.expires = time.Now().Add(s.cfg.SessionTTL)
+				s.sessions[c.Value] = current
+				sess = current
+			} else {
+				refresh = false
+			}
+			s.mu.Unlock()
+			if refresh {
+				s.setSessionCookies(w, c.Value, sess.csrf)
 			}
 		}
 		next(w, r)

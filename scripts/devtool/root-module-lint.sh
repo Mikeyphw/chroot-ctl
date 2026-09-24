@@ -34,6 +34,7 @@ go vet \
   ./cmd/chrootctl \
   ./cmd/repoctl \
   ./internal/module \
+  ./internal/standalonewebui \
   ./internal/install/... \
   ./internal/integrity \
   ./internal/bridge \

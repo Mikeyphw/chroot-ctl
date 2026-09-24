@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"chrootctl/internal/bridge"
 )
@@ -53,21 +54,106 @@ func decodePayload(w http.ResponseWriter, r *http.Request) (map[string]any, bool
 	return p, true
 }
 
-func bridgeRequest(op string, payload map[string]any) (bridge.Request, error) {
-	raw, err := json.Marshal(map[string]any{"protocolVersion": bridge.ProtocolVersion, "requestId": requestID(), "operation": op, "payload": payload})
+func bridgeRequest(op string, payload map[string]any, id string) (bridge.Request, error) {
+	if strings.TrimSpace(id) == "" {
+		id = requestID()
+	}
+	raw, err := json.Marshal(map[string]any{"protocolVersion": bridge.ProtocolVersion, "requestId": id, "operation": op, "payload": payload})
 	if err != nil {
 		return bridge.Request{}, err
 	}
 	return bridge.ParseRequest(raw)
 }
 
-func validatedRequest(w http.ResponseWriter, op string, payload map[string]any) (bridge.Request, bool) {
-	req, err := bridgeRequest(op, payload)
+func validatedRequest(w http.ResponseWriter, op string, payload map[string]any, id string) (bridge.Request, bool) {
+	req, err := bridgeRequest(op, payload, id)
 	if err != nil {
 		http.Error(w, "invalid typed request: "+err.Error(), http.StatusBadRequest)
 		return bridge.Request{}, false
 	}
 	return req, true
+}
+
+func requestIDHeader(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("X-Chrootctl-Request-ID"))
+}
+
+func eventString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func terminalEvent(v map[string]any) bool {
+	switch strings.TrimSpace(eventString(v["type"])) {
+	case "operation_succeeded", "operation_failed", "operation_cancelled", "operation_blocked", "bridge_error":
+		return true
+	default:
+		return false
+	}
+}
+
+// startOperation detaches a typed mutation from the lifetime of the HTTP
+// request. Browser request cancellation must not consume a one-shot preview and
+// then cause the WebUI to replay the mutation. Progress and terminal state are
+// read back from the persistent operation journal.
+func (s *Server) startOperation(d Dispatcher, req bridge.Request) map[string]any {
+	events := make(chan map[string]any, 16)
+	done := make(chan int, 1)
+	go func() {
+		s.beginOperation()
+		defer s.endOperation()
+		s.logf("operation start request_id=%s operation=%s", req.RequestID, req.Operation)
+		code := d.Run(s.operationContext(), req, func(v map[string]any) error {
+			select {
+			case events <- v:
+			default:
+			}
+			return nil
+		})
+		s.logf("operation finish request_id=%s operation=%s exit=%d", req.RequestID, req.Operation, code)
+		done <- code
+	}()
+
+	ack := map[string]any{
+		"accepted":    true,
+		"requestId":   req.RequestID,
+		"operationId": "",
+		"events":      []map[string]any{},
+	}
+	collected := []map[string]any{}
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case event := <-events:
+			collected = append(collected, event)
+			if id := strings.TrimSpace(eventString(event["operationId"])); id != "" {
+				ack["operationId"] = id
+			}
+			ack["events"] = collected
+			if terminalEvent(event) || ack["operationId"] != "" {
+				return ack
+			}
+		case code := <-done:
+			for {
+				select {
+				case event := <-events:
+					collected = append(collected, event)
+					if id := strings.TrimSpace(eventString(event["operationId"])); id != "" {
+						ack["operationId"] = id
+					}
+				default:
+					ack["events"] = collected
+					ack["exitCode"] = code
+					ack["complete"] = true
+					return ack
+				}
+			}
+		case <-timer.C:
+			ack["events"] = collected
+			return ack
+		}
+	}
 }
 
 func (s *Server) apiHandler(d Dispatcher) http.Handler {
@@ -97,7 +183,7 @@ func (s *Server) apiHandler(d Dispatcher) http.Handler {
 			return
 		}
 		op := strings.TrimPrefix(r.URL.Path, "/api/v1/query/")
-		req, valid := validatedRequest(w, op, p)
+		req, valid := validatedRequest(w, op, p, "")
 		if !valid {
 			return
 		}
@@ -113,7 +199,7 @@ func (s *Server) apiHandler(d Dispatcher) http.Handler {
 			return
 		}
 		op := strings.TrimPrefix(r.URL.Path, "/api/v1/preview/")
-		req, valid := validatedRequest(w, op, p)
+		req, valid := validatedRequest(w, op, p, "")
 		if !valid {
 			return
 		}
@@ -129,16 +215,11 @@ func (s *Server) apiHandler(d Dispatcher) http.Handler {
 			return
 		}
 		op := strings.TrimPrefix(r.URL.Path, "/api/v1/run/")
-		events := []map[string]any{}
-		req, valid := validatedRequest(w, op, p)
+		req, valid := validatedRequest(w, op, p, requestIDHeader(r))
 		if !valid {
 			return
 		}
-		code := d.Run(r.Context(), req, func(v map[string]any) error { events = append(events, v); return nil })
-		// Reaching the typed operation endpoint is a successful HTTP transport.
-		// Application-level failure is represented by exitCode + terminal events;
-		// returning HTTP 4xx here makes the browser discard those diagnostics.
-		writeJSON(w, http.StatusOK, map[string]any{"events": events, "exitCode": code})
+		writeJSON(w, http.StatusAccepted, s.startOperation(d, req))
 	}))
 	mux.HandleFunc("/api/v1/operations/", s.auth(func(w http.ResponseWriter, r *http.Request) {
 		tail := strings.TrimPrefix(r.URL.Path, "/api/v1/operations/")

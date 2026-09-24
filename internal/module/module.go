@@ -23,8 +23,8 @@ import (
 const (
 	ModuleID              = "chrootctl"
 	ModuleName            = "chrootctl"
-	ModuleVersion         = "1.3.6"
-	ModuleVersionCode     = 21
+	ModuleVersion         = "1.3.7"
+	ModuleVersionCode     = 22
 	BackendVersion        = "0.11.0"
 	BridgeProtocolVersion = 1
 	RuntimeSchemaVersion  = 2

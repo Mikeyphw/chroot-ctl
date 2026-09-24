@@ -109,12 +109,15 @@ func TestTypedHTTPMapsQueryPreviewAndOperation(t *testing.T) {
 	d := &fakeDispatcher{}
 	cl, info := authedClient(t, d)
 	token := csrf(t, cl, info)
-	for _, tc := range []struct{ path, mode, op string }{{"/api/v1/query/sessions.capture", "query", "sessions.capture"}, {"/api/v1/preview/catalog.preview", "preview", "catalog.preview"}, {"/api/v1/run/sessions.input", "operation", "sessions.input"}} {
+	for _, tc := range []struct {
+		path, mode, op string
+		status         int
+	}{{"/api/v1/query/sessions.capture", "query", "sessions.capture", http.StatusOK}, {"/api/v1/preview/catalog.preview", "preview", "catalog.preview", http.StatusOK}, {"/api/v1/run/sessions.input", "operation", "sessions.input", http.StatusAccepted}} {
 		resp := post(t, cl, info, tc.path, map[string]any{"id": "s1"}, token)
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode != 200 {
-			t.Fatalf("%s=%d", tc.path, resp.StatusCode)
+		if resp.StatusCode != tc.status {
+			t.Fatalf("%s=%d want=%d", tc.path, resp.StatusCode, tc.status)
 		}
 		if d.mode != tc.mode || d.last.Operation != tc.op {
 			t.Fatalf("dispatch=%s/%s", d.mode, d.last.Operation)
@@ -141,4 +144,154 @@ func TestNoGenericShellRoute(t *testing.T) {
 			t.Fatalf("dangerous route accepted: %s", p)
 		}
 	}
+}
+
+type asyncDispatcher struct {
+	fakeDispatcher
+	started     chan struct{}
+	release     chan struct{}
+	ctxCanceled chan struct{}
+}
+
+func newAsyncDispatcher() *asyncDispatcher {
+	return &asyncDispatcher{
+		started:     make(chan struct{}),
+		release:     make(chan struct{}),
+		ctxCanceled: make(chan struct{}, 1),
+	}
+}
+
+func (d *asyncDispatcher) Run(ctx context.Context, r bridge.Request, emit func(map[string]any) error) int {
+	d.last = r
+	d.mode = "operation"
+	_ = emit(map[string]any{
+		"protocolVersion": bridge.ProtocolVersion,
+		"requestId":       r.RequestID,
+		"operationId":     "op-async-1",
+		"sequence":        1,
+		"type":            "operation_started",
+	})
+	close(d.started)
+	select {
+	case <-d.release:
+		_ = emit(map[string]any{
+			"protocolVersion": bridge.ProtocolVersion,
+			"requestId":       r.RequestID,
+			"operationId":     "op-async-1",
+			"sequence":        2,
+			"type":            "operation_succeeded",
+			"payload":         map[string]any{"result": map[string]any{"ok": true}},
+		})
+		return 0
+	case <-ctx.Done():
+		select {
+		case d.ctxCanceled <- struct{}{}:
+		default:
+		}
+		return 2
+	}
+}
+
+func TestRunStartsOnceWithCallerRequestIDAndOutlivesHTTPRequest(t *testing.T) {
+	d := newAsyncDispatcher()
+	cl, info := authedClient(t, d)
+	token := csrf(t, cl, info)
+	body, _ := json.Marshal(map[string]any{"previewId": "preview-once"})
+	req, _ := http.NewRequest(http.MethodPost, info.URL+"/api/v1/run/install.run", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", token)
+	req.Header.Set("Origin", info.URL)
+	req.Header.Set("X-Chrootctl-Request-ID", "webui-run-fixed-1")
+
+	startedAt := time.Now()
+	resp, err := cl.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("run status=%d", resp.StatusCode)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("run handshake blocked for %s", elapsed)
+	}
+	var ack map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&ack); err != nil {
+		t.Fatal(err)
+	}
+	if got := ack["requestId"]; got != "webui-run-fixed-1" {
+		t.Fatalf("requestId=%v", got)
+	}
+	if got := ack["operationId"]; got != "op-async-1" {
+		t.Fatalf("operationId=%v", got)
+	}
+	select {
+	case <-d.started:
+	default:
+		t.Fatal("dispatcher never started")
+	}
+	if d.last.RequestID != "webui-run-fixed-1" {
+		t.Fatalf("dispatcher requestId=%q", d.last.RequestID)
+	}
+
+	// Closing/finishing the HTTP request must not cancel the mutation. Its
+	// lifetime belongs to the standalone server and persistent operation journal.
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-d.ctxCanceled:
+		t.Fatal("operation inherited HTTP request cancellation")
+	default:
+	}
+	close(d.release)
+}
+
+func TestActiveRunPreventsStandaloneIdleShutdown(t *testing.T) {
+	d := newAsyncDispatcher()
+	s, err := New(Config{IdleTimeout: 100 * time.Millisecond, Dispatcher: d})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	info, err := s.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar, _ := cookiejar.New(nil)
+	cl := &http.Client{Jar: jar}
+	bootstrap, err := cl.Get(info.BootstrapURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, bootstrap.Body)
+	bootstrap.Body.Close()
+	token := csrf(t, cl, info)
+	body, _ := json.Marshal(map[string]any{"previewId": "preview-long"})
+	req, _ := http.NewRequest(http.MethodPost, info.URL+"/api/v1/run/install.run", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", token)
+	req.Header.Set("Origin", info.URL)
+	req.Header.Set("X-Chrootctl-Request-ID", "webui-long-run-1")
+	resp, err := cl.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("run status=%d", resp.StatusCode)
+	}
+
+	// idleWatch ticks once per second. Wait past both the configured idle window
+	// and a full ticker interval while the operation is deliberately blocked.
+	time.Sleep(1200 * time.Millisecond)
+	health, err := cl.Get(info.URL + "/api/v1/health")
+	if err != nil {
+		t.Fatalf("active operation allowed standalone server to idle-shutdown: %v", err)
+	}
+	health.Body.Close()
+	if health.StatusCode != http.StatusOK {
+		t.Fatalf("health after idle window=%d", health.StatusCode)
+	}
+	close(d.release)
 }

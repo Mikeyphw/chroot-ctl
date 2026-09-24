@@ -8,7 +8,7 @@ if [ -f internal/module/webui_transport_test.mjs ]; then node internal/module/we
 if [ -f internal/module/webui_bridge_ui_test.mjs ]; then node internal/module/webui_bridge_ui_test.mjs; fi
 if [ -f internal/module/webui_post_cux_transport_test.mjs ]; then node internal/module/webui_post_cux_transport_test.mjs; fi
 if [ -f internal/module/webui_install_failure_transport_test.mjs ]; then node internal/module/webui_install_failure_transport_test.mjs; fi
-go test ./internal/module ./internal/install/... ./internal/integrity ./internal/bridge ./internal/operations ./internal/users ./internal/services ./internal/rcloneops ./internal/catalog ./internal/repoctl ./internal/config ./internal/logging ./internal/clipboard
+go test ./internal/module ./internal/standalonewebui ./internal/install/... ./internal/integrity ./internal/bridge ./internal/operations ./internal/users ./internal/services ./internal/rcloneops ./internal/catalog ./internal/repoctl ./internal/config ./internal/logging ./internal/clipboard
 
 # TMUX-01 static runtime contract tests do not require network/build execution.
 go test ./internal/repoctl -run 'TestTMUX01'

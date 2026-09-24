@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the pinned rclone release from the two official release inputs instead of
-# packaging the upstream Android testbuild. rclone's *-vendor.tar.gz contains only
-# vendor/, while the plain *.tar.gz contains the source tree; both are required for
-# an offline -mod=vendor build. chrootctl verifies both signed-release SHA-256 values, builds
-# an Android/arm64 PIE with explicit 16 KiB alignment, then inspects every PT_LOAD.
+# Build the latest stable bclone release from the official GitHub repository.
+# bclone intentionally retains rclone's Go module identity and CLI/config format,
+# so the packaged runtime remains named `rclone` for protocol compatibility.
+#
+# No release version is pinned in this repository. Each invocation resolves
+# https://github.com/BenjiThatFoxGuy/bclone/releases/latest, validates the tag
+# shape, downloads that immutable tag's source archive, vendors its Go modules,
+# and builds the Android/arm64 PIE with the existing 16 KiB page-size contract.
 
-readonly RCLONE_VERSION="1.75.1"
+readonly BCLONE_REPOSITORY="BenjiThatFoxGuy/bclone"
+readonly BCLONE_LATEST_URL="https://github.com/${BCLONE_REPOSITORY}/releases/latest"
+readonly BCLONE_ARCHIVE_BASE_URL="https://github.com/${BCLONE_REPOSITORY}/archive/refs/tags"
 readonly RCLONE_ANDROID_API="24"
 readonly RCLONE_ANDROID_ARCH="arm64"
-readonly RCLONE_SOURCE_ARCHIVE="rclone-v${RCLONE_VERSION}.tar.gz"
-readonly RCLONE_VENDOR_ARCHIVE="rclone-v${RCLONE_VERSION}-vendor.tar.gz"
-readonly RCLONE_RELEASE_BASE_URL="https://downloads.rclone.org/v${RCLONE_VERSION}"
-# From the PGP-signed upstream v1.75.1 SHA256SUMS manifest.
-readonly RCLONE_SOURCE_SHA256="6ada25ecda8b3c8d971ed0aae1167e44d257dbcbf0be6598bf6c127daca2e13f"
-readonly RCLONE_VENDOR_SHA256="a43cd21f71344ff96b3b00217196c069f2f28fa29835cd61cfa94edb1aa5b93b"
 readonly CHROOTCTL_ANDROID_PAGE_SIZE="16384"
 readonly CHROOTCTL_REQUIRED_NDK_REVISION="29.0.14206865"
 
@@ -28,7 +27,7 @@ fail() {
     local code=$1
     local stage=$2
     shift 2
-    printf 'chrootctl rclone runtime install failed [%s]: %s\n' "$stage" "$*" >&2
+    printf 'chrootctl bclone runtime install failed [%s]: %s\n' "$stage" "$*" >&2
     exit "$code"
 }
 
@@ -41,71 +40,72 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
     exit 64
 fi
 
+resolve_latest_bclone_tag() {
+    local effective tag
+    command -v curl >/dev/null 2>&1 || fail 69 latest 'curl is required to resolve the latest bclone release'
+    effective=$(curl --fail --location --silent --show-error --output /dev/null --write-out '%{url_effective}' "$BCLONE_LATEST_URL") ||         fail 69 latest 'could not resolve the latest bclone release from GitHub'
+    effective=${effective%%\?*}
+    tag=${effective##*/}
+    if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9][A-Za-z0-9._-]*)?$ ]]; then
+        fail 65 latest "GitHub latest release resolved to unexpected tag: $tag"
+    fi
+    printf '%s\n' "$tag"
+}
+
 output_root=$1
 ndk_root=${2:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}}
 output_dir="$output_root/arm64-v8a"
-cache_root="${CHROOTCTL_RCLONE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/chrootctl/rclone/v${RCLONE_VERSION}-android-${RCLONE_ANDROID_API}-arm64-16k}"
-source_archive="$cache_root/$RCLONE_SOURCE_ARCHIVE"
-vendor_archive="$cache_root/$RCLONE_VENDOR_ARCHIVE"
+bclone_tag=$(resolve_latest_bclone_tag)
+readonly BCLONE_TAG="$bclone_tag"
+readonly BCLONE_VERSION="${BCLONE_TAG#v}"
+unset bclone_tag
+readonly BCLONE_SOURCE_ARCHIVE="bclone-${BCLONE_TAG}.tar.gz"
+readonly BCLONE_SOURCE_URL="${BCLONE_ARCHIVE_BASE_URL}/${BCLONE_TAG}.tar.gz"
+cache_root="${CHROOTCTL_RCLONE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/chrootctl/bclone/${BCLONE_TAG}-android-${RCLONE_ANDROID_API}-arm64-16k}"
+source_archive="$cache_root/$BCLONE_SOURCE_ARCHIVE"
+source_sha_file="$source_archive.sha256"
 cached_runtime="$cache_root/rclone"
 target="$output_dir/rclone"
 tmp_target="$target.tmp.$$"
 mkdir -p "$cache_root" "$output_dir"
 trap 'rm -f "$tmp_target"' EXIT HUP INT TERM
 
-fetch_archive() {
-    local archive_name=$1
-    local destination=$2
-    local label=$3
-    local url="$RCLONE_RELEASE_BASE_URL/$archive_name"
-    local tmp="$destination.download.$$"
+printf 'chrootctl bclone runtime: latest stable release resolved to %s\n' "$BCLONE_TAG" >&2
+
+fetch_source_archive() {
+    local tmp="$source_archive.download.$$"
     rm -f "$tmp"
-    printf 'chrootctl rclone runtime: fetching verified %s %s\n' "$label" "$url" >&2
-    if command -v curl >/dev/null 2>&1; then
-        curl --fail --location --retry 3 --retry-delay 2 --output "$tmp" "$url" || {
-            rm -f "$tmp"
-            fail 69 fetch "curl could not fetch the pinned rclone $label archive"
-        }
-    elif command -v wget >/dev/null 2>&1; then
-        wget --tries=3 --timeout=30 --output-document="$tmp" "$url" || {
-            rm -f "$tmp"
-            fail 69 fetch "wget could not fetch the pinned rclone $label archive"
-        }
-    else
-        fail 69 fetch 'curl or wget is required to fetch the pinned rclone release inputs'
-    fi
-    [[ -s "$tmp" ]] || fail 69 fetch "downloaded rclone $label archive is empty"
-    mv -f "$tmp" "$destination"
+    printf 'chrootctl bclone runtime: fetching %s\n' "$BCLONE_SOURCE_URL" >&2
+    curl --fail --location --retry 3 --retry-delay 2 --output "$tmp" "$BCLONE_SOURCE_URL" || {
+        rm -f "$tmp"
+        fail 69 fetch 'curl could not fetch the latest bclone source archive'
+    }
+    [[ -s "$tmp" ]] || fail 69 fetch 'downloaded bclone source archive is empty'
+    run_native_page_verifier archive-safe "$tmp" >/dev/null || fail 65 source 'bclone source archive contains an unsafe path'
+    mv -f "$tmp" "$source_archive"
+    sha256sum "$source_archive" | awk '{print $1}' > "$source_sha_file.tmp.$$"
+    mv -f "$source_sha_file.tmp.$$" "$source_sha_file"
 }
 
-validate_archive() {
-    local archive=$1
-    local expected=$2
-    local actual
-    [[ -s "$archive" ]] || return 1
-    actual=$(sha256sum "$archive" | awk '{print $1}')
-    [[ "$actual" == "$expected" ]]
+validate_cached_source_archive() {
+    local expected actual
+    [[ -s "$source_archive" && -s "$source_sha_file" ]] || return 1
+    expected=$(tr -d '[:space:]' < "$source_sha_file")
+    [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
+    actual=$(sha256sum "$source_archive" | awk '{print $1}')
+    [[ "$actual" == "$expected" ]] || return 1
+    run_native_page_verifier archive-safe "$source_archive" >/dev/null || return 1
 }
 
-ensure_verified_archive() {
-    local archive_name=$1
-    local archive=$2
-    local expected=$3
-    local label=$4
-    local actual
-    if ! validate_archive "$archive" "$expected"; then
-        if [[ -e "$archive" ]]; then
-            printf 'chrootctl rclone runtime: cached %s checksum mismatch; refetching\n' "$label" >&2
-            rm -f "$archive"
+ensure_source_archive() {
+    if ! validate_cached_source_archive; then
+        if [[ -e "$source_archive" || -e "$source_sha_file" ]]; then
+            printf 'chrootctl bclone runtime: cached source integrity mismatch; refetching %s\n' "$BCLONE_TAG" >&2
+            rm -f "$source_archive" "$source_sha_file"
         fi
-        fetch_archive "$archive_name" "$archive" "$label"
-        if ! validate_archive "$archive" "$expected"; then
-            actual=$(sha256sum "$archive" | awk '{print $1}')
-            printf 'expected %s SHA-256: %s\nactual %s SHA-256:   %s\n' "$label" "$expected" "$label" "$actual" >&2
-            fail 65 checksum "official rclone $label archive checksum mismatch"
-        fi
+        fetch_source_archive
     fi
-    printf 'chrootctl rclone runtime: %s SHA-256 verified\n' "$label" >&2
+    printf 'chrootctl bclone runtime: source archive integrity verified for %s\n' "$BCLONE_TAG" >&2
 }
 
 validate_runtime() {
@@ -115,27 +115,24 @@ validate_runtime() {
     run_native_page_verifier elf --min-page-size "$CHROOTCTL_ANDROID_PAGE_SIZE" "$runtime" >/dev/null || return 1
     build_info=$(go version -m "$runtime" 2>&1) || return 1
     chrootctl_rclone_validate_build_info "$build_info" || return 1
-    # On the Android/Termux host we can execute the exact runtime as an additional
-    # dynamic-linker/API proof. Cross-host validation retains the static proofs.
     if [[ -d /system && -e /system/bin/linker64 ]]; then
         version_output=$("$runtime" version 2>&1) || return 1
-        chrootctl_rclone_validate_version_output "$version_output" "$RCLONE_VERSION" || return 1
+        chrootctl_rclone_validate_version_output "$version_output" "$BCLONE_VERSION" || return 1
     fi
 }
 
 if validate_runtime "$cached_runtime"; then
-    printf 'chrootctl rclone runtime: using verified 16 KiB cache %s\n' "$cached_runtime" >&2
+    printf 'chrootctl bclone runtime: using verified 16 KiB cache %s\n' "$cached_runtime" >&2
     cp -f "$cached_runtime" "$tmp_target"
     chmod 0755 "$tmp_target"
     mv -f "$tmp_target" "$target"
     trap - EXIT HUP INT TERM
-    printf 'chrootctl rclone runtime: packaged cached v%s -> %s\n' "$RCLONE_VERSION" "$target" >&2
+    printf 'chrootctl bclone runtime: packaged cached %s -> %s\n' "$BCLONE_TAG" "$target" >&2
     exit 0
 fi
 rm -f "$cached_runtime"
 
-ensure_verified_archive "$RCLONE_SOURCE_ARCHIVE" "$source_archive" "$RCLONE_SOURCE_SHA256" 'source'
-ensure_verified_archive "$RCLONE_VENDOR_ARCHIVE" "$vendor_archive" "$RCLONE_VENDOR_SHA256" 'vendor'
+ensure_source_archive
 
 toolchain_cc=""
 toolchain_cxx=""
@@ -374,23 +371,38 @@ printf 'chrootctl rclone runtime: selected compiler %s\n' "$cc" >&2
 rm -rf "$probe_root"
 probe_root=""
 
-work_dir=$(mktemp -d "${TMPDIR:-$cache_root}/chrootctl-rclone-source-build.XXXXXX")
-printf 'chrootctl rclone runtime: extracting verified source + vendor release inputs\n' >&2
-run_native_page_verifier archive-safe "$source_archive" "$vendor_archive" >/dev/null || \
-    fail 65 source 'rclone release archive contains an unsafe path'
-tar -xzf "$source_archive" -C "$work_dir" || fail 65 source 'could not extract rclone source archive'
-source_dir=$(find "$work_dir" -mindepth 1 -maxdepth 1 -type d -name "rclone-v${RCLONE_VERSION}" -print -quit)
+work_dir=$(mktemp -d "${TMPDIR:-$cache_root}/chrootctl-bclone-source-build.XXXXXX")
+printf 'chrootctl bclone runtime: extracting latest source %s\n' "$BCLONE_TAG" >&2
+run_native_page_verifier archive-safe "$source_archive" >/dev/null || \
+    fail 65 source 'bclone source archive contains an unsafe path'
+tar -xzf "$source_archive" -C "$work_dir" || fail 65 source 'could not extract bclone source archive'
+source_dir=$(find "$work_dir" -mindepth 1 -maxdepth 1 -type d -name 'bclone-*' -print -quit)
 [[ -n "$source_dir" && -f "$source_dir/go.mod" ]] || \
-    fail 65 source 'rclone source archive layout is incomplete'
-tar -xzf "$vendor_archive" -C "$source_dir" || fail 65 source 'could not extract rclone vendor archive into source tree'
-[[ -d "$source_dir/vendor" && -f "$source_dir/vendor/modules.txt" ]] || \
-    fail 65 source 'combined rclone source + vendor layout is incomplete'
+    fail 65 source 'bclone source archive layout is incomplete'
+if ! grep -Eq '^module[[:space:]]+github\.com/rclone/rclone[[:space:]]*$' "$source_dir/go.mod"; then
+    fail 65 identity 'bclone no longer exposes the expected github.com/rclone/rclone module identity'
+fi
 
 jobs=${CHROOTCTL_RCLONE_BUILD_JOBS:-1}
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail 64 build 'CHROOTCTL_RCLONE_BUILD_JOBS must be a positive integer'
-ldflags="-s -w -X github.com/rclone/rclone/fs.Version=v${RCLONE_VERSION} -linkmode=external -extldflags=-Wl,-z,max-page-size=${CHROOTCTL_ANDROID_PAGE_SIZE},-z,common-page-size=${CHROOTCTL_ANDROID_PAGE_SIZE}"
 
-printf 'chrootctl rclone runtime: building v%s from verified source for android/arm64 (16 KiB)\n' "$RCLONE_VERSION" >&2
+# GitHub's bclone releases do not ship rclone's separate vendor tarball. Vendor
+# the exact resolved release before the build; go.sum remains authoritative for
+# dependency checksums, and the subsequent build is forced through -mod=vendor.
+printf 'chrootctl bclone runtime: vendoring dependencies for %s\n' "$BCLONE_TAG" >&2
+(
+    cd "$source_dir"
+    export GOTOOLCHAIN=local
+    export GOMODCACHE="$cache_root/go-module-cache"
+    mkdir -p "$GOMODCACHE"
+    go mod vendor
+) || fail 69 vendor 'could not vendor dependencies for the latest bclone release'
+[[ -d "$source_dir/vendor" && -f "$source_dir/vendor/modules.txt" ]] || \
+    fail 65 vendor 'bclone dependency vendoring did not produce vendor/modules.txt'
+
+ldflags="-s -w -X github.com/rclone/rclone/fs.Version=v${BCLONE_VERSION} -linkmode=external -extldflags=-Wl,-z,max-page-size=${CHROOTCTL_ANDROID_PAGE_SIZE},-z,common-page-size=${CHROOTCTL_ANDROID_PAGE_SIZE}"
+
+printf 'chrootctl bclone runtime: building %s for android/arm64 (16 KiB)\n' "$BCLONE_TAG" >&2
 (
     cd "$source_dir"
     export GOOS=android
@@ -407,36 +419,36 @@ printf 'chrootctl rclone runtime: building v%s from verified source for android/
     export CGO_CFLAGS="-O2 -fPIC"
     export CGO_LDFLAGS="-fuse-ld=lld -Wl,-z,max-page-size=${CHROOTCTL_ANDROID_PAGE_SIZE} -Wl,-z,common-page-size=${CHROOTCTL_ANDROID_PAGE_SIZE}"
     export GOCACHE="$work_dir/go-build-cache"
-    export GOMODCACHE="$work_dir/go-module-cache"
+    export GOMODCACHE="$cache_root/go-module-cache"
     mkdir -p "$GOCACHE" "$GOMODCACHE"
     go build -mod=vendor -p "$jobs" -tags "android noselfupdate" -trimpath -buildvcs=false -buildmode=pie \
         -ldflags "$ldflags" -o "$tmp_target" .
-) || fail 70 build 'rclone Android/arm64 source build failed'
+) || fail 70 build 'bclone Android/arm64 source build failed'
 chmod 0755 "$tmp_target"
 
-printf 'chrootctl rclone runtime: validating AArch64 PIE, identity and 16 KiB PT_LOAD alignment\n' >&2
+printf 'chrootctl bclone runtime: validating AArch64 PIE, rclone-compatible identity and 16 KiB PT_LOAD alignment\n' >&2
 run_native_page_verifier runtime \
     --min-page-size "$CHROOTCTL_ANDROID_PAGE_SIZE" \
-    --version "$RCLONE_VERSION" \
-    "$tmp_target" || fail 65 elf 'rclone runtime failed ELF/version/16 KiB validation'
+    --version "$BCLONE_VERSION" \
+    "$tmp_target" || fail 65 elf 'bclone-backed rclone runtime failed ELF/version/16 KiB validation'
 build_info=$(go version -m "$tmp_target" 2>&1) || {
     printf '%s\n' "$build_info" >&2
-    fail 66 build-info 'could not inspect rclone Go build metadata'
+    fail 66 build-info 'could not inspect bclone Go build metadata'
 }
 if ! chrootctl_rclone_validate_build_info "$build_info"; then
     printf '%s\n' "$build_info" >&2
-    fail 65 build-info 'rclone runtime build metadata is not the required Android/ARM64/CGO shape'
+    fail 65 build-info 'bclone runtime build metadata is not the required Android/ARM64/CGO shape'
 fi
 
 if [[ -d /system && -e /system/bin/linker64 ]]; then
-    printf 'chrootctl rclone runtime: executing on-host version smoke test\n' >&2
+    printf 'chrootctl bclone runtime: executing on-host version smoke test\n' >&2
     version_output=$("$tmp_target" version 2>&1) || {
         printf '%s\n' "$version_output" >&2
-        fail 66 execute 'rclone Android runtime failed its on-host version smoke test'
+        fail 66 execute 'bclone Android runtime failed its on-host version smoke test'
     }
-    if ! chrootctl_rclone_validate_version_output "$version_output" "$RCLONE_VERSION"; then
+    if ! chrootctl_rclone_validate_version_output "$version_output" "$BCLONE_VERSION"; then
         printf '%s\n' "$version_output" >&2
-        fail 65 identity 'unexpected rclone Android version output'
+        fail 65 identity 'unexpected bclone-backed rclone version output'
     fi
 fi
 
@@ -446,4 +458,4 @@ mv -f "$tmp_target" "$target"
 rm -rf "$work_dir"
 work_dir=""
 trap - EXIT HUP INT TERM
-printf 'chrootctl rclone runtime: packaged source-built 16 KiB v%s -> %s\n' "$RCLONE_VERSION" "$target" >&2
+printf 'chrootctl bclone runtime: packaged source-built 16 KiB %s -> %s\n' "$BCLONE_TAG" "$target" >&2

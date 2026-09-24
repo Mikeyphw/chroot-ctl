@@ -119,3 +119,116 @@ func TestBootstrapLandingCommitsStrictCookiesBeforeStaticUI(t *testing.T) {
 		t.Fatalf("unauth static=%d", resp3.StatusCode)
 	}
 }
+
+func TestAuthenticatedActivityRefreshesSession(t *testing.T) {
+	s, err := New(Config{IdleTimeout: time.Minute, SessionTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	info, err := s.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar, _ := cookiejar.New(nil)
+	cl := &http.Client{Jar: jar}
+	resp, err := cl.Get(info.BootstrapURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bootstrap=%d", resp.StatusCode)
+	}
+
+	// Force the authenticated session inside the renewal window without relying
+	// on wall-clock sleeps, then prove the next valid request extends it.
+	var sid string
+	s.mu.Lock()
+	for id, sess := range s.sessions {
+		sid = id
+		sess.expires = time.Now().Add(10 * time.Second)
+		s.sessions[id] = sess
+		break
+	}
+	s.mu.Unlock()
+	if sid == "" {
+		t.Fatal("bootstrap session missing")
+	}
+	resp, err = cl.Get(info.URL + "/api/v1/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("refresh health=%d", resp.StatusCode)
+	}
+	if got := len(resp.Header.Values("Set-Cookie")); got < 2 {
+		t.Fatalf("session refresh Set-Cookie count=%d want>=2", got)
+	}
+	s.mu.Lock()
+	renewed := s.sessions[sid].expires
+	s.mu.Unlock()
+	if time.Until(renewed) < 45*time.Second {
+		t.Fatalf("session was not renewed far enough: expires in %s", time.Until(renewed))
+	}
+}
+
+func TestRejectedMutationDoesNotRefreshSession(t *testing.T) {
+	s, err := New(Config{IdleTimeout: time.Minute, SessionTTL: time.Minute, Dispatcher: &fakeDispatcher{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	info, err := s.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar, _ := cookiejar.New(nil)
+	cl := &http.Client{Jar: jar}
+	resp, err := cl.Get(info.BootstrapURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	var sid string
+	shortExpiry := time.Now().Add(10 * time.Second)
+	s.mu.Lock()
+	for id, sess := range s.sessions {
+		sid = id
+		sess.expires = shortExpiry
+		s.sessions[id] = sess
+		break
+	}
+	s.mu.Unlock()
+	if sid == "" {
+		t.Fatal("bootstrap session missing")
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, info.URL+"/api/v1/query/chroots.list", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", "wrong-token")
+	req.Header.Set("Origin", info.URL)
+	resp, err = cl.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("invalid csrf status=%d", resp.StatusCode)
+	}
+	if got := len(resp.Header.Values("Set-Cookie")); got != 0 {
+		t.Fatalf("rejected mutation refreshed cookies count=%d", got)
+	}
+	s.mu.Lock()
+	after := s.sessions[sid].expires
+	s.mu.Unlock()
+	if after.After(shortExpiry.Add(time.Second)) {
+		t.Fatalf("rejected mutation extended server session: before=%s after=%s", shortExpiry, after)
+	}
+}

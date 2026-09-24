@@ -409,7 +409,7 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 		runtimeFiles = append(runtimeFiles, runtimeFile{Path: "rclone", Size: rcloneInfo.Size(), SHA256: rcloneSum, Executable: true})
 		fmt.Fprintf(os.Stderr, "repoctl: bundled Android rclone runtime: %s\n", rcloneSource)
 	} else if strings.TrimSpace(os.Getenv("CHROOTCTL_REQUIRE_RCLONE")) == "1" {
-		return "", errors.New("CHROOTCTL_REQUIRE_RCLONE=1 but no trusted Android/arm64 rclone runtime was found; set CHROOTCTL_RCLONE_PATH or run install-rclone-android-runtime.sh")
+		return "", errors.New("CHROOTCTL_REQUIRE_RCLONE=1 but no trusted Android/arm64 rclone runtime was found; set CHROOTCTL_RCLONE_PATH or run install-rclone-android-runtime.sh to build the latest bclone release")
 	} else {
 		fmt.Fprintln(os.Stderr, "repoctl: rclone runtime not bundled (remote transport will remain unavailable until CHROOTCTL_RCLONE_PATH is provided at runtime)")
 	}

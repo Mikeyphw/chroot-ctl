@@ -87,6 +87,7 @@ inputs = [
   "internal/**",
   "migration/contracts/**",
   "docs/release/WEBUI_*.md",
+  "docs/release/ROOT_MODULE_*.md",
   "docs/release/compatibility-manifest.json",
   "docs/release/VALIDATION_EVIDENCE.md",
   "scripts/devtool/root-module-*.sh",
