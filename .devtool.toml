@@ -478,3 +478,9 @@ go = ["chrootctl_go"]
 module = ["chrootctl_root_module"]
 release = ["chrootctl"]
 all = ["@go", "@module", "@release"]
+
+[workspace.scheduler]
+parallel = true
+max_parallel_nodes = 2
+max_gradle_nodes = 1
+max_dotnet_nodes = 1
