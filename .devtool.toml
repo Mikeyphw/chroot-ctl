@@ -469,3 +469,12 @@ validate = [
   { id = "go-test", ref = "job:chrootctl-validate-go-test", depends_on = ["repoctl"] },
   { id = "go-vet", ref = "job:chrootctl-validate-go-vet", depends_on = ["repoctl"] },
 ]
+
+[workspace]
+default_target = "chrootctl"
+
+[workspace.groups]
+go = ["chrootctl_go"]
+module = ["chrootctl_root_module"]
+release = ["chrootctl"]
+all = ["@go", "@module", "@release"]
