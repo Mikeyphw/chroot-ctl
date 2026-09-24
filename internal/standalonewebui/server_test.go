@@ -113,7 +113,10 @@ func TestBootstrapLandingCommitsStrictCookiesBeforeStaticUI(t *testing.T) {
 	if resp2.StatusCode != http.StatusOK || !strings.Contains(string(body2), "standalone-ok") {
 		t.Fatalf("authenticated static status=%d body=%q", resp2.StatusCode, body2)
 	}
-	resp3, _ := http.Get(info.URL + "/")
+	resp3, err := http.Get(info.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp3.Body.Close()
 	if resp3.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauth static=%d", resp3.StatusCode)
