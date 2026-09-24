@@ -22,14 +22,16 @@ func TestRootModuleDevtoolLifecycleScripts(t *testing.T) {
 		`build_command = "scripts/devtool/root-module-build.sh"`,
 		`test_command = "scripts/devtool/root-module-test.sh"`,
 		`package_command = "scripts/devtool/root-module-package.sh"`,
-		`"job:chrootctl-root-module-lint"`,
+		`"job:chrootctl-root-lint-go"`,
+		`"job:chrootctl-root-lint-native"`,
+		`"job:chrootctl-root-package-evidence"`,
 		`run = ["job:chrootctl-root-module-install"]`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing Devtool lifecycle contract %q", want)
 		}
 	}
-	for _, name := range []string{"restore", "build", "test", "lint", "package", "install"} {
+	for _, name := range []string{"restore", "build", "test", "lint", "package", "install", "stage"} {
 		p := filepath.Join(root, "scripts", "devtool", "root-module-"+name+".sh")
 		st, err := os.Stat(p)
 		if err != nil {

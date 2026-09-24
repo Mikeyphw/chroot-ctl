@@ -10,7 +10,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|go02-device-acceptance|final-seal|seal-root-module-evidence|release|doctor-cross-arch> [options]")
+	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|validate-step|validate-steps|go02-device-acceptance|final-seal|seal-root-module-evidence|release|doctor-cross-arch> [options]")
 }
 func fail(err error) { fmt.Fprintln(os.Stderr, "repoctl:", err); os.Exit(1) }
 func main() {
@@ -70,6 +70,19 @@ func main() {
 	case "validate":
 		if e := repoctl.Validate(); e != nil {
 			fail(e)
+		}
+	case "validate-step":
+		fs := flag.NewFlagSet("validate-step", flag.ExitOnError)
+		fs.Parse(os.Args[2:])
+		if fs.NArg() != 1 {
+			fail(fmt.Errorf("validate-step requires exactly one step name"))
+		}
+		if e := repoctl.ValidateStep(fs.Arg(0)); e != nil {
+			fail(e)
+		}
+	case "validate-steps":
+		for _, name := range repoctl.ValidationStepNames() {
+			fmt.Println(name)
 		}
 	case "go02-device-acceptance":
 		fs := flag.NewFlagSet("go02-device-acceptance", flag.ExitOnError)

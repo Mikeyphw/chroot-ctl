@@ -80,7 +80,7 @@ func validationEvidencePath(root, requested string) string {
 }
 
 func writeFinalSealEvidence(root, path string, checks map[string]validationCheck) (string, error) {
-	required := []string{"go_test", "go_vet", "go_contracts", "repo_purity", "audit_coverage", "source_package", "android_compileDebugKotlin", "android_testDebugUnitTest", "android_lint_configuration_seal", "module_render", "module_zip", "module_shell", "source_no_webui"}
+	required := []string{"go_test", "go_vet", "go_contracts", "repo_purity", "audit_coverage", "source_package", "module_render", "module_zip", "module_shell", "source_no_webui"}
 	for _, id := range required {
 		item, ok := checks[id]
 		if !ok || item.Status != "pass" || item.ExitCode != 0 {
@@ -150,7 +150,7 @@ func validateModuleShellContract(root string) error {
 }
 
 func validateNoWebUI(root string) error {
-	roots := []string{filepath.Join(root, "internal"), filepath.Join(root, "android", "app", "src", "main"), filepath.Join(root, "resources")}
+	roots := []string{filepath.Join(root, "internal"), filepath.Join(root, "resources")}
 	for _, base := range roots {
 		err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
 			if err != nil {

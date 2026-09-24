@@ -15,7 +15,7 @@ func TestTmux07ReleaseSeal(t *testing.T) {
 	checks := map[string][]string{
 		"scripts/tmux/device-release-smoke.sh":        {"tmux 3.7c", "sessions create", "sessions capture", "sessions detach", "sessions reconcile", "sessions kill", "mode 0700", "TMUX-07 DEVICE SMOKE PASS"},
 		"docs/runtime/TMUX_RELEASE_SEAL.md":           {"c753b02433e55e8d3b75507aa65f11caa63614a09dd66bffa12295dceb1439b6", "does **not** claim tmux sessions survive reboot", "/data/adb/chrootctl/runtime/tmux", "real-device smoke evidence"},
-		"scripts/devtool/root-module-package.sh":      {"runtime/arm64-v8a/tmux", "tmux-runtime-manifest.json", "tmux.sha256", "verify-static-android-arm64.sh", "unzip -p"},
+		"scripts/devtool/root-module-stage.sh":        {"runtime/arm64-v8a/tmux", "tmux-runtime-manifest.json", "tmux.sha256", "verify-static-android-arm64.sh", "unzip -p"},
 		"scripts/tmux/verify-static-android-arm64.sh": {"ELF64", "AArch64", "INTERP", "(NEEDED)", `"version": "3.7c"`},
 		"internal/tmuxruntime/runtime.go":             {`DefaultStateRoot = "/data/adb/chrootctl/runtime/tmux"`, "0700"},
 		"internal/tmuxruntime/session.go":             {"deterministicID", "maxCaptureBytes", "context.WithTimeout"},

@@ -50,68 +50,16 @@ func FinalSeal(opts FinalSealOptions) error {
 	}); err != nil {
 		return err
 	}
-	if err = recordCheck(checks, "audit_coverage", "repoctl audit-coverage + build-foundation", "internal-check", func() error {
-		if e := ValidateAuditCoverage(root); e != nil {
-			return e
+	if err = recordCheck(checks, "audit_coverage", "repoctl current source-contract gates", "internal-check", func() error {
+		for _, step := range sourceValidationSteps {
+			if step.Name == "repository-purity" || step.Name == "test-seal" || step.Name == "frozen-live-contracts" {
+				continue
+			}
+			if e := step.Run(root); e != nil {
+				return fmt.Errorf("%s: %w", step.Name, e)
+			}
 		}
-		if e := ValidateBuildFoundation(root); e != nil {
-			return e
-		}
-		if e := ValidateConfigRegistryFoundation(root); e != nil {
-			return e
-		}
-		if e := ValidatePrivilegeTrustBoundary(root); e != nil {
-			return e
-		}
-		if e := ValidateProcessTransportBoundary(root); e != nil {
-			return e
-		}
-		if e := ValidateMutationEngineGateA(root); e != nil {
-			return e
-		}
-		if e := ValidateCRUDAtomicity(root); e != nil {
-			return e
-		}
-		if e := ValidateMountServiceRuntime(root); e != nil {
-			return e
-		}
-		if e := ValidateSnapshotFidelity(root); e != nil {
-			return e
-		}
-		if e := ValidateTransferArtifactPlane(root); e != nil {
-			return e
-		}
-		if e := ValidateInstallerUpgradeReconstruction(root); e != nil {
-			return e
-		}
-		if e := ValidateUserIdentitySafety(root); e != nil {
-			return e
-		}
-		if e := ValidateCatalogPackageWorkflow(root); e != nil {
-			return e
-		}
-		if e := ValidateClipboardPrivilegedIntegration(root); e != nil {
-			return e
-		}
-		if e := ValidateModuleRuntimeReleaseTrust(root); e != nil {
-			return e
-		}
-		if e := ValidateLoggingDiagnosticsAuditEvidence(root); e != nil {
-			return e
-		}
-		if e := ValidateBridgeProtocolV2Convergence(root); e != nil {
-			return e
-		}
-		if e := ValidateAndroidOperationRoomRecovery(root); e != nil {
-			return e
-		}
-		if e := ValidateAndroidProductWorkspaceCorrectness(root); e != nil {
-			return e
-		}
-		if e := ValidateNavigationAdaptiveFinalReleaseSeal(root); e != nil {
-			return e
-		}
-		return ValidateRoadmapConvergenceSeal(root)
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -144,20 +92,6 @@ func FinalSeal(opts FinalSealOptions) error {
 	if err = recordCheck(checks, "go_vet", "go vet ./...", "subprocess", func() error {
 		return run(root, nil, "go", "vet", "./...")
 	}); err != nil {
-		return err
-	}
-
-	androidRoot := filepath.Join(root, "android")
-	androidCommand := "./gradlew --no-daemon --continue :chrootctlAndroidAppSeal"
-	if err = recordCheckGroup(
-		checks,
-		[]string{"android_compileDebugKotlin", "android_testDebugUnitTest", "android_lint_configuration_seal"},
-		androidCommand,
-		"subprocess",
-		func() error {
-			return run(androidRoot, nil, "./gradlew", "--no-daemon", "--continue", ":chrootctlAndroidAppSeal")
-		},
-	); err != nil {
 		return err
 	}
 

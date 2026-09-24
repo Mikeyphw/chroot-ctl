@@ -78,10 +78,6 @@ inputs = [
   "go.sum",
   "cmd/chrootctl/**",
   "cmd/repoctl/**",
-  # build-module compiles cmd/chrootctl into the Android root-module runtime.
-  # Keep the explicit module/bridge authority tokens required by the WR12 seal,
-  # and also claim the whole internal tree so affected-target selection/cache
-  # invalidation cannot miss a transitive runtime dependency as packages evolve.
   "internal/module/**",
   "internal/bridge/**",
   "internal/**",
@@ -95,9 +91,12 @@ inputs = [
   "docs/runtime/TMUX_STATIC_RUNTIME.md",
 ]
 outputs = [
+  "out/native-runtime/**",
+  "out/tmux/**",
   "out/module/**",
   "out/chrootctl.zip",
   "out/chrootctl.zip.sha256",
+  "out/devtool-evidence/**",
 ]
 restore_command = "scripts/devtool/root-module-restore.sh"
 build_command = "scripts/devtool/root-module-build.sh"
@@ -105,50 +104,333 @@ test_command = "scripts/devtool/root-module-test.sh"
 package_command = "scripts/devtool/root-module-package.sh"
 run_command = "scripts/devtool/root-module-install.sh"
 
-[jobs.chrootctl-root-module-lint]
+# ---------------------------------------------------------------------------
+# EXO-visible root-module lifecycle jobs.
+# Each job is one independently meaningful operation. Read-only gates declare
+# read_only=true; producers declare their exact repository output scopes.
+# ---------------------------------------------------------------------------
+
+[jobs.chrootctl-root-evidence-reset]
 runner = "command"
 execution_environment = "host"
-command = ["scripts/devtool/root-module-lint.sh"]
-inputs = [
-  "go.mod",
-  "go.sum",
-  "cmd/**",
-  "internal/**",
-  "scripts/devtool/root-module-lint.sh",
-]
+command = ["scripts/devtool/root-module-stage.sh", "restore-reset"]
+inputs = ["scripts/devtool/root-module-evidence.sh"]
+outputs = ["out/devtool-evidence/**"]
+
+[jobs.chrootctl-root-restore-go]
+runner = "go"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "restore-go"]
+inputs = ["go.mod", "go.sum"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-restore-tmux]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "restore-tmux"]
+inputs = ["scripts/tmux/**"]
+outputs = [".devtool/cache/tmux-sources/**"]
+
+[jobs.chrootctl-root-restore-seal]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "restore-seal"]
+inputs = ["out/devtool-evidence/**", "internal/module/webroot/**"]
+outputs = ["out/devtool-evidence/root_restore.ok"]
+
+[jobs.chrootctl-root-build-tmux]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "build-tmux"]
+inputs = ["scripts/tmux/**", ".devtool/cache/tmux-sources/**"]
+outputs = ["out/tmux/**", "out/tmux-build/**"]
+
+[jobs.chrootctl-root-verify-tmux]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "build-tmux-verify"]
+inputs = ["out/tmux/**", "scripts/tmux/verify-static-android-arm64.sh"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-build-repoctl-devtool]
+runner = "go"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "build-repoctl"]
+inputs = ["go.mod", "go.sum", "cmd/repoctl/**", "internal/**"]
+outputs = ["out/repoctl-devtool"]
+
+[jobs.chrootctl-root-build-runtime]
+runner = "go"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "build-runtime"]
+inputs = ["out/repoctl-devtool", "out/tmux/**", "cmd/chrootctl/**", "internal/**"]
+outputs = ["out/native-runtime/**"]
+
+[jobs.chrootctl-root-build-module]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "build-module"]
+inputs = ["out/repoctl-devtool", "out/native-runtime/**", "internal/module/**", "docs/release/compatibility-manifest.json"]
+outputs = ["out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
+
+[jobs.chrootctl-root-build-seal]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "build-seal"]
+inputs = ["out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
+outputs = ["out/devtool-evidence/root_build.ok"]
+
+[jobs.chrootctl-root-test-webui]
+runner = "node"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "test-webui"]
+inputs = ["internal/module/webroot/**", "internal/module/*.mjs"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-test-go]
+runner = "go"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "test-go"]
+inputs = ["go.mod", "go.sum", "cmd/**", "internal/**", "migration/**", ".devtool.toml"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-test-tmux]
+runner = "go"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "test-tmux"]
+inputs = ["go.mod", "go.sum", "internal/repoctl/**", "scripts/tmux/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-test-seal]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "test-seal"]
+inputs = ["scripts/devtool/root-module-evidence.sh"]
+outputs = ["out/devtool-evidence/root_test.ok"]
+
+[jobs.chrootctl-root-lint-go]
+runner = "go"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "lint-go"]
+inputs = ["go.mod", "go.sum", "cmd/**", "internal/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-lint-native]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "lint-native"]
+inputs = ["scripts/devtool/**", "scripts/tmux/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-lint-seal]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "lint-seal"]
+inputs = ["scripts/devtool/root-module-evidence.sh"]
+outputs = ["out/devtool-evidence/root_lint.ok"]
+
+[jobs.chrootctl-root-package-preflight]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "package-preflight"]
+inputs = [".devtool.toml", "out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-package-runtime]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "package-runtime"]
+inputs = ["out/module/**", "out/chrootctl.zip", "scripts/tmux/verify-static-android-arm64.sh"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-package-webui]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "package-webui"]
+inputs = ["cmd/chrootctl/main.go", "internal/module/module.go", "internal/standalonewebui/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-root-package-evidence]
+runner = "command"
+execution_environment = "host"
+command = ["scripts/devtool/root-module-stage.sh", "package-evidence"]
+inputs = ["out/devtool-evidence/**", "out/repoctl-devtool", "out/module/**", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
+outputs = ["out/module/config/chrootctl/validation-results.json", "out/chrootctl.zip", "out/chrootctl.zip.sha256"]
 
 [jobs.chrootctl-root-module-install]
 runner = "command"
 execution_environment = "native-termux"
 command = ["scripts/devtool/root-module-install.sh"]
-inputs = [
-  "out/chrootctl.zip",
-  "scripts/devtool/root-module-install.sh",
-]
+inputs = ["out/chrootctl.zip", "scripts/devtool/root-module-install.sh"]
+metadata = { read_only = true }
 
 [targets.chrootctl_root_module.workflows]
-build = ["runner:command#restore", "runner:command#build"]
-test = ["runner:command#test"]
+restore = [
+  { id = "reset", ref = "job:chrootctl-root-evidence-reset", depends_on = [] },
+  { id = "go", ref = "job:chrootctl-root-restore-go", depends_on = ["reset"] },
+  { id = "tmux-source", ref = "job:chrootctl-root-restore-tmux", depends_on = ["reset"] },
+  { id = "restore-seal", ref = "job:chrootctl-root-restore-seal", depends_on = ["go", "tmux-source"] },
+]
+build = [
+  { id = "reset", ref = "job:chrootctl-root-evidence-reset", depends_on = [] },
+  { id = "go", ref = "job:chrootctl-root-restore-go", depends_on = ["reset"] },
+  { id = "tmux-source", ref = "job:chrootctl-root-restore-tmux", depends_on = ["reset"] },
+  { id = "restore-seal", ref = "job:chrootctl-root-restore-seal", depends_on = ["go", "tmux-source"] },
+  { id = "tmux-build", ref = "job:chrootctl-root-build-tmux", depends_on = ["restore-seal"] },
+  { id = "tmux-verify", ref = "job:chrootctl-root-verify-tmux", depends_on = ["tmux-build"] },
+  { id = "repoctl", ref = "job:chrootctl-build-repoctl-devtool", depends_on = ["restore-seal"] },
+  { id = "runtime", ref = "job:chrootctl-root-build-runtime", depends_on = ["tmux-verify", "repoctl"] },
+  { id = "module", ref = "job:chrootctl-root-build-module", depends_on = ["runtime"] },
+  { id = "build-seal", ref = "job:chrootctl-root-build-seal", depends_on = ["module"] },
+]
+test = [
+  { id = "webui", ref = "job:chrootctl-root-test-webui", depends_on = [] },
+  { id = "go", ref = "job:chrootctl-root-test-go", depends_on = [] },
+  { id = "tmux", ref = "job:chrootctl-root-test-tmux", depends_on = [] },
+  { id = "test-seal", ref = "job:chrootctl-root-test-seal", depends_on = ["webui", "go", "tmux"] },
+]
+lint = [
+  { id = "go", ref = "job:chrootctl-root-lint-go", depends_on = [] },
+  { id = "native", ref = "job:chrootctl-root-lint-native", depends_on = [] },
+  { id = "lint-seal", ref = "job:chrootctl-root-lint-seal", depends_on = ["go", "native"] },
+]
 package = [
-  "runner:command#restore",
-  "runner:command#build",
-  "runner:command#test",
-  "job:chrootctl-root-module-lint",
-  "runner:command#package",
+  { id = "reset", ref = "job:chrootctl-root-evidence-reset", depends_on = [] },
+  { id = "restore-go", ref = "job:chrootctl-root-restore-go", depends_on = ["reset"] },
+  { id = "restore-tmux", ref = "job:chrootctl-root-restore-tmux", depends_on = ["reset"] },
+  { id = "restore-seal", ref = "job:chrootctl-root-restore-seal", depends_on = ["restore-go", "restore-tmux"] },
+  { id = "tmux-build", ref = "job:chrootctl-root-build-tmux", depends_on = ["restore-seal"] },
+  { id = "tmux-verify", ref = "job:chrootctl-root-verify-tmux", depends_on = ["tmux-build"] },
+  { id = "repoctl", ref = "job:chrootctl-build-repoctl-devtool", depends_on = ["restore-seal"] },
+  { id = "runtime", ref = "job:chrootctl-root-build-runtime", depends_on = ["tmux-verify", "repoctl"] },
+  { id = "module", ref = "job:chrootctl-root-build-module", depends_on = ["runtime"] },
+  { id = "build-seal", ref = "job:chrootctl-root-build-seal", depends_on = ["module"] },
+  { id = "webui-test", ref = "job:chrootctl-root-test-webui", depends_on = ["build-seal"] },
+  { id = "go-test", ref = "job:chrootctl-root-test-go", depends_on = ["build-seal"] },
+  { id = "tmux-test", ref = "job:chrootctl-root-test-tmux", depends_on = ["build-seal"] },
+  { id = "test-seal", ref = "job:chrootctl-root-test-seal", depends_on = ["webui-test", "go-test", "tmux-test"] },
+  { id = "go-lint", ref = "job:chrootctl-root-lint-go", depends_on = ["build-seal"] },
+  { id = "native-lint", ref = "job:chrootctl-root-lint-native", depends_on = ["build-seal"] },
+  { id = "lint-seal", ref = "job:chrootctl-root-lint-seal", depends_on = ["go-lint", "native-lint"] },
+  { id = "package-preflight", ref = "job:chrootctl-root-package-preflight", depends_on = ["test-seal", "lint-seal"] },
+  { id = "package-runtime", ref = "job:chrootctl-root-package-runtime", depends_on = ["package-preflight"] },
+  { id = "package-webui", ref = "job:chrootctl-root-package-webui", depends_on = ["package-preflight"] },
+  { id = "package-evidence", ref = "job:chrootctl-root-package-evidence", depends_on = ["package-runtime", "package-webui"] },
 ]
 validate = [
-  "runner:command#restore",
-  "runner:command#build",
-  "runner:command#test",
-  "job:chrootctl-root-module-lint",
-  "runner:command#package",
+  { id = "reset", ref = "job:chrootctl-root-evidence-reset", depends_on = [] },
+  { id = "restore-go", ref = "job:chrootctl-root-restore-go", depends_on = ["reset"] },
+  { id = "restore-tmux", ref = "job:chrootctl-root-restore-tmux", depends_on = ["reset"] },
+  { id = "restore-seal", ref = "job:chrootctl-root-restore-seal", depends_on = ["restore-go", "restore-tmux"] },
+  { id = "tmux-build", ref = "job:chrootctl-root-build-tmux", depends_on = ["restore-seal"] },
+  { id = "tmux-verify", ref = "job:chrootctl-root-verify-tmux", depends_on = ["tmux-build"] },
+  { id = "repoctl", ref = "job:chrootctl-build-repoctl-devtool", depends_on = ["restore-seal"] },
+  { id = "runtime", ref = "job:chrootctl-root-build-runtime", depends_on = ["tmux-verify", "repoctl"] },
+  { id = "module", ref = "job:chrootctl-root-build-module", depends_on = ["runtime"] },
+  { id = "build-seal", ref = "job:chrootctl-root-build-seal", depends_on = ["module"] },
+  { id = "webui-test", ref = "job:chrootctl-root-test-webui", depends_on = ["build-seal"] },
+  { id = "go-test", ref = "job:chrootctl-root-test-go", depends_on = ["build-seal"] },
+  { id = "tmux-test", ref = "job:chrootctl-root-test-tmux", depends_on = ["build-seal"] },
+  { id = "test-seal", ref = "job:chrootctl-root-test-seal", depends_on = ["webui-test", "go-test", "tmux-test"] },
+  { id = "go-lint", ref = "job:chrootctl-root-lint-go", depends_on = ["build-seal"] },
+  { id = "native-lint", ref = "job:chrootctl-root-lint-native", depends_on = ["build-seal"] },
+  { id = "lint-seal", ref = "job:chrootctl-root-lint-seal", depends_on = ["go-lint", "native-lint"] },
+  { id = "package-preflight", ref = "job:chrootctl-root-package-preflight", depends_on = ["test-seal", "lint-seal"] },
+  { id = "package-runtime", ref = "job:chrootctl-root-package-runtime", depends_on = ["package-preflight"] },
+  { id = "package-webui", ref = "job:chrootctl-root-package-webui", depends_on = ["package-preflight"] },
+  { id = "package-evidence", ref = "job:chrootctl-root-package-evidence", depends_on = ["package-runtime", "package-webui"] },
 ]
 run = ["job:chrootctl-root-module-install"]
 
 # ---------------------------------------------------------------------------
-# repoctl release/module pipeline.  This target deliberately does not duplicate
-# the normal CLI target.
+# Repository source/release validation. repoctl exposes the current source gates
+# individually so Devtool can represent them as sibling EXO nodes rather than a
+# single opaque `repoctl validate` process.
 # ---------------------------------------------------------------------------
+
+[jobs.chrootctl-validate-test-seal]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "test-seal"]
+inputs = ["migration/**", "internal/**", "docs/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-repository-purity]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "repository-purity"]
+inputs = ["."]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-audit-coverage]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "audit-coverage"]
+inputs = ["docs/audit/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-root-retirement]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "root-module-retirement"]
+inputs = [".devtool.toml", ".github/workflows/**", "android/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-contract-generation]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "contract-generation"]
+inputs = ["migration/contracts/**", "internal/contracts/**", "internal/contractgen/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-cli-contract]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "cli-contract"]
+inputs = ["cmd/chrootctl/**", "internal/cli/**", "migration/contracts/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-mutation-engine]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "mutation-engine"]
+inputs = ["internal/**", "migration/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-crud-atomicity]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "crud-atomicity"]
+inputs = ["internal/**", "migration/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-clipboard]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "clipboard-integration"]
+inputs = ["internal/clipboard/**", "internal/services/**", "internal/cli/**", "migration/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-contracts]
+runner = "go"
+execution_environment = "host"
+command = ["out/repoctl-devtool", "validate-step", "frozen-live-contracts"]
+inputs = ["migration/contracts/**", "internal/contracts/**", "internal/bridge/**", "internal/cli/**"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-go-test]
+runner = "go"
+execution_environment = "host"
+command = ["go", "test", "-p", "2", "./..."]
+inputs = ["go.mod", "go.sum", "cmd/**", "internal/**", "migration/**", "scripts/**", ".devtool.toml"]
+metadata = { read_only = true }
+
+[jobs.chrootctl-validate-go-vet]
+runner = "go"
+execution_environment = "host"
+command = ["go", "vet", "./..."]
+inputs = ["go.mod", "go.sum", "cmd/**", "internal/**"]
+metadata = { read_only = true }
 
 [targets.chrootctl]
 runner = "command"
@@ -160,24 +442,30 @@ inputs = [
   "go.sum",
   "cmd/chrootctl/**",
   "cmd/repoctl/**",
-  # build-runtime/build-module compile the production chrootctl backend, so the
-  # release pipeline must invalidate on any internal runtime dependency change.
   "internal/**",
   "migration/contracts/**",
   "docs/release/**",
   "scripts/**",
   "build.sh",
 ]
-outputs = [
-  "out/**",
-  "dist/**",
-  "chrootctl.zip",
-  "chrootctl.zip.sha256",
-]
+outputs = ["out/**", "dist/**", "chrootctl.zip", "chrootctl.zip.sha256"]
 run_command = "go run ./cmd/repoctl host"
-test_command = "go run ./cmd/repoctl validate"
 build_command = "go run ./cmd/repoctl build-runtime"
 package_command = "go run ./cmd/repoctl build-module"
 
 [targets.chrootctl.workflows]
-validate = ["runner:command#test"]
+validate = [
+  { id = "repoctl", ref = "job:chrootctl-build-repoctl-devtool", depends_on = [] },
+  { id = "test-seal", ref = "job:chrootctl-validate-test-seal", depends_on = ["repoctl"] },
+  { id = "purity", ref = "job:chrootctl-validate-repository-purity", depends_on = ["repoctl"] },
+  { id = "audit", ref = "job:chrootctl-validate-audit-coverage", depends_on = ["repoctl"] },
+  { id = "retirement", ref = "job:chrootctl-validate-root-retirement", depends_on = ["repoctl"] },
+  { id = "contract-gen", ref = "job:chrootctl-validate-contract-generation", depends_on = ["repoctl"] },
+  { id = "cli", ref = "job:chrootctl-validate-cli-contract", depends_on = ["repoctl"] },
+  { id = "mutation", ref = "job:chrootctl-validate-mutation-engine", depends_on = ["repoctl"] },
+  { id = "crud", ref = "job:chrootctl-validate-crud-atomicity", depends_on = ["repoctl"] },
+  { id = "clipboard", ref = "job:chrootctl-validate-clipboard", depends_on = ["repoctl"] },
+  { id = "contracts", ref = "job:chrootctl-validate-contracts", depends_on = ["repoctl"] },
+  { id = "go-test", ref = "job:chrootctl-validate-go-test", depends_on = ["repoctl"] },
+  { id = "go-vet", ref = "job:chrootctl-validate-go-vet", depends_on = ["repoctl"] },
+]

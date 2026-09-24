@@ -30,11 +30,8 @@ func TestTMUX01DevtoolAndPackagingContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	checks := map[string][]string{
-		".devtool.toml":                                {"scripts/tmux/**", "docs/runtime/TMUX_STATIC_RUNTIME.md"},
-		"scripts/devtool/root-module-restore.sh":       {"CHROOTCTL_TMUX_FETCH_ONLY=1", "build-static-android-arm64.sh"},
-		"scripts/devtool/root-module-build.sh":         {"build-static-android-arm64.sh", "CHROOTCTL_REQUIRE_TMUX=1", "CHROOTCTL_TMUX_PATH"},
-		"scripts/devtool/root-module-package.sh":       {"runtime/arm64-v8a/tmux", "tmux-runtime-manifest.json", "verify-static-android-arm64.sh", "unzip -p", "tmux.sha256"},
-		"scripts/devtool/root-module-lint.sh":          {"scripts/tmux/build-static-android-arm64.sh", "android-glob-compat.c", "clang -Wall -Wextra -Werror"},
+		".devtool.toml":                                {"scripts/tmux/**", "docs/runtime/TMUX_STATIC_RUNTIME.md", "job:chrootctl-root-build-tmux", "job:chrootctl-root-package-runtime"},
+		"scripts/devtool/root-module-stage.sh":         {"CHROOTCTL_TMUX_FETCH_ONLY=1", "build-static-android-arm64.sh", "CHROOTCTL_REQUIRE_TMUX=1", "CHROOTCTL_TMUX_PATH", "runtime/arm64-v8a/tmux", "tmux-runtime-manifest.json", "verify-static-android-arm64.sh", "unzip -p", "tmux.sha256", "android-glob-compat.c", "clang -Wall -Wextra -Werror"},
 		"internal/repoctl/repoctl.go":                  {"CHROOTCTL_TMUX_PATH", "tmux-runtime-manifest.json", "tmux.sha256"},
 		"scripts/tmux/android-glob-compat.c":           {"CHROOTCTL_ANDROID_GLOB_COMPAT", "fnmatch", "GLOB_NOMATCH", "globfree"},
 		"scripts/tmux/android-glob-compat.h":           {"int glob(", "void globfree("},

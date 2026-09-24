@@ -64,7 +64,7 @@ func TestPostCUXRuntimeAndEvidenceConvergenceContract(t *testing.T) {
 	if strings.Contains(read("internal/repoctl/seal_evidence.go"), `return "/data/adb/chrootctl/validation-results.json"`) {
 		t.Fatal("legacy schema-v3 final-seal can still overwrite runtime readiness evidence")
 	}
-	require("scripts/devtool/root-module-package.sh",
+	require("scripts/devtool/root-module-stage.sh",
 		"root-module-evidence.sh require root_restore root_build root_test root_lint",
 		"seal-root-module-evidence",
 		"validation-results.json",
@@ -88,9 +88,9 @@ func TestPostCUXRuntimeAndEvidenceConvergenceContract(t *testing.T) {
 		t.Fatal("root-module package workflow is missing")
 	}
 	packageWorkflow := devtool[packageSection:validateSection]
-	for _, token := range []string{`"runner:command#test"`, `"job:chrootctl-root-module-lint"`, `"runner:command#package"`} {
+	for _, token := range []string{`job:chrootctl-root-test-go`, `job:chrootctl-root-lint-go`, `job:chrootctl-root-package-preflight`, `job:chrootctl-root-package-runtime`, `job:chrootctl-root-package-webui`, `job:chrootctl-root-package-evidence`} {
 		if !strings.Contains(packageWorkflow, token) {
-			t.Fatalf("root-module package workflow does not seal %s", token)
+			t.Fatalf("root-module package workflow does not expose %s", token)
 		}
 	}
 }

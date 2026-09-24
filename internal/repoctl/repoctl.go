@@ -21,12 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"chrootctl/internal/contractgen"
-	"chrootctl/internal/contracts"
 	chmodule "chrootctl/internal/module"
 	chsystem "chrootctl/internal/system"
-
-	"chrootctl/internal/testseal"
 )
 
 const defaultNDKVersion = "29.0.14206865"
@@ -667,41 +663,7 @@ func Validate() error {
 	if e != nil {
 		return e
 	}
-	if e = testseal.Validate(root, false); e != nil {
-		return e
-	}
-	if e = ValidateRepositoryPurity(root); e != nil {
-		return e
-	}
-	if e = ValidateAuditCoverage(root); e != nil {
-		return e
-	}
-	if e = ValidateRootModuleRetirement(root); e != nil {
-		return e
-	}
-	if e = contractgen.Check(root); e != nil {
-		return e
-	}
-	if e = ValidateCLIContractFoundation(root); e != nil {
-		return e
-	}
-	if e = ValidateMutationEngineGateA(root); e != nil {
-		return e
-	}
-	if e = ValidateCRUDAtomicity(root); e != nil {
-		return e
-	}
-	if e = ValidateClipboardPrivilegedIntegration(root); e != nil {
-		return e
-	}
-	bundle, e := contracts.LoadDir(filepath.Join(root, "migration", "contracts", "v1"))
-	if e != nil {
-		return e
-	}
-	if e = bundle.Validate(); e != nil {
-		return e
-	}
-	if e = ValidateLiveContracts(root, bundle); e != nil {
+	if e = validateSourceContracts(); e != nil {
 		return e
 	}
 	if e = run(root, nil, "go", "test", "-p", "2", "./..."); e != nil {

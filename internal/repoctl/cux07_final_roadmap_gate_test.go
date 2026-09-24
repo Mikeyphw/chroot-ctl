@@ -86,7 +86,7 @@ func TestCUX07FinalRoadmapGate(t *testing.T) {
 			t.Fatalf("final typed transport allow-list missing %s", op)
 		}
 	}
-	pkg, err := os.ReadFile("../../scripts/devtool/root-module-package.sh")
+	pkg, err := os.ReadFile("../../scripts/devtool/root-module-stage.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
