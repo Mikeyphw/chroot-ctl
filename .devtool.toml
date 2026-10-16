@@ -496,3 +496,79 @@ parallel = true
 max_parallel_nodes = 2
 max_gradle_nodes = 1
 max_dotnet_nodes = 1
+
+[targets.chrootctl_go.jobs.ci-actions-contract]
+runner = "command"
+command = ["python3", "scripts/devtool_actions_contract.py"]
+inputs = [".devtool.toml", ".github/workflows/*.yml", "scripts/devtool_actions_contract.py"]
+metadata = { read_only = true }
+
+[targets.chrootctl_go.workflows]
+ci-preflight = [
+  { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
+]
+ci-local = [
+  { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
+  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract"] },
+]
+ci-full = [
+  { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
+  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract"] },
+  { id = "repo-validation", ref = "target:chrootctl#validate", depends_on = ["actions-contract"] },
+]
+
+[wrapper]
+schema = 2
+default_command = "build"
+
+[wrapper.commands.build]
+description = "build through canonical Devtool and EXO"
+devtool = "build"
+target = "chrootctl_go"
+allow_passthrough = true
+
+[wrapper.commands.test]
+description = "test through canonical Devtool and EXO"
+devtool = "test"
+target = "chrootctl_go"
+allow_passthrough = true
+
+[wrapper.commands.module-build]
+description = "module-build through canonical Devtool and EXO"
+workflow = "build"
+target = "chrootctl_root_module"
+
+[wrapper.commands.module-test]
+description = "module-test through canonical Devtool and EXO"
+workflow = "test"
+target = "chrootctl_root_module"
+
+[wrapper.commands.module-package]
+description = "module-package through canonical Devtool and EXO"
+workflow = "package"
+target = "chrootctl_root_module"
+
+[wrapper.commands.module-validate]
+description = "module-validate through canonical Devtool and EXO"
+workflow = "validate"
+target = "chrootctl_root_module"
+
+[wrapper.commands.release-validate]
+description = "release-validate through canonical Devtool and EXO"
+workflow = "validate"
+target = "chrootctl"
+
+[wrapper.commands.ci-preflight]
+description = "ci-preflight through canonical Devtool and EXO"
+workflow = "ci-preflight"
+target = "chrootctl_go"
+
+[wrapper.commands.ci-local]
+description = "ci-local through canonical Devtool and EXO"
+workflow = "ci-local"
+target = "chrootctl_go"
+
+[wrapper.commands.ci-full]
+description = "ci-full through canonical Devtool and EXO"
+workflow = "ci-full"
+target = "chrootctl_go"

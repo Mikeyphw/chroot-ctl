@@ -1,0 +1,49 @@
+name: chroot-ctl Devtool GitHub build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+      - uses: android-actions/setup-android@v3
+      - name: Install Android NDK required by CGO/SQLite
+        run: sdkmanager "ndk;29.0.14206865"
+      - name: Validate repository through authoritative repoctl
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          go run ./cmd/repoctl validate
+      - name: Build Android runtime and Magisk/KernelSU module
+        shell: bash
+        run: |
+          set -euo pipefail
+          go run ./cmd/repoctl build-runtime --output-root "$RUNNER_TEMP/chrootctl-runtime" --jobs 2
+          go run ./cmd/repoctl build-module --runtime-dir "$RUNNER_TEMP/chrootctl-runtime/arm64-v8a" --output-dir "$RUNNER_TEMP/chrootctl-module" --zip "$RUNNER_TEMP/chrootctl.zip" --checksum
+      - name: Produce immutable source and artifact receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/devtool-evidence"
+          go run ./cmd/repoctl build-source --version ci --output "$RUNNER_TEMP/devtool-evidence/chrootctl-source-ci.tar.gz" --checksum
+          cp "$RUNNER_TEMP/chrootctl.zip" "$RUNNER_TEMP/devtool-evidence/"
+          cp "$RUNNER_TEMP/chrootctl.zip.sha256" "$RUNNER_TEMP/devtool-evidence/"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/devtool-evidence/source-commit.txt"
+          (cd "$RUNNER_TEMP/devtool-evidence" && sha256sum chrootctl.zip chrootctl-source-ci.tar.gz > SHA256SUMS)
+          (cd "$RUNNER_TEMP/devtool-evidence" && sha256sum --check SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chrootctl-devtool-build
+          path: ${{ runner.temp }}/devtool-evidence/
+          if-no-files-found: error
+          retention-days: 7
