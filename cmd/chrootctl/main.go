@@ -26,6 +26,10 @@ func runWithIO(args []string) int {
 	// An explicit read-only integration command; no native-rclone fallback is
 	// changed and no Skybind socket is accessed by default CLI operations.
 	if len(args) > 0 && args[0] == "skybind-read" {
+		if os.Geteuid() != 0 {
+			fmt.Fprintln(os.Stderr, "chrootctl skybind-read: root module process required")
+			return 2
+		}
 		flags := flag.NewFlagSet("skybind-read", flag.ContinueOnError)
 		flags.SetOutput(os.Stderr)
 		op := flags.String("operation", "", "whitelisted R1 metadata operation")
@@ -34,7 +38,7 @@ func runWithIO(args []string) int {
 		if flags.Parse(args[1:]) != nil || len(flags.Args()) != 0 {
 			return 2
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 		payload, err := skybindr1.Read(ctx, *op, *remote, *path)
 		if err != nil {
