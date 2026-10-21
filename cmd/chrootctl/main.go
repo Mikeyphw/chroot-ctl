@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 
 	"chrootctl/internal/bridge"
 	"chrootctl/internal/services"
+	"chrootctl/internal/skybindr1"
 	"chrootctl/internal/standalonewebui"
 
 	"chrootctl/internal/cli"
@@ -21,6 +23,27 @@ import (
 func main() { os.Exit(runWithIO(os.Args[1:])) }
 
 func runWithIO(args []string) int {
+	// An explicit read-only integration command; no native-rclone fallback is
+	// changed and no Skybind socket is accessed by default CLI operations.
+	if len(args) > 0 && args[0] == "skybind-read" {
+		flags := flag.NewFlagSet("skybind-read", flag.ContinueOnError)
+		flags.SetOutput(os.Stderr)
+		op := flags.String("operation", "", "whitelisted R1 metadata operation")
+		remote := flags.String("remote", "", "operator-approved Skybind remote")
+		path := flags.String("path", "", "relative path inside grant scope")
+		if flags.Parse(args[1:]) != nil || len(flags.Args()) != 0 {
+			return 2
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		payload, err := skybindr1.Read(ctx, *op, *remote, *path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "chrootctl skybind-read: read unavailable or denied")
+			return 2
+		}
+		_, _ = os.Stdout.Write(append(payload, '\n'))
+		return 0
+	}
 	if len(args) >= 2 && args[0] == "webui" && (args[1] == "serve" || args[1] == "start") {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
