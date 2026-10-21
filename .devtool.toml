@@ -499,22 +499,31 @@ max_dotnet_nodes = 1
 
 [targets.chrootctl_go.jobs.ci-actions-contract]
 runner = "command"
-command = ["python3", "scripts/devtool_actions_contract.py"]
-inputs = [".devtool.toml", ".github/workflows/*.yml", "scripts/devtool_actions_contract.py"]
+command = ["go", "run", "./cmd/devtoolgates", "actions"]
+inputs = [".devtool.toml", ".github/workflows/*.yml", "cmd/devtoolgates/**"]
+metadata = { read_only = true }
+
+[targets.chrootctl_go.jobs.r1-source-contract]
+runner = "command"
+command = ["go", "run", "./cmd/devtoolgates", "r1"]
+inputs = ["cmd/devtoolgates/**", "cmd/chrootctl/main.go", "internal/skybindr1/**"]
 metadata = { read_only = true }
 
 [targets.chrootctl_go.workflows]
 ci-preflight = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
+  { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
 ]
 ci-local = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
-  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract"] },
+  { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
+  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source"] },
 ]
 ci-full = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
-  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract"] },
-  { id = "repo-validation", ref = "target:chrootctl#validate", depends_on = ["actions-contract"] },
+  { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
+  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source"] },
+  { id = "repo-validation", ref = "target:chrootctl#validate", depends_on = ["actions-contract", "r1-source"] },
 ]
 
 [wrapper]

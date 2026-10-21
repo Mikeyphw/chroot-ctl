@@ -13,9 +13,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android NDK for Go SQLite runtime
-        run: sdkmanager "ndk;29.0.14206865"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools ndk;29.0.14206865'
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Verify native NDK for CGO/SQLite runtime
+        run: |
+          set -euo pipefail
+          test -f "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
+          test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+      - name: Native Devtool and R1 source contracts (not device qualification)
+        run: |
+          go run ./cmd/devtoolgates actions
+          go run ./cmd/devtoolgates r1
       - name: Go-only repository and contract validation
         run: go run ./cmd/repoctl validate
       - name: Build sealed Android Go runtime
