@@ -15,9 +15,17 @@ jobs:
         with:
           go-version: '1.23.x'
           cache: true
-      - uses: android-actions/setup-android@v3
-      - name: Install Android NDK required by CGO/SQLite
-        run: sdkmanager "ndk;29.0.14206865"
+      # Match Skybind's passing hosted Android setup; keep the required NDK.
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools ndk;29.0.14206865'
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Verify installed Android NDK required by CGO/SQLite
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
+          test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
       - name: Validate repository through authoritative repoctl
         shell: bash
         run: |
