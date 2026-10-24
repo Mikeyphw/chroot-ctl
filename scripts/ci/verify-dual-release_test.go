@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,7 @@ func materializeDual(t *testing.T) (string, string, string) {
 		mustWrite(filepath.Join(rt, "runtime-manifest.json"), manifest)
 		desc, _ := json.Marshal(variantDescriptor{Edition: edition, AndroidAPI: 26, RuntimeManifestSHA: hashBytes(manifest), SourceCommit: source, DevtoolCommit: devtool})
 		mustWrite(filepath.Join(expanded, "config/chrootctl/build-variant.json"), desc)
+		mustWrite(filepath.Join(expanded, "webroot/index.html"), []byte("VALIDATED-WEBUI-FIXTURE"))
 		for _, name := range append([]string{"runtime-manifest.json"}, func() []string {
 			out := []string{}
 			for _, f := range files {
@@ -64,6 +66,11 @@ func materializeDual(t *testing.T) (string, string, string) {
 				t.Fatal(e)
 			}
 			mustWrite(filepath.Join(expanded, "runtime/arm64-v8a", name), b)
+			if name == "chrootctl" || name == "rclone" {
+				if e := os.Chmod(filepath.Join(expanded, "runtime/arm64-v8a", name), 0755); e != nil {
+					t.Fatal(e)
+				}
+			}
 		}
 		zpath := filepath.Join(root, "chrootctl-"+edition+"-arm64.zip")
 		zfile, e := os.Create(zpath)
@@ -71,7 +78,7 @@ func materializeDual(t *testing.T) (string, string, string) {
 			t.Fatal(e)
 		}
 		w := zip.NewWriter(zfile)
-		rels := []string{"config/chrootctl/build-variant.json", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl"}
+		rels := []string{"config/chrootctl/build-variant.json", "runtime/arm64-v8a/runtime-manifest.json", "runtime/arm64-v8a/chrootctl", "webroot/index.html"}
 		if edition == "rclone" {
 			rels = append(rels, "runtime/arm64-v8a/rclone")
 		}
@@ -80,7 +87,13 @@ func materializeDual(t *testing.T) (string, string, string) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			member, e := w.Create(rel)
+			info, e := os.Stat(filepath.Join(expanded, rel))
+			if e != nil {
+				t.Fatal(e)
+			}
+			hdr := &zip.FileHeader{Name: rel, Method: zip.Deflate}
+			hdr.SetMode(info.Mode().Perm())
+			member, e := w.CreateHeader(hdr)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -150,6 +163,89 @@ func TestHostedDualReleaseRejectsCorruption(t *testing.T) {
 			tt.breakIt(t, root)
 			if err := run(root, source, devtool, ""); err == nil {
 				t.Fatal("mutated release accepted")
+			}
+		})
+	}
+}
+
+// Regression: the previous independent verifier only checked a few selected
+// archive files. An attacker/stale producer could alter any other ZIP member,
+// recompute the sidecar and still obtain a purported verification PASS.
+func TestCC12RejectsUnsealedZipOrStagedMembers(t *testing.T) {
+	for _, mutation := range []string{"extra-zip-file", "tamper-webui", "omit-webui", "extra-staged-file", "mode-mismatch"} {
+		t.Run(mutation, func(t *testing.T) {
+			root, source, devtool := materializeDual(t)
+			edition := "standard"
+			zipPath := filepath.Join(root, "chrootctl-"+edition+"-arm64.zip")
+			orig, err := zip.OpenReader(zipPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tmp := zipPath + ".new"
+			out, err := os.Create(tmp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			zw := zip.NewWriter(out)
+			for _, f := range orig.File {
+				if mutation == "omit-webui" && f.Name == "webroot/index.html" {
+					continue
+				}
+				h := f.FileHeader
+				if mutation == "mode-mismatch" && f.Name == "runtime/arm64-v8a/chrootctl" {
+					h.SetMode(0644)
+				}
+				dst, err := zw.CreateHeader(&h)
+				if err != nil {
+					t.Fatal(err)
+				}
+				input, err := f.Open()
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = io.Copy(dst, input)
+				input.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mutation == "tamper-webui" && f.Name == "webroot/index.html" {
+					if _, err := dst.Write([]byte("CORRUPTED")); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if mutation == "extra-zip-file" {
+				extra, err := zw.Create("unsealed-extra.txt")
+				if err != nil {
+					t.Fatal(err)
+				}
+				extra.Write([]byte("unlisted"))
+			}
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := out.Close(); err != nil {
+				t.Fatal(err)
+			}
+			orig.Close()
+			if err := os.Rename(tmp, zipPath); err != nil {
+				t.Fatal(err)
+			}
+			sum, err := hash(zipPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(zipPath+".sha256", []byte(sum+"  "+filepath.Base(zipPath)+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if mutation == "extra-staged-file" {
+				p := filepath.Join(root, "module", edition, "webroot/extra.html")
+				if err := os.WriteFile(p, []byte("unsealed staging"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := run(root, source, devtool, ""); err == nil {
+				t.Fatal("tampered release was accepted")
 			}
 		})
 	}

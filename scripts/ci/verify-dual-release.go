@@ -12,7 +12,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -79,6 +81,95 @@ func readJSON(path string, v any) error {
 		return e
 	}
 	return json.Unmarshal(p, v)
+}
+
+// verifyEntireZipMatch is independent of the producer's package verifier.
+// Selected runtime files are not enough: every ZIP member must match exactly
+// one staged regular file (bytes and mode), and vice versa.
+func verifyEntireZipMatch(archive *zip.ReadCloser, expanded, edition string) error {
+	expected := make(map[string]os.FileInfo)
+	if err := filepath.WalkDir(expanded, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == expanded {
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s: staged symlink forbidden: %s", edition, p)
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s: staged nonregular file: %s", edition, p)
+		}
+		relative, err := filepath.Rel(expanded, p)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		if !fs.ValidPath(relative) {
+			return fmt.Errorf("%s: unsafe staged path: %s", edition, relative)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		expected[relative] = info
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(expected) == 0 {
+		return fmt.Errorf("%s: empty staged module", edition)
+	}
+	seen := make(map[string]bool)
+	for _, f := range archive.File {
+		name := f.Name
+		if name != path.Clean(name) || !fs.ValidPath(name) || strings.ContainsAny(name, "\\:") || strings.HasPrefix(name, "/") || seen[name] {
+			return fmt.Errorf("%s: noncanonical/duplicate ZIP member: %s", edition, name)
+		}
+		seen[name] = true
+		info, ok := expected[name]
+		if !ok {
+			return fmt.Errorf("%s: unsealed ZIP member: %s", edition, name)
+		}
+		if !f.Mode().IsRegular() || !info.Mode().IsRegular() || f.Mode().Perm() != info.Mode().Perm() || f.UncompressedSize64 != uint64(info.Size()) {
+			return fmt.Errorf("%s: ZIP type/mode/size differs: %s", edition, name)
+		}
+		in, err := f.Open()
+		if err != nil {
+			return err
+		}
+		h := sha256.New()
+		copied, readErr := io.Copy(h, in)
+		closeErr := in.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if copied != info.Size() {
+			return fmt.Errorf("%s: ZIP decoded size differs: %s", edition, name)
+		}
+		stagedSHA, err := hash(filepath.Join(expanded, filepath.FromSlash(name)))
+		if err != nil {
+			return err
+		}
+		if hex.EncodeToString(h.Sum(nil)) != stagedSHA {
+			return fmt.Errorf("%s: ZIP/staged bytes differ: %s", edition, name)
+		}
+	}
+	if len(seen) != len(expected) {
+		for name := range expected {
+			if !seen[name] {
+				return fmt.Errorf("%s: staged file missing in ZIP: %s", edition, name)
+			}
+		}
+	}
+	return nil
 }
 func run(root, source, devtool, publish string) error {
 	var err error
@@ -165,6 +256,10 @@ func run(root, source, devtool, publish string) error {
 				return fmt.Errorf("%s: unsafe or duplicate ZIP entry: %s", edition, key)
 			}
 			entries[key] = entry
+		}
+		if e = verifyEntireZipMatch(archive, expanded, edition); e != nil {
+			archive.Close()
+			return e
 		}
 		if err = check((entries["runtime/arm64-v8a/rclone"] != nil) == (edition == "rclone"), edition+": ZIP rclone membership differs"); err != nil {
 			archive.Close()

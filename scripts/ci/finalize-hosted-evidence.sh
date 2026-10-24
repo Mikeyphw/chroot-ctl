@@ -16,6 +16,10 @@ for name in "${required[@]}"; do
   path="$dir/$name"
   [[ -f "$path" && ! -L "$path" && -s "$path" ]] || { echo "FAIL_HOSTED_FINALIZE: missing, empty or unsafe $name" >&2; exit 1; }
 done
+# A checksum over arbitrary JSON is not proof of a completed Devtool DAG.
+# Require all 19 source-bound hosted jobs, an exact plan, and successful results.
+GOTOOLCHAIN=local go run scripts/ci/verify-devtool-receipt.go \
+  --plan "$dir/devtool-plan.json" --run "$dir/devtool-run.json" --repo "$ROOT"
 [[ -f "$dir/SHA256SUMS" && ! -L "$dir/SHA256SUMS" ]] || { echo 'FAIL_HOSTED_FINALIZE: missing original checksum index' >&2; exit 1; }
 (cd "$dir" && sha256sum --check --status SHA256SUMS) || { echo 'FAIL_HOSTED_FINALIZE: original checksum mismatch' >&2; exit 1; }
 # Do not silently index arbitrary extra files (e.g. stale outputs from a prior build).

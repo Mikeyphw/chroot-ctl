@@ -67,6 +67,7 @@ case "$STAGE" in
     ;;
   test-verifier)
     GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-dual-release.go scripts/ci/verify-dual-release_test.go
+    GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-devtool-receipt.go scripts/ci/verify-devtool-receipt_test.go
     GOTOOLCHAIN=local go test -count=1 scripts/ci/reconcile-qualification.go scripts/ci/reconcile-qualification_test.go
     sh -n scripts/device/cc09-module-snapshot.sh
     bash scripts/ci/test-finalize-hosted-evidence.sh
