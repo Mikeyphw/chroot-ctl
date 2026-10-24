@@ -91,7 +91,8 @@ case "${1:-}" in
       ./internal/repoctl \
       ./internal/config \
       ./internal/logging \
-      ./internal/clipboard
+      ./internal/clipboard \
+      ./internal/skybindr1
     ;;
   test-tmux)
     go test ./internal/repoctl -run 'TestTMUX01'

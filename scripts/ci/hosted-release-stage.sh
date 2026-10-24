@@ -67,6 +67,15 @@ case "$STAGE" in
     ;;
   test-verifier)
     GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-dual-release.go scripts/ci/verify-dual-release_test.go
+    GOTOOLCHAIN=local go test -count=1 scripts/ci/reconcile-qualification.go scripts/ci/reconcile-qualification_test.go
+    sh -n scripts/device/cc09-module-snapshot.sh
+    ;;
+  test-skybind-consumer)
+    GOTOOLCHAIN=local go test -count=1 ./internal/skybindr1 -run 'TestCC08'
+    GOTOOLCHAIN=local go run ./cmd/devtoolgates r1
+    ;;
+  test-edition-upgrade)
+    GOTOOLCHAIN=local go test -count=1 ./internal/module -run 'TestCC09'
     ;;
   test-source)
     go run ./cmd/devtoolgates actions
@@ -87,6 +96,9 @@ case "$STAGE" in
     ;;
   receipt)
     GOTOOLCHAIN=local go run scripts/ci/verify-dual-release.go --root "$DUAL_ROOT" --source "$CHROOTCTL_EXPECTED_SOURCE_SHA" --devtool "$CHROOTCTL_EXPECTED_DEVTOOL_SHA" --publish "$TOOL_ROOT"
+    GOTOOLCHAIN=local go run scripts/ci/reconcile-qualification.go \
+      --hosted-evidence "$TOOL_ROOT" --output "$TOOL_ROOT/release-qualification.json"
+    (cd "$TOOL_ROOT" && sha256sum release-qualification.json >> SHA256SUMS)
     # Context is informative, not an independently signed attestation. The
     # Devtool machine receipt and optional GitHub Sigstore record remain distinct.
     ndk_identity=$(sha256sum "$ANDROID_HOME/ndk/$NDK_REV/source.properties" | awk '{print $1}')

@@ -122,7 +122,7 @@ func r1Checks(root string) ([]check, error) {
 		{"ABSTRACT_HANDOFF", strings.Contains(client, `\x00skybind-r1-grant-handoff-v1`)},
 		{"NO_NATIVE_FALLBACK", !strings.Contains(client, `exec.Command("rclone"`)},
 		{"SCOPED_OPERATIONS", containsAll(client, "rclone.lsjson", "rclone.size", "rclone.listremotes", "rclone.version", "system.capabilities", "validateArgs(op, remote, path)")},
-		{"NO_IMPLICIT_APPROVAL", containsAll(client, "receiveGrant(ctx, grantEndpoint)", "return readOnce(ctx, readEndpoint")},
+		{"NO_IMPLICIT_APPROVAL", containsAll(client, "readVia(ctx, grantEndpoint, readEndpoint", "receiveGrant(ctx, grantAddress)", "return readOnce(ctx, readAddress")},
 	}, nil
 }
 

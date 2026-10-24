@@ -137,7 +137,12 @@ func readOnce(ctx context.Context, addr string, g grant, op, remote, path string
 	}
 	return out.Result, nil
 }
-func Read(ctx context.Context, op, remote, path string) (json.RawMessage, error) {
+
+// readVia keeps the production socket endpoints fixed while allowing an
+// in-process gateway fixture to exercise the *whole* grant->read transaction.
+// The only exported entry point (Read) always uses the constant Skybind R1
+// abstract sockets, and never tries an unmanaged native-rclone fallback.
+func readVia(ctx context.Context, grantAddress, readAddress, op, remote, path string) (json.RawMessage, error) {
 	if e := validateArgs(op, remote, path); e != nil {
 		return nil, e
 	}
@@ -147,7 +152,7 @@ func Read(ctx context.Context, op, remote, path string) (json.RawMessage, error)
 	var g grant
 	var e error
 	for {
-		g, e = receiveGrant(ctx, grantEndpoint)
+		g, e = receiveGrant(ctx, grantAddress)
 		if e == nil {
 			break
 		}
@@ -157,5 +162,11 @@ func Read(ctx context.Context, op, remote, path string) (json.RawMessage, error)
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	return readOnce(ctx, readEndpoint, g, op, remote, path)
+	return readOnce(ctx, readAddress, g, op, remote, path)
+}
+
+// Read is the strictly read-only, operator-approved Skybind R1 interface.
+// Future streaming/mutation protocols must not be silently routed here.
+func Read(ctx context.Context, op, remote, path string) (json.RawMessage, error) {
+	return readVia(ctx, grantEndpoint, readEndpoint, op, remote, path)
 }

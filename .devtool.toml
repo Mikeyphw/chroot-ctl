@@ -668,6 +668,18 @@ execution_environment = "host"
 command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-verifier"]
 metadata = { read_only = true }
 
+[targets.chrootctl_hosted_release.jobs.test-skybind-consumer]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-skybind-consumer"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.test-edition-upgrade]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-edition-upgrade"]
+metadata = { read_only = true }
+
 [targets.chrootctl_hosted_release.jobs.test-source]
 runner = "command"
 execution_environment = "host"
@@ -708,7 +720,9 @@ ci-release = [
   { id = "lint-go", ref = "job:lint-go", depends_on = ["restore-go"] },
   { id = "test-source", ref = "job:test-source", depends_on = ["build-repoctl"] },
   { id = "test-verifier", ref = "job:test-verifier", depends_on = ["restore-go"] },
+  { id = "test-skybind-consumer", ref = "job:test-skybind-consumer", depends_on = ["restore-go"] },
+  { id = "test-edition-upgrade", ref = "job:test-edition-upgrade", depends_on = ["restore-go"] },
   { id = "build-editions", ref = "job:build-editions", depends_on = ["verify-tmux", "build-rclone", "build-repoctl"] },
   { id = "verify-editions", ref = "job:verify-editions", depends_on = ["build-editions"] },
-  { id = "receipt", ref = "job:receipt", depends_on = ["verify-editions", "test-source", "test-verifier", "test-go", "test-webui", "test-tmux", "lint-native", "lint-go"] },
+  { id = "receipt", ref = "job:receipt", depends_on = ["verify-editions", "test-source", "test-verifier", "test-skybind-consumer", "test-edition-upgrade", "test-go", "test-webui", "test-tmux", "lint-native", "lint-go"] },
 ]
