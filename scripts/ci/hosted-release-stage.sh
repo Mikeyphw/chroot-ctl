@@ -51,12 +51,12 @@ case "$STAGE" in
     CHROOTCTL_TMUX_HOSTED_NDK=1 scripts/tmux/build-static-android-arm64.sh
     ;;
   verify-tmux)
-    scripts/tmux/verify-static-android-arm64.sh "$TMUX_ROOT/tmux" "$TMUX_ROOT/tmux-runtime-manifest.json"
+    bash scripts/tmux/verify-static-android-arm64.sh "$TMUX_ROOT/tmux" "$TMUX_ROOT/tmux-runtime-manifest.json"
     ;;
   build-rclone)
     ensure_ndk
     CHROOTCTL_RCLONE_CACHE_DIR="${CHROOTCTL_RCLONE_CACHE_DIR:-$ROOT/.devtool/cache/rclone-runtime}" \
-      scripts/install-rclone-android-runtime.sh "$ROOT/out/rclone" "$ANDROID_NDK_HOME"
+      bash scripts/install-rclone-android-runtime.sh "$ROOT/out/rclone" "$ANDROID_NDK_HOME"
     ;;
   build-repoctl)
     mkdir -p out
@@ -67,6 +67,7 @@ case "$STAGE" in
     scripts/devtool/root-module-stage.sh "$map"
     ;;
   test-verifier)
+    bash scripts/ci/test-hosted-script-invocation.sh
     bash scripts/ci/test-require-hosted-ndk.sh
     GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-dual-release.go scripts/ci/verify-dual-release_test.go
     GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-devtool-receipt.go scripts/ci/verify-devtool-receipt_test.go

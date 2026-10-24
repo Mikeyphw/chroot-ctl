@@ -35,7 +35,7 @@ case "${1:-}" in
     fi
     ;;
   build-tmux-verify)
-    scripts/tmux/verify-static-android-arm64.sh "$TMUX_OUT/tmux" "$TMUX_OUT/tmux-runtime-manifest.json"
+    bash scripts/tmux/verify-static-android-arm64.sh "$TMUX_OUT/tmux" "$TMUX_OUT/tmux-runtime-manifest.json"
     ;;
   build-repoctl)
     mkdir -p out
@@ -178,7 +178,7 @@ case "${1:-}" in
     grep -Fq 'runtime_execs_ready "$LIVE_NEXT/runtime/arm64-v8a" "$LIVE_NEXT/config/chrootctl/runtime-executables.list"' "$TREE/customize.sh" || { echo "live-update preflight does not verify every sealed runtime executable" >&2; exit 1; }
     ;;
   package-runtime)
-    scripts/tmux/verify-static-android-arm64.sh "$TREE/runtime/arm64-v8a/tmux" "$TREE/runtime/arm64-v8a/tmux-runtime-manifest.json"
+    bash scripts/tmux/verify-static-android-arm64.sh "$TREE/runtime/arm64-v8a/tmux" "$TREE/runtime/arm64-v8a/tmux-runtime-manifest.json"
     tmux_tree_sha=$(sha256sum "$TREE/runtime/arm64-v8a/tmux" | awk '{print $1}')
     tmux_sidecar_sha=$(awk 'NR==1 {print $1}' "$TREE/runtime/arm64-v8a/tmux.sha256")
     [[ "$tmux_tree_sha" == "$tmux_sidecar_sha" ]] || { echo "packaged tmux checksum sidecar mismatch" >&2; exit 1; }
