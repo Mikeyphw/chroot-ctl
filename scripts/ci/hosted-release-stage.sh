@@ -69,6 +69,7 @@ case "$STAGE" in
     GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-dual-release.go scripts/ci/verify-dual-release_test.go
     GOTOOLCHAIN=local go test -count=1 scripts/ci/reconcile-qualification.go scripts/ci/reconcile-qualification_test.go
     sh -n scripts/device/cc09-module-snapshot.sh
+    bash scripts/ci/test-finalize-hosted-evidence.sh
     ;;
   test-skybind-consumer)
     GOTOOLCHAIN=local go test -count=1 ./internal/skybindr1 -run 'TestCC08'
@@ -98,7 +99,6 @@ case "$STAGE" in
     GOTOOLCHAIN=local go run scripts/ci/verify-dual-release.go --root "$DUAL_ROOT" --source "$CHROOTCTL_EXPECTED_SOURCE_SHA" --devtool "$CHROOTCTL_EXPECTED_DEVTOOL_SHA" --publish "$TOOL_ROOT"
     GOTOOLCHAIN=local go run scripts/ci/reconcile-qualification.go \
       --hosted-evidence "$TOOL_ROOT" --output "$TOOL_ROOT/release-qualification.json"
-    (cd "$TOOL_ROOT" && sha256sum release-qualification.json >> SHA256SUMS)
     # Context is informative, not an independently signed attestation. The
     # Devtool machine receipt and optional GitHub Sigstore record remain distinct.
     ndk_identity=$(sha256sum "$ANDROID_HOME/ndk/$NDK_REV/source.properties" | awk '{print $1}')
@@ -108,6 +108,7 @@ case "$STAGE" in
     cat > "$TOOL_ROOT/build-context.json" <<EOF
 {"schemaVersion":1,"androidApi":26,"sourceCommit":"$CHROOTCTL_EXPECTED_SOURCE_SHA","sourceTree":"$source_tree","devtoolCommit":"$CHROOTCTL_EXPECTED_DEVTOOL_SHA","bcloneLockSHA256":"$bclone_lock","devtoolLockSHA256":"$devtool_lock","ndkSourcePropertiesSHA256":"$ndk_identity","goCompiler":"$(go version | awk '{print $3}')","githubRunId":"${GITHUB_RUN_ID:-}","githubRunAttempt":"${GITHUB_RUN_ATTEMPT:-}"}
 EOF
+    (cd "$TOOL_ROOT" && sha256sum release-evidence.json release-qualification.json build-context.json >> SHA256SUMS)
     ;;
   *) failed 'unknown/non-permitted stage' ;;
 esac

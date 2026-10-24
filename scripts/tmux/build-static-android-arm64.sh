@@ -106,7 +106,7 @@ BUILD_FINGERPRINT_FILE="$WORK/.chrootctl-tmux-build-fingerprint"
 build_fingerprint() {
   {
     printf '%s\n' \
-      "schema=3"
+      "schema=3" \
       "hosted_ndk=${CHROOTCTL_TMUX_HOSTED_NDK:-0}" \
       "tmux=$TMUX_VERSION:$TMUX_SHA256" \
       "libevent=$LIBEVENT_VERSION:$LIBEVENT_SHA256" \

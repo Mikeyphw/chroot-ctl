@@ -98,6 +98,7 @@ case "${1:-}" in
     go test ./internal/repoctl -run 'TestTMUX01'
     bash scripts/tmux/test-android-glob-compat.sh
     bash scripts/tmux/test-android-langinfo-compat.sh
+    bash scripts/tmux/test-build-fingerprint.sh
     ;;
   test-seal)
     record root_test 'devtool root-module test DAG'

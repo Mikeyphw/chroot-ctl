@@ -82,7 +82,7 @@ jobs:
             echo 'Devtool machine receipt missing' >&2
             exit 1
           fi
-          (cd out/hosted-evidence && sha256sum --check SHA256SUMS)
+          scripts/ci/finalize-hosted-evidence.sh out/hosted-evidence
       - name: Upload both validated release candidates
         uses: actions/upload-artifact@v4
         with:
