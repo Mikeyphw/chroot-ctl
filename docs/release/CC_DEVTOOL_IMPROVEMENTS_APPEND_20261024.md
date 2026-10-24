@@ -1,0 +1,12 @@
+# Devtool cumulative improvements append — Chrootctl API26 build
+
+Keep previous Devtool improvements ledger intact; **this is an append payload**, not a claim to have altered Devtool's repository.
+
+| ID | Observed issue | Affected code/products | Suggested remedy | Status |
+|---|---|---|---|---|
+| CC-DT-01 | Existing root-module Devtool DAG not directly usable on hosted Ubuntu; adoption doctor: 1 eligible, 10 blocked | Devtool Actions exporter; Chrootctl `.devtool.toml` | Target-local host-portable release DAG using isolated dual-variant producer | OPEN |
+| CC-DT-02 | Two direct GitHub workflows duplicate native runtime builds and bypass complete Devtool DAG | Chrootctl Actions; Devtool release orchestration | Single Devtool DAG as authoritative release coordinator | OPEN |
+| CC-DT-03 | Chrootctl source-build rclone previously resolved latest; Standard could accidentally inherit ambient binary | Chrootctl repoctl/source restore | Reviewed pinned API26 commit and enforced edition-positive/negative inventories | SOURCE IMPLEMENTED, host build unverified |
+| CC-DT-04 | Exact source/Devtool SHA required through final ZIP and build receipts, beyond marker timestamps | Chrootctl module evidence + Devtool | Versioned host receipts, output+source+toolchain+edition digests, signed/hashed artifact proof | OPEN |
+| CC-DT-05 | Current Actions source gates use literal YAML string assumptions | Chrootctl `devtoolgates` + Devtool | Semantic workflow exporter/CI obligations validation with negative cases | OPEN |
+| CC-DT-06 | Inability to execute all Chrootctl Go tests in isolated audit image | Local offline Go dependency cache | Preserve truth status; run complete Go tests through hosted immutable dependency setup | OPEN |

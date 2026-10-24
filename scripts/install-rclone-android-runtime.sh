@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the latest stable bclone release from the official GitHub repository.
-# bclone intentionally retains rclone's Go module identity and CLI/config format,
-# so the packaged runtime remains named `rclone` for protocol compatibility.
-#
-# No release version is pinned in this repository. Each invocation resolves
-# https://github.com/BenjiThatFoxGuy/bclone/releases/latest, validates the tag
-# shape, downloads that immutable tag's source archive, vendors its Go modules,
-# and builds the Android/arm64 PIE with the existing 16 KiB page-size contract.
-
+# Immutable, reviewed bclone Git commit. Never resolve releases/latest on CI.
 readonly BCLONE_REPOSITORY="BenjiThatFoxGuy/bclone"
-readonly BCLONE_LATEST_URL="https://github.com/${BCLONE_REPOSITORY}/releases/latest"
-readonly BCLONE_ARCHIVE_BASE_URL="https://github.com/${BCLONE_REPOSITORY}/archive/refs/tags"
-readonly RCLONE_ANDROID_API="24"
+readonly BCLONE_GIT_URL="https://github.com/${BCLONE_REPOSITORY}.git"
+readonly RCLONE_ANDROID_API="26"
 readonly RCLONE_ANDROID_ARCH="arm64"
 readonly CHROOTCTL_ANDROID_PAGE_SIZE="16384"
 readonly CHROOTCTL_REQUIRED_NDK_REVISION="29.0.14206865"
@@ -40,28 +31,31 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
     exit 64
 fi
 
-resolve_latest_bclone_tag() {
-    local effective tag
-    command -v curl >/dev/null 2>&1 || fail 69 latest 'curl is required to resolve the latest bclone release'
-    effective=$(curl --fail --location --silent --show-error --output /dev/null --write-out '%{url_effective}' "$BCLONE_LATEST_URL") ||         fail 69 latest 'could not resolve the latest bclone release from GitHub'
-    effective=${effective%%\?*}
-    tag=${effective##*/}
-    if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9][A-Za-z0-9._-]*)?$ ]]; then
-        fail 65 latest "GitHub latest release resolved to unexpected tag: $tag"
-    fi
-    printf '%s\n' "$tag"
+# Parse data, never source/eval a lock file.
+lock_file="$script_dir/../config/chrootctl/bclone-android-source.lock"
+[[ -f "$lock_file" && ! -L "$lock_file" ]] || fail 65 lock 'missing safe reviewed source lock'
+lock_value() {
+    local key=$1
+    awk -F= -v key="$key" '$1==key {print substr($0, length(key)+2)}' "$lock_file"
 }
+[[ $(lock_value schema) == chrootctl-bclone-source-lock-v1 ]] || fail 65 lock 'unsupported source lock schema'
+[[ $(lock_value repository) == "$BCLONE_GIT_URL" ]] || fail 65 lock 'unexpected bclone repository'
+[[ $(lock_value ndk_revision) == "$CHROOTCTL_REQUIRED_NDK_REVISION" ]] || fail 65 lock 'unexpected NDK source lock'
+[[ $(lock_value android_api) == "$RCLONE_ANDROID_API" ]] || fail 65 lock 'source lock must target API 26'
+[[ $(lock_value android_arch) == "$RCLONE_ANDROID_ARCH" ]] || fail 65 lock 'invalid source-lock architecture'
+[[ $(lock_value page_size) == "$CHROOTCTL_ANDROID_PAGE_SIZE" ]] || fail 65 lock 'invalid ELF page size'
+readonly BCLONE_TAG="$(lock_value tag)"
+readonly BCLONE_COMMIT="$(lock_value commit)"
+readonly BCLONE_GO_VERSION="$(lock_value go_version)"
+[[ "$BCLONE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$BCLONE_COMMIT" =~ ^[0-9a-f]{40}$ && "$BCLONE_GO_VERSION" =~ ^go[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 65 lock 'malformed reviewed source identity'
+[[ $(GOTOOLCHAIN=local go version | awk '{print $3}') == "$BCLONE_GO_VERSION" ]] || fail 65 lock "requires reviewed compiler $BCLONE_GO_VERSION"
+readonly BCLONE_VERSION="${BCLONE_TAG#v}"
 
 output_root=$1
 ndk_root=${2:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}}
 output_dir="$output_root/arm64-v8a"
-bclone_tag=$(resolve_latest_bclone_tag)
-readonly BCLONE_TAG="$bclone_tag"
-readonly BCLONE_VERSION="${BCLONE_TAG#v}"
-unset bclone_tag
-readonly BCLONE_SOURCE_ARCHIVE="bclone-${BCLONE_TAG}.tar.gz"
-readonly BCLONE_SOURCE_URL="${BCLONE_ARCHIVE_BASE_URL}/${BCLONE_TAG}.tar.gz"
-cache_root="${CHROOTCTL_RCLONE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/chrootctl/bclone/${BCLONE_TAG}-android-${RCLONE_ANDROID_API}-arm64-16k}"
+readonly BCLONE_SOURCE_ARCHIVE="bclone-${BCLONE_COMMIT}.tar.gz"
+cache_root="${CHROOTCTL_RCLONE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/chrootctl/bclone/${BCLONE_COMMIT}-${BCLONE_GO_VERSION}-android-${RCLONE_ANDROID_API}-arm64-16k}"
 source_archive="$cache_root/$BCLONE_SOURCE_ARCHIVE"
 source_sha_file="$source_archive.sha256"
 cached_runtime="$cache_root/rclone"
@@ -70,18 +64,22 @@ tmp_target="$target.tmp.$$"
 mkdir -p "$cache_root" "$output_dir"
 trap 'rm -f "$tmp_target"' EXIT HUP INT TERM
 
-printf 'chrootctl bclone runtime: latest stable release resolved to %s\n' "$BCLONE_TAG" >&2
+printf 'chrootctl bclone runtime: pinned source %s @ %s (API 26)\n' "$BCLONE_TAG" "$BCLONE_COMMIT" >&2
 
 fetch_source_archive() {
-    local tmp="$source_archive.download.$$"
+    local tmp="$source_archive.download.$$" git_dir
+    command -v git >/dev/null 2>&1 || fail 69 fetch 'git required to verify source commit'
+    git_dir=$(mktemp -d "${TMPDIR:-$cache_root}/bclone-git.XXXXXX") || fail 70 fetch 'cannot allocate Git source checkout'
     rm -f "$tmp"
-    printf 'chrootctl bclone runtime: fetching %s\n' "$BCLONE_SOURCE_URL" >&2
-    curl --fail --location --retry 3 --retry-delay 2 --output "$tmp" "$BCLONE_SOURCE_URL" || {
-        rm -f "$tmp"
-        fail 69 fetch 'curl could not fetch the latest bclone source archive'
-    }
-    [[ -s "$tmp" ]] || fail 69 fetch 'downloaded bclone source archive is empty'
-    run_native_page_verifier archive-safe "$tmp" >/dev/null || fail 65 source 'bclone source archive contains an unsafe path'
+    git -C "$git_dir" init -q || fail 69 fetch 'cannot initialize source checkout'
+    git -C "$git_dir" remote add origin "$BCLONE_GIT_URL"
+    git -C "$git_dir" fetch --depth=1 origin "refs/tags/$BCLONE_TAG" || fail 69 fetch 'cannot fetch pinned bclone tag'
+    [[ $(git -C "$git_dir" rev-parse 'FETCH_HEAD^{commit}') == "$BCLONE_COMMIT" ]] || fail 65 source 'upstream tag does not resolve to reviewed source commit'
+    git -C "$git_dir" checkout -q --detach "$BCLONE_COMMIT" || fail 65 source 'cannot check out pinned commit'
+    git -C "$git_dir" archive --format=tar.gz --prefix="bclone-${BCLONE_TAG}/" --output="$tmp" HEAD || fail 69 source 'cannot archive pinned Git tree'
+    rm -rf "$git_dir"
+    [[ -s "$tmp" ]] || fail 69 source 'empty bclone Git archive'
+    run_native_page_verifier archive-safe "$tmp" >/dev/null || fail 65 source 'unsafe bclone archive contents'
     mv -f "$tmp" "$source_archive"
     sha256sum "$source_archive" | awk '{print $1}' > "$source_sha_file.tmp.$$"
     mv -f "$source_sha_file.tmp.$$" "$source_sha_file"
@@ -121,11 +119,16 @@ validate_runtime() {
     fi
 }
 
-if validate_runtime "$cached_runtime"; then
+if validate_runtime "$cached_runtime" && [[ -s "$cache_root/rclone-build-receipt.json" ]]; then
+    expected_cached_sha=$(sha256sum "$cached_runtime" | awk '{print $1}')
+    if ! grep -Fq "\"sha256\":\"$expected_cached_sha\"" "$cache_root/rclone-build-receipt.json"; then
+        fail 65 cache 'cached rclone build receipt hash mismatch'
+    fi
     printf 'chrootctl bclone runtime: using verified 16 KiB cache %s\n' "$cached_runtime" >&2
     cp -f "$cached_runtime" "$tmp_target"
     chmod 0755 "$tmp_target"
     mv -f "$tmp_target" "$target"
+    cp -f "$cache_root/rclone-build-receipt.json" "$output_dir/rclone-build-receipt.json"
     trap - EXIT HUP INT TERM
     printf 'chrootctl bclone runtime: packaged cached %s -> %s\n' "$BCLONE_TAG" "$target" >&2
     exit 0
@@ -372,7 +375,7 @@ rm -rf "$probe_root"
 probe_root=""
 
 work_dir=$(mktemp -d "${TMPDIR:-$cache_root}/chrootctl-bclone-source-build.XXXXXX")
-printf 'chrootctl bclone runtime: extracting latest source %s\n' "$BCLONE_TAG" >&2
+printf 'chrootctl bclone runtime: extracting pinned source %s\n' "$BCLONE_TAG" >&2
 run_native_page_verifier archive-safe "$source_archive" >/dev/null || \
     fail 65 source 'bclone source archive contains an unsafe path'
 tar -xzf "$source_archive" -C "$work_dir" || fail 65 source 'could not extract bclone source archive'
@@ -396,7 +399,7 @@ printf 'chrootctl bclone runtime: vendoring dependencies for %s\n' "$BCLONE_TAG"
     export GOMODCACHE="$cache_root/go-module-cache"
     mkdir -p "$GOMODCACHE"
     go mod vendor
-) || fail 69 vendor 'could not vendor dependencies for the latest bclone release'
+) || fail 69 vendor 'could not vendor dependencies for the reviewed bclone release'
 [[ -d "$source_dir/vendor" && -f "$source_dir/vendor/modules.txt" ]] || \
     fail 65 vendor 'bclone dependency vendoring did not produce vendor/modules.txt'
 
@@ -454,7 +457,11 @@ fi
 
 cp -f "$tmp_target" "$cached_runtime"
 chmod 0755 "$cached_runtime"
+artifact_sha=$(sha256sum "$tmp_target" | awk '{print $1}')
+printf '{"schemaVersion":1,"sourceCommit":"%s","androidApi":26,"pageSize":16384,"sha256":"%s"}\n' "$BCLONE_COMMIT" "$artifact_sha" > "$cache_root/rclone-build-receipt.json.tmp.$$"
+mv -f "$cache_root/rclone-build-receipt.json.tmp.$$" "$cache_root/rclone-build-receipt.json"
 mv -f "$tmp_target" "$target"
+cp -f "$cache_root/rclone-build-receipt.json" "$output_dir/rclone-build-receipt.json"
 rm -rf "$work_dir"
 work_dir=""
 trap - EXIT HUP INT TERM

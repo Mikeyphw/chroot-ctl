@@ -10,7 +10,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-source|validate|validate-step|validate-steps|go02-device-acceptance|final-seal|seal-root-module-evidence|release|doctor-cross-arch> [options]")
+	fmt.Fprintln(os.Stderr, "usage: repoctl <build-runtime|build-module|build-editions|build-source|validate|validate-step|validate-steps|go02-device-acceptance|final-seal|seal-root-module-evidence|release|doctor-cross-arch> [options]")
 }
 func fail(err error) { fmt.Fprintln(os.Stderr, "repoctl:", err); os.Exit(1) }
 func main() {
@@ -24,8 +24,9 @@ func main() {
 		out := fs.String("output-root", "out/native-runtime", "")
 		jobs := fs.Int("jobs", 2, "")
 		cc := fs.String("cc", "", "")
+		edition := fs.String("edition", "", "standard|rclone; required for release builds")
 		fs.Parse(os.Args[2:])
-		path, e := repoctl.BuildRuntime(repoctl.RuntimeOptions{OutputRoot: *out, Jobs: *jobs, CC: *cc})
+		path, e := repoctl.BuildRuntime(repoctl.RuntimeOptions{OutputRoot: *out, Jobs: *jobs, CC: *cc, Edition: *edition})
 		if e != nil {
 			fail(e)
 		}
@@ -41,6 +42,7 @@ func main() {
 		install := fs.Bool("install", false, "")
 		installShort := fs.Bool("i", false, "")
 		checksum := fs.Bool("checksum", false, "")
+		edition := fs.String("edition", "", "require standard|rclone runtime edition")
 		var startupTargets multi
 		fs.Var(&startupTargets, "startup-target", "installed chroot to mount at module boot; repeatable")
 		fs.Var(&startupTargets, "name", "compatibility alias for --startup-target")
@@ -51,11 +53,21 @@ func main() {
 		if *runtimeCompat != "" {
 			*runtime = *runtimeCompat
 		}
-		path, e := repoctl.BuildModule(repoctl.ModuleOptions{OutputDir: *out, ZipPath: *zip, RuntimeDir: *runtime, StartupTargets: startupTargets, Jobs: *jobs, Install: *install || *installShort, Checksum: *checksum})
+		path, e := repoctl.BuildModule(repoctl.ModuleOptions{OutputDir: *out, ZipPath: *zip, RuntimeDir: *runtime, StartupTargets: startupTargets, Jobs: *jobs, Install: *install || *installShort, Checksum: *checksum, Edition: *edition})
 		if e != nil {
 			fail(e)
 		}
 		fmt.Println(path)
+	case "build-editions":
+		fs := flag.NewFlagSet("build-editions", flag.ExitOnError)
+		out := fs.String("output-root", "out/dual-release", "isolated edition outputs")
+		rclone := fs.String("rclone", "", "required exact Android/arm64 binary for Embedded edition")
+		jobs := fs.Int("jobs", 2, "")
+		cc := fs.String("cc", "", "")
+		fs.Parse(os.Args[2:])
+		if e := repoctl.BuildEditions(repoctl.DualEditionOptions{OutputRoot: *out, RclonePath: *rclone, Jobs: *jobs, CC: *cc}); e != nil {
+			fail(e)
+		}
 	case "build-source":
 		fs := flag.NewFlagSet("build-source", flag.ExitOnError)
 		version := fs.String("version", "dev", "")

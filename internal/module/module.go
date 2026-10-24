@@ -35,6 +35,7 @@ const (
 	ModulePackageSchemaVersion = 1
 	ModulePackageManifestPath  = "config/chrootctl/module-package-manifest.json"
 	RuntimeExecutablesListPath = "config/chrootctl/runtime-executables.list"
+	BuildVariantPath           = "config/chrootctl/build-variant.json"
 	ValidationEvidencePath     = "config/chrootctl/validation-results.json"
 )
 
@@ -101,6 +102,8 @@ type runtimeManifest struct {
 	Entrypoint            string        `json:"entrypoint"`
 	BackendVersion        string        `json:"backendVersion"`
 	BridgeProtocolVersion int           `json:"bridgeProtocolVersion"`
+	Edition               string        `json:"edition,omitempty"`
+	AndroidAPI            int           `json:"androidApi,omitempty"`
 	Files                 []runtimeFile `json:"files"`
 }
 
@@ -200,6 +203,8 @@ func CompatibilityPayload() map[string]any {
 		"module":                map[string]any{"id": ModuleID, "version": ModuleVersion, "versionCode": ModuleVersionCode, "minimumSupportedBridgeProtocolVersion": BridgeProtocolVersion},
 	}
 }
+
+func shaBytes(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
 func shaFile(path string) (string, error) {
 	f, e := os.Open(path)
@@ -313,6 +318,14 @@ func ValidateRuntime(root string) error {
 	}
 	if err := validateAndroidArm64RuntimeELF(ep, "native runtime entrypoint"); err != nil {
 		return err
+	}
+	if m.Edition != "" {
+		if (m.Edition != "standard" && m.Edition != "rclone") || m.AndroidAPI != 26 {
+			return fmt.Errorf("unsupported runtime release edition/API: %q/%d", m.Edition, m.AndroidAPI)
+		}
+		if seen["rclone"] != (m.Edition == "rclone") {
+			return fmt.Errorf("runtime edition %q does not match bundled rclone presence", m.Edition)
+		}
 	}
 	if seen["rclone"] {
 		if err := validateAndroidArm64RuntimeELF(filepath.Join(root, "rclone"), "bundled rclone runtime"); err != nil {
@@ -677,6 +690,28 @@ func ValidateZipArchive(path string) error {
 	if string(listEntry.raw) != wantRuntimeExecs {
 		return fmt.Errorf("module ZIP runtime executable installer inventory mismatch: got %q want %q", string(listEntry.raw), wantRuntimeExecs)
 	}
+	if err := validateVariantDescriptor(runtimeManifestEntry.raw, entries[BuildVariantPath].raw); err != nil {
+		return err
+	}
+	var sealedRuntime runtimeManifest
+	if err := json.Unmarshal(runtimeManifestEntry.raw, &sealedRuntime); err != nil {
+		return err
+	}
+	if sealedRuntime.Edition != "" {
+		if sealedRuntime.AndroidAPI != 26 || (sealedRuntime.Edition != "standard" && sealedRuntime.Edition != "rclone") {
+			return errors.New("ZIP has unsupported release edition/API")
+		}
+		_, present := entries["runtime/"+RuntimeABI+"/rclone"]
+		if present != (sealedRuntime.Edition == "rclone") {
+			return errors.New("ZIP edition/rclone membership mismatch")
+		}
+		for _, file := range sealedRuntime.Files {
+			actual, ok := entries["runtime/"+RuntimeABI+"/"+file.Path]
+			if !ok || actual.meta.SHA256 != file.SHA256 || actual.meta.Size != file.Size || actual.meta.Executable != file.Executable {
+				return fmt.Errorf("ZIP runtime inventory digest mismatch: %s", file.Path)
+			}
+		}
+	}
 	for _, rel := range strings.Fields(wantRuntimeExecs) {
 		entry, ok := entries["runtime/"+RuntimeABI+"/"+rel]
 		if !ok || !entry.meta.Executable || entry.meta.Mode != "0755" {
@@ -1021,6 +1056,36 @@ func proxy(target string) string {
 	return "#!/system/bin/sh\nMODDIR=\"${CHROOTCTL_MODULE_DIR:-/data/adb/modules/chrootctl}\"\nexec \"$MODDIR/" + target + "\" \"$@\"\n"
 }
 
+func validateVariantDescriptor(runtimeJSON, variantJSON []byte) error {
+	var runtime runtimeManifest
+	if err := json.Unmarshal(runtimeJSON, &runtime); err != nil {
+		return err
+	}
+	if runtime.Edition == "" {
+		if len(variantJSON) != 0 {
+			return errors.New("legacy runtime has unexpected edition descriptor")
+		}
+		return nil
+	}
+	if len(variantJSON) == 0 {
+		return errors.New("release edition missing sealed build-variant.json")
+	}
+	var descriptor struct {
+		SchemaVersion         int    `json:"schemaVersion"`
+		Edition               string `json:"edition"`
+		AndroidAPI            int    `json:"androidApi"`
+		ModuleID              string `json:"moduleId"`
+		RuntimeManifestSHA256 string `json:"runtimeManifestSha256"`
+	}
+	if err := json.Unmarshal(variantJSON, &descriptor); err != nil {
+		return err
+	}
+	if descriptor.SchemaVersion != 1 || descriptor.Edition != runtime.Edition || descriptor.AndroidAPI != 26 || descriptor.ModuleID != ModuleID || descriptor.RuntimeManifestSHA256 != shaBytes(runtimeJSON) {
+		return errors.New("module build-variant descriptor/runtime seal mismatch")
+	}
+	return nil
+}
+
 func Render(opts Options) error {
 	if opts.OutputDir == "" {
 		return errors.New("module output directory is required")
@@ -1065,6 +1130,14 @@ func Render(opts Options) error {
 	if e != nil {
 		return e
 	}
+	rawRuntimeManifest, e := os.ReadFile(filepath.Join(runtime, "runtime-manifest.json"))
+	if e != nil {
+		return e
+	}
+	var selectedRuntime runtimeManifest
+	if e = json.Unmarshal(rawRuntimeManifest, &selectedRuntime); e != nil {
+		return e
+	}
 	compat, _ := json.MarshalIndent(CompatibilityPayload(), "", "  ")
 	compat = append(compat, '\n')
 	targets, _ := json.MarshalIndent(map[string]any{"startup_targets": opts.StartupTargets}, "", "  ")
@@ -1073,6 +1146,16 @@ func Render(opts Options) error {
 		c string
 		m fs.FileMode
 	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "action.sh": {action(), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-helper": {proxy("bin/chrootctl-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}, RuntimeExecutablesListPath: {runtimeExecs, 0644}}
+	if selectedRuntime.Edition != "" {
+		variantJSON, jsonErr := json.MarshalIndent(map[string]any{"schemaVersion": 1, "edition": selectedRuntime.Edition, "androidApi": selectedRuntime.AndroidAPI, "moduleId": ModuleID, "runtimeManifestSha256": shaBytes(rawRuntimeManifest)}, "", "  ")
+		if jsonErr != nil {
+			return jsonErr
+		}
+		files[BuildVariantPath] = struct {
+			c string
+			m fs.FileMode
+		}{string(append(variantJSON, '\n')), 0644}
+	}
 	for rel, v := range files {
 		if e := writeFile(out, rel, v.c, v.m); e != nil {
 			return e
@@ -1337,6 +1420,17 @@ func ValidateRendered(root string) error {
 	}
 	if e := validateRuntimeExecutableList(root); e != nil {
 		return e
+	}
+	runtimeJSON, e := os.ReadFile(filepath.Join(root, "runtime", RuntimeABI, "runtime-manifest.json"))
+	if e != nil {
+		return e
+	}
+	variantJSON, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(BuildVariantPath)))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err = validateVariantDescriptor(runtimeJSON, variantJSON); err != nil {
+		return err
 	}
 	return ValidatePackageManifest(root)
 }

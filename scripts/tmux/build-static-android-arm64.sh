@@ -7,7 +7,8 @@ LIBEVENT_VERSION=2.1.12-stable
 LIBEVENT_SHA256=92e6de1be9ec176428fd2367677e61ceffc2ee1cb119035037a27d346b0403bb
 NCURSES_VERSION=6.5
 NCURSES_SHA256=136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6
-ANDROID_API=${CHROOTCTL_TMUX_ANDROID_API:-24}
+ANDROID_API=${CHROOTCTL_TMUX_ANDROID_API:-26}
+[[ "$ANDROID_API" == "26" ]] || { echo "chrootctl API 26 release requires tmux Android API 26" >&2; exit 64; }
 NDK_REVISION=${CHROOTCTL_TMUX_NDK_REVISION:-29.0.14206865}
 JOBS=${DEVTOOL_MAX_WORKERS:-${CHROOTCTL_TMUX_JOBS:-2}}
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -103,7 +104,7 @@ build_fingerprint() {
       "cflags=-Os -fPIC -ffile-prefix-map=WORK=. -fdebug-prefix-map=WORK=." \
       "ldflags=static,--build-id=none" \
       "tmux_libs=-lncursesw -ltinfow" \
-      "compat_reallocarray=private-api24" \
+      "compat_reallocarray=private-android-pre29" \
       "source_date_epoch=$SOURCE_DATE_EPOCH"
     sha256sum "$ROOT/scripts/tmux/android-glob-compat.c" \
       "$ROOT/scripts/tmux/android-glob-compat.h" \
@@ -208,18 +209,18 @@ Cflags: -I\${includedir} -I\${includedir}/ncursesw
 EOF
 
 # Android/Bionic does not expose glob()/globfree() until API 28. TMUX-01
-# intentionally targets API 24, so provide the small source-file glob subset
+# targets API 26, so provide the small source-file glob subset
 # used by tmux rather than raising the minimum Android version.
 TMUX_CPPFLAGS="$CPPFLAGS"
 if (( ANDROID_API < 29 )); then
   # reallocarray is a public Bionic API only from API 29. Keep tmux's compat
-  # implementation for API 24, but give it a private symbol name so the NDK
+  # implementation for API 26, but give it a private symbol name so the NDK
   # static libc's malloc_common.o cannot collide with compat/reallocarray.o.
   TMUX_CPPFLAGS="$TMUX_CPPFLAGS -Dreallocarray=chrootctl_tmux_reallocarray"
 fi
 TMUX_LIBS="-lncursesw -ltinfow"
 # Bionic adds nl_langinfo() in API 26. tmux only asks for CODESET here, so
-# retain the API-24 floor with a small compatibility implementation matching
+# retain a guarded compatibility implementation for pre-26 targets matching
 # Bionic's CODESET behavior rather than linking a symbol unavailable at runtime.
 if (( ANDROID_API < 26 )); then
   ANDROID_LANGINFO_OBJ="$WORK/android-langinfo-compat.o"

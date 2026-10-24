@@ -32,12 +32,14 @@ type RuntimeOptions struct {
 	OutputRoot string
 	Jobs       int
 	CC         string
+	Edition    string // empty keeps the legacy local developer behavior; CI must set an explicit edition
 }
 type ModuleOptions struct {
 	OutputDir, ZipPath, RuntimeDir string
 	StartupTargets                 []string
 	Jobs                           int
 	Install, Checksum              bool
+	Edition                        string // require matching runtime edition when set
 }
 type SourceOptions struct {
 	Version, Output string
@@ -63,6 +65,8 @@ type runtimeManifest struct {
 	Entrypoint            string        `json:"entrypoint"`
 	BackendVersion        string        `json:"backendVersion"`
 	BridgeProtocolVersion int           `json:"bridgeProtocolVersion"`
+	Edition               string        `json:"edition,omitempty"`
+	AndroidAPI            int           `json:"androidApi,omitempty"`
 	Files                 []runtimeFile `json:"files"`
 }
 
@@ -318,6 +322,12 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 	if e != nil {
 		return "", e
 	}
+	if err := validateEditionOption(opts.Edition); err != nil {
+		return "", err
+	}
+	if opts.Edition != "" && os.Getenv("CHROOTCTL_ANDROID_API") != "" && os.Getenv("CHROOTCTL_ANDROID_API") != "26" {
+		return "", errors.New("release runtime requires Android API 26")
+	}
 	if opts.Jobs <= 0 {
 		opts.Jobs = 2
 	}
@@ -334,6 +344,11 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 	cc, e := resolveAndroidCC(opts.CC)
 	if e != nil {
 		return "", e
+	}
+	// Hosted release builds must not accept an arbitrary API 24 compiler
+	// passed through --cc or environment overrides.
+	if opts.Edition != "" && runtime.GOOS != "android" && filepath.Base(cc) != "aarch64-linux-android26-clang" {
+		return "", fmt.Errorf("hosted edition builds require NDK aarch64-linux-android26-clang, got %q", cc)
 	}
 	binary := filepath.Join(tmp, chmodule.RuntimeEntrypoint)
 	fmt.Fprintf(os.Stderr, "repoctl: Android compiler: %s\n", cc)
@@ -387,7 +402,19 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 	} else if strings.TrimSpace(os.Getenv("CHROOTCTL_REQUIRE_TMUX")) == "1" {
 		return "", errors.New("CHROOTCTL_REQUIRE_TMUX=1 but CHROOTCTL_TMUX_PATH is unset")
 	}
-	if rcloneSource, found, resolveErr := resolveRcloneRuntimeSource(root); resolveErr != nil {
+	// Release editions must not consult PATH or old out/ trees for rclone.
+	// The rclone edition accepts only the explicitly supplied candidate.
+	if opts.Edition == EditionStandard {
+		fmt.Fprintln(os.Stderr, "repoctl: Standard edition intentionally excludes the embedded rclone binary")
+	} else if opts.Edition == EditionRclone {
+		rcloneSource, err := explicitRcloneSource()
+		if err != nil {
+			return "", err
+		}
+		if err := appendRcloneToRuntime(tmp, rcloneSource, &runtimeFiles); err != nil {
+			return "", err
+		}
+	} else if rcloneSource, found, resolveErr := resolveRcloneRuntimeSource(root); resolveErr != nil {
 		return "", resolveErr
 	} else if found {
 		rcloneTarget := filepath.Join(tmp, "rclone")
@@ -405,11 +432,11 @@ func BuildRuntime(opts RuntimeOptions) (string, error) {
 		runtimeFiles = append(runtimeFiles, runtimeFile{Path: "rclone", Size: rcloneInfo.Size(), SHA256: rcloneSum, Executable: true})
 		fmt.Fprintf(os.Stderr, "repoctl: bundled Android rclone runtime: %s\n", rcloneSource)
 	} else if strings.TrimSpace(os.Getenv("CHROOTCTL_REQUIRE_RCLONE")) == "1" {
-		return "", errors.New("CHROOTCTL_REQUIRE_RCLONE=1 but no trusted Android/arm64 rclone runtime was found; set CHROOTCTL_RCLONE_PATH or run install-rclone-android-runtime.sh to build the latest bclone release")
+		return "", errors.New("CHROOTCTL_REQUIRE_RCLONE=1 but no trusted Android/arm64 rclone runtime was found; set CHROOTCTL_RCLONE_PATH or run install-rclone-android-runtime.sh to build the locked bclone source")
 	} else {
 		fmt.Fprintln(os.Stderr, "repoctl: rclone runtime not bundled (remote transport will remain unavailable until CHROOTCTL_RCLONE_PATH is provided at runtime)")
 	}
-	m := runtimeManifest{SchemaVersion: chmodule.RuntimeSchemaVersion, RuntimeKind: chmodule.RuntimeKind, Platform: "android", ABI: chmodule.RuntimeABI, Entrypoint: chmodule.RuntimeEntrypoint, BackendVersion: chmodule.BackendVersion, BridgeProtocolVersion: chmodule.BridgeProtocolVersion, Files: runtimeFiles}
+	m := runtimeManifest{SchemaVersion: chmodule.RuntimeSchemaVersion, RuntimeKind: chmodule.RuntimeKind, Platform: "android", ABI: chmodule.RuntimeABI, Entrypoint: chmodule.RuntimeEntrypoint, BackendVersion: chmodule.BackendVersion, BridgeProtocolVersion: chmodule.BridgeProtocolVersion, Edition: opts.Edition, AndroidAPI: editionAndroidAPI(opts.Edition), Files: runtimeFiles}
 	raw, _ := json.MarshalIndent(m, "", "  ")
 	raw = append(raw, '\n')
 	if e = os.WriteFile(filepath.Join(tmp, "runtime-manifest.json"), raw, 0644); e != nil {
@@ -433,7 +460,7 @@ func BuildModule(opts ModuleOptions) (string, error) {
 	zipPath := absFromRoot(root, opts.ZipPath, "chrootctl.zip")
 	runtimeDir := opts.RuntimeDir
 	if runtimeDir == "" {
-		runtimeDir, e = BuildRuntime(RuntimeOptions{Jobs: opts.Jobs})
+		runtimeDir, e = BuildRuntime(RuntimeOptions{Jobs: opts.Jobs, Edition: opts.Edition})
 		if e != nil {
 			return "", e
 		}
@@ -442,6 +469,11 @@ func BuildModule(opts ModuleOptions) (string, error) {
 	}
 	if e = chmodule.ValidateRuntime(runtimeDir); e != nil {
 		return "", e
+	}
+	if opts.Edition != "" {
+		if e = requireRuntimeEdition(runtimeDir, opts.Edition); e != nil {
+			return "", e
+		}
 	}
 	parent := filepath.Dir(out)
 	if e = os.MkdirAll(parent, 0755); e != nil {
