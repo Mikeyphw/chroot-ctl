@@ -178,11 +178,15 @@ func VerifyDetachedSignatureWithKeyring(data, signature string, keyring []byte, 
 }
 
 func parseKeyring(raw []byte) (openpgp.EntityList, error) {
+	// Whitespace trimming is valid only for ASCII armor. OpenPGP binary
+	// keyrings contain length-framed packets whose final signature octet can
+	// legitimately equal a whitespace byte. Trimming binary input corrupts
+	// those packets and makes randomly generated keyring tests flaky.
 	trimmed := bytes.TrimSpace(raw)
 	if bytes.HasPrefix(trimmed, []byte("-----BEGIN PGP PUBLIC KEY BLOCK-----")) {
 		return openpgp.ReadArmoredKeyRing(bytes.NewReader(trimmed))
 	}
-	return openpgp.ReadKeyRing(bytes.NewReader(trimmed))
+	return openpgp.ReadKeyRing(bytes.NewReader(raw))
 }
 
 func normalizeFingerprint(fingerprint string) string {

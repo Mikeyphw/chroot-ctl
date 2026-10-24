@@ -1,0 +1,4 @@
+# Cumulative Devtool improvement ledger delta — CC15
+
+- **DT-CC15-01 (OPEN, Devtool producer):** Hosted Go regression failures in `chrootctl/internal/integrity` were accurately classified by Devtool's test job, but there is no uploaded failure-only diagnostic machine receipt. Preserve tested source/run/node identity and safe, redacted errors independently of release artifacts; never publish failed release candidates. Evidence: Chrootctl run `40129586619`, `test-go` 1 failure, 9 skipped.
+- **DT-CC15-02 (CONSUMER FIXED, independent HOSTED GATE OPEN):** Binary OpenPGP public-keyring payload was improperly whitespace-trimmed before parsing. A deterministic, public-only binary key fixture and direct-parser regression are now included in Chrootctl; `go-crypto` unavailable offline, so test execution remains pending. Do not mark hosted qualification PASS until the next full run.

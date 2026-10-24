@@ -127,3 +127,29 @@ func TestReadKeyringFileRejectsOversizeInput(t *testing.T) {
 		t.Fatalf("oversize error=%v", err)
 	}
 }
+
+// This fixture is a public-only OpenPGP keyring whose final valid packet
+// byte is 0x0a. The binary parser must not strip it as whitespace.
+// It was generated with GnuPG and contains no private key material.
+func TestParseKeyringPreservesBinaryTrailingNewline(t *testing.T) {
+	keyring, err := os.ReadFile("testdata/public-keyring-trailing-lf.gpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keyring) == 0 || keyring[len(keyring)-1] != '\n' {
+		t.Fatalf("fixture must end with an OpenPGP packet byte 0x0a (length %d)", len(keyring))
+	}
+	// Validate the fixture with an unmodified binary reader independently.
+	want, err := openpgp.ReadKeyRing(bytes.NewReader(keyring))
+	if err != nil {
+		t.Fatalf("fixture cannot be parsed directly: %v", err)
+	}
+	got, err := parseKeyring(keyring)
+	if err != nil {
+		t.Fatalf("binary keyring suffix must not be trimmed: %v", err)
+	}
+	if len(want) != 1 || len(got) != 1 ||
+		!bytes.Equal(got[0].PrimaryKey.Fingerprint, want[0].PrimaryKey.Fingerprint) {
+		t.Fatalf("binary keyring identity changed: expected %d entity, got %d", len(want), len(got))
+	}
+}
