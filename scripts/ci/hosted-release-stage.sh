@@ -14,12 +14,13 @@ lock_get() { awk -F= -v k="$1" '$1==k {print substr($0,length(k)+2)}' "$2"; }
 failed() { echo "FAIL_HOSTED_RELEASE_${STAGE}: $*" >&2; exit 1; }
 ensure_ndk() {
   : "${ANDROID_HOME:?Android SDK required}"
-  export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$NDK_REV}"
-  [[ -r "$ANDROID_NDK_HOME/source.properties" ]] || failed 'NDK source.properties missing'
-  [[ $(sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$ANDROID_NDK_HOME/source.properties" | head -1) == "$NDK_REV" ]] || failed 'NDK revision differs'
-  export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
-  CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-clang"
-  [[ -x "$CC" ]] || failed 'API 26 Android ARM64 compiler missing'
+  # Never accept a runner- or Devtool-inherited NDK_HOME as build authority.
+  # Select and validate the side-by-side NDK installed in the pinned SDK slot.
+  local pinned_ndk
+  pinned_ndk=$(scripts/ci/require-hosted-ndk.sh "$ANDROID_HOME" "$NDK_REV" "$API") || failed 'locked API 26 Android NDK validation failed'
+  export ANDROID_NDK_HOME="$pinned_ndk" ANDROID_NDK_ROOT="$pinned_ndk"
+  CC="$pinned_ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-clang"
+  echo "PASS_HOSTED_NDK_LOCK revision=$NDK_REV api=$API source=$pinned_ndk/source.properties" >&2
   export CHROOTCTL_ANDROID_CC="$CC" CHROOTCTL_RCLONE_CC="$CC"
 }
 case "$STAGE" in
@@ -66,6 +67,7 @@ case "$STAGE" in
     scripts/devtool/root-module-stage.sh "$map"
     ;;
   test-verifier)
+    bash scripts/ci/test-require-hosted-ndk.sh
     GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-dual-release.go scripts/ci/verify-dual-release_test.go
     GOTOOLCHAIN=local go test -count=1 scripts/ci/verify-devtool-receipt.go scripts/ci/verify-devtool-receipt_test.go
     GOTOOLCHAIN=local go test -count=1 scripts/ci/reconcile-qualification.go scripts/ci/reconcile-qualification_test.go
