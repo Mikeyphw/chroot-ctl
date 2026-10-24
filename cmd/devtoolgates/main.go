@@ -81,23 +81,27 @@ const (
 )
 
 func actionsChecks(root string) ([]check, error) {
-	files := []string{".github/workflows/ci.yml", ".github/workflows/devtool-chrootctl-build.yml"}
-	contents := make(map[string]string, len(files))
-	for _, path := range files {
-		s, err := read(root, path)
+	paths := []string{".github/workflows/ci.yml", ".github/workflows/devtool-chrootctl-build.yml", ".devtool.toml", "scripts/ci/hosted-release-stage.sh", "config/chrootctl/devtool-hosted-source.lock"}
+	contents := make(map[string]string, len(paths))
+	for _, p := range paths {
+		content, err := read(root, p)
 		if err != nil {
 			return nil, err
 		}
-		contents[path] = s
+		contents[p] = content
 	}
-	ci := contents[files[0]]
-	hosted := contents[files[1]]
+	ci := contents[paths[0]]
+	hosted := contents[paths[1]]
+	dag := contents[paths[2]]
+	stage := contents[paths[3]]
+	lock := contents[paths[4]]
 	return []check{
-		{"WORKFLOW_FILES_NONEMPTY_NO_SYMLINK", len(contents) == len(files)},
-		{"CI_HOSTED_ANDROID_V4", containsAll(ci, "android-actions/setup-android@v4", "packages: 'platform-tools ndk;29.0.14206865'", "log-accepted-android-sdk-licenses: 'false'") && !strings.Contains(ci, "android-actions/setup-android@v3")},
-		{"CI_NDK_VERIFICATION", containsAll(ci, "ndk/29.0.14206865/source.properties", "toolchains/llvm/prebuilt/linux-x86_64/bin/clang")},
-		{"HOSTED_MODULE_V4_SOURCE_BOUND", containsAll(hosted, "android-actions/setup-android@v4", "git rev-parse HEAD", "go run ./cmd/repoctl validate", "chrootctl-devtool-build")},
-		{"CI_GO_NATIVE_R1_CONTRACT", containsAll(ci, "go run ./cmd/devtoolgates actions", "go run ./cmd/devtoolgates r1")},
+		{"HOSTED_DEVTOOL_SOURCE_PIN", containsAll(hosted, "Mikeyphw/devtool", "CHROOTCTL_EXPECTED_DEVTOOL_SHA", "445044ac4941c1542754cc19d74ebd785b5d8595") && containsAll(lock, "repository=Mikeyphw/devtool", "commit=445044ac4941c1542754cc19d74ebd785b5d8595")},
+		{"HOSTED_NDK_API26", containsAll(hosted, "android-actions/setup-android@v4", "ndk;29.0.14206865", "CHROOTCTL_TMUX_ANDROID_API: '26'")},
+		{"HOSTED_DEVTOOL_DAG", containsAll(hosted, "-m devtool", "plan ci-release", "invoke ci-release", "--target chrootctl_hosted_release", "--machine-file") && containsAll(dag, "[targets.chrootctl_hosted_release]", "[targets.chrootctl_hosted_release.workflows]", "ci-release =")},
+		{"NO_DUPLICATE_NATIVE_BUILD", !containsAll(ci, "repoctl build-runtime") && !strings.Contains(ci, "build-module --") && !strings.Contains(ci, "setup-android@")},
+		{"HOSTED_TWO_API26_EDITIONS", containsAll(stage, "build-editions", "verify-editions", "receipt", "CHROOTCTL_RCLONE_PATH", "CHROOTCTL_TMUX_PATH") && containsAll(hosted, "actions/upload-artifact@v4", "actions/attest@v4")},
+		{"CI_SKYBIND_SOURCE_GATE", containsAll(ci, "go run ./cmd/devtoolgates actions", "go run ./cmd/devtoolgates r1")},
 	}, nil
 }
 

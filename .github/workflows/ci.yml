@@ -1,36 +1,25 @@
-
-name: ci
-
+name: chrootctl source-contract checks
 on:
   push:
   pull_request:
-
+permissions:
+  contents: read
 jobs:
-  go-native:
-    runs-on: ubuntu-latest
+  source-contracts:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
-      - uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools ndk;29.0.14206865'
-          log-accepted-android-sdk-licenses: 'false'
-      - name: Verify native NDK for CGO/SQLite runtime
+          go-version: '1.27.2'
+          cache: true
+      - name: Static hosted pipeline and Skybind R1 contracts
+        shell: bash
         run: |
           set -euo pipefail
-          test -f "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
-          test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
-      - name: Native Devtool and R1 source contracts (not device qualification)
-        run: |
           go run ./cmd/devtoolgates actions
           go run ./cmd/devtoolgates r1
-      - name: Go-only repository and contract validation
-        run: go run ./cmd/repoctl validate
-      - name: Build sealed Android Go runtime
-        run: go run ./cmd/repoctl build-runtime --output-root /tmp/chrootctl-runtime --jobs 2
-      - name: Build Go-native module
-        run: go run ./cmd/repoctl build-module --runtime-dir /tmp/chrootctl-runtime/arm64-v8a --output-dir /tmp/chrootctl-module --zip /tmp/chrootctl.zip --checksum
-      - name: Build source artifact with repoctl
-        run: go run ./cmd/repoctl build-source --version ci --output /tmp/chrootctl-source-ci.tar.gz --checksum
+      # Native Android builds, WebUI test suite and full qualification run only
+      # through the canonical Devtool hosted-release DAG, not this lane.

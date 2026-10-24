@@ -1,0 +1,4 @@
+schema=chrootctl-devtool-hosted-source-v1
+repository=Mikeyphw/devtool
+commit=445044ac4941c1542754cc19d74ebd785b5d8595
+python_minimum=3.11

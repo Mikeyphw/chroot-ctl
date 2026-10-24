@@ -1,57 +1,97 @@
-name: chroot-ctl Devtool GitHub build
+name: chrootctl dual-edition Devtool release candidates
 on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 jobs:
-  build-and-evidence:
+  dual-release:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
+    env:
+      CHROOTCTL_EXPECTED_DEVTOOL_SHA: 445044ac4941c1542754cc19d74ebd785b5d8595
+      CHROOTCTL_TMUX_HOSTED_NDK: '1'
+      CHROOTCTL_TMUX_ANDROID_API: '26'
+      CHROOTCTL_RCLONE_CACHE_DIR: ${{ github.workspace }}/.devtool/cache/rclone-runtime
+      DEVTOOL_MAX_WORKERS: '2'
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 1
+      - name: Fetch reviewed Devtool source
+        uses: actions/checkout@v4
+        with:
+          repository: Mikeyphw/devtool
+          ref: 445044ac4941c1542754cc19d74ebd785b5d8595
+          path: .ci-devtool
+          persist-credentials: false
+          # For private Devtool repositories, set DEVTOOL_READ_TOKEN with contents:read.
+          token: ${{ secrets.DEVTOOL_READ_TOKEN || github.token }}
+      - name: Move Devtool outside Chrootctl source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv "$GITHUB_WORKSPACE/.ci-devtool" "$RUNNER_TEMP/chrootctl-reviewed-devtool"
+          echo "CHROOTCTL_DEVTOOL_ROOT=$RUNNER_TEMP/chrootctl-reviewed-devtool" >> "$GITHUB_ENV"
+          echo "CHROOTCTL_EXPECTED_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.27.2'
           cache: true
-      # Match Skybind's passing hosted Android setup; keep the required NDK.
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools ndk;29.0.14206865'
           log-accepted-android-sdk-licenses: 'false'
-      - name: Verify installed Android NDK required by CGO/SQLite
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
-          test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
-      - name: Validate repository through authoritative repoctl
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          go run ./cmd/repoctl validate
-      - name: Build Android runtime and Magisk/KernelSU module
-        shell: bash
-        run: |
-          set -euo pipefail
-          go run ./cmd/repoctl build-runtime --output-root "$RUNNER_TEMP/chrootctl-runtime" --jobs 2
-          go run ./cmd/repoctl build-module --runtime-dir "$RUNNER_TEMP/chrootctl-runtime/arm64-v8a" --output-dir "$RUNNER_TEMP/chrootctl-module" --zip "$RUNNER_TEMP/chrootctl.zip" --checksum
-      - name: Produce immutable source and artifact receipts
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/devtool-evidence"
-          go run ./cmd/repoctl build-source --version ci --output "$RUNNER_TEMP/devtool-evidence/chrootctl-source-ci.tar.gz" --checksum
-          cp "$RUNNER_TEMP/chrootctl.zip" "$RUNNER_TEMP/devtool-evidence/"
-          cp "$RUNNER_TEMP/chrootctl.zip.sha256" "$RUNNER_TEMP/devtool-evidence/"
-          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/devtool-evidence/source-commit.txt"
-          (cd "$RUNNER_TEMP/devtool-evidence" && sha256sum chrootctl.zip chrootctl-source-ci.tar.gz > SHA256SUMS)
-          (cd "$RUNNER_TEMP/devtool-evidence" && sha256sum --check SHA256SUMS)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/cache@v4
         with:
-          name: chrootctl-devtool-build
-          path: ${{ runner.temp }}/devtool-evidence/
+          path: |
+            .devtool/cache/tmux-sources
+            .devtool/cache/rclone-runtime
+          key: chrootctl-api26-${{ runner.os }}-${{ hashFiles('scripts/tmux/**', 'config/chrootctl/bclone-android-source.lock', 'scripts/install-rclone-android-runtime.sh') }}
+      - name: Bootstrap exact Devtool source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/devtool-venv"
+          "$RUNNER_TEMP/devtool-venv/bin/pip" install "$CHROOTCTL_DEVTOOL_ROOT"
+          test "$(git -C "$CHROOTCTL_DEVTOOL_ROOT" rev-parse HEAD)" = "$CHROOTCTL_EXPECTED_DEVTOOL_SHA"
+      - name: Preflight Devtool plan (no build)
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/devtool-venv/bin/python" -m devtool --repo "$GITHUB_WORKSPACE" plan ci-release --target chrootctl_hosted_release --json > "$RUNNER_TEMP/chrootctl-plan.json"
+          test -s "$RUNNER_TEMP/chrootctl-plan.json"
+      - name: Execute single source-bound Devtool release DAG
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/devtool-venv/bin/python" -m devtool --repo "$GITHUB_WORKSPACE" \
+            --machine-file "$RUNNER_TEMP/chrootctl-devtool-run.json" \
+            invoke ci-release --target chrootctl_hosted_release --workflow-max-workers 2
+          test -s out/hosted-evidence/release-evidence.json
+          cp "$RUNNER_TEMP/chrootctl-plan.json" out/hosted-evidence/devtool-plan.json
+          if test -s "$RUNNER_TEMP/chrootctl-devtool-run.json"; then
+            cp "$RUNNER_TEMP/chrootctl-devtool-run.json" out/hosted-evidence/devtool-run.json
+          else
+            echo 'Devtool machine receipt missing' >&2
+            exit 1
+          fi
+          (cd out/hosted-evidence && sha256sum --check SHA256SUMS)
+      - name: Upload both validated release candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrootctl-api26-standard-and-rclone-${{ github.sha }}
+          path: out/hosted-evidence/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+      - name: Attest release candidate ZIPs (eligible repositories only)
+        if: ${{ github.event_name != 'pull_request' && vars.CHROOTCTL_ATTEST_RELEASE_CANDIDATES == 'true' && !failure() }}
+        uses: actions/attest@v4
+        with:
+          subject-path: out/hosted-evidence/chrootctl-*-arm64.zip

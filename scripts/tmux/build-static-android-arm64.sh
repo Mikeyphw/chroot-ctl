@@ -64,7 +64,16 @@ actual_ndk=$(sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$NDK_ROOT/sou
 [[ $actual_ndk == "$NDK_REVISION" ]] || { echo "tmux build requires Android NDK $NDK_REVISION, found ${actual_ndk:-unknown}" >&2; exit 1; }
 
 TOOLCHAIN=$(CDPATH= cd -- "$(dirname -- "$NDK_CC")/.." && pwd)
-if [[ -n ${CHROOTCTL_TMUX_CC:-} ]]; then
+if [[ ${CHROOTCTL_TMUX_HOSTED_NDK:-0} == 1 ]]; then
+  # Ubuntu Actions: NDK owns the target compiler, sysroot, builtins and unwinder.
+  # Never look for Termux libunwind or switch to a host-system compiler.
+  [[ -z ${CHROOTCTL_TMUX_CC:-} || ${CHROOTCTL_TMUX_CC:-} == "$NDK_CC" ]] || {
+    echo 'hosted tmux compiler override must be the locked API 26 NDK compiler' >&2; exit 1;
+  }
+  CC="$NDK_CC"
+  TERMUX_LIB=''
+  RESOURCE_DIR=''
+elif [[ -n ${CHROOTCTL_TMUX_CC:-} ]]; then
   CC="$CHROOTCTL_TMUX_CC"
 else
   HOST_CLANG=${CHROOTCTL_TMUX_HOST_CLANG:-$(command -v clang || true)}
@@ -82,16 +91,23 @@ else
   [[ -f $UNWIND ]] || { echo "Termux static libunwind missing: $UNWIND" >&2; exit 1; }
   CC="$HOST_CLANG --target=aarch64-linux-android$ANDROID_API --sysroot=$TOOLCHAIN/sysroot -resource-dir=$RESOURCE_DIR"
 fi
-AR=${CHROOTCTL_TMUX_AR:-$(command -v llvm-ar || true)}
-RANLIB=${CHROOTCTL_TMUX_RANLIB:-$(command -v llvm-ranlib || true)}
-STRIP=${CHROOTCTL_TMUX_STRIP:-$(command -v llvm-strip || true)}
+if [[ ${CHROOTCTL_TMUX_HOSTED_NDK:-0} == 1 ]]; then
+  AR=${CHROOTCTL_TMUX_AR:-$TOOLCHAIN/bin/llvm-ar}
+  RANLIB=${CHROOTCTL_TMUX_RANLIB:-$TOOLCHAIN/bin/llvm-ranlib}
+  STRIP=${CHROOTCTL_TMUX_STRIP:-$TOOLCHAIN/bin/llvm-strip}
+else
+  AR=${CHROOTCTL_TMUX_AR:-$(command -v llvm-ar || true)}
+  RANLIB=${CHROOTCTL_TMUX_RANLIB:-$(command -v llvm-ranlib || true)}
+  STRIP=${CHROOTCTL_TMUX_STRIP:-$(command -v llvm-strip || true)}
+fi
 for x in "$AR" "$RANLIB" "$STRIP"; do [[ -n $x && -x $x ]] || { echo "missing native Termux LLVM tool: ${x:-unset}" >&2; exit 127; }; done
 
 BUILD_FINGERPRINT_FILE="$WORK/.chrootctl-tmux-build-fingerprint"
 build_fingerprint() {
   {
     printf '%s\n' \
-      "schema=2" \
+      "schema=3"
+      "hosted_ndk=${CHROOTCTL_TMUX_HOSTED_NDK:-0}" \
       "tmux=$TMUX_VERSION:$TMUX_SHA256" \
       "libevent=$LIBEVENT_VERSION:$LIBEVENT_SHA256" \
       "ncurses=$NCURSES_VERSION:$NCURSES_SHA256" \
@@ -148,7 +164,11 @@ tar -xzf "$EVENT_TAR" -C "$WORK/src"; tar -xzf "$CURSES_TAR" -C "$WORK/src"; tar
 export CC AR RANLIB STRIP
 export CFLAGS="-Os -fPIC -ffile-prefix-map=$WORK=. -fdebug-prefix-map=$WORK=."
 export CPPFLAGS="-I$PREFIX/include -I$PREFIX/include/ncursesw"
-export LDFLAGS="-L$PREFIX/lib -L$TERMUX_LIB -L$RESOURCE_DIR/lib/linux -static -Wl,--build-id=none"
+if [[ ${CHROOTCTL_TMUX_HOSTED_NDK:-0} == 1 ]]; then
+  export LDFLAGS="-L$PREFIX/lib -static -Wl,--build-id=none -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+else
+  export LDFLAGS="-L$PREFIX/lib -L$TERMUX_LIB -L$RESOURCE_DIR/lib/linux -static -Wl,--build-id=none"
+fi
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 
 pushd "$WORK/src/libevent-$LIBEVENT_VERSION" >/dev/null

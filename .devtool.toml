@@ -581,3 +581,134 @@ target = "chrootctl_go"
 description = "ci-full through canonical Devtool and EXO"
 workflow = "ci-full"
 target = "chrootctl_go"
+
+# ---------------------------------------------------------------------------
+# CC-05–CC-07: authoritative hosted GitHub Actions release, Linux x86_64.
+# This never installs/changes an Android device or runs native-Termux jobs.
+# ---------------------------------------------------------------------------
+[targets.chrootctl_hosted_release]
+runner = "command"
+platform = "cli"
+execution_environment = "host"
+inputs = [".devtool.toml", "go.mod", "go.sum", "cmd/**", "internal/**", "scripts/**", "config/chrootctl/**", "docs/release/**"]
+outputs = ["out/dual-release/**", "out/tmux/**", "out/rclone/**", "out/hosted-evidence/**"]
+
+[targets.chrootctl_hosted_release.jobs.preflight]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "preflight"]
+
+[targets.chrootctl_hosted_release.jobs.restore-go]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "restore-go"]
+
+[targets.chrootctl_hosted_release.jobs.restore-tmux]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "restore-tmux"]
+
+[targets.chrootctl_hosted_release.jobs.build-tmux]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "build-tmux"]
+outputs = ["out/tmux/**"]
+
+[targets.chrootctl_hosted_release.jobs.verify-tmux]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "verify-tmux"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.build-rclone]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "build-rclone"]
+outputs = ["out/rclone/**"]
+
+[targets.chrootctl_hosted_release.jobs.build-repoctl]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "build-repoctl"]
+outputs = ["out/repoctl-devtool"]
+
+[targets.chrootctl_hosted_release.jobs.test-webui]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-webui"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.test-go]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-go"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.test-tmux]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-tmux"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.lint-native]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "lint-native"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.lint-go]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "lint-go"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.test-verifier]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-verifier"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.test-source]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "test-source"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.build-editions]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "build-editions"]
+outputs = ["out/dual-release/**"]
+
+[targets.chrootctl_hosted_release.jobs.verify-editions]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "verify-editions"]
+metadata = { read_only = true }
+
+[targets.chrootctl_hosted_release.jobs.receipt]
+runner = "command"
+execution_environment = "host"
+command = ["bash", "scripts/ci/hosted-release-stage.sh", "receipt"]
+outputs = ["out/hosted-evidence/**"]
+
+[targets.chrootctl_hosted_release.workflows]
+ci-release = [
+  { id = "preflight", ref = "job:preflight", depends_on = [] },
+  { id = "restore-go", ref = "job:restore-go", depends_on = ["preflight"] },
+  { id = "restore-tmux", ref = "job:restore-tmux", depends_on = ["preflight"] },
+  { id = "build-tmux", ref = "job:build-tmux", depends_on = ["restore-tmux"] },
+  { id = "verify-tmux", ref = "job:verify-tmux", depends_on = ["build-tmux"] },
+  { id = "build-rclone", ref = "job:build-rclone", depends_on = ["preflight"] },
+  { id = "build-repoctl", ref = "job:build-repoctl", depends_on = ["restore-go"] },
+  { id = "test-webui", ref = "job:test-webui", depends_on = ["preflight"] },
+  { id = "test-go", ref = "job:test-go", depends_on = ["restore-go"] },
+  { id = "test-tmux", ref = "job:test-tmux", depends_on = ["restore-go"] },
+  { id = "lint-native", ref = "job:lint-native", depends_on = ["preflight"] },
+  { id = "lint-go", ref = "job:lint-go", depends_on = ["restore-go"] },
+  { id = "test-source", ref = "job:test-source", depends_on = ["build-repoctl"] },
+  { id = "test-verifier", ref = "job:test-verifier", depends_on = ["restore-go"] },
+  { id = "build-editions", ref = "job:build-editions", depends_on = ["verify-tmux", "build-rclone", "build-repoctl"] },
+  { id = "verify-editions", ref = "job:verify-editions", depends_on = ["build-editions"] },
+  { id = "receipt", ref = "job:receipt", depends_on = ["verify-editions", "test-source", "test-verifier", "test-go", "test-webui", "test-tmux", "lint-native", "lint-go"] },
+]
