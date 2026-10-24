@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	chmodule "chrootctl/internal/module"
@@ -214,6 +216,73 @@ func AssembleEditionRuntime(baseDir, destRoot, edition, rclonePath string) (stri
 	return dest, nil
 }
 
+func cleanGitIdentity(root string) (string, string, error) {
+	if !filepath.IsAbs(root) {
+		return "", "", errors.New("release Git repository must be absolute")
+	}
+	read := func(args ...string) (string, error) {
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		output, err := command.Output()
+		if err != nil {
+			return "", fmt.Errorf("release Git identity %v: %w", args, err)
+		}
+		return strings.TrimSpace(string(output)), nil
+	}
+	status, err := read("status", "--porcelain", "--untracked-files=normal")
+	if err != nil {
+		return "", "", err
+	}
+	if status != "" {
+		return "", "", errors.New("release Git repository is dirty")
+	}
+	commit, err := read("rev-parse", "HEAD")
+	if err != nil {
+		return "", "", err
+	}
+	tree, err := read("rev-parse", "HEAD^{tree}")
+	if err != nil {
+		return "", "", err
+	}
+	return commit, tree, nil
+}
+
+func hostedReleaseIdentity(root string) (*chmodule.ReleaseIdentity, error) {
+	commit, tree, err := cleanGitIdentity(root)
+	if err != nil {
+		return nil, err
+	}
+	expectedSource := strings.TrimSpace(os.Getenv("CHROOTCTL_EXPECTED_SOURCE_SHA"))
+	if len(expectedSource) != 40 || expectedSource != commit {
+		return nil, errors.New("hosted release requires CHROOTCTL_EXPECTED_SOURCE_SHA matching clean Chrootctl HEAD")
+	}
+	devtoolRoot := strings.TrimSpace(os.Getenv("CHROOTCTL_DEVTOOL_ROOT"))
+	if devtoolRoot == "" {
+		return nil, errors.New("hosted dual-edition release requires CHROOTCTL_DEVTOOL_ROOT")
+	}
+	devtoolCommit, _, err := cleanGitIdentity(devtoolRoot)
+	if err != nil {
+		return nil, fmt.Errorf("Devtool authority: %w", err)
+	}
+	expectedDevtool := strings.TrimSpace(os.Getenv("CHROOTCTL_EXPECTED_DEVTOOL_SHA"))
+	if len(expectedDevtool) != 40 || expectedDevtool != devtoolCommit {
+		return nil, errors.New("hosted release requires CHROOTCTL_EXPECTED_DEVTOOL_SHA matching clean Devtool HEAD")
+	}
+	lockPath := filepath.Join(root, "config/chrootctl/bclone-android-source.lock")
+	lockSHA, err := shaFile(lockPath)
+	if err != nil {
+		return nil, err
+	}
+	lockContent, err := os.ReadFile(lockPath)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(string(lockContent), "go_version="+runtime.Version()+"\n") || !strings.Contains(string(lockContent), "android_api=26\n") {
+		return nil, errors.New("release compiler version/API does not match reviewed source lock")
+	}
+	result := &chmodule.ReleaseIdentity{SourceCommit: commit, SourceTree: tree, DevtoolCommit: devtoolCommit, BcloneLockSHA256: lockSHA, GoCompilerVersion: runtime.Version()}
+	return result, nil
+}
+
 // BuildEditions is the release-only entrypoint. A single base native build is
 // shared across two isolated module package trees, with no fallback to PATH.
 func BuildEditions(opts DualEditionOptions) error {
@@ -224,6 +293,10 @@ func BuildEditions(opts DualEditionOptions) error {
 		return err
 	}
 	root, err := repoRoot()
+	if err != nil {
+		return err
+	}
+	identity, err := hostedReleaseIdentity(root)
 	if err != nil {
 		return err
 	}
@@ -248,7 +321,7 @@ func BuildEditions(opts DualEditionOptions) error {
 			return fmt.Errorf("assemble %s: %w", edition, err)
 		}
 		path := filepath.Join(staging, "chrootctl-"+edition+"-arm64.zip")
-		if _, err := BuildModule(ModuleOptions{OutputDir: filepath.Join(staging, "module", edition), ZipPath: path, RuntimeDir: runtime, Edition: edition, Checksum: true}); err != nil {
+		if _, err := BuildModule(ModuleOptions{OutputDir: filepath.Join(staging, "module", edition), ZipPath: path, RuntimeDir: runtime, Edition: edition, Checksum: true, ReleaseIdentity: identity}); err != nil {
 			return fmt.Errorf("build %s: %w", edition, err)
 		}
 	}

@@ -35,6 +35,7 @@ const (
 	ModulePackageSchemaVersion = 1
 	ModulePackageManifestPath  = "config/chrootctl/module-package-manifest.json"
 	RuntimeExecutablesListPath = "config/chrootctl/runtime-executables.list"
+	RuntimeChecksumListPath    = "config/chrootctl/runtime-sha256.list"
 	BuildVariantPath           = "config/chrootctl/build-variant.json"
 	ValidationEvidencePath     = "config/chrootctl/validation-results.json"
 )
@@ -57,7 +58,7 @@ func installedModuleFiles() []string {
 	required := []string{
 		"module.prop", "post-fs-data.sh", "service.sh", "action.sh",
 		"bin/chrootctl-helper", "bin/chrootctl-log-helper", "system/bin/chrootctl", "system/bin/chrootctl-helper",
-		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", RuntimeExecutablesListPath,
+		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", RuntimeExecutablesListPath, RuntimeChecksumListPath,
 		"runtime/" + RuntimeABI + "/runtime-manifest.json",
 		"runtime/" + RuntimeABI + "/" + RuntimeEntrypoint,
 	}
@@ -71,7 +72,7 @@ func requiredModuleFiles() []string {
 	required := []string{
 		"module.prop", "customize.sh", "post-fs-data.sh", "service.sh", "action.sh", "uninstall.sh",
 		"bin/chrootctl-helper", "bin/chrootctl-log-helper", "system/bin/chrootctl", "system/bin/chrootctl-helper",
-		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", RuntimeExecutablesListPath,
+		"config/chrootctl/compatibility-manifest.json", "config/chrootctl/boot_targets.json", RuntimeExecutablesListPath, RuntimeChecksumListPath,
 		"runtime/" + RuntimeABI + "/runtime-manifest.json",
 		"runtime/" + RuntimeABI + "/" + RuntimeEntrypoint,
 	}
@@ -82,10 +83,46 @@ func requiredModuleFiles() []string {
 }
 
 type Options struct {
+	ReleaseIdentity  *ReleaseIdentity
 	OutputDir        string
 	ZipPath          string
 	NativeRuntimeDir string
 	StartupTargets   []string
+}
+
+// ReleaseIdentity binds a hosted two-edition build to Chrootctl, Devtool and
+// the reviewed source/toolchain lock. The module ZIP seals these fields, but
+// independently verifying their claimed Git origins remains a CI authority.
+type ReleaseIdentity struct {
+	SourceCommit      string `json:"sourceCommit"`
+	SourceTree        string `json:"sourceTree"`
+	DevtoolCommit     string `json:"devtoolCommit"`
+	BcloneLockSHA256  string `json:"bcloneLockSha256"`
+	GoCompilerVersion string `json:"goCompilerVersion"`
+}
+
+func validateReleaseIdentity(p *ReleaseIdentity) error {
+	if p == nil {
+		return errors.New("release source identity missing")
+	}
+	for _, value := range []string{p.SourceCommit, p.SourceTree, p.DevtoolCommit} {
+		if len(value) != 40 {
+			return errors.New("release identity has invalid Git SHA")
+		}
+		if _, err := hex.DecodeString(value); err != nil {
+			return err
+		}
+	}
+	if len(p.BcloneLockSHA256) != 64 {
+		return errors.New("release identity has invalid source lock SHA-256")
+	}
+	if _, err := hex.DecodeString(p.BcloneLockSHA256); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(p.GoCompilerVersion, "go1.") || len(p.GoCompilerVersion) > 64 {
+		return errors.New("release identity has invalid Go compiler version")
+	}
+	return nil
 }
 
 type runtimeFile struct {
@@ -164,6 +201,56 @@ func validateRuntimeExecutableList(moduleRoot string) error {
 		if st.Mode().Perm() != 0o755 {
 			return fmt.Errorf("runtime executable mode must be 0755: %s mode=%04o", rel, st.Mode().Perm())
 		}
+	}
+	return nil
+}
+
+// runtimeChecksumListFromManifest is the installer-friendly byte seal for every
+// runtime file plus the manifest itself. The root-manager installer has no Go
+// JSON parser, so it verifies this exact prechecked inventory with sha256sum.
+// The list is itself covered by the package manifest and ZIP validation.
+func runtimeChecksumListFromManifest(raw []byte) (string, error) {
+	var manifest runtimeManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return "", fmt.Errorf("decode runtime checksum manifest: %w", err)
+	}
+	entries := []runtimeFile{{Path: "runtime-manifest.json", SHA256: shaBytes(raw)}}
+	entries = append(entries, manifest.Files...)
+	seen := make(map[string]bool)
+	for _, file := range entries {
+		if file.Path == "" || filepath.Base(file.Path) != file.Path ||
+			strings.ContainsAny(file.Path, " \t\r\n\\") ||
+			file.Path == "." || file.Path == ".." || seen[file.Path] || len(file.SHA256) != 64 {
+			return "", fmt.Errorf("unsafe or duplicate runtime checksum entry: %q", file.Path)
+		}
+		if _, err := hex.DecodeString(file.SHA256); err != nil {
+			return "", fmt.Errorf("invalid runtime checksum for %s: %w", file.Path, err)
+		}
+		seen[file.Path] = true
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	var b strings.Builder
+	for _, file := range entries {
+		fmt.Fprintf(&b, "%s  %s\n", file.SHA256, file.Path)
+	}
+	return b.String(), nil
+}
+
+func validateRuntimeChecksumList(root string) error {
+	manifest, err := os.ReadFile(filepath.Join(root, "runtime", RuntimeABI, "runtime-manifest.json"))
+	if err != nil {
+		return err
+	}
+	want, err := runtimeChecksumListFromManifest(manifest)
+	if err != nil {
+		return err
+	}
+	got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(RuntimeChecksumListPath)))
+	if err != nil {
+		return err
+	}
+	if string(got) != want {
+		return errors.New("runtime SHA-256 installer inventory mismatch")
 	}
 	return nil
 }
@@ -690,6 +777,13 @@ func ValidateZipArchive(path string) error {
 	if string(listEntry.raw) != wantRuntimeExecs {
 		return fmt.Errorf("module ZIP runtime executable installer inventory mismatch: got %q want %q", string(listEntry.raw), wantRuntimeExecs)
 	}
+	wantChecksums, err := runtimeChecksumListFromManifest(runtimeManifestEntry.raw)
+	if err != nil {
+		return err
+	}
+	if string(entries[RuntimeChecksumListPath].raw) != wantChecksums {
+		return errors.New("module ZIP runtime SHA-256 installer inventory mismatch")
+	}
 	if err := validateVariantDescriptor(runtimeManifestEntry.raw, entries[BuildVariantPath].raw); err != nil {
 		return err
 	}
@@ -768,6 +862,65 @@ restore_runtime_exec_modes() {
   runtime_execs_ready "$runtime_root" "$exec_list"
 }
 
+# Verify the complete sealed runtime inventory before any active-module switch.
+# The SHA list is generated from runtime-manifest.json and validated against the
+# package seal offline; the on-device check prevents extraction/copy corruption.
+runtime_integrity_ready() {
+  candidate="$1"
+  root="$candidate/runtime/arm64-v8a"
+  checks="$candidate/config/chrootctl/runtime-sha256.list"
+  exes="$candidate/config/chrootctl/runtime-executables.list"
+  variant="$candidate/config/chrootctl/build-variant.json"
+  [ -d "$root" ] && [ ! -L "$root" ] && [ -f "$checks" ] && [ ! -L "$checks" ] || return 1
+  [ -f "$root/runtime-manifest.json" ] && [ ! -L "$root/runtime-manifest.json" ] || return 1
+  runtime_execs_ready "$root" "$exes" || return 1
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$root" && sha256sum -c "$checks" >/dev/null 2>&1) || return 1
+  elif command -v toybox >/dev/null 2>&1; then
+    (cd "$root" && toybox sha256sum -c "$checks" >/dev/null 2>&1) || return 1
+  else
+    return 1
+  fi
+  # Reject extra files/symlinks and paths not included in the checksum list.
+  for entry in "$root"/*; do
+    [ -e "$entry" ] || continue
+    [ -f "$entry" ] && [ ! -L "$entry" ] || return 1
+    rel="${entry##*/}"
+    listed=0
+    while read -r digest listed_name; do
+      [ "$listed_name" != "$rel" ] || listed=1
+    done < "$checks"
+    [ "$listed" -eq 1 ] || return 1
+  done
+  if [ -f "$variant" ]; then
+    [ ! -L "$variant" ] || return 1
+    edition="$(sed -n 's/^[[:space:]]*"edition": *"\([a-z]*\)".*/\1/p' "$variant")"
+    api="$(sed -n 's/^[[:space:]]*"androidApi": *\([0-9]*\).*/\1/p' "$variant")"
+    id="$(sed -n 's/^[[:space:]]*"moduleId": *"\([a-z]*\)".*/\1/p' "$variant")"
+    expected="$(sed -n 's/^[[:space:]]*"runtimeManifestSha256": *"\([0-9a-f]*\)".*/\1/p' "$variant")"
+    [ "$api" = 26 ] && [ "$id" = chrootctl ] && [ "${#expected}" -eq 64 ] || return 1
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual="$(sha256sum "$root/runtime-manifest.json" 2>/dev/null | cut -d ' ' -f 1)"
+    else
+      actual="$(toybox sha256sum "$root/runtime-manifest.json" 2>/dev/null | cut -d ' ' -f 1)"
+    fi
+    [ "$actual" = "$expected" ] || return 1
+    case "$edition" in
+      standard)
+        [ ! -e "$root/rclone" ] && ! grep -qx rclone "$exes" || return 1
+        grep -Eq '"edition"[[:space:]]*:[[:space:]]*"standard"' "$root/runtime-manifest.json" || return 1 ;;
+      rclone)
+        [ -x "$root/rclone" ] && grep -qx rclone "$exes" || return 1
+        grep -Eq '"edition"[[:space:]]*:[[:space:]]*"rclone"' "$root/runtime-manifest.json" || return 1 ;;
+      *) return 1 ;;
+    esac
+  else
+    # Only legacy builds may omit the edition descriptor.
+    ! grep -q '"edition"' "$root/runtime-manifest.json" || return 1
+  fi
+  return 0
+}
+
 # Magisk/KernelSU extraction may leave module payload files as 0644 even when
 # the ZIP records executable modes. Enforce executable bits during install so
 # /system/bin/chrootctl can exec the bundled Go runtime after promotion.
@@ -806,7 +959,7 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
     [ ! -f "$MODPATH/config/chrootctl/validation-results.json" ] || chmod 0600 "$MODPATH/config/chrootctl/validation-results.json" 2>/dev/null || true
   fi
 
-  if ! restore_runtime_exec_modes "$RUNTIME_ROOT" "$RUNTIME_EXEC_LIST"; then
+  if ! restore_runtime_exec_modes "$RUNTIME_ROOT" "$RUNTIME_EXEC_LIST" || ! runtime_integrity_ready "$MODPATH"; then
     ui_print "chrootctl installer refused runtime with missing/non-executable sealed binaries." 2>/dev/null || echo "chrootctl installer refused runtime with missing/non-executable sealed binaries." >&2
     return 1 2>/dev/null || exit 1
   fi
@@ -826,7 +979,37 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
   # only module-owned payload paths, then swap directories with rename(2).
   # This preserves manager marker files and gives us a rollback point.
   ACTIVE_MODULE="/data/adb/modules/chrootctl"
-  if [ -d "$ACTIVE_MODULE" ] && [ "$MODPATH" != "$ACTIVE_MODULE" ]; then
+  # Never mix two editions while boot services hold old executable handles.
+  # A transition is left to the root manager's staged, reboot activation path.
+  ACTIVE_VARIANT="$ACTIVE_MODULE/config/chrootctl/build-variant.json"
+  NEXT_VARIANT="$MODPATH/config/chrootctl/build-variant.json"
+  ACTIVE_EDITION=legacy
+  NEXT_EDITION=legacy
+  [ ! -f "$ACTIVE_VARIANT" ] || ACTIVE_EDITION="$(sed -n 's/^[[:space:]]*"edition": *"\([a-z]*\)".*/\1/p' "$ACTIVE_VARIANT")"
+  [ ! -f "$NEXT_VARIANT" ] || NEXT_EDITION="$(sed -n 's/^[[:space:]]*"edition": *"\([a-z]*\)".*/\1/p' "$NEXT_VARIANT")"
+  LIVE_SWITCH_ALLOWED=1
+  if [ "$ACTIVE_EDITION" != "$NEXT_EDITION" ]; then
+    LIVE_SWITCH_ALLOWED=0
+    [ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "installer edition-switch staged reboot-required old=$ACTIVE_EDITION new=$NEXT_EDITION" || true
+    ui_print "chrootctl edition switch $ACTIVE_EDITION -> $NEXT_EDITION staged; reboot required to remove old runtime safely." 2>/dev/null || echo "chrootctl edition switch $ACTIVE_EDITION -> $NEXT_EDITION staged; reboot required to remove old runtime safely."
+  fi
+  # A leftover sibling means an earlier swap was interrupted. Never delete
+  # the only possible recovery tree or begin another live transaction over it.
+  if [ "$LIVE_SWITCH_ALLOWED" -eq 1 ]; then
+    for abandoned in "${ACTIVE_MODULE%/*}"/.chrootctl.live-old.* "${ACTIVE_MODULE%/*}"/.chrootctl.live-new.*; do
+      [ -e "$abandoned" ] || continue
+      LIVE_SWITCH_ALLOWED=0
+      [ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "installer interrupted-live-transaction detected staged-fallback=true" || true
+      ui_print "chrootctl detected an interrupted previous live swap; refusing new live activation and preserving recovery files." 2>/dev/null || echo "chrootctl detected an interrupted previous live swap; refusing new live activation and preserving recovery files."
+      break
+    done
+  fi
+  if [ "$LIVE_SWITCH_ALLOWED" -eq 1 ] && [ -d "$ACTIVE_MODULE" ] && ! runtime_integrity_ready "$ACTIVE_MODULE"; then
+    LIVE_SWITCH_ALLOWED=0
+    [ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "installer old-active-integrity-invalid staged-fallback=true" || true
+    ui_print "chrootctl existing active runtime failed seal verification; keeping active tree untouched and staging for reboot." 2>/dev/null || echo "chrootctl existing active runtime failed seal verification; keeping active tree untouched and staging for reboot."
+  fi
+  if [ "$LIVE_SWITCH_ALLOWED" -eq 1 ] && [ -d "$ACTIVE_MODULE" ] && [ "$MODPATH" != "$ACTIVE_MODULE" ]; then
     LIVE_PARENT="${ACTIVE_MODULE%/*}"
     LIVE_NEXT="$LIVE_PARENT/.chrootctl.live-new.$$"
     LIVE_OLD="$LIVE_PARENT/.chrootctl.live-old.$$"
@@ -842,16 +1025,16 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
       done
     fi
 
-    for required in module.prop post-fs-data.sh service.sh system/bin/chrootctl runtime/arm64-v8a/runtime-manifest.json runtime/arm64-v8a/chrootctl config/chrootctl/module-package-manifest.json config/chrootctl/runtime-executables.list; do
+    for required in module.prop post-fs-data.sh service.sh system/bin/chrootctl runtime/arm64-v8a/runtime-manifest.json runtime/arm64-v8a/chrootctl config/chrootctl/module-package-manifest.json config/chrootctl/runtime-executables.list config/chrootctl/runtime-sha256.list; do
       [ "$LIVE_OK" -eq 0 ] || [ -f "$LIVE_NEXT/$required" ] || LIVE_OK=0
     done
     [ "$LIVE_OK" -eq 0 ] || [ -x "$LIVE_NEXT/system/bin/chrootctl" ] || LIVE_OK=0
-    [ "$LIVE_OK" -eq 0 ] || runtime_execs_ready "$LIVE_NEXT/runtime/arm64-v8a" "$LIVE_NEXT/config/chrootctl/runtime-executables.list" || LIVE_OK=0
+    [ "$LIVE_OK" -eq 0 ] || runtime_integrity_ready "$LIVE_NEXT" || LIVE_OK=0
 
     if [ "$LIVE_OK" -eq 1 ]; then
       chown -R 0:0 "$LIVE_NEXT" 2>/dev/null || true
       restorecon -RF "$LIVE_NEXT" 2>/dev/null || true
-      if mv "$ACTIVE_MODULE" "$LIVE_OLD" && mv "$LIVE_NEXT" "$ACTIVE_MODULE"; then
+      if mv "$ACTIVE_MODULE" "$LIVE_OLD" && mv "$LIVE_NEXT" "$ACTIVE_MODULE" && runtime_integrity_ready "$ACTIVE_MODULE"; then
         rm -rf "$LIVE_OLD" 2>/dev/null || true
         export CHROOTCTL_MODULE_DIR="$ACTIVE_MODULE"
         "$ACTIVE_MODULE/post-fs-data.sh" >/dev/null 2>&1 || true
@@ -859,11 +1042,17 @@ if [ -n "${MODPATH:-}" ] && [ -d "$MODPATH" ]; then
           "$ACTIVE_MODULE/service.sh" >/dev/null 2>&1 || true
         fi
         [ -x "$ACTIVE_MODULE/bin/chrootctl-log-helper" ] && "$ACTIVE_MODULE/bin/chrootctl-log-helper" module "installer live-update success" || true
-        ui_print "chrootctl active module updated live; reboot is not required for the module runtime/WebUI." 2>/dev/null || echo "chrootctl active module updated live; reboot is not required for the module runtime/WebUI."
+        ui_print "chrootctl runtime files updated live (services requested, health not independently qualified)." 2>/dev/null || echo "chrootctl runtime files updated live (services requested, health not independently qualified)."
         ui_print "Root-manager magic-mount changes, if any, may still require a reboot." 2>/dev/null || true
       else
         rm -rf "$LIVE_NEXT" 2>/dev/null || true
-        if [ ! -d "$ACTIVE_MODULE" ] && [ -d "$LIVE_OLD" ]; then mv "$LIVE_OLD" "$ACTIVE_MODULE" 2>/dev/null || true; fi
+        if [ -d "$LIVE_OLD" ]; then
+          # Preserve an intact previous edition on partial rename/verification
+          # failure. Never destroy the last rollback tree to claim success.
+          if [ -d "$ACTIVE_MODULE" ]; then mv "$ACTIVE_MODULE" "$LIVE_PARENT/.chrootctl.failed-new.$$" 2>/dev/null || true; fi
+          if [ ! -d "$ACTIVE_MODULE" ]; then mv "$LIVE_OLD" "$ACTIVE_MODULE" 2>/dev/null || true; fi
+          [ ! -d "$ACTIVE_MODULE" ] || rm -rf "$LIVE_PARENT/.chrootctl.failed-new.$$" 2>/dev/null || true
+        fi
         [ -x "$LOG_HELPER" ] && "$LOG_HELPER" module "installer live-update failed staged-fallback=true" || true
         ui_print "chrootctl live activation failed; staged update is preserved for reboot activation." 2>/dev/null || echo "chrootctl live activation failed; staged update is preserved for reboot activation."
       fi
@@ -1080,8 +1269,17 @@ func validateVariantDescriptor(runtimeJSON, variantJSON []byte) error {
 	if err := json.Unmarshal(variantJSON, &descriptor); err != nil {
 		return err
 	}
-	if descriptor.SchemaVersion != 1 || descriptor.Edition != runtime.Edition || descriptor.AndroidAPI != 26 || descriptor.ModuleID != ModuleID || descriptor.RuntimeManifestSHA256 != shaBytes(runtimeJSON) {
+	if (descriptor.SchemaVersion != 1 && descriptor.SchemaVersion != 2) || descriptor.Edition != runtime.Edition || descriptor.AndroidAPI != 26 || descriptor.ModuleID != ModuleID || descriptor.RuntimeManifestSHA256 != shaBytes(runtimeJSON) {
 		return errors.New("module build-variant descriptor/runtime seal mismatch")
+	}
+	if descriptor.SchemaVersion == 2 {
+		var provenance struct{ ReleaseIdentity }
+		if err := json.Unmarshal(variantJSON, &provenance); err != nil {
+			return err
+		}
+		if err := validateReleaseIdentity(&provenance.ReleaseIdentity); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1138,6 +1336,10 @@ func Render(opts Options) error {
 	if e = json.Unmarshal(rawRuntimeManifest, &selectedRuntime); e != nil {
 		return e
 	}
+	runtimeChecksums, e := runtimeChecksumListFromManifest(rawRuntimeManifest)
+	if e != nil {
+		return e
+	}
 	compat, _ := json.MarshalIndent(CompatibilityPayload(), "", "  ")
 	compat = append(compat, '\n')
 	targets, _ := json.MarshalIndent(map[string]any{"startup_targets": opts.StartupTargets}, "", "  ")
@@ -1145,9 +1347,21 @@ func Render(opts Options) error {
 	files := map[string]struct {
 		c string
 		m fs.FileMode
-	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "action.sh": {action(), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-helper": {proxy("bin/chrootctl-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}, RuntimeExecutablesListPath: {runtimeExecs, 0644}}
+	}{"module.prop": {moduleProp(), 0644}, "customize.sh": {customize(), 0755}, "post-fs-data.sh": {postFS(), 0755}, "service.sh": {service(opts.StartupTargets), 0755}, "action.sh": {action(), 0755}, "uninstall.sh": {uninstall(), 0755}, "bin/chrootctl-helper": {helper(), 0755}, "bin/chrootctl-log-helper": {logHelper(), 0755}, "system/bin/chrootctl": {launcher(), 0755}, "system/bin/chrootctl-helper": {proxy("bin/chrootctl-helper"), 0755}, "config/chrootctl/compatibility-manifest.json": {string(compat), 0644}, "config/chrootctl/boot_targets.json": {string(targets), 0644}, RuntimeExecutablesListPath: {runtimeExecs, 0644}, RuntimeChecksumListPath: {runtimeChecksums, 0644}}
 	if selectedRuntime.Edition != "" {
-		variantJSON, jsonErr := json.MarshalIndent(map[string]any{"schemaVersion": 1, "edition": selectedRuntime.Edition, "androidApi": selectedRuntime.AndroidAPI, "moduleId": ModuleID, "runtimeManifestSha256": shaBytes(rawRuntimeManifest)}, "", "  ")
+		variant := map[string]any{"schemaVersion": 1, "edition": selectedRuntime.Edition, "androidApi": selectedRuntime.AndroidAPI, "moduleId": ModuleID, "runtimeManifestSha256": shaBytes(rawRuntimeManifest)}
+		if opts.ReleaseIdentity != nil {
+			if err := validateReleaseIdentity(opts.ReleaseIdentity); err != nil {
+				return err
+			}
+			variant["schemaVersion"] = 2
+			variant["sourceCommit"] = opts.ReleaseIdentity.SourceCommit
+			variant["sourceTree"] = opts.ReleaseIdentity.SourceTree
+			variant["devtoolCommit"] = opts.ReleaseIdentity.DevtoolCommit
+			variant["bcloneLockSha256"] = opts.ReleaseIdentity.BcloneLockSHA256
+			variant["goCompilerVersion"] = opts.ReleaseIdentity.GoCompilerVersion
+		}
+		variantJSON, jsonErr := json.MarshalIndent(variant, "", "  ")
 		if jsonErr != nil {
 			return jsonErr
 		}
@@ -1319,6 +1533,9 @@ func validateInstalledPackageSubset(root string) error {
 		sealed[item.Path] = item
 	}
 	persistent := append([]string{}, installedModuleFiles()...)
+	if _, ok := sealed[BuildVariantPath]; ok {
+		persistent = append(persistent, BuildVariantPath)
+	}
 	// Validation evidence is added only after the root-module Devtool gate has
 	// completed. Pre-validation rendered trees legitimately do not contain it,
 	// but an installed package that seals it must keep it byte-identical.
@@ -1371,6 +1588,20 @@ func ValidateInstalled(root string) error {
 	if err := validateRuntimeExecutableList(root); err != nil {
 		return err
 	}
+	if err := validateRuntimeChecksumList(root); err != nil {
+		return err
+	}
+	runtimeJSON, err := os.ReadFile(filepath.Join(root, "runtime", RuntimeABI, "runtime-manifest.json"))
+	if err != nil {
+		return err
+	}
+	variantJSON, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(BuildVariantPath)))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := validateVariantDescriptor(runtimeJSON, variantJSON); err != nil {
+		return err
+	}
 	return validateInstalledPackageSubset(root)
 }
 
@@ -1419,6 +1650,9 @@ func ValidateRendered(root string) error {
 		return e
 	}
 	if e := validateRuntimeExecutableList(root); e != nil {
+		return e
+	}
+	if e := validateRuntimeChecksumList(root); e != nil {
 		return e
 	}
 	runtimeJSON, e := os.ReadFile(filepath.Join(root, "runtime", RuntimeABI, "runtime-manifest.json"))

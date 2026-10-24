@@ -40,6 +40,7 @@ type ModuleOptions struct {
 	Jobs                           int
 	Install, Checksum              bool
 	Edition                        string // require matching runtime edition when set
+	ReleaseIdentity                *chmodule.ReleaseIdentity
 }
 type SourceOptions struct {
 	Version, Output string
@@ -484,7 +485,7 @@ func BuildModule(opts ModuleOptions) (string, error) {
 		return "", e
 	}
 	defer os.RemoveAll(tmp)
-	if e = chmodule.Render(chmodule.Options{OutputDir: tmp, NativeRuntimeDir: runtimeDir, StartupTargets: opts.StartupTargets}); e != nil {
+	if e = chmodule.Render(chmodule.Options{OutputDir: tmp, NativeRuntimeDir: runtimeDir, StartupTargets: opts.StartupTargets, ReleaseIdentity: opts.ReleaseIdentity}); e != nil {
 		return "", e
 	}
 	if e = replaceDir(tmp, out); e != nil {
