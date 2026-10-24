@@ -45,7 +45,9 @@ func TestNativeSourceGatesRejectTampering(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ci := filepath.Join(dir, ".github/workflows/ci.yml")
+	ci := filepath.Join(dir, ".github/workflows/devtool-chrootctl-build.yml")
+	// The Android SDK setup belongs to the hosted release workflow; ci.yml
+	// intentionally contains no Android toolchain or native-build steps.
 	original, err := os.ReadFile(ci)
 	if err != nil {
 		t.Fatal(err)
