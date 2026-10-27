@@ -15,15 +15,32 @@ func (s *Container) RcloneRuntime() (rcloneops.Runtime, error) {
 }
 
 func (s *TransferService) RcloneStatus(ctx context.Context) (map[string]any, error) {
+	provider, _ := rcloneops.SelectedProvider()
+	if provider == "" {
+		provider = "chrootctl"
+	}
+	unavailable := "bundled rclone runtime is unavailable"
+	probeFailed := "bundled rclone runtime probe failed"
+	expected := "/data/adb/modules/chrootctl/runtime/arm64-v8a/rclone"
+	remediation := "Rebuild or reinstall the sealed root module with rclone bundled, or explicitly provide a trusted CHROOTCTL_RCLONE_PATH for recovery."
+	probeRemediation := "Rebuild the packaged rclone runtime and reinstall the sealed module before retrying remote operations."
+	if provider == "skybind" {
+		unavailable = "Skybind rclone provider is unavailable"
+		probeFailed = "Skybind rclone provider probe failed"
+		expected = "/data/adb/modules/skybind/system/bin/skybind-rclone"
+		remediation = "Verify Skybind API-01 module provenance and root-private config. No fallback to Chrootctl's rclone is allowed."
+		probeRemediation = "Repair Skybind's trusted native rclone installation. Do not change SELinux, copy credentials or fall back implicitly."
+	}
 	runtime, err := s.C.RcloneRuntime()
 	if err != nil {
 		return map[string]any{
 			"available": false, "configured": false,
-			"error":             "bundled rclone runtime is unavailable",
+			"error":             unavailable,
+			"provider":          provider,
 			"reason":            "No trusted Android/arm64 rclone executable passed runtime discovery and seal validation.",
-			"expected_path":     "/data/adb/modules/chrootctl/runtime/arm64-v8a/rclone",
+			"expected_path":     expected,
 			"check":             "Verify the active module runtime inventory, rclone executable ownership/mode, and runtime-manifest seal.",
-			"remediation":       "Rebuild or reinstall the sealed root module with rclone bundled, or explicitly provide a trusted CHROOTCTL_RCLONE_PATH for recovery.",
+			"remediation":       remediation,
 			"technical_details": err.Error(),
 		}, nil
 	}
@@ -31,11 +48,12 @@ func (s *TransferService) RcloneStatus(ctx context.Context) (map[string]any, err
 	if err != nil {
 		return map[string]any{
 			"available": false, "configured": false,
-			"error":             "bundled rclone runtime probe failed",
+			"error":             probeFailed,
+			"provider":          provider,
 			"reason":            "A trusted rclone executable was discovered, but its version probe did not complete successfully.",
 			"expected_path":     runtime.Executable,
 			"check":             "Verify the packaged executable is Android/arm64, executable, and runnable under the root-module environment.",
-			"remediation":       "Rebuild the packaged rclone runtime and reinstall the sealed module before retrying remote operations.",
+			"remediation":       probeRemediation,
 			"technical_details": err.Error(),
 		}, nil
 	}
@@ -43,6 +61,7 @@ func (s *TransferService) RcloneStatus(ctx context.Context) (map[string]any, err
 	sort.Strings(names)
 	return map[string]any{
 		"available":     true,
+		"provider":      info.Provider,
 		"configured":    len(names) > 0,
 		"version":       info.Version,
 		"remotes":       names,

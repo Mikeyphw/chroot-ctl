@@ -337,6 +337,13 @@ func (r Runtime) runInputCommand(ctx context.Context, args []string, reader io.R
 }
 
 func ImportConfig(staged string) (string, error) {
+	provider, err := SelectedProvider()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine rclone provider: %w", err)
+	}
+	if provider == "skybind" {
+		return "", fmt.Errorf("Skybind owns its root-private rclone configuration; edit remotes through Skybind, not Chrootctl config import")
+	}
 	src, err := filepath.Abs(staged)
 	if err != nil {
 		return "", err

@@ -25,9 +25,11 @@ const (
 type Runtime struct {
 	Executable string
 	Config     string
+	Provider   string
 }
 
 type RuntimeInfo struct {
+	Provider          string   `json:"provider"`
 	Version           string   `json:"version"`
 	Executable        string   `json:"executable"`
 	Config            string   `json:"config"`
@@ -45,6 +47,25 @@ func RuntimeFromEnviron(environ []string) (Runtime, error) {
 			}
 		}
 		return ""
+	}
+	provider, providerErr := selectedRcloneProvider(lookup)
+	if providerErr != nil {
+		return Runtime{}, providerErr
+	}
+	switch provider {
+	case "", "chrootctl": // Existing discovery and credential isolation remain unchanged.
+	case "skybind":
+		// Explicit provider selection must never be combined with a foreign
+		// executable/config override or an implicit PATH fallback.
+		if lookup("CHROOTCTL_RCLONE_PATH") != "" || lookup("CHROOTCTL_RCLONE_CONFIG") != "" || lookup("CHROOTCTL_RCLONE_ALLOW_PATH") != "" {
+			return Runtime{}, fmt.Errorf("skybind rclone provider conflicts with manual runtime/config/PATH overrides")
+		}
+		if os.Geteuid() != 0 {
+			return Runtime{}, fmt.Errorf("skybind rclone provider requires root for the private Skybind config")
+		}
+		return skybindRuntimeAt(skybindLayout{moduleDir: skybindModuleDir, configDir: skybindConfigDir}, 0)
+	default:
+		return Runtime{}, fmt.Errorf("unknown CHROOTCTL_RCLONE_PROVIDER (expected chrootctl or skybind)")
 	}
 	type runtimeCandidate struct {
 		path        string
@@ -116,7 +137,11 @@ func RuntimeFromEnviron(environ []string) (Runtime, error) {
 			return Runtime{}, fmt.Errorf("rclone config is unavailable or unsafe: %s", config)
 		}
 	}
-	return Runtime{Executable: executable, Config: config}, nil
+	selectedProvider := "chrootctl"
+	if lookup("CHROOTCTL_RCLONE_PATH") != "" {
+		selectedProvider = "external"
+	}
+	return Runtime{Executable: executable, Config: config, Provider: selectedProvider}, nil
 }
 
 func trustedRuntimeFile(st os.FileInfo, privileged bool) bool {
@@ -178,7 +203,7 @@ func (r Runtime) Probe(ctx context.Context) (RuntimeInfo, error) {
 			sort.Strings(names)
 		}
 	}
-	return RuntimeInfo{Version: strings.TrimPrefix(first, "rclone "), Executable: r.Executable, Config: r.Config, ConfiguredRemotes: names}, nil
+	return RuntimeInfo{Provider: r.Provider, Version: strings.TrimPrefix(first, "rclone "), Executable: r.Executable, Config: r.Config, ConfiguredRemotes: names}, nil
 }
 
 func (r Runtime) ConfiguredRemoteNames() (map[string]bool, error) {
