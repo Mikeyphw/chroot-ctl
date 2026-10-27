@@ -509,21 +509,30 @@ command = ["go", "run", "./cmd/devtoolgates", "r1"]
 inputs = ["cmd/devtoolgates/**", "cmd/chrootctl/main.go", "internal/skybindr1/**"]
 metadata = { read_only = true }
 
+[targets.chrootctl_go.jobs.api03-skybind-feature]
+runner = "command"
+command = ["bash", "scripts/api03-source-check.sh"]
+inputs = ["cmd/chrootctl/main.go", "internal/skybindfeature/**", "scripts/api03-source-check.sh"]
+metadata = { read_only = true }
+
 [targets.chrootctl_go.workflows]
 ci-preflight = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
   { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
+  { id = "api03", ref = "job:api03-skybind-feature", depends_on = [] },
 ]
 ci-local = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
   { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
-  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source"] },
+  { id = "api03", ref = "job:api03-skybind-feature", depends_on = [] },
+  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source", "api03"] },
 ]
 ci-full = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
   { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
-  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source"] },
-  { id = "repo-validation", ref = "target:chrootctl#validate", depends_on = ["actions-contract", "r1-source"] },
+  { id = "api03", ref = "job:api03-skybind-feature", depends_on = [] },
+  { id = "go-test", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source", "api03"] },
+  { id = "repo-validation", ref = "target:chrootctl#validate", depends_on = ["actions-contract", "r1-source", "api03"] },
 ]
 
 [wrapper]

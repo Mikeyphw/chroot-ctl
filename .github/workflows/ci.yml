@@ -21,5 +21,8 @@ jobs:
           set -euo pipefail
           go run ./cmd/devtoolgates actions
           go run ./cmd/devtoolgates r1
+      - name: API-03 root feature consumer source tests
+        shell: bash
+        run: bash scripts/api03-source-check.sh
       # Native Android builds, WebUI test suite and full qualification run only
       # through the canonical Devtool hosted-release DAG, not this lane.

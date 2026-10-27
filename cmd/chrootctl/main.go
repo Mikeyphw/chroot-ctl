@@ -14,6 +14,7 @@ import (
 
 	"chrootctl/internal/bridge"
 	"chrootctl/internal/services"
+	"chrootctl/internal/skybindfeature"
 	"chrootctl/internal/skybindr1"
 	"chrootctl/internal/standalonewebui"
 
@@ -23,6 +24,26 @@ import (
 func main() { os.Exit(runWithIO(os.Args[1:])) }
 
 func runWithIO(args []string) int {
+	// API-03 is opt-in and root-only. Do not route through the old R1
+	// read socket or chrootctl's own rclone/mount mutation dispatch.
+	if len(args) > 0 && args[0] == "skybind-feature" {
+		if os.Geteuid() != 0 {
+			fmt.Fprintln(os.Stderr, "chrootctl skybind-feature: root required")
+			return 2
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		payload, err := skybindfeature.Call(ctx, args[1:], os.Stdin, skybindfeature.RunInstalled)
+		if err != nil {
+			if err == skybindfeature.ErrDenied && len(payload) > 0 {
+				_, _ = os.Stdout.Write(payload)
+			}
+			fmt.Fprintln(os.Stderr, "chrootctl skybind-feature: unavailable or denied")
+			return 2
+		}
+		_, _ = os.Stdout.Write(payload)
+		return 0
+	}
 	// An explicit read-only integration command; no native-rclone fallback is
 	// changed and no Skybind socket is accessed by default CLI operations.
 	if len(args) > 0 && args[0] == "skybind-read" {
