@@ -1,0 +1,47 @@
+name: Devtool S7 P04 Go Consumer Adoption
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-adoption:
+    name: Native Devtool Go audit and exact-tree scaffold (non-release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      CGO_ENABLED: "1"
+    steps:
+      - name: Check out exact Go consumer source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Create local inspection branch (never pushed)
+        run: git switch -c s7-p04-go-ci-inspection
+      - name: Install pinned canonical Devtool S7 P02
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/devtool-s7-p04-env"
+          "$RUNNER_TEMP/devtool-s7-p04-env/bin/python" -m pip install --disable-pip-version-check \
+            'git+https://github.com/Mikeyphw/devtool.git@416d24140c7f7a4b9833d7cb19df50ca7e7363b8'
+          echo "$RUNNER_TEMP/devtool-s7-p04-env/bin" >> "$GITHUB_PATH"
+      - name: Canonical Devtool Go consumer adoption and drift negatives
+        run: python3 -m unittest discover -s tests -p 'test_devtool_go_adoption.py' -v
+      - name: Set up repo-pinned hosted Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: true
+      - name: Existing Go source-contract gates (non-release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go version
+          go run ./cmd/devtoolgates actions
+          go run ./cmd/devtoolgates r1
